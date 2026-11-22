@@ -5,6 +5,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { Money } from '../../../common/money';
 import { DbService, type TransactionContext, isUniqueViolation } from '../../../infra/db';
 import { ClientGroupDirectory, RETAIL_GROUP_KIND } from '../../catalog';
 import { MerchantAccounts, MerchantWallets } from '../../money';
@@ -14,6 +15,7 @@ import { type ClientChangeInput, kindOfClientChange } from '../domain/client-det
 import {
   canMoveClient,
   referralCode,
+  statusChangePermission,
   suspendReasonProblem,
   usernameBase,
   usernameCandidate,
@@ -27,6 +29,7 @@ import {
   updateClientRow,
   usernameTaken,
 } from '../infra/client-admin.repository';
+import { requirePermission } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { SessionService } from '../security/session.service';
@@ -72,6 +75,10 @@ const MAX_CREATE_ATTEMPTS = 4;
  * Side effects: writes `clients`, `ledger_accounts` (through the money module), `auth_tokens`, `outbox_events` and `audit_logs`; a
  * status change clears the cached API key views (`ApiKeyDirectory.invalidateClient`) and session views after the commit and a
  * suspension ends the merchant's sessions.
+ *
+ * Second permissions (decision 046, checked here, not by the route's guard): a credit limit above zero at invitation needs
+ * `wallet:credit_limit`; a group other than the default one at invitation, and a group move, need `groups:update`; suspending,
+ * declining and reactivating need `clients:security`.
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/clients` sections)
  */
@@ -127,9 +134,15 @@ export class ClientAdminService {
    * @param input name, email, country, group and credit limit
    * @returns the new merchant (status `pending`)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `groupId` for an unknown group, the retail group or no default group, on
-   *   `creditLimit` for a negative limit or a group without credit), `EMAIL_TAKEN` (409)
+   *   `creditLimit` for a negative limit or a group without credit), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a `creditLimit` above
+   *   zero needs `wallet:credit_limit`; a `groupId` other than the default group needs `groups:update`, checked after the group is
+   *   found and before any write, decision 046)
    */
   async create(caller: StaffPrincipal, input: CreateClientInput): Promise<ClientView> {
+    // Decision 046: credit at invitation is a credit-limit decision, as on the credit-limit route.
+    if (input.creditLimit !== undefined && Money.of(input.creditLimit).isPositive()) {
+      requirePermission(caller, 'wallet:credit_limit');
+    }
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.createOnce(caller, input);
@@ -148,11 +161,14 @@ export class ClientAdminService {
    * @param input a status change (with a reason when suspending), a group move, or details (several keys at once); one kind per call
    * @returns the updated merchant
    * @throws {AppError} `NOT_FOUND` (404), `INVALID_TRANSITION` (409), `EMAIL_TAKEN` (409), `RATE_LIMITED` (429, an email change),
-   *   `VALIDATION_FAILED` (422 on `reason`, `status`, `groupId`, a detail key, or the first key of a second kind in the same call)
+   *   `VALIDATION_FAILED` (422 on `reason`, `status`, `groupId`, a detail key, or the first key of a second kind in the same call),
+   *   `FORBIDDEN` (403: a group move needs `groups:update`; a move into or out of `suspended` needs `clients:security`, decision 046)
    */
   async update(caller: StaffPrincipal, id: number, input: UpdateClientInput): Promise<ClientView> {
     const kind = kindOfClientChange(input);
     if ('problem' in kind) throw invalid(kind.problem.field, kind.problem.message);
+    // Decision 046: a group decides the merchant's prices and credit.
+    if (kind.kind === 'group') requirePermission(caller, 'groups:update');
     if (kind.kind === 'details' && input.email !== undefined) {
       // After the cheap refusals (404), before the transaction: a refused call spends no point of the limiter.
       const existing = await findClientById(this.db.db, id);
@@ -185,6 +201,11 @@ export class ClientAdminService {
         );
       }
       if (group.kind === RETAIL_GROUP_KIND) throw invalid('groupId', 'A merchant cannot join the storefront group.');
+      // Decision 046: a group decides the merchant's prices and credit, so a group other than the default one is a groups decision,
+      // as on the move route. No group, or the default group, needs only the route's permission. Nothing is written before this.
+      if (input.groupId !== undefined && (await this.groups.findDefault(work.tx))?.id !== group.id) {
+        requirePermission(caller, 'groups:update');
+      }
 
       const username = await this.freeUsername(work.tx, name);
       let client: Client;
@@ -251,6 +272,9 @@ export class ClientAdminService {
         errors: [{ field: 'status', code: 'INVALID_TRANSITION', message: `Cannot go from ${client.status} to ${to}.` }],
       });
     }
+    // Decision 046: who may use the account (suspend, decline, reactivate) is an account-security decision.
+    const needed = statusChangePermission(client.status, to);
+    if (needed !== null) requirePermission(caller, needed);
     const suspending = to === 'suspended';
     const reason = reasonInput ?? '';
     if (suspending) {

@@ -10,6 +10,7 @@ import { Money } from '../../../common/money';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { isUniqueViolation } from '../../../infra/db/pg-errors';
 import { ClientGroupDirectory } from '../../catalog';
+import { type PermissionHolder, requireOwner } from '../../identity';
 import { AuditService, PUBLIC_LOGO_MIN_SIDE, PUBLIC_MEDIA_PATH, PublicImages } from '../../platform';
 import type { NewPaymentGateway, PaymentGateway } from '../db/schema';
 import {
@@ -22,6 +23,8 @@ import {
 import {
   type GatewayFields,
   type WebhookSecretChange,
+  changesAutomaticSetup,
+  changesCredentials,
   checkGatewayFields,
   nextWebhookSecrets,
   secretHintOf,
@@ -57,6 +60,7 @@ export interface CreateGatewayInput extends GatewayFields, WebhookSecretChange {
 export type UpdateGatewayInput = Partial<CreateGatewayInput>;
 
 const DAY_MS = 86_400_000;
+const GATEWAY_OWNER_DETAIL = 'Only an owner can set up an automatic payment method or change its secrets.';
 const refuse = (...errors: FieldError[]) => new AppError('VALIDATION_FAILED', { errors });
 /** The webhook keys after a change, or the 422 when a second key would stand alone. */
 const webhookSecretsAfter = (stored: readonly string[], change: WebhookSecretChange) => {
@@ -192,15 +196,19 @@ export class PaymentGatewayService {
   /**
    * Adds a gateway.
    *
+   * @param caller the signed-in staff member (only an Owner adds an automatic method or sends a secret, decision 046)
    * @param input the request body
    * @returns the new gateway
    * @throws {AppError} `VALIDATION_FAILED` for a bad field, a code another gateway uses, a group that does not exist, a second webhook
    *   secret without a first, or a `preset` that is unknown (`preset` `unknown`), not available yet (`preset` `unavailable`), of another
-   *   kind than `isManual` (`isManual` `preset_kind`) or of another driver (`driver` `preset_driver`)
+   *   kind than `isManual` (`isManual` `preset_kind`) or of another driver (`driver` `preset_driver`); `FORBIDDEN` (403) for a
+   *   caller who is not an Owner and adds an automatic method or sends a secret, after the validation and before any write
    */
-  async create(input: CreateGatewayInput): Promise<WireGateway> {
+  async create(caller: PermissionHolder, input: CreateGatewayInput): Promise<WireGateway> {
     const errors = [...(await this.problems(input, input.allowedGroupIds)), ...presetProblems(input)];
     if (errors.length > 0) throw refuse(...errors);
+    // Decision 046: a method that confirms payments by itself, and the keys it is checked against, are set by an Owner.
+    if (!input.isManual || changesCredentials(input)) requireOwner(caller, GATEWAY_OWNER_DETAIL);
     const { secrets } = webhookSecretsAfter([], input);
     const row = await this.db.runInTransaction(async ({ tx }) => {
       if (await findGatewayByCode(tx, input.code)) throw refuse(codeTaken);
@@ -250,14 +258,18 @@ export class PaymentGatewayService {
   /**
    * Changes a gateway.
    *
+   * @param caller the signed-in staff member (only an Owner sends a secret, changes `isManual` of a method that is automatic before
+   *   or after the change, or changes the driver of such a method, decision 046; `secondaryWebhookSecret: null` on a method with no
+   *   second secret changes nothing and is not a change of secrets)
    * @param id the gateway id
    * @param input the fields to change
    * @returns the changed gateway
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for an invalid merged gateway, a code change, a group that does not exist, a
    *   second webhook secret without a first, or (a method made from a preset) a merged `isManual` that is not the preset's kind
-   *   (`isManual` `preset_kind`) or a merged `driver` that is not the preset's (`driver` `preset_driver`), checked before any write
+   *   (`isManual` `preset_kind`) or a merged `driver` that is not the preset's (`driver` `preset_driver`), checked before any write;
+   *   `FORBIDDEN` (403) for a caller who is not an Owner and does one of the Owner-only changes above, after the validation
    */
-  async update(id: number, input: UpdateGatewayInput): Promise<WireGateway> {
+  async update(caller: PermissionHolder, id: number, input: UpdateGatewayInput): Promise<WireGateway> {
     const row = await this.db.runInTransaction(async ({ tx }) => {
       const current = await findGateway(tx, id, true);
       if (!current) throw notFound();
@@ -292,6 +304,11 @@ export class PaymentGatewayService {
         ...presetPinProblems(current.preset, merged),
       ];
       if (errors.length > 0) throw refuse(...errors);
+      const stored = this.vault.read(current).webhookSecrets;
+      // Decision 046: the secrets, the kind of an automatic method and its driver are set by an Owner.
+      if (changesCredentials(input, stored) || changesAutomaticSetup(current, merged)) {
+        requireOwner(caller, GATEWAY_OWNER_DETAIL);
+      }
       const changes: Partial<NewPaymentGateway> = {
         driver: merged.driver,
         name: merged.name,
@@ -309,7 +326,6 @@ export class PaymentGatewayService {
         isActive: merged.isActive,
         updatedAt: this.clock.now(),
       };
-      const stored = this.vault.read(current).webhookSecrets;
       const webhook = webhookSecretsAfter(stored, input);
       if (input.secret) changes.configEnc = this.vault.sealConfig(current.configEnc, { secret: input.secret }, id);
       if (webhook.changed) {

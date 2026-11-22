@@ -239,7 +239,8 @@ export const createGateway = defineRoute({
   description:
     'Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. ' +
     "`preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). " +
-    `${VALIDATION} Audited.`,
+    `${VALIDATION} Audited. ` +
+    'Only an owner may add an automatic method (`isManual` false) or send `secret`, `webhookSecret` or `secondaryWebhookSecret` (`403 FORBIDDEN`, after the validation above; decision 046).',
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',
@@ -299,7 +300,8 @@ export const updateGateway = defineRoute({
     'A `preset` in the body is ignored: the preset of a method never changes, and a method made from one keeps its kind and driver: ' +
     'a merged `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a merged `driver` that is not the preset driver is 422 on ' +
     '`driver` (`preset_driver`). A custom method may still change both. ' +
-    `The merged gateway is validated as on create. ${VALIDATION} Audited.`,
+    `The merged gateway is validated as on create. ${VALIDATION} Audited. ` +
+    "Only an owner may send `secret`, `webhookSecret` or `secondaryWebhookSecret` (a `null` for a method that has no second secret changes nothing and is open to the route's own permission), change `isManual` of a method that is automatic before or after the change (turning an automatic method manual included), or change the `driver` of such a method (`403 FORBIDDEN`, after the validation; decision 046). The other fields of an automatic method stay under the route's own permission.",
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',

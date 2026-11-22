@@ -2,7 +2,7 @@
 import { AppError } from '../../../common/errors';
 import type { SessionStage } from '../db/schema';
 import type { CapabilityAccessKind } from './machine/capability-tokens';
-import { grantsEverything } from './permission-grammar';
+import { grants, grantsEverything, uncoveredPermissions } from './permission-grammar';
 import type { SessionView } from './session.types';
 
 /**
@@ -155,4 +155,78 @@ export function assertOwnerTargetAllowed(caller: PermissionHolder, target: Permi
   if (isOwner(target) && !isOwner(caller)) {
     throw new AppError('FORBIDDEN', { detail: 'Only an owner can do this to an owner account.' });
   }
+}
+
+/**
+ * The refusal of a caller who lacks a permission.
+ *
+ * Why: decision 046: the permission guard and every second-permission check answer in one wording, and `403 FORBIDDEN` never
+ * signs the caller out (ALIGNMENT § 3).
+ *
+ * @param permission the permission the caller needs
+ * @returns the error to throw: `FORBIDDEN` (403) naming the permission
+ */
+export function missingPermission(permission: string): AppError {
+  return new AppError('FORBIDDEN', { detail: `You need the ${permission} permission to do this.` });
+}
+
+/**
+ * Refuses a caller whose role does not grant a permission the action needs besides the route's own.
+ *
+ * Why: decision 046: where one coarse permission covered a stronger action, the use case also asks for the permission of that
+ * action (the route keeps its own permission, which the console reads).
+ *
+ * @param caller the signed-in staff member
+ * @param permission the second permission the action needs
+ * @throws {AppError} `FORBIDDEN` (403) naming the permission
+ */
+export function requirePermission(caller: PermissionHolder, permission: string): void {
+  if (!grants(caller.permissions, permission)) throw missingPermission(permission);
+}
+
+/**
+ * Refuses a caller who is not an Owner.
+ *
+ * Why: decision 046: a few actions are kept for Owners (payment method secrets, merchant API keys made by staff).
+ *
+ * @param caller the signed-in staff member
+ * @param detail the refusal text the console shows
+ * @throws {AppError} `FORBIDDEN` (403) with `detail` when the caller's role does not hold `*`
+ */
+export function requireOwner(caller: PermissionHolder, detail: string): void {
+  if (!isOwner(caller)) throw new AppError('FORBIDDEN', { detail });
+}
+
+/** What a ceiling refusal is about: a permission list the caller sent, a stored role, or another staff account. */
+export type CeilingSubject = 'list' | 'role' | 'account';
+
+const CEILING_NAMES_SHOWN = 5;
+
+function ceilingDetail(subject: CeilingSubject, missing: readonly string[]): string {
+  if (subject === 'role') return 'This role has permissions you do not hold yourself.';
+  if (subject === 'account') return 'This account has permissions you do not hold yourself.';
+  const shown = missing.slice(0, CEILING_NAMES_SHOWN).join(', ');
+  const more = missing.length > CEILING_NAMES_SHOWN ? `, and ${missing.length - CEILING_NAMES_SHOWN} more` : '';
+  return `You can only give permissions you hold yourself. Not yours: ${shown}${more}.`;
+}
+
+/**
+ * Refuses a caller who would grant, assign or act on permissions they do not hold themselves.
+ *
+ * Why: decision 046 (privilege ceiling): staff stay inside their own permissions, whatever role or account is concerned. An
+ * Owner passes always. A refusal that concerns a stored role or account names no permission (the caller may not be allowed to
+ * read other roles); one about a list the caller sent names up to five.
+ *
+ * @param caller the signed-in staff member
+ * @param permissions the permissions granted, assigned or acted on
+ * @param subject what the permissions belong to, which decides the wording
+ * @throws {AppError} `FORBIDDEN` (403) when an entry is not covered by the caller's permissions
+ */
+export function assertWithinCeiling(
+  caller: PermissionHolder,
+  permissions: readonly string[],
+  subject: CeilingSubject,
+): void {
+  const missing = uncoveredPermissions(caller.permissions, permissions);
+  if (missing.length > 0) throw new AppError('FORBIDDEN', { detail: ceilingDetail(subject, missing) });
 }

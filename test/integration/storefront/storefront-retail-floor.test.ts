@@ -23,7 +23,7 @@ beforeEach(async () => {
   clock.set('2026-11-07T12:00:00.000Z');
   await resetDb();
   await clearIdentityCaches(t);
-  admin = await adminWith(t, ['storefront:*']);
+  admin = await adminWith(t, ['storefront:*', 'pricing:update']);
 });
 afterAll(async () => {
   await resetDb();

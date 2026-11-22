@@ -50,8 +50,8 @@ function useKey(key: string, ip = '127.0.0.1') {
   });
 }
 
-const staff = (permissions: string[] = ['api_keys:create', 'api_keys:update', 'api_keys:read']) =>
-  adminWith(t, permissions, { name: 'Rami K.' });
+// Creating a key from the console is kept for Owners (decision 046): the default member is one; pass a list for another role.
+const staff = (permissions: string[] = ['*']) => adminWith(t, permissions, { name: 'Rami K.' });
 const keyRows = () => db.select().from(s.apiKeys).orderBy(s.apiKeys.id);
 
 describe('POST /admin/clients/:id/api-keys', () => {
@@ -245,6 +245,22 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(noCsrf.status).toBe(403);
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
     expect(await keyRows()).toEqual([]);
+  });
+
+  it('refuses a staff member who is not an Owner, even with api_keys:create, and stores no key and mails no notice (decision 046)', async () => {
+    const clientId = await insertMerchant(db);
+    const deputy = await staff(['api_keys:create', 'api_keys:read']);
+    const refused = await deputy.post(`/admin/clients/${clientId}/api-keys`, BODY);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('Only an owner can create an API key for a merchant.');
+    expect(await keyRows()).toEqual([]);
+    expect(await notificationRows(db)).toEqual([]);
+    expect(await db.select().from(s.outboxEvents)).toEqual([]);
+    expect(await db.select().from(s.auditLogs)).toEqual([]);
+
+    const owner = await staff();
+    expect((await owner.post(`/admin/clients/${clientId}/api-keys`, BODY)).status).toBe(201);
   });
 
   it("the merchant's own POST /client/api-keys is unchanged: created_by is null and no notice is mailed", async () => {

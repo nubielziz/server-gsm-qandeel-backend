@@ -32,7 +32,7 @@ beforeEach(async () => {
   const { db } = await testDb();
   merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
   await db.update(s.clients).set({ company: 'Zain Trading LLC', country: 'JO' }).where(eq(s.clients.id, merchant.id));
-  staff = await adminWith(t, ['reports:read']);
+  staff = await adminWith(t, ['reports:read', 'wallet:read']);
 });
 afterAll(async () => {
   await resetDb();
@@ -101,7 +101,7 @@ async function renderWithCap(query: { from?: string; to?: string }, maxRows: num
   const renderer = t.app.get(PdfRenderer, { strict: false });
   const spy = spyOn(renderer, 'render');
   try {
-    const file = await service.render(merchant.id, query, maxRows);
+    const file = await service.render({ permissions: ['reports:read', 'wallet:read'] }, merchant.id, query, maxRows);
     const document: PdfDocument | undefined = spy.mock.calls[0]?.[0];
     return { file, document };
   } finally {
@@ -444,5 +444,15 @@ describe('GET /admin/reports/client-statement/:clientId', () => {
     expect((await wrong.get(URL(merchant.id))).status).toBe(403);
     expect((await staff.anonymous('GET', URL(merchant.id))).status).toBe(401);
     expect((await download(URL(merchant.id))).status).toBe(200);
+  });
+
+  it('also needs wallet:read: 403 with reports:read alone, and nothing is written (decision 046)', async () => {
+    const reportsOnly = await adminWith(t, ['reports:read']);
+    const { db } = await testDb();
+    const refused = await reportsOnly.get(URL(merchant.id));
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the wallet:read permission to do this.');
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
   });
 });

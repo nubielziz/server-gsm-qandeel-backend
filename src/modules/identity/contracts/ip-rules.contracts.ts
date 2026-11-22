@@ -86,7 +86,9 @@ export const createIpRule = defineRoute({
     'An allow rule is always for the admin console (the scope is forced to `admin`). A block needs a `reason`. `cidr` is an ' +
     'address or a range of at least /16 (IPv4) or /48 (IPv6) with no bits set after the prefix. A live rule with the same ' +
     'range and kind (and, for blocks, scope) is refused. A block of the admin console or of everything that covers the ' +
-    "caller's own address is `409 SELF_LOCKOUT`. The rule cache is cleared after the commit.",
+    "caller's own address is `409 SELF_LOCKOUT`. The rule cache is cleared after the commit. " +
+    "A caller who is not an owner gets `403 FORBIDDEN` for a block of the admin console or of everything that would shut out an address an active owner uses: an address of a live owner session, or an active owner's last sign-in address (decision 046). " +
+    "The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
   tags: ['ip-rules'],
   surface: 'admin',
   access: 'staff-permission',
@@ -113,7 +115,9 @@ export const deleteIpRule = defineRoute({
   summary: 'Remove an IP rule',
   description:
     'Unblocks an address or removes an allowed one. Removing the only live allow rule that lets the caller in, while the ' +
-    'restriction is on, is `409 SELF_LOCKOUT`; removing a rule that does not cover the caller is always allowed.',
+    'restriction is on, is `409 SELF_LOCKOUT`; removing a rule that does not cover the caller is always allowed. ' +
+    'A caller who is not an owner gets `403 FORBIDDEN` when, with the restriction on, the removal would shut out an address an active owner uses (decision 046). ' +
+    "The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
   tags: ['ip-rules'],
   surface: 'admin',
   access: 'staff-permission',
@@ -147,7 +151,9 @@ export const setAdminRestriction = defineRoute({
   summary: 'Turn the admin allow-list restriction on or off',
   description:
     'Stores the setting `adminAllowlistOnly`. Turning it on is `409 IP_NOT_IN_ALLOWLIST` unless a live allow rule covers the ' +
-    "caller's own address, so nobody locks themselves out. Turning it off is always allowed. Idempotent.",
+    "caller's own address, so nobody locks themselves out. Turning it off is always allowed. Idempotent. " +
+    'A caller who is not an owner gets `403 FORBIDDEN` when turning it on would shut out an address an active owner uses (decision 046). ' +
+    "The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
   tags: ['ip-rules'],
   surface: 'admin',
   access: 'staff-permission',

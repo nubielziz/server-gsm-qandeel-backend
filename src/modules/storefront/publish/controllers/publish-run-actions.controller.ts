@@ -20,7 +20,7 @@ import { editsPrice } from '../domain/publish-edit';
  * The routes that change a publish run or its rows.
  *
  * Why: staff correct a preview, publish it, stop it or take it off the shop. Each route has one permission the guard checks; the price
- * keys of a row edit (and a reset that would drop a price staff chose) also need `storefront:update` and stopping a run that is publishing also needs `storefront:publish`.
+ * keys of a row edit (and a reset that would drop a price staff chose) also need `pricing:update` (the permission of a retail price on the listing route, decision 046) and stopping a run that is publishing also needs `storefront:publish`.
  *
  * @route PATCH /admin/publish-runs/:id/items/:itemId
  * @route POST /admin/publish-runs/:id/items/bulk
@@ -42,7 +42,7 @@ export class PublishRunActionsController {
    * @param body what to change
    * @param staff the signed-in staff member (the role is read for the price keys)
    * @returns the row, judged again
-   * @throws {AppError} `FORBIDDEN` (403: a price key, or a reset that drops a price staff chose, needs `storefront:update`)
+   * @throws {AppError} `FORBIDDEN` (403: a price key, or a reset that drops a price staff chose, needs `pricing:update`)
    * @route PATCH /admin/publish-runs/:id/items/:itemId
    */
   @Route(editPublishItem)

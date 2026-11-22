@@ -25,7 +25,7 @@ beforeEach(async () => {
   clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
-  admin = await adminWith(t, ['catalog:*'], { name: 'Rami K.' });
+  admin = await adminWith(t, ['catalog:*', 'pricing:update'], { name: 'Rami K.' });
 });
 afterAll(async () => {
   await resetDb();
@@ -607,6 +607,22 @@ describe('PATCH /admin/services/:id', () => {
   it('needs catalog:update', async () => {
     const other = await adminWith(t, ['catalog:read', 'catalog:create']);
     expect((await other.patch('/admin/services/1', { name: 'X' })).status).toBe(403);
+  });
+
+  it('basePrice and minProfit also need pricing:update; other keys do not (decision 046)', async () => {
+    const { db } = await testDb();
+    const category = await insertCategory(db);
+    const id = await insertAtt(category);
+    const editor = await adminWith(t, ['catalog:read', 'catalog:update'], { name: 'Editor' });
+    for (const change of [{ basePrice: '15.0000' }, { minProfit: '1.0000' }, { minProfit: null }]) {
+      const refused = await editor.patch(`/admin/services/${id}`, change);
+      expect(refused.status, JSON.stringify(change)).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe('You need the pricing:update permission to do this.');
+    }
+    expect(await serviceRow(id)).toMatchObject({ basePrice: '17.2800', minProfit: '0.8100' });
+    expect(await auditRows()).toHaveLength(0);
+    expect((await editor.patch(`/admin/services/${id}`, { name: 'Renamed service' })).status).toBe(200);
   });
 });
 

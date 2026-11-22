@@ -5,6 +5,7 @@ import { getContract } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { accessStateOf } from './access-state';
 import { grants } from './permission-grammar';
+import { missingPermission } from './principal';
 
 /**
  * Refuses a staff member whose role lacks the permission a route needs.
@@ -30,7 +31,7 @@ export class PermissionGuard implements CanActivate {
     const { principal } = accessStateOf(context.switchToHttp().getRequest<FastifyRequest>());
     if (principal?.kind !== 'staff') throw new AppError('UNAUTHORIZED');
     if (!grants(principal.permissions, contract.permission)) {
-      throw new AppError('FORBIDDEN', { detail: `You need the ${contract.permission} permission to do this.` });
+      throw missingPermission(contract.permission);
     }
     return true;
   }

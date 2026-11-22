@@ -4,6 +4,7 @@ import { CLIENT_STATUSES } from '@src/modules/identity/db/schema';
 import {
   canMoveClient,
   referralCode,
+  statusChangePermission,
   suspendReasonProblem,
   usernameBase,
   usernameCandidate,
@@ -62,5 +63,19 @@ describe('referralCode', () => {
     let n = 0;
     const code = referralCode((max) => n++ % max);
     expect(code).toMatch(/^GSM[A-HJ-NP-Z2-9]{6}$/);
+  });
+});
+
+describe('statusChangePermission', () => {
+  it('asks clients:security to suspend, decline or reactivate, and nothing more to approve', () => {
+    expect(statusChangePermission('active', 'suspended')).toBe('clients:security');
+    expect(statusChangePermission('pending', 'suspended')).toBe('clients:security');
+    expect(statusChangePermission('suspended', 'active')).toBe('clients:security');
+    expect(statusChangePermission('pending', 'active')).toBeNull();
+  });
+
+  it('asks nothing for pairs that touch neither side of a suspension', () => {
+    expect(statusChangePermission('active', 'pending')).toBeNull();
+    expect(statusChangePermission('active', 'active')).toBeNull();
   });
 });

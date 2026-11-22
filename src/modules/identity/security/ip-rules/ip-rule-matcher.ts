@@ -148,3 +148,61 @@ export function decideIpAccess(
   }
   return { decision: 'allowed', rule: null, reason: 'open' };
 }
+
+/**
+ * The addresses a change of the rules shuts out of the admin console: allowed before it, refused after it.
+ *
+ * Why: decision 046: a staff member who is not an Owner may not make a change that locks an address an active Owner uses out of the
+ * console; an address already refused before the change is not counted, so unrelated changes stay possible.
+ *
+ * @param addresses the addresses to protect
+ * @param before the compiled rules as they are
+ * @param after the compiled rules as they would be after the change
+ * @param nowMs the current time in milliseconds
+ * @returns the addresses that lose access to the console
+ */
+export function shutOut(
+  addresses: readonly IpAddress[],
+  before: CompiledIpRules,
+  after: CompiledIpRules,
+  nowMs: number,
+): IpAddress[] {
+  return addresses.filter(
+    (address) =>
+      decideIpAccess(before, address, 'admin', nowMs).decision === 'allowed' &&
+      decideIpAccess(after, address, 'admin', nowMs).decision === 'refused',
+  );
+}
+
+/**
+ * The addresses a change shuts out of the admin console at this moment or at any later moment a rule runs out.
+ *
+ * Why: decision 046: an Owner's address may not be refused at any moment at which it would have been allowed without the change.
+ * Rules only ever end, so access changes only now and at the moments a rule of either state runs out; the change is judged at
+ * each of those moments (a rule counts as gone at its expiry, so the moment of the expiry is the state right after it). An
+ * address already refused at a moment before the change does not count there, so an unrelated change stays possible.
+ *
+ * @param addresses the addresses to protect
+ * @param before the compiled rules as they are
+ * @param after the compiled rules as they would be after the change
+ * @param nowMs the current time in milliseconds
+ * @returns the addresses that are allowed before the change and refused after it at one of those moments, in the order of `addresses`
+ */
+export function shutOutNowOrLater(
+  addresses: readonly IpAddress[],
+  before: CompiledIpRules,
+  after: CompiledIpRules,
+  nowMs: number,
+): IpAddress[] {
+  const moments = new Set<number>([nowMs]);
+  for (const { expiresAtMs } of [...before.rules, ...after.rules]) {
+    if (expiresAtMs !== null && expiresAtMs > nowMs) moments.add(expiresAtMs);
+  }
+  return addresses.filter((address) =>
+    [...moments].some(
+      (at) =>
+        decideIpAccess(before, address, 'admin', at).decision === 'allowed' &&
+        decideIpAccess(after, address, 'admin', at).decision === 'refused',
+    ),
+  );
+}

@@ -32,7 +32,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
-  admin = await adminWith(t, ['storefront:*'], { name: 'Rami K.' });
+  admin = await adminWith(t, ['storefront:*', 'pricing:update'], { name: 'Rami K.' });
 });
 afterAll(async () => {
   await resetDb();
@@ -519,6 +519,29 @@ describe('PATCH /admin/service-listings/:id (the switch)', () => {
     expect(audit[0]?.after).toEqual({ isListed: true });
   });
 
+  it('switching a listing on also needs storefront:publish; switching off, a listed listing and content do not (decision 046)', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    const url = `/admin/service-listings/${id}`;
+    const listed = async () =>
+      (await db.select().from(s.serviceListings).where(eq(s.serviceListings.id, id)))[0]!.isListed;
+    const editor = await adminWith(t, ['storefront:read', 'storefront:update'], { name: 'Editor' });
+
+    const refused = await editor.patch(url, { isListed: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the storefront:publish permission to do this.');
+    expect(await listed()).toBe(false);
+    expect(await auditRows()).toHaveLength(0);
+
+    expect((await editor.patch(url, { summary: 'A short summary' })).status).toBe(200);
+    expect((await admin.patch(url, { isListed: true })).status).toBe(200);
+    expect((await editor.patch(url, { isListed: true })).status).toBe(200);
+    expect((await editor.patch(url, { isListed: false })).status).toBe(200);
+    expect(await listed()).toBe(false);
+  });
+
   it('audits the value the row had under the service lock, not the one read before it', async () => {
     const { db, pool } = await testDb();
     const world = await listingWorld(db);
@@ -589,6 +612,23 @@ describe('PATCH /admin/service-listings/:id (the switch)', () => {
 });
 
 describe('PATCH /admin/service-listings/:id (the retail price)', () => {
+  it('a retail price or the rule needs pricing:update (decision 046)', async () => {
+    const { db } = await testDb();
+    const world = await listingWorld(db);
+    const id = await insertListingRow(db, world.att);
+    const editor = await adminWith(t, ['storefront:read', 'storefront:update', 'storefront:publish'], {
+      name: 'Editor',
+    });
+    for (const change of [{ retailPrice: '25.9900' }, { retailPricing: 'rule' }]) {
+      const refused = await editor.patch(`/admin/service-listings/${id}`, change);
+      expect(refused.status, JSON.stringify(change)).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe('You need the pricing:update permission to do this.');
+    }
+    expect(await retailRow(world.att)).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
   it('writes the retail group price, works the figures out again, audits it and moves the catalog price version', async () => {
     const { db } = await testDb();
     const world = await listingWorld(db);

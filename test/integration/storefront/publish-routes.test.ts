@@ -1791,14 +1791,15 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
     }
   });
 
-  it('a role with storefront:create edits a row but needs storefront:update for a price key; storefront:read cannot edit', async () => {
+  it('a role with storefront:create edits a row but needs pricing:update for a price key; storefront:read cannot edit', async () => {
     const w = await world();
     await makeRule();
     const a = await service(w, { name: 'AT&T USA Premier Unlock' });
     const run = await prepared({ scope: { kind: 'all' } });
     const clerk = await adminWith(t, ['storefront:create', 'storefront:read'], { name: 'Clerk' });
     const viewer = await adminWith(t, ['storefront:read'], { name: 'Viewer' });
-    const pricer = await adminWith(t, ['storefront:create', 'storefront:update'], { name: 'Pricer' });
+    const pricer = await adminWith(t, ['storefront:create', 'pricing:update'], { name: 'Pricer' });
+    const updater = await adminWith(t, ['storefront:create', 'storefront:update'], { name: 'Updater' });
     const before = await itemOf(run, a);
 
     expect((await patchItem(run, a, { brand: 'Apple' }, clerk)).status).toBe(200);
@@ -1806,8 +1807,12 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
       const res = await patchItem(run, a, body, clerk);
       expect(res.status, JSON.stringify(body)).toBe(403);
       expect(res.body).toMatchObject({ code: 'FORBIDDEN' });
-      expect(res.body.detail).toContain('storefront:update');
+      expect(res.body.detail).toContain('pricing:update');
     }
+    // A role that may update the storefront but not price things is refused a price key too (decision 046).
+    const stale = await patchItem(run, a, { retailPrice: '25.0000' }, updater);
+    expect(stale.status).toBe(403);
+    expect(stale.body.detail).toContain('pricing:update');
     expect((await itemOf(run, a)).priceMode).toBe(before.priceMode);
     expect((await patchItem(run, a, { reset: true }, clerk)).status).toBe(200);
     expect((await patchItem(run, a, { brand: 'Apple' }, viewer)).status).toBe(403);
@@ -1815,7 +1820,7 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
     expect((await admin.withoutCsrf('PATCH', runUrl(run, `/items/${before.id}`), { brand: 'x' })).status).toBe(403);
   });
 
-  it('a reset that would drop a price staff chose needs storefront:update; on any other row it does not', async () => {
+  it('a reset that would drop a price staff chose needs pricing:update; on any other row it does not', async () => {
     const w = await world();
     await makeRule();
     const typed = await service(w, { name: 'AT&T USA Premier Unlock' });
@@ -1827,7 +1832,7 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
     expect(group.status).toBe(200);
     const run = await prepared({ scope: { kind: 'all' } });
     const clerk = await adminWith(t, ['storefront:create', 'storefront:read'], { name: 'Clerk' });
-    const pricer = await adminWith(t, ['storefront:create', 'storefront:update'], { name: 'Pricer' });
+    const pricer = await adminWith(t, ['storefront:create', 'pricing:update'], { name: 'Pricer' });
     expect((await patchItem(run, typed, { retailPrice: '50.0000' })).status).toBe(200);
     expect((await patchItem(run, replaced, { pricing: 'rule' })).status).toBe(200);
     expect(await itemRowOf(run, replaced)).toMatchObject({ priceMode: 'rule', replacesPrice: '20.0000' });
@@ -1839,7 +1844,7 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
       const refused = await patchItem(run, id, { reset: true }, clerk);
       expect(refused.status).toBe(403);
       expect(refused.body).toMatchObject({ code: 'FORBIDDEN' });
-      expect(refused.body.detail).toContain('storefront:update');
+      expect(refused.body.detail).toContain('pricing:update');
       // Nothing moved: the row keeps the price choice staff made, and no other field changed with it.
       expect(await itemRowOf(run, id)).toMatchObject(stored);
     }

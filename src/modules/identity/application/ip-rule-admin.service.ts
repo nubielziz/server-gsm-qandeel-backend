@@ -10,6 +10,7 @@ import { DbService, type TransactionContext } from '../../../infra/db';
 import { AuditService, SettingsReader, SettingsService } from '../../platform';
 import type { IpRule } from '../db/schema';
 import { cidrToWire, normaliseCidr } from '../domain/ip-rule-input';
+import { activeOwnerAddresses } from '../infra/owner.repository';
 import {
   type IpRuleRow,
   deleteIpRuleRow,
@@ -22,9 +23,17 @@ import {
 } from '../infra/ip-rule-admin.repository';
 import type { IpAudience } from '../security/ip-rules/ip-audience';
 import { ADMIN_ALLOWLIST_KEY, IpRuleCache } from '../security/ip-rules/ip-rule-cache';
-import { compileIpRules, decideIpAccess } from '../security/ip-rules/ip-rule-matcher';
+import {
+  type ActiveIpRule,
+  compileIpRules,
+  decideIpAccess,
+  shutOutNowOrLater,
+} from '../security/ip-rules/ip-rule-matcher';
 import { loadLiveIpRules } from '../security/ip-rules/ip-rule.repository';
+import { isOwner } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
+import { SessionPolicy } from '../security/session-policy';
+import { idleLimitsOf } from './idle-limits';
 
 /** An IP rule as the console reads it. */
 export interface IpRuleView {
@@ -73,6 +82,14 @@ function invalid(field: string, message: string): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code: 'invalid', message }] });
 }
 
+const OWNER_LOCKOUT_DETAIL = 'This change would lock an owner out of the console. Only an owner can make it.';
+
+/** The rules and the restriction switch as one state of the access settings. */
+interface AccessState {
+  readonly rules: readonly ActiveIpRule[];
+  readonly restricted: boolean;
+}
+
 /**
  * Manages IP rules and the admin allow-list restriction.
  *
@@ -81,7 +98,11 @@ function invalid(field: string, message: string): AppError {
  * caller's own address is `SELF_LOCKOUT`; removing the allow rule that lets the caller in while the restriction is on is
  * `SELF_LOCKOUT`; turning the restriction on without a live allow rule for the caller's address is `IP_NOT_IN_ALLOWLIST`.
  * "The caller's address" is the real request address (`request.ip` behind the trusted proxy chain), never the console's hint.
- * The changes run under one advisory lock, so two staff members cannot lock each other out together.
+ * The changes run under one advisory lock, so two staff members cannot lock each other out together. A staff member who is not
+ * an Owner cannot make a change that would turn an address an active Owner uses (a live Owner session, an active Owner's last
+ * sign-in address) from allowed to refused for the console (decision 046, `403 FORBIDDEN`). The change is judged as things are and at
+ * each later moment a rule runs out: an Owner's address may not be refused at any moment at which it would have been allowed without
+ * the change. The self-lockout rules run first.
  *
  * Side effects: writes `ip_rules`, the setting `adminAllowlistOnly` and `audit_logs`; clears the IP rule cache
  * (`IpRuleCache.invalidate()`) and the settings snapshot after the commit.
@@ -96,6 +117,7 @@ export class IpRuleAdminService {
     private readonly settings: SettingsService,
     private readonly settingsReader: SettingsReader,
     private readonly rulesCache: IpRuleCache,
+    private readonly policy: SessionPolicy,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -131,7 +153,9 @@ export class IpRuleAdminService {
    * @param caller the signed-in staff member
    * @param input kind, audience, address or range, label, reason and expiry
    * @returns the new rule
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `cidr`, `reason` or `expiresAt`), `SELF_LOCKOUT` (409 on `cidr`)
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `cidr`, `reason` or `expiresAt`), `SELF_LOCKOUT` (409 on `cidr`), `FORBIDDEN`
+   *   (403: a block of the console or of everything would refuse an address an active Owner uses at this moment or at a later
+   *   moment a rule runs out, and the caller is not an Owner, decision 046)
    */
   async create(caller: StaffPrincipal, input: CreateIpRuleInput): Promise<IpRuleView> {
     const cidr = normaliseCidr(input.cidr);
@@ -168,6 +192,25 @@ export class IpRuleAdminService {
           detail: 'This block would cover your own address, so you could not sign in again.',
           errors: [{ field: 'cidr', code: 'SELF_LOCKOUT', message: 'This range includes your own address.' }],
         });
+      }
+      if (input.kind === 'block' && (scope === 'admin' || scope === 'all')) {
+        const rules = await loadLiveIpRules(work.tx, now);
+        const restricted = await this.restricted(work.tx);
+        // Id 0 belongs to no stored rule: the matcher uses the id only to break a tie.
+        const added: ActiveIpRule = {
+          id: 0,
+          kind: 'block',
+          scope,
+          cidr: cidr.stored,
+          expiresAt: expiresAt?.toISOString() ?? null,
+        };
+        await this.assertOwnersKeepAccess(
+          work.tx,
+          caller,
+          { rules, restricted },
+          { rules: [...rules, added], restricted },
+          now,
+        );
       }
       const rule = await insertIpRuleRow(work.tx, {
         kind: input.kind,
@@ -206,7 +249,8 @@ export class IpRuleAdminService {
    * @param caller the signed-in staff member
    * @param id the rule id
    * @throws {AppError} `NOT_FOUND` (404), `SELF_LOCKOUT` (409: the rule is the only live allow rule that lets the caller in
-   *   while the restriction is on)
+   *   while the restriction is on), `FORBIDDEN` (403: with the restriction on, the removal would refuse an address an active
+   *   Owner uses at this moment or at a later moment a rule runs out, and the caller is not an Owner, decision 046)
    */
   async remove(caller: StaffPrincipal, id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
@@ -227,6 +271,14 @@ export class IpRuleAdminService {
             });
           }
         }
+        const rules = await loadLiveIpRules(work.tx, now);
+        await this.assertOwnersKeepAccess(
+          work.tx,
+          caller,
+          { rules, restricted: true },
+          { rules: rules.filter((candidate) => candidate.id !== id), restricted: true },
+          now,
+        );
       }
       await deleteIpRuleRow(work.tx, id);
       work.afterCommit(() => this.rulesCache.invalidate());
@@ -278,18 +330,30 @@ export class IpRuleAdminService {
    * @param caller the signed-in staff member
    * @param enabled the wanted state
    * @returns the stored state
-   * @throws {AppError} `IP_NOT_IN_ALLOWLIST` (409) when turning it on without a live allow rule for the caller's address
+   * @throws {AppError} `IP_NOT_IN_ALLOWLIST` (409) when turning it on without a live allow rule for the caller's address,
+   *   `FORBIDDEN` (403: turning it on would refuse an address an active Owner uses at this moment or at a later moment a rule
+   *   runs out, and the caller is not an Owner, decision 046)
    */
   async setRestriction(caller: StaffPrincipal, enabled: boolean): Promise<{ enabled: boolean }> {
     await this.db.runInTransaction(async (work) => {
       await lockIpRuleChanges(work.tx);
+      const now = this.clock.now();
       if (enabled) {
-        const verdict = await this.verdict(work.tx, parseIpAddress(caller.ip), true, this.clock.now());
+        const verdict = await this.verdict(work.tx, parseIpAddress(caller.ip), true, now);
         if (verdict.decision === 'refused') {
           throw new AppError('IP_NOT_IN_ALLOWLIST', {
             detail: 'Your current address is not on the allow list. Add it first, then turn the restriction on.',
           });
         }
+        const rules = await loadLiveIpRules(work.tx, now);
+        const restrictedNow = await this.restricted(work.tx);
+        await this.assertOwnersKeepAccess(
+          work.tx,
+          caller,
+          { rules, restricted: restrictedNow },
+          { rules, restricted: true },
+          now,
+        );
       }
       const before = await this.settings.set(work.tx, ADMIN_ALLOWLIST_KEY, enabled);
       work.afterCommit(() => this.rulesCache.invalidate());
@@ -305,6 +369,29 @@ export class IpRuleAdminService {
       });
     });
     return { enabled };
+  }
+
+  /**
+   * Decision 046: a staff member who is not an Owner cannot make a change that refuses an address an active Owner uses at a moment at
+   * which it would have been allowed without the change, now or at a later moment a rule runs out.
+   */
+  private async assertOwnersKeepAccess(
+    tx: TransactionContext['tx'],
+    caller: StaffPrincipal,
+    before: AccessState,
+    after: AccessState,
+    now: Date,
+  ): Promise<void> {
+    if (isOwner(caller)) return;
+    const addresses = (await activeOwnerAddresses(tx, now, await idleLimitsOf(this.policy)))
+      .map((text) => parseIpAddress(text))
+      .filter((address): address is IpAddress => address !== undefined);
+    if (addresses.length === 0) return;
+    const compiled = (state: AccessState) =>
+      compileIpRules({ version: 'check', restricted: state.restricted, rules: state.rules });
+    if (shutOutNowOrLater(addresses, compiled(before), compiled(after), now.getTime()).length > 0) {
+      throw new AppError('FORBIDDEN', { detail: OWNER_LOCKOUT_DETAIL });
+    }
   }
 
   private async restricted(tx: TransactionContext['tx']): Promise<boolean> {

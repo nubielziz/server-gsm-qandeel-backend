@@ -1,7 +1,15 @@
-// Unit tests of the Owner helpers (decision 018, MISMATCHES B113): an Owner is a staff member whose role contains *.
+// Unit tests of the Owner helpers (decision 018, MISMATCHES B113: an Owner is a staff member whose role contains *) and of the
+// privilege ceiling and second-permission helpers (decision 046).
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
-import { assertOwnerTargetAllowed, isOwner } from '@src/modules/identity/security/principal';
+import {
+  assertOwnerTargetAllowed,
+  assertWithinCeiling,
+  isOwner,
+  missingPermission,
+  requireOwner,
+  requirePermission,
+} from '@src/modules/identity/security/principal';
 
 const holder = (...permissions: string[]) => ({ permissions });
 
@@ -38,5 +46,98 @@ describe('assertOwnerTargetAllowed', () => {
         expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
       }
     }
+  });
+});
+
+/** Runs a check that must refuse and returns the error it threw. */
+function refusal(run: () => void): AppError {
+  try {
+    run();
+  } catch (error) {
+    expect(error).toBeInstanceOf(AppError);
+    return error as AppError;
+  }
+  throw new Error('expected a refusal');
+}
+
+describe('missingPermission', () => {
+  it('answers 403 FORBIDDEN in the words of the permission guard', () => {
+    const error = missingPermission('refunds:approve');
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect(error.detail).toBe('You need the refunds:approve permission to do this.');
+  });
+});
+
+describe('requirePermission', () => {
+  it('passes a held permission, its area wildcard and *; refuses anything else naming it', () => {
+    expect(() => requirePermission(holder('refunds:approve'), 'refunds:approve')).not.toThrow();
+    expect(() => requirePermission(holder('refunds:*'), 'refunds:approve')).not.toThrow();
+    expect(() => requirePermission(holder('*'), 'refunds:approve')).not.toThrow();
+    expect(refusal(() => requirePermission(holder('refunds:read'), 'refunds:approve')).detail).toBe(
+      'You need the refunds:approve permission to do this.',
+    );
+    expect(refusal(() => requirePermission(holder('risk:read'), 'risk:*')).detail).toBe(
+      'You need the risk:* permission to do this.',
+    );
+  });
+});
+
+describe('requireOwner', () => {
+  it('passes * and *:*, refuses every other role with the given detail', () => {
+    expect(() => requireOwner(holder('*'), 'Owners only.')).not.toThrow();
+    expect(() => requireOwner(holder('*:*'), 'Owners only.')).not.toThrow();
+    const everyArea = [
+      'staff',
+      'roles',
+      'access',
+      'wallet',
+      'orders',
+      'clients',
+      'payments',
+      'catalog',
+      'risk',
+      'settings',
+    ];
+    const error = refusal(() => requireOwner(holder(...everyArea.map((area) => `${area}:*`)), 'Owners only.'));
+    expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect(error.detail).toBe('Owners only.');
+  });
+});
+
+describe('assertWithinCeiling', () => {
+  it('lets an Owner and a caller who holds everything asked pass', () => {
+    expect(() => assertWithinCeiling(holder('*'), ['*', 'wallet:adjust'], 'list')).not.toThrow();
+    expect(() =>
+      assertWithinCeiling(holder('staff:*', 'orders:read'), ['staff:read', 'orders:read'], 'role'),
+    ).not.toThrow();
+    expect(() => assertWithinCeiling(holder('staff:read'), [], 'account')).not.toThrow();
+  });
+
+  it('names what a sent list asks for that the caller does not hold', () => {
+    const error = refusal(() =>
+      assertWithinCeiling(holder('staff:read'), ['staff:read', 'wallet:adjust', 'refunds:approve'], 'list'),
+    );
+    expect(error).toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    expect(error.detail).toBe(
+      'You can only give permissions you hold yourself. Not yours: wallet:adjust, refunds:approve.',
+    );
+  });
+
+  it('shows at most five names', () => {
+    const seven = ['a:one', 'a:two', 'a:three', 'a:four', 'a:five', 'a:six', 'a:seven'];
+    expect(refusal(() => assertWithinCeiling(holder('staff:read'), seven, 'list')).detail).toBe(
+      'You can only give permissions you hold yourself. Not yours: a:one, a:two, a:three, a:four, a:five, and 2 more.',
+    );
+  });
+
+  it('names nothing for a stored role or account', () => {
+    const missing = ['wallet:adjust'];
+    expect(refusal(() => assertWithinCeiling(holder('staff:read'), missing, 'role')).detail).toBe(
+      'This role has permissions you do not hold yourself.',
+    );
+    expect(refusal(() => assertWithinCeiling(holder('staff:read'), missing, 'account')).detail).toBe(
+      'This account has permissions you do not hold yourself.',
+    );
   });
 });

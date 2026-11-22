@@ -478,6 +478,23 @@ describe('verification: POST /client/orders/:id/verify and POST /admin/orders/:i
     expect((await auditOf(db, id)).at(-1)!.action).toBe('refunded after verification of');
   });
 
+  it('a refund decision also needs orders:reopen; accept does not (decision 046)', async () => {
+    const { db, merchant } = world;
+    const id = await verifiable();
+    await (await portalFor(t, merchant.id)).post(`/client/orders/${id}/verify`);
+    const decider = await adminWith(t, ['orders:update', 'orders:read'], { name: 'Dana A.' });
+    const refused = await decider.post(`/admin/orders/${id}/verification`, {
+      decision: 'refund',
+      note: 'Code did not work',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the orders:reopen permission to do this.');
+    expect(await orderRow(db, id)).toMatchObject({ status: 'completed', verificationStatus: 'requested' });
+    expect(await walletOf(db, merchant.id)).toEqual({ wallet: '82.7200', hold: '0.0000' });
+    expect((await decider.post(`/admin/orders/${id}/verification`, { decision: 'accept' })).status).toBe(204);
+  });
+
   it('refuses a decision on an order without a request, and a bad decision', async () => {
     const id = await verifiable();
     const none = await staff.post(`/admin/orders/${id}/verification`, { decision: 'accept' });

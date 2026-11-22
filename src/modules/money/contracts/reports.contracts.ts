@@ -258,7 +258,8 @@ export const getClientStatement = defineRoute({
     'balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit ' +
     '`from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row ' +
     '(`exported statement of`). It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an ' +
-    '`Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.',
+    '`Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row. ' +
+    'It also needs `wallet:read`, as the wallet statement does (`403 FORBIDDEN`, decision 046).',
   tags: ['reports'],
   surface: 'admin',
   access: 'staff-permission',

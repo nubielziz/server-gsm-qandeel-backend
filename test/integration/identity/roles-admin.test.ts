@@ -95,7 +95,7 @@ describe('listing and showing roles', () => {
 
 describe('POST /admin/roles', () => {
   it('creates a role with catalog entries and area wildcards, cleans the list, and audits it', async () => {
-    const admin = await adminWith(t, ['roles:create'], { name: 'Rami K.' });
+    const admin = await adminWith(t, ['roles:create', 'staff:*', 'roles:read'], { name: 'Rami K.' });
     const res = await admin.post('/admin/roles', {
       name: '  Finance ',
       permissions: ['staff:read', 'staff:*', 'staff:read', ' roles:read '],
@@ -175,7 +175,7 @@ describe('POST /admin/roles', () => {
 
 describe('PATCH /admin/roles/:id', () => {
   it("renames a role and changes its permissions; the change applies on the holder's next request", async () => {
-    const admin = await adminWith(t, ['roles:update', 'staff:read']);
+    const admin = await adminWith(t, ['roles:update', 'staff:read', 'roles:read']);
     const { db } = await testDb();
     const roleId = await insertRole(db, ['staff:read'], 'Support');
     const staffId = await insertStaff(db, roleId);
@@ -197,7 +197,7 @@ describe('PATCH /admin/roles/:id', () => {
   });
 
   it('changes only the keys sent and refuses an empty body, a bad name and unknown permissions', async () => {
-    const admin = await adminWith(t, ['roles:update']);
+    const admin = await adminWith(t, ['roles:update', 'staff:read']);
     const { db } = await testDb();
     const roleId = await insertRole(db, ['staff:read'], 'Support');
     expect((await admin.patch(`/admin/roles/${roleId}`, { name: 'Help desk' })).body.permissions).toEqual([
@@ -279,7 +279,7 @@ describe('PATCH /admin/roles/:id', () => {
 
 describe('DELETE /admin/roles/:id', () => {
   it('deletes an unused role, audits it and answers 204', async () => {
-    const admin = await adminWith(t, ['roles:delete']);
+    const admin = await adminWith(t, ['roles:delete', 'staff:read']);
     const { db } = await testDb();
     const roleId = await insertRole(db, ['staff:read'], 'Spare');
     const res = await admin.delete(`/admin/roles/${roleId}`);
@@ -306,5 +306,89 @@ describe('DELETE /admin/roles/:id', () => {
     const { db } = await testDb();
     const ownerRole = await insertRole(db, ['*'], 'Old owners');
     expect((await admin.delete(`/admin/roles/${ownerRole}`)).status).toBe(403);
+  });
+});
+
+describe('the privilege ceiling (decision 046)', () => {
+  const roleNamed = async (name: string) => {
+    const { db } = await testDb();
+    return (await db.select().from(s.roles).where(eq(s.roles.name, name)))[0];
+  };
+
+  it('refuses giving a role a permission the caller does not hold, naming it, and writes nothing', async () => {
+    const admin = await adminWith(t, ['roles:create', 'staff:read']);
+    const refused = await admin.post('/admin/roles', { name: 'Desk', permissions: ['staff:read', 'wallet:adjust'] });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You can only give permissions you hold yourself. Not yours: wallet:adjust.');
+    expect(await roleNamed('Desk')).toBeUndefined();
+    expect(await auditRows()).toHaveLength(0);
+    expect((await admin.post('/admin/roles', { name: 'Desk', permissions: ['staff:read'] })).status).toBe(201);
+  });
+
+  it('lets a held area wildcard cover its actions, but never single actions the wildcard', async () => {
+    const wildcard = await adminWith(t, ['roles:create', 'staff:*']);
+    const covered = await wildcard.post('/admin/roles', {
+      name: 'Team',
+      permissions: ['staff:read', 'staff:suspend', 'staff:*'],
+    });
+    expect(covered.status).toBe(201);
+
+    const singles = await adminWith(t, ['roles:create', 'staff:read', 'staff:create', 'staff:update', 'staff:suspend']);
+    const refused = await singles.post('/admin/roles', { name: 'Everything staff', permissions: ['staff:*'] });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toContain('Not yours: staff:*.');
+  });
+
+  it('refuses editing a role that has a permission the caller does not hold, even a rename', async () => {
+    const admin = await adminWith(t, ['roles:update', 'staff:read']);
+    const { db } = await testDb();
+    const roleId = await insertRole(db, ['staff:read', 'wallet:adjust'], 'Finance');
+    const res = await admin.patch(`/admin/roles/${roleId}`, { name: 'Other' });
+    expect(res.status).toBe(403);
+    expect(res.body.detail).toBe('This role has permissions you do not hold yourself.');
+    expect((await roleNamed('Finance'))?.id).toBe(roleId);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('refuses adding a permission the caller does not hold to a role they may edit', async () => {
+    const admin = await adminWith(t, ['roles:update', 'staff:read']);
+    const { db } = await testDb();
+    const roleId = await insertRole(db, ['staff:read'], 'Support');
+    const res = await admin.patch(`/admin/roles/${roleId}`, { permissions: ['staff:read', 'refunds:approve'] });
+    expect(res.status).toBe(403);
+    expect(res.body.detail).toMatch(/Not yours: refunds:approve\.$/);
+    expect((await roleNamed('Support'))?.permissions).toEqual(['staff:read']);
+  });
+
+  it('refuses editing the role you hold (409 CANNOT_CHANGE_OWN_ROLE) unless you are an Owner', async () => {
+    const admin = await adminWith(t, ['roles:update', 'staff:read']);
+    const refused = await admin.patch(`/admin/roles/${admin.roleId}`, { permissions: ['staff:read'] });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('CANNOT_CHANGE_OWN_ROLE');
+    expect(refused.body.detail).toBe('You cannot edit the role you hold.');
+    expect(await auditRows()).toHaveLength(0);
+
+    // An Owner holds everything, so the ceiling cannot stop them; the last-Owner rule still does.
+    const owner = await adminWith(t, ['*'], { roleName: 'Founders' });
+    const renamed = await owner.patch(`/admin/roles/${owner.roleId}`, { name: 'Founders club' });
+    expect(renamed.status).toBe(200);
+    const demoted = await owner.patch(`/admin/roles/${owner.roleId}`, { permissions: ['staff:read'] });
+    expect(demoted.status).toBe(409);
+    expect(demoted.body.code).toBe('LAST_OWNER');
+  });
+
+  it('refuses deleting a role that has a permission the caller does not hold, and the role you hold (ROLE_IN_USE)', async () => {
+    const admin = await adminWith(t, ['roles:delete']);
+    const { db } = await testDb();
+    const finance = await insertRole(db, ['wallet:adjust'], 'Finance');
+    const refused = await admin.delete(`/admin/roles/${finance}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe('This role has permissions you do not hold yourself.');
+    expect(await roleNamed('Finance')).toBeDefined();
+
+    const own = await admin.delete(`/admin/roles/${admin.roleId}`);
+    expect(own.status).toBe(409);
+    expect(own.body.code).toBe('ROLE_IN_USE');
   });
 });

@@ -292,7 +292,8 @@ export const updateService = defineRoute({
     '`duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and ' +
     'largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the ' +
     'same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ "qtyOptions": [5, ' +
-    '10, 25] }`. The audit row `edited service` holds the three values before and after.',
+    '10, 25] }`. The audit row `edited service` holds the three values before and after. ' +
+    'Sending `basePrice` or `minProfit` also needs `pricing:update` (`403 FORBIDDEN`, decision 046).',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',

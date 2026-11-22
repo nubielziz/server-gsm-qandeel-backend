@@ -9,8 +9,21 @@
 // lead into that cycle (decision 032; test/tooling/module-load.test.ts loads every module index on its own).
 export { CurrentMerchant, CurrentPrincipal, CurrentStaff, accessStateOf, principalOf } from './security/access-state';
 export type { AccessState } from './security/access-state';
-export { ALL_PERMISSIONS, grants, grantsEverything, isValidPermission } from './security/permission-grammar';
-export { assertOwnerTargetAllowed, isOwner } from './security/principal';
+export {
+  ALL_PERMISSIONS,
+  grants,
+  grantsEverything,
+  isValidPermission,
+  uncoveredPermissions,
+} from './security/permission-grammar';
+export {
+  assertOwnerTargetAllowed,
+  assertWithinCeiling,
+  isOwner,
+  missingPermission,
+  requireOwner,
+  requirePermission,
+} from './security/principal';
 // Leaf services other modules inject (the catalog's group routes): no dependencies, so they load before anything that leads back.
 export { MerchantGroupMembers } from './application/merchant-group-members';
 // The gateway webhook adapter registry (no dependencies): billing's verifier injects it, so it loads before the cycle through money.
@@ -93,6 +106,7 @@ export { PermissionsCatalog } from './security/permissions-catalog';
 export type {
   ApiKeyPrincipal,
   CapabilityPrincipal,
+  CeilingSubject,
   CustomerPrincipal,
   MachinePrincipal,
   MerchantPrincipal,

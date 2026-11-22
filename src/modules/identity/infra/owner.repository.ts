@@ -1,8 +1,9 @@
 // Queries behind the Owner rules (decision 018, RESOLUTIONS identity-platform-4): who is an active Owner, and the lock that
 // keeps two changes from removing the last two Owners together.
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { roles, staffUsers } from '../db/schema';
+import { roles, sessions, staffUsers } from '../db/schema';
+import { type IdleLimits, liveSessionCondition } from '../security/session.repository';
 
 /** The advisory lock key of every change that can remove an Owner (a fixed number: `hashtext` of a name is not stable). */
 const OWNER_LOCK_KEY = 7_201_001;
@@ -51,4 +52,39 @@ export async function countActiveOwners(
       ),
     );
   return row?.total ?? 0;
+}
+
+/**
+ * The addresses active Owners use: the address of each of their live, fully signed-in sessions and each one's last sign-in
+ * address.
+ *
+ * Why: decision 046: a staff member who is not an Owner cannot shut these out of the console; a signed-out Owner is protected by
+ * the last sign-in address.
+ *
+ * @param db the database or a transaction
+ * @param now the injected clock's time (decision 031), for the live-session rule
+ * @param idle the idle limit of each subject type in milliseconds
+ * @returns the distinct addresses as stored (not parsed)
+ */
+export async function activeOwnerAddresses(db: DbExecutor, now: Date, idle: IdleLimits): Promise<string[]> {
+  const live = await db
+    .select({ ip: sessions.ip })
+    .from(sessions)
+    .innerJoin(staffUsers, eq(staffUsers.id, sessions.subjectId))
+    .innerJoin(roles, eq(roles.id, staffUsers.roleId))
+    .where(
+      and(
+        eq(sessions.subjectType, 'staff'),
+        eq(sessions.stage, 'active'),
+        liveSessionCondition(now, idle),
+        eq(staffUsers.status, 'active'),
+        grantsAll,
+      ),
+    );
+  const last = await db
+    .select({ ip: staffUsers.lastLoginIp })
+    .from(staffUsers)
+    .innerJoin(roles, eq(roles.id, staffUsers.roleId))
+    .where(and(eq(staffUsers.status, 'active'), isNotNull(staffUsers.lastLoginIp), grantsAll));
+  return [...new Set([...live.map((row) => row.ip), ...last.flatMap((row) => (row.ip === null ? [] : [row.ip]))])];
 }

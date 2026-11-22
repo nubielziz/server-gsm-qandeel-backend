@@ -108,11 +108,11 @@ export class PublishItemEditService {
    * @param runId the run
    * @param itemId the row
    * @param edit the body of the `PATCH`
-   * @param canPrice whether the staff member holds `storefront:update` (a reset of a row with a price choice needs it; the controller
+   * @param canPrice whether the staff member holds `pricing:update` (a reset of a row with a price choice needs it; the controller
    *   already refused the price keys without it)
    * @returns the row as the list shows it
    * @throws {AppError} `NOT_FOUND` (404: unknown run or row); `CONFLICT` (409: the run is not a draft, or the service is gone);
-   *   `FORBIDDEN` (403: a reset would drop a typed price or a rule chosen over one, without `storefront:update`);
+   *   `FORBIDDEN` (403: a reset would drop a typed price or a rule chosen over one, without `pricing:update`);
    *   `VALIDATION_FAILED` (422: `retailPrice` `invalid` or `below_floor`; `slug` `invalid` or `duplicate`; `pricing` `invalid`;
    *   `included` `blocked`; `retailPrice` or `reset` with `conflict`)
    */

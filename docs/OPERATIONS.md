@@ -423,3 +423,22 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] `.env.production` has no `CORS_ORIGINS`, and the four base URLs are https (decision 045).
 - [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
 - [ ] Docker log rotation is set, and the host has disk space for the volumes (database, files, Prometheus).
+
+**Staff roles** (decision 046)
+- [ ] Only people trusted like an Owner hold `*`; other admins hold what they need (they can give, and act on, only what they hold).
+- [ ] The permissions in `src/modules/identity/README.md` ("Permissions that reach owner-level power") are given on purpose; an area
+      wildcard such as `wallet:*` includes them.
+- [ ] A second active Owner account on another role exists: it is what lets the last-Owner rule allow a change to the Owner role or to
+      the other Owner's account, and it is the way back when one Owner is lost.
+- [ ] The "owners keep access" rule looks at the addresses of an Owner's live sessions and last sign-in. Each Owner keeps a lasting allow
+      rule (no expiry) for the address they sign in from, so a change by another admin that would refuse that address is turned away.
+
+**Locked out of the console by an IP rule** (needs access to the server)
+1. Turn the allow-list restriction off:
+   `gsmc exec postgres psql -U gsm -d gsm -c "update settings set value = 'false'::jsonb where key = 'adminAllowlistOnly';"`
+2. If a block covers your address, find it and remove it:
+   `gsmc exec postgres psql -U gsm -d gsm -c "select id, cidr, scope, reason from ip_rules where kind = 'block' and scope in ('admin', 'all');"`
+   then `gsmc exec postgres psql -U gsm -d gsm -c "delete from ip_rules where id = <id>;"`
+3. Make it apply at once (otherwise within a few minutes):
+   `gsmc exec redis-cache redis-cli DEL gsm:production:identity:ip-rules:active gsm:production:platform:settings:all`
+4. Sign in, check the access settings, and note what you changed: these steps write no audit row.

@@ -87,7 +87,7 @@ a contract is refused:
    signature + replay window (webhooks), network or token (`/metrics`).
 6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`); a mutation without a session on `/admin` or `/client` (and the
    `/store/v1` sign-in routes) needs an `Origin` of its surface, and an `originCheck` GET needs `Sec-Fetch-Site: same-origin` or such an `Origin`.
-7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource).
+7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource); some use cases also ask for a second permission (decision 046).
    **Anti-bot** (D034): a `/store/v1` or public `/client` route with `turnstile: true` needs a passing `X-Turnstile-Token` (`403 TURNSTILE_FAILED`; the merchant sign-up, sign-in and forgot routes only while `TURNSTILE_MERCHANT_AUTH` is on); the
    verifier is Cloudflare's siteverify through `OutboundHttp`, or a dummy one without `TURNSTILE_SECRET_KEY` outside production.
 8. **Validation**: zod contract pipes (`422 VALIDATION_FAILED`).
@@ -151,7 +151,9 @@ Staff, merchant and customer sessions are opaque random tokens in httpOnly, Secu
 supplier/gateway credentials AES-256-GCM with key ids; API keys and one-time tokens stored as keyed hashes; outgoing
 webhooks HMAC-signed, incoming verified with replay protection; parameterized SQL only; no stack traces in production
 errors; logs redacted (D012). Admin guards are enforced server-side: no self-suspension or self role change, at
-least one active Owner, no self-lockout through IP rules, IP ranges no wider than /16.
+least one active Owner, no self-lockout through IP rules, IP ranges no wider than /16, and a privilege ceiling: nobody grants,
+assigns or acts on permissions they do not hold, and only an Owner edits the role they hold; payment method secrets, merchant API
+keys made by staff and IP changes that would shut out an Owner are kept for Owners (decision 046).
 
 ## 10. Observability and testing
 

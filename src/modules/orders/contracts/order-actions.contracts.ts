@@ -80,7 +80,8 @@ export const rejectOrder = defineRoute({
     'Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the ' +
     'wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order ' +
     'delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier ' +
-    'the action waits for the answer: `409 ALREADY_SENT`.',
+    'the action waits for the answer: `409 ALREADY_SENT`. ' +
+    'Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046).',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -166,7 +167,8 @@ export const decideVerification = defineRoute({
   description:
     'Decides the verification request of a completed order. `accept` keeps the charge (`verification_status` `accepted`). `refund` ' +
     'rejects the order with the note (or a default text) as its result and refunds it like `POST /admin/orders/:id/refund`: revenue ' +
-    'back to the wallet, cost kept (`verification_status` `refunded`). Writes a `verification` event (and the refund events) and an audit row.',
+    'back to the wallet, cost kept (`verification_status` `refunded`). Writes a `verification` event (and the refund events) and an audit row. ' +
+    '`refund` also needs `orders:reopen`, the permission of `POST /admin/orders/:id/refund` (`403 FORBIDDEN`, decision 046).',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

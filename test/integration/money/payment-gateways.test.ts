@@ -53,7 +53,7 @@ const body = (overrides: Record<string, unknown> = {}) => ({
 
 describe('POST /admin/payment-gateways', () => {
   it('stores the gateway with the credentials encrypted and answers only a hint', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const res = await admin.post('/admin/payment-gateways', body({ webhookSecret: 'whsec_card_key' }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
@@ -89,7 +89,7 @@ describe('POST /admin/payment-gateways', () => {
   });
 
   it('refuses each bad field with its name and a code that another gateway uses', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const bad = await admin.post(
       '/admin/payment-gateways',
       body({
@@ -178,7 +178,7 @@ describe('GET /admin/payment-gateways', () => {
 describe('PATCH /admin/payment-gateways/:id', () => {
   it('changes only what is sent, keeps the secret unless a new one comes, and audits before and after', async () => {
     const { db } = await testDb();
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const created = (await admin.post('/admin/payment-gateways', body())).body;
     const off = await admin.patch(`/admin/payment-gateways/${created.id}`, { isActive: false });
     expect(off.status).toBe(200);
@@ -201,7 +201,7 @@ describe('PATCH /admin/payment-gateways/:id', () => {
 
   it("audits the switch with the demo's on and off phrases, and any other change as a change", async () => {
     const { db } = await testDb();
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const created = (await admin.post('/admin/payment-gateways', body())).body;
     const patch = (changes: Record<string, unknown>) => admin.patch(`/admin/payment-gateways/${created.id}`, changes);
     expect((await patch({ isActive: false })).status).toBe(200);
@@ -229,7 +229,7 @@ describe('PATCH /admin/payment-gateways/:id', () => {
   });
 
   it('refuses a code change, an invalid merged row and an unknown group, and answers 404 for an unknown id', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const created = (await admin.post('/admin/payment-gateways', body())).body;
     const code = await admin.patch(`/admin/payment-gateways/${created.id}`, { code: 'other' });
     expect(code.status).toBe(422);
@@ -246,7 +246,7 @@ describe('PATCH /admin/payment-gateways/:id', () => {
 describe('DELETE /admin/payment-gateways/:id', () => {
   it('deletes an unused gateway with an audit row and refuses one that has payments', async () => {
     const { db } = await testDb();
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const merchant = await insertWalletMerchant(db);
     const free = await insertGateway(t, db, { code: 'free' });
     const used = await insertGateway(t, db, { code: 'used' });
@@ -291,5 +291,128 @@ describe('PaymentGateways.dropGroup', () => {
     const rows = await db.select().from(s.paymentGateways);
     expect(rows.find((row) => row.id === restricted)).toMatchObject({ allowedGroupIds: [], isActive: false });
     expect(rows.find((row) => row.id === shared)).toMatchObject({ allowedGroupIds: [other!.id], isActive: true });
+  });
+});
+
+describe('owner-only secrets (decision 046)', () => {
+  const OWNER_DETAIL = 'Only an owner can set up an automatic payment method or change its secrets.';
+
+  it('refuses a staff member who is not an Owner adding an automatic method or sending a secret, and stores nothing', async () => {
+    const { db } = await testDb();
+    const admin = await adminWith(t, ['payments:gateways']);
+    for (const automatic of [body(), body({ isManual: false, secret: undefined })]) {
+      const refused = await admin.post('/admin/payment-gateways', automatic);
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe(OWNER_DETAIL);
+    }
+    const manual = { code: 'bank', driver: 'bank', isManual: true, secret: undefined };
+    expect((await admin.post('/admin/payment-gateways', body(manual))).status).toBe(201);
+    const withSecret = await admin.post(
+      '/admin/payment-gateways',
+      body({ ...manual, code: 'bank2', secret: 'sk_manual_1234' }),
+    );
+    expect(withSecret.status).toBe(403);
+    expect((await db.select().from(s.paymentGateways)).map((row) => row.code)).toEqual(['bank']);
+    expect(await db.select().from(s.auditLogs).where(eq(s.auditLogs.entityType, 'payment_gateway'))).toHaveLength(1);
+
+    // The field checks answer first, for everyone.
+    expect((await admin.post('/admin/payment-gateways', body({ name: ' ' }))).status).toBe(422);
+  });
+
+  it('refuses a non-Owner changing a secret, turning a manual method automatic or changing the driver of an automatic one; other changes pass', async () => {
+    const { db } = await testDb();
+    const admin = await adminWith(t, ['payments:gateways']);
+    const card = await insertGateway(t, db, { code: 'card', secret: 'sk_abcd1234' });
+    const bank = await insertGateway(t, db, { code: 'bank', driver: 'bank', isManual: true });
+    const storedConfig = async (id: number) =>
+      (await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.id, id)))[0]!;
+    const before = await storedConfig(card);
+
+    for (const change of [{ secret: 'sk_new_1111' }, { webhookSecret: 'whsec_x' }, { driver: 'stripe' }]) {
+      const refused = await admin.patch(`/admin/payment-gateways/${card}`, change);
+      expect(refused.status).toBe(403);
+      expect(refused.body.detail).toBe(OWNER_DETAIL);
+    }
+    const after = await storedConfig(card);
+    expect(after.configEnc).toBe(before.configEnc);
+    expect(after.webhookSecretEnc).toBe(before.webhookSecretEnc);
+    expect(after.driver).toBe(before.driver);
+
+    expect((await admin.patch(`/admin/payment-gateways/${card}`, { isActive: false })).status).toBe(200);
+    expect((await admin.patch(`/admin/payment-gateways/${card}`, { feePercent: '3' })).status).toBe(200);
+    const kind = await admin.patch(`/admin/payment-gateways/${bank}`, { isManual: false });
+    expect(kind.status).toBe(403);
+    expect((await storedConfig(bank)).isManual).toBe(true);
+    // A manual method may change its driver while it stays manual.
+    expect((await admin.patch(`/admin/payment-gateways/${bank}`, { driver: 'cliq' })).status).toBe(200);
+
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/payment-gateways/${card}`, { secret: 'sk_new_1111' })).status).toBe(200);
+    expect((await owner.patch(`/admin/payment-gateways/${card}`, { driver: 'stripe' })).status).toBe(200);
+  });
+
+  it('refuses a non-Owner turning an automatic method manual, writes nothing, and keeps the plain fields open', async () => {
+    const { db } = await testDb();
+    const admin = await adminWith(t, ['payments:gateways']);
+    const card = await insertGateway(t, db, { code: 'card', secret: 'sk_abcd1234' });
+    const storedRow = async () => (await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.id, card)))[0]!;
+    const before = await storedRow();
+
+    const refused = await admin.patch(`/admin/payment-gateways/${card}`, { isManual: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    // The kind and the driver together are refused too.
+    expect((await admin.patch(`/admin/payment-gateways/${card}`, { isManual: true, driver: 'bank' })).status).toBe(403);
+    expect(await storedRow()).toEqual(before);
+    expect(await db.select().from(s.auditLogs).where(eq(s.auditLogs.entityType, 'payment_gateway'))).toHaveLength(0);
+
+    // The plain fields of an automatic method stay under the route's own permission.
+    const plain = await admin.patch(`/admin/payment-gateways/${card}`, {
+      name: 'Cards',
+      feePercent: '3',
+      isActive: false,
+    });
+    expect(plain.status).toBe(200);
+    expect(await storedRow()).toMatchObject({ name: 'Cards', isManual: false, driver: 'card' });
+
+    const owner = await adminWith(t, ['*']);
+    const turned = await owner.patch(`/admin/payment-gateways/${card}`, { isManual: true });
+    expect(turned.status).toBe(200);
+    expect(turned.body.isManual).toBe(true);
+    expect((await storedRow()).isManual).toBe(true);
+  });
+
+  it('does not count removing a second webhook secret that the method does not have as a change of secrets', async () => {
+    const { db } = await testDb();
+    const admin = await adminWith(t, ['payments:gateways']);
+    const owner = await adminWith(t, ['*']);
+    const card = await insertGateway(t, db, { code: 'card' });
+    const bank = await insertGateway(t, db, { code: 'bank', driver: 'bank', isManual: true });
+    const storedRow = async (id: number) =>
+      (await db.select().from(s.paymentGateways).where(eq(s.paymentGateways.id, id)))[0]!;
+    const before = await storedRow(card);
+
+    // No second secret: nothing to remove, so a non-Owner may send the null.
+    const none = await admin.patch(`/admin/payment-gateways/${card}`, { secondaryWebhookSecret: null, name: 'Cards' });
+    expect(none.status).toBe(200);
+    expect(none.body.secondaryWebhookSecretHint).toBeNull();
+    expect((await storedRow(card)).webhookSecretEnc).toBe(before.webhookSecretEnc);
+    expect((await admin.patch(`/admin/payment-gateways/${bank}`, { secondaryWebhookSecret: null })).status).toBe(200);
+
+    // A stored second secret: only an Owner removes it.
+    const added = await owner.patch(`/admin/payment-gateways/${card}`, { secondaryWebhookSecret: 'whsec_second_2222' });
+    expect(added.status).toBe(200);
+    expect(added.body.secondaryWebhookSecretHint).toBe('••••2222');
+    const withSecond = await storedRow(card);
+    const refused = await admin.patch(`/admin/payment-gateways/${card}`, { secondaryWebhookSecret: null });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect((await storedRow(card)).webhookSecretEnc).toBe(withSecond.webhookSecretEnc);
+    expect(
+      (await owner.patch(`/admin/payment-gateways/${card}`, { secondaryWebhookSecret: null })).body
+        .secondaryWebhookSecretHint,
+    ).toBeNull();
   });
 });

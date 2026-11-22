@@ -39,7 +39,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   snapshot, records a `job_runs` row of job `ledger_reconcile` (`RECONCILE_RUNNING` while one runs) and audits the run. It is
   synchronous (ANSWERS finance Q4) and never corrects anything.
 - **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
-  (money-13).
+  (money-13). Adding a currency, or changing a rate or markup, also needs `currencies:update` (decision 046).
 - **Exchange-rate refresh** (feature 14b, decision 029, resolution money-9): `FxRefreshService` (`application/fx-refresh.service.ts`) asks the
   driver behind the token `FX_PROVIDER` for every active non-base currency, stores the rates it gets (`rate_updated_at` from the clock, so
   `isStale` is false), and answers `{ refreshed, failed, source }`. A currency the provider does not offer, or sends an unusable rate for, is in
@@ -80,7 +80,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   profit report is a single query.
 - **Client statement PDF (feature 11).** `ClientStatementService` (`application/client-statement.service.ts`, reads in
   `infra/client-statement.repository.ts`, totals and layout in `domain/client-statement.ts`) answers
-  `GET /admin/reports/client-statement/:clientId?from&to` (`reports:read`) with `application/pdf` and
+  `GET /admin/reports/client-statement/:clientId?from&to` (`reports:read` and `wallet:read`, decision 046) with `application/pdf` and
   `Content-Disposition: attachment; filename="statement-<clientId>-<from>-<to>.pdf"`: merchant header, period, opening balance, the
   wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), totals, closing balance, credit limit and the
   invoices issued in the period, drawn by the platform's `PdfRenderer` (decision 030). Everything is read in one read-only
@@ -103,7 +103,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   `postTransaction`, skipping merchants the identity seed has not created.
 
 - **Billing (feature 8).** 18 routes (the 5 KYC routes are identity's). Contracts `contracts/{gateways,invoices,payments,billing-portal,payment-webhook}.contracts.ts`; use cases
-  `application/`: `PaymentGatewayService` (CRUD, secrets encrypted by `GatewayCredentialsVault`, audit `added|changed|removed payment method`, and `turned on|turned off payment method` when a change only moves the switch, the demo's phrases), `InvoiceAdminService` (list, read, issue a manual invoice, audit `issued invoice for`),
+  `application/`: `PaymentGatewayService` (CRUD, secrets encrypted by `GatewayCredentialsVault`, audit `added|changed|removed payment method`, and `turned on|turned off payment method` when a change only moves the switch, the demo's phrases; only an Owner adds an automatic method, changes `isManual` or the driver of a method that is automatic before or after the change, or sets, replaces or removes a method's secrets, decision 046; the plain fields of an automatic method, and a `secondaryWebhookSecret: null` for a method without a second secret, keep the route's own permission), `InvoiceAdminService` (list, read, issue a manual invoice, audit `issued invoice for`),
   `PaymentReviewService` (list, read, approve, reject; audit `approved|rejected deposit of`) with `PaymentViews` (the wire around a page: merchant, group, wallet, gateway, reviewer, hints) and `PaymentCrediting` (the one place that credits a top-up),
   `MerchantBillingService` (the portal: payment methods, invoices, a new top-up invoice, the receipt), `PaymentWebhookService` and `PaymentWebhookVerifier` (the incoming confirmation), `InvoiceDocuments` (PDF) and `InvoiceOutbox` (`invoice.paid`).
   - **Money rules.** A deposit posts the map event `deposit` (Dr `bank` for a manual gateway or `gateway_clearing` for an automatic one, Cr `client_wallet` net, Cr `fee_income` fee) with ref `payment`, key `deposit:payment:<id>`, memo

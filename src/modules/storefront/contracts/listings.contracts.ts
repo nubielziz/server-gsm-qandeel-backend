@@ -243,7 +243,8 @@ export const updateListing = defineRoute({
     '`requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), ' +
     '`isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, ' +
     '`changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). ' +
-    'Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`).',
+    'Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`). ' +
+    'Besides `storefront:update`: switching a listing on (`isListed` true while it is off) also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (`403 FORBIDDEN`, decision 046).',
   tags: ['storefront-listings'],
   surface: 'admin',
   access: 'staff-permission',

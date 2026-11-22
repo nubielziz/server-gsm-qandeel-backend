@@ -21,7 +21,7 @@ import {
 } from '../infra/role.repository';
 import { grantsEverything } from '../security/permission-grammar';
 import { PermissionsCatalog } from '../security/permissions-catalog';
-import { assertOwnerTargetAllowed } from '../security/principal';
+import { assertOwnerTargetAllowed, assertWithinCeiling, isOwner } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { RolePermissions } from '../security/role-permissions';
 
@@ -65,6 +65,9 @@ function nameTaken(): AppError {
  * create, edit or delete one, or give a role `*`; removing `*` from the role of the last active Owner is `409 LAST_OWNER`
  * on `permissions` (the Owner role may be renamed); the check runs under an advisory lock so two parallel changes cannot
  * both pass.
+ *
+ * Privilege ceiling (decision 046): the caller must hold every permission of a role they create, edit or delete, and every
+ * permission they give it; only an Owner edits the role they hold themselves (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
  *
  * Side effects: writes `roles` and `audit_logs`; deletes `gsm:{env}:identity:role:{id}` after the commit.
  *
@@ -119,11 +122,12 @@ export class RoleAdminService {
    * @param input the name and permissions
    * @returns the new role (no holders yet)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `permissions` for unknown entries, on `name` for a duplicate), `FORBIDDEN`
-   *   (403: only an Owner may create a role that grants `*`)
+   *   (403: only an Owner may create a role that grants `*`; the caller must hold every permission given, decision 046)
    */
   async create(caller: StaffPrincipal, input: { name: string; permissions: string[] }): Promise<RoleView> {
     const permissions = this.checkedPermissions(input.permissions);
     if (grantsEverything(permissions)) assertOwnerTargetAllowed(caller, { permissions });
+    assertWithinCeiling(caller, permissions, 'list');
     return this.db.runInTransaction(async (work) => {
       let role: Role;
       try {
@@ -151,8 +155,9 @@ export class RoleAdminService {
    * @param id the role id
    * @param changes the keys to change
    * @returns the updated role
-   * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422), `FORBIDDEN` (403: an Owner role, or granting `*`, needs an
-   *   Owner), `LAST_OWNER` (409 on `permissions`)
+   * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422), `CANNOT_CHANGE_OWN_ROLE` (409: the caller holds this role and
+   *   is not an Owner), `FORBIDDEN` (403: an Owner role, or granting `*`, needs an Owner; the caller must hold every permission
+   *   the role has and every permission sent, decision 046), `LAST_OWNER` (409 on `permissions`)
    */
   async update(caller: StaffPrincipal, id: number, changes: RoleChanges): Promise<RoleView> {
     const permissions = changes.permissions === undefined ? undefined : this.checkedPermissions(changes.permissions);
@@ -160,8 +165,15 @@ export class RoleAdminService {
       await lockOwnerChanges(work.tx);
       const before = await lockRole(work.tx, id);
       if (!before) throw new AppError('NOT_FOUND', { detail: 'No role has this id.' });
+      // Decision 046: only an Owner edits the role they hold (the last-Owner rule below still applies to them).
+      if (before.id === caller.roleId && !isOwner(caller)) {
+        throw new AppError('CANNOT_CHANGE_OWN_ROLE', { detail: 'You cannot edit the role you hold.' });
+      }
       assertOwnerTargetAllowed(caller, before);
+      // Editing a role acts on everyone who holds it: the caller must hold what it has now and what it will have.
+      assertWithinCeiling(caller, before.permissions, 'role');
       if (permissions && grantsEverything(permissions)) assertOwnerTargetAllowed(caller, { permissions });
+      if (permissions) assertWithinCeiling(caller, permissions, 'list');
       if (permissions && grantsEverything(before.permissions) && !grantsEverything(permissions)) {
         await this.assertAnotherOwnerRemains(work.tx, before.id);
       }
@@ -195,8 +207,8 @@ export class RoleAdminService {
    *
    * @param caller the signed-in staff member
    * @param id the role id
-   * @throws {AppError} `NOT_FOUND` (404), `ROLE_IN_USE` (409: a staff member of any status holds it), `FORBIDDEN` (403: an
-   *   Owner role needs an Owner)
+   * @throws {AppError} `NOT_FOUND` (404), `ROLE_IN_USE` (409: a staff member of any status holds it, the caller's own role
+   *   included), `FORBIDDEN` (403: an Owner role needs an Owner; the caller must hold every permission of the role, decision 046)
    */
   async remove(caller: StaffPrincipal, id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
@@ -204,6 +216,7 @@ export class RoleAdminService {
       const role = await lockRole(work.tx, id);
       if (!role) throw new AppError('NOT_FOUND', { detail: 'No role has this id.' });
       assertOwnerTargetAllowed(caller, role);
+      assertWithinCeiling(caller, role.permissions, 'role');
       const inUse = new AppError('ROLE_IN_USE', { detail: 'Move the staff members to another role first.' });
       if ((await countStaffOfRole(work.tx, id)) > 0) throw inUse;
       try {

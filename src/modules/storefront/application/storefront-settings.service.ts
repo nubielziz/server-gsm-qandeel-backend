@@ -3,6 +3,7 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService, SettingsReader, SettingsService } from '../../platform';
 import {
   type BOOLEAN_POLICIES,
@@ -48,11 +49,15 @@ export class StorefrontSettingsService {
   /**
    * Changes policies.
    *
+   * @param caller the signed-in staff member (`require3ds` also needs `risk:*`, decision 046)
    * @param patch the flat object the console sent
    * @returns the policies that have a value, after the change
-   * @throws {AppError} `VALIDATION_FAILED` (422) with one `errors[]` item per refused key (`field` = the key), or for an empty body
+   * @throws {AppError} `FORBIDDEN` (403: `require3ds` is in the body and the caller lacks `risk:*`); `VALIDATION_FAILED` (422) with one
+   *   `errors[]` item per refused key (`field` = the key), or for an empty body
    */
-  async update(patch: Readonly<Record<string, unknown>>): Promise<PolicyValues> {
+  async update(caller: PermissionHolder, patch: Readonly<Record<string, unknown>>): Promise<PolicyValues> {
+    // `require3ds` is also a risk rule: it is changed with the permission of the risk rules (decision 046).
+    if (Object.hasOwn(patch, 'require3ds')) requirePermission(caller, 'risk:*');
     const keys = Object.keys(patch);
     if (keys.length === 0) {
       throw new AppError('VALIDATION_FAILED', {

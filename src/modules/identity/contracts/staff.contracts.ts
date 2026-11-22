@@ -99,7 +99,8 @@ export const createStaff = defineRoute({
     'The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link ' +
     '(`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` ' +
     'generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. ' +
-    'Only an owner can give the new account a role that grants `*`.',
+    'Only an owner can give the new account a role that grants `*`. ' +
+    'The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).',
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -125,7 +126,8 @@ export const updateStaff = defineRoute({
   description:
     "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role " +
     '(`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and ' +
-    'giving a role that grants `*` need an owner.',
+    'giving a role that grants `*` need an owner. ' +
+    "On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -157,7 +159,8 @@ export const setStaffPassword = defineRoute({
     'emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The ' +
     'current password keeps working until the link is used. `temporary_password` generates and stores a password (hash ' +
     'only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for ' +
-    'the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member.',
+    'the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. ' +
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -176,7 +179,9 @@ export const setStaffPassword = defineRoute({
 export const revokeStaffSessions = defineRoute({
   key: 'POST /admin/staff/:id/sessions/revoke',
   summary: 'End all sessions of a staff member',
-  description: 'Ends every session of the member, including a sign-in step in progress. Ending your own signs you out.',
+  description:
+    'Ends every session of the member, including a sign-in step in progress. Ending your own signs you out. ' +
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -192,7 +197,8 @@ export const suspendStaff = defineRoute({
   summary: 'Suspend a staff member',
   description:
     'Sets `suspended`, ends every session and voids unused links; the history stays and the name stays on old audit ' +
-    'entries. Suspending yourself or the last active owner is refused.',
+    'entries. Suspending yourself or the last active owner is refused. ' +
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -219,7 +225,8 @@ export const reactivateStaff = defineRoute({
   summary: 'Reactivate a staff member',
   description:
     'The status becomes `active` if the member ever signed in, else `invited`; the reason is cleared. No session comes ' +
-    'back: the member signs in again with the current password and authenticator.',
+    'back: the member signs in again with the current password and authenticator. ' +
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -235,7 +242,8 @@ export const resetStaffTwoFactor = defineRoute({
   summary: 'Reset two-factor sign-in',
   description:
     "Turns 2FA off and clears the secret; the next sign-in asks for a new setup. The member's sessions end unless the " +
-    'member is the caller.',
+    'member is the caller. ' +
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',

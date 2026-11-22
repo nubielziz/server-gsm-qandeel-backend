@@ -261,7 +261,7 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
 | `GET /admin/ip-rules`, `GET /admin/ip-rules/:id`, `POST /admin/ip-rules/check` | `access:read` | `IpRuleAdminService` |
 | `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id`, `PUT /admin/access/restriction` | `access:create`, `access:delete`, `access:update` | |
 | `GET /admin/clients`, `GET /admin/clients/:id` | `clients:read` (`wallet` and `stats` only with `wallet:read`) | `ClientAdminService` |
-| `POST /admin/clients`, `PATCH /admin/clients/:id` | `clients:create`, `clients:update` | |
+| `POST /admin/clients`, `PATCH /admin/clients/:id` | `clients:create` (and `wallet:credit_limit` for a credit limit above zero, `groups:update` for a group other than the default one), `clients:update` (and `clients:security` to suspend, decline or reactivate, `groups:update` for a group move) | decision 046 |
 
 **Rules worth knowing**
 
@@ -270,6 +270,9 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   last active Owner is never demoted, suspended or stripped of `*` (`409 LAST_OWNER`). The count of Owners runs under one advisory lock
   (`lockOwnerChanges`), so two Owners demoting or suspending each other at the same moment cannot both win. Every staff write re-reads the
   caller's account from `staff_users` (`ACCOUNT_SUSPENDED` at once), not the 60-second cached session view.
+  **Privilege ceiling** (decision 046, `assertWithinCeiling`): role create, edit (current and new list) and delete, the role given to a new member
+  or by a role change, and every action on another member's account (also `DELETE /admin/sessions/:id`) need the caller to hold each permission
+  concerned (`403 FORBIDDEN`); only an Owner edits the role they hold (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
 - **What a change does to sessions and caches:** a suspension, "end all sessions", a password reset with `revokeSessions` and a 2FA reset
   call `SessionService.revokeAllOf` (the caller keeps their own session when they reset their own 2FA); a rename or role change, and a
   reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`; a merchant status change calls
@@ -288,6 +291,10 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   covers the caller's request address, or when a removal would take away the only live allow rule that lets the caller in while the restriction
   is on; `409 IP_NOT_IN_ALLOWLIST` when turning the restriction on without a live allow rule for the caller. Every change runs under one advisory
   lock and calls `IpRuleCache.invalidate()` after the commit. `POST /admin/ip-rules/check` calls `decideIpAccess`, counts no hit and writes no audit row.
+  A staff member who is not an Owner cannot make a change that would turn an address an active Owner uses (live Owner sessions, active Owners'
+  last sign-in address) from allowed to refused for the console (`403 FORBIDDEN`, decision 046). `shutOutNowOrLater` judges the change as things are and at
+  each later moment a rule of either state runs out: an Owner's address may not be refused at any moment at which it would have been allowed
+  without the change.
 - **Merchants:** `POST /admin/clients` inserts the merchant as `pending` with a generated Dhru username and referral code, opens the wallet and
   hold accounts through `MerchantAccounts.open` (`overdraft_limit` = credit limit; user rule 2: credit above zero on a group without
   `overdraft_allowed` is `422` on `creditLimit`), issues the one-hour invite token (`auth_tokens`, purpose `invite`, subject type `client`, hash only)
@@ -295,7 +302,10 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   transaction. `PATCH` does one action per call: approve
   (`pending → active`), suspend (`active → suspended`, a reason of 3 to 140 characters, sessions ended), reactivate (`suspended → active`), or a
   group move (`422` on `groupId` for an unknown group, the storefront retail group, the same group, or a group without credit while the
-  wallet's limit is above zero). Any other status change is `409 INVALID_TRANSITION`.
+  wallet's limit is above zero). Any other status change is `409 INVALID_TRANSITION`. A credit limit above zero at invitation also needs
+  `wallet:credit_limit`, and a `groupId` other than the default group's `groups:update` (no `groupId`, or the default group's id, needs only
+  `clients:create`; checked after the group is found and before anything is written); suspending, declining and reactivating also need
+  `clients:security`, a group move `groups:update` (decision 046).
 - **Times the API returns or decides on come from the clock** (decision 031): `createdAt` of staff, IP rules, merchants, sessions and
   invite/reset tokens is written by the service, not by the column default.
 
@@ -444,7 +454,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   otherwise; the key shown once with `no-store`, `api_keys.created_by` = the staff member, a `merchant.security_notice` mail, an audit row without the key) and
   `PATCH /admin/api-keys/:id` (`api_keys:update`; per-minute limit 1-6000 and allowed addresses; drops the cached view of the key). `createdByStaff` is on every key row.
   Lock order: the merchant's `api-keys:<id>` advisory lock, then the `clients` row (the merchant's own creation takes the advisory lock and then a shared lock on the
-  merchant row for the foreign key of the insert, so the reverse order would deadlock).
+  merchant row for the foreign key of the insert, so the reverse order would deadlock). Creating a key from the console is kept for Owners (decision 046).
 
 ### What happens when an account changes
 
@@ -623,6 +633,24 @@ Staff permissions the map requires on this module's admin routes: `access:*`, `a
 The contracts of feature 2a name the concrete permissions: `access:read|create|update|delete`, `clients:read|create|update`, `roles:read|create|update|delete`, `sessions:read|revoke`, `staff:read|create|update|suspend` (a role may hold `area:*` for each area).
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
+
+### Permissions that reach owner-level power (decision 046)
+
+The server keeps every staff member inside their own permissions (the privilege ceiling) and keeps a few actions for Owners: a payment
+method's secrets and automatic methods, API keys made for a merchant from the console, and IP rule changes that would shut out an
+Owner. Some permissions still let one person move money or act for other accounts on their own. Give them only to people you trust as
+you trust an Owner, and remember that an area wildcard (`wallet:*`, `clients:*`, `payments:*`, ...) includes every permission of its
+area:
+
+- money: `wallet:adjust`, `wallet:credit_limit`, `payments:approve`, `invoices:create`, `refunds:approve`, `commissions:approve`, `orders:reopen`;
+- other people's accounts: `clients:security`, `clients:update`, `customers:password`, `customers:update`, `staff:create`, `staff:update`,
+  `roles:create`, `roles:update` (the last four only up to the holder's own permissions);
+- who reaches the console: `access:create`, `access:update`, `access:delete`, `sessions:revoke`;
+- personal data: `files:read`, `kyc:read`, `customers:privacy`;
+- configuration that steers money or messages: `payments:gateways`, `suppliers:update`, `settings:update`, `currencies:update`,
+  `notifications:update`, `system:manage`.
+
+The development seed's roles follow the console's demo and hold several of these through area wildcards: they are for development only.
 
 ## IP rules in the request pipeline (`security/ip-rules/`)
 

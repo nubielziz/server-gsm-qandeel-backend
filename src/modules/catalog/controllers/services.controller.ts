@@ -2,6 +2,7 @@
 // option lists. Thin: the rules live in ServiceAdminService and ServicePartsService.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { ServiceAdminService } from '../application/service-admin.service';
 import { ServicePartsService } from '../application/service-parts.service';
 import {
@@ -74,6 +75,7 @@ export class ServicesController {
   /**
    * Changes a service.
    *
+   * @param staff the signed-in staff member (decision 046: `basePrice` and `minProfit` also need `pricing:update`)
    * @param params the service id
    * @param body the keys to change
    * @returns the updated service
@@ -81,10 +83,11 @@ export class ServicesController {
    */
   @Route(updateService)
   update(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof updateService>,
     @Body() body: BodyOf<typeof updateService>,
   ): Promise<ResultOf<typeof updateService>> {
-    return this.services.update(params.id, body);
+    return this.services.update(staff, params.id, body);
   }
 
   /**

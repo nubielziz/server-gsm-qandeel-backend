@@ -20,7 +20,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
-  admin = await adminWith(t, ['catalog:*', 'groups:*'], { name: 'Rami K.' });
+  admin = await adminWith(t, ['catalog:*', 'groups:*', 'pricing:update'], { name: 'Rami K.' });
 });
 afterAll(async () => {
   await resetDb();

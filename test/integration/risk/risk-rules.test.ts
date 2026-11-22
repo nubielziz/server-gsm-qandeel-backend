@@ -156,7 +156,7 @@ describe('PUT /admin/risk/rules', () => {
   });
 
   it('is one value for both routes: PATCH /admin/storefront/settings moves the risk rule, PUT /admin/risk/rules moves the policy', async () => {
-    const storefront = await adminWith(t, ['settings:storefront', 'settings:read']);
+    const storefront = await adminWith(t, ['settings:storefront', 'settings:read', 'risk:*']);
     const rule = async () => ruleOf((await owner.get('/admin/risk/rules')).body.rules, 'require3ds').on;
     const policy = async () => (await storefront.get('/admin/settings')).body.require3ds;
     // Nothing saved yet: the rule starts on (the demo's default) and the checkout treats an unset policy as on.

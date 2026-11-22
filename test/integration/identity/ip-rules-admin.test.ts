@@ -6,8 +6,8 @@ import { schema as s } from '@src/infra/db';
 import { IpRuleCache } from '@src/modules/identity';
 import { type AdminApi, adminFor, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertStaff } from '../../support/auth';
-import { HOUR, TestClock } from '../../support/clock';
+import { clearIdentityCaches, insertRole, insertStaff } from '../../support/auth';
+import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 
 const clock = new TestClock();
@@ -782,5 +782,185 @@ describe('two staff members changing the rules at once', () => {
     expect(answers.map((answer) => answer.status).sort()).toEqual([204, 409]);
     expect(await ruleRows()).toHaveLength(1);
     expect((await rami.get('/admin/ip-rules')).status).toBe(200);
+  });
+});
+
+describe('owners keep access (decision 046)', () => {
+  /** A staff member with the whole access area who is not an Owner. */
+  const deputy = () => adminWith(t, ['access:*'], { name: 'Deputy', ip: CALLER_IP });
+  const OWNER_DETAIL = 'This change would lock an owner out of the console. Only an owner can make it.';
+
+  it('refuses a block of the console or of everything that covers a live owner session, and allows the storefront and an owner', async () => {
+    await adminWith(t, ['*'], { name: 'Chief' });
+    const aide = await deputy();
+    const sessionAddress = '203.0.113.7';
+    for (const scope of ['admin', 'all']) {
+      const refused = await aide.post('/admin/ip-rules', { kind: 'block', scope, cidr: sessionAddress, reason: 'x' });
+      expect(refused.status).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe(OWNER_DETAIL);
+    }
+    const store = await aide.post('/admin/ip-rules', {
+      kind: 'block',
+      scope: 'store',
+      cidr: sessionAddress,
+      reason: 'x',
+    });
+    expect(store.status).toBe(201);
+    expect((await ruleRows()).map((rule) => rule.scope)).toEqual(['store']);
+
+    const rami = await owner();
+    const allowed = await rami.post('/admin/ip-rules', {
+      kind: 'block',
+      scope: 'admin',
+      cidr: sessionAddress,
+      reason: 'x',
+    });
+    expect(allowed.status).toBe(201);
+  });
+
+  it('protects the last sign-in address of an active owner who is signed out, not of a suspended owner or of other staff', async () => {
+    const aide = await deputy();
+    const { db } = await testDb();
+    const ownerRole = await insertRole(db, ['*'], 'Owner');
+    const plainRole = await insertRole(db, ['staff:read'], 'Support');
+    await insertStaff(db, ownerRole, { lastLoginIp: '198.51.100.20' });
+    await insertStaff(db, ownerRole, { status: 'suspended', lastLoginIp: '198.51.100.30' });
+    await insertStaff(db, plainRole, { lastLoginIp: '198.51.100.40' });
+    const block = (cidr: string) => aide.post('/admin/ip-rules', { kind: 'block', scope: 'admin', cidr, reason: 'x' });
+
+    const refused = await block('198.51.100.20');
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect((await block('198.51.100.30')).status).toBe(201);
+    expect((await block('198.51.100.40')).status).toBe(201);
+  });
+
+  it("refuses turning the restriction on while an owner's address is not on the list, and allows it once it is", async () => {
+    await adminWith(t, ['*'], { name: 'Chief' });
+    const aide = await deputy();
+    await addRule({ kind: 'allow', scope: 'admin', cidr: CALLER_IP });
+    const refused = await aide.put('/admin/access/restriction', { enabled: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect(await restrictionRow()).toBeUndefined();
+
+    await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.7' });
+    expect((await aide.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+  });
+
+  it('refuses removing the allow rule an owner gets in by while the restriction is on', async () => {
+    const rami = await owner();
+    await addRule({ kind: 'allow', scope: 'admin', cidr: CALLER_IP });
+    const ownersRule = await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.7' });
+    const unrelated = await addRule({ kind: 'allow', scope: 'admin', cidr: '192.0.2.0/24' });
+    expect((await rami.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+    const aide = await deputy();
+
+    const refused = await aide.delete(`/admin/ip-rules/${ownersRule}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect((await ruleRows()).map((rule) => rule.id)).toContain(ownersRule);
+    expect((await aide.delete(`/admin/ip-rules/${unrelated}`)).status).toBe(204);
+    // An Owner may remove it.
+    expect((await rami.delete(`/admin/ip-rules/${ownersRule}`)).status).toBe(204);
+  });
+
+  it("does not count an allow rule that runs out as an owner's access when the restriction is turned on", async () => {
+    await adminWith(t, ['*'], { name: 'Chief' });
+    const aide = await deputy();
+    const soon = new Date(clock.nowMs() + 2 * MINUTE).toISOString();
+    expect((await aide.post('/admin/ip-rules', { kind: 'allow', scope: 'admin', cidr: CALLER_IP })).status).toBe(201);
+    expect(
+      (await aide.post('/admin/ip-rules', { kind: 'allow', scope: 'admin', cidr: '203.0.113.7', expiresAt: soon }))
+        .status,
+    ).toBe(201);
+
+    const refused = await aide.put('/admin/access/restriction', { enabled: true });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect(await restrictionRow()).toBeUndefined();
+
+    // A lasting rule for the owner's address makes it possible.
+    await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.7' });
+    expect((await aide.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+  });
+
+  it('does not count an allow rule that runs out when the rule that lasts is removed', async () => {
+    const rami = await owner();
+    await addRule({ kind: 'allow', scope: 'admin', cidr: CALLER_IP });
+    const lasting = await addRule({ kind: 'allow', scope: 'admin', cidr: '203.0.113.7' });
+    expect((await rami.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+    const aide = await deputy();
+    const soon = new Date(clock.nowMs() + 2 * MINUTE).toISOString();
+    const short = await aide.post('/admin/ip-rules', {
+      kind: 'allow',
+      scope: 'admin',
+      cidr: '203.0.113.0/24',
+      expiresAt: soon,
+    });
+    expect(short.status).toBe(201);
+
+    const refused = await aide.delete(`/admin/ip-rules/${lasting}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect((await ruleRows()).map((rule) => rule.id)).toContain(lasting);
+  });
+
+  it('lets an unrelated removal through when an owner is covered only by an allow rule that runs out', async () => {
+    const rami = await owner();
+    await addRule({ kind: 'allow', scope: 'admin', cidr: CALLER_IP });
+    const unrelated = await addRule({ kind: 'allow', scope: 'admin', cidr: '192.0.2.0/24' });
+    await addRule({
+      kind: 'allow',
+      scope: 'admin',
+      cidr: '203.0.113.7',
+      expiresAt: new Date(clock.nowMs() + 2 * MINUTE),
+    });
+    expect((await rami.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+    const aide = await deputy();
+    expect((await aide.delete(`/admin/ip-rules/${unrelated}`)).status).toBe(204);
+  });
+
+  it("refuses removing an owner's long allow rule while a short rule that covers the address is in place", async () => {
+    const chief = await adminWith(t, ['*'], { name: 'Chief', ip: '203.0.113.7' });
+    await addRule({ kind: 'allow', scope: 'admin', cidr: CALLER_IP });
+    const month = await addRule({
+      kind: 'allow',
+      scope: 'admin',
+      cidr: '203.0.113.7',
+      expiresAt: new Date(clock.nowMs() + 30 * DAY),
+    });
+    const unrelated = await addRule({ kind: 'allow', scope: 'admin', cidr: '192.0.2.0/24' });
+    expect((await chief.put('/admin/access/restriction', { enabled: true })).status).toBe(200);
+    const aide = await deputy();
+
+    const soon = new Date(clock.nowMs() + 2 * MINUTE).toISOString();
+    const short = await aide.post('/admin/ip-rules', {
+      kind: 'allow',
+      scope: 'admin',
+      cidr: '203.0.113.0/29',
+      expiresAt: soon,
+    });
+    expect(short.status).toBe(201);
+
+    const refused = await aide.delete(`/admin/ip-rules/${month}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe(OWNER_DETAIL);
+    expect((await ruleRows()).map((rule) => rule.id)).toContain(month);
+    // A removal that touches no owner's address stays possible.
+    expect((await aide.delete(`/admin/ip-rules/${unrelated}`)).status).toBe(204);
+
+    // Once the short rule has run out the owner still gets in by the long one.
+    clock.advance(5 * MINUTE);
+    expect((await chief.get('/admin/ip-rules')).status).toBe(200);
+  });
+
+  it('keeps the self-lockout rule first', async () => {
+    await adminWith(t, ['*'], { name: 'Chief' });
+    const aide = await deputy();
+    const res = await aide.post('/admin/ip-rules', { kind: 'block', scope: 'admin', cidr: CALLER_IP, reason: 'x' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('SELF_LOCKOUT');
   });
 });

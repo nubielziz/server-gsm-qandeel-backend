@@ -803,6 +803,27 @@ describe('the refund the system opens when a paid order is rejected', () => {
     });
   });
 
+  it('a staff rejection of a paid order also needs refunds:approve, and nothing moves without it (decision 046)', async () => {
+    const paid = await order();
+    const clerk = await adminWith(t, ['orders:*'], { name: 'Dana A.' });
+    const ledgerBefore = await ledgerTotals(db);
+    const eventsBefore = (await eventsOf(db, paid.orderId)).length;
+    const refused = await clerk.post(`/admin/orders/${paid.orderId}/reject`, { reason: 'Cannot be unlocked' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the refunds:approve permission to do this.');
+    expect((await orderRow(db, paid.orderId)).status).not.toBe('rejected');
+    expect(await db.select().from(s.refunds)).toHaveLength(0);
+    expect(await ledgerTotals(db)).toEqual(ledgerBefore);
+    expect(await eventsOf(db, paid.orderId)).toHaveLength(eventsBefore);
+    expect(await auditOf(db, paid.orderId)).toHaveLength(0);
+
+    // Whoever holds the refund permission as well can reject it.
+    expect((await staff.post(`/admin/orders/${paid.orderId}/reject`, { reason: 'Cannot be unlocked' })).status).toBe(
+      204,
+    );
+  });
+
   /** An order paid by the second of two payments of one checkout; the first one confirmed later and was refunded as a duplicate. */
   async function orderPaidSecond(): Promise<{ orderId: number; first: { id: number }; second: { id: number } }> {
     const { token } = await openCheckout(t, world);

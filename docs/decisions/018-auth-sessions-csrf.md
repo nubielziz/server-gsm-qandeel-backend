@@ -50,3 +50,7 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
 
 **Consequences.** One session service for three kinds of users; the admin flow matches the console without any
 frontend change; credentials and sessions never exist in clear text at rest.
+
+**Amendment (decision 046, 2026-11-20).** The guards gain a privilege ceiling (nobody grants, assigns or acts on permissions they do
+not hold; only an Owner edits the role they hold), actions kept for Owners (payment method secrets, merchant API keys made by staff,
+IP changes that would shut out an Owner) and second permissions for stronger actions inside coarse routes.

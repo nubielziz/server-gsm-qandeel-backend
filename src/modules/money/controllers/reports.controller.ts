@@ -3,6 +3,7 @@ import { Controller, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { attachmentDisposition } from '../../../infra/storage';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { ClientStatementService } from '../application/client-statement.service';
 import { ReportService } from '../application/report.service';
 import {
@@ -88,6 +89,7 @@ export class ReportsController {
   /**
    * The official account statement of a merchant, as a PDF download.
    *
+   * @param staff the signed-in staff member (decision 046: `wallet:read` too)
    * @param params the merchant id
    * @param query the optional first and last day
    * @param reply the reply, for the file headers
@@ -96,11 +98,12 @@ export class ReportsController {
    */
   @Route(getClientStatement)
   async clientStatement(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof getClientStatement>,
     @Query() query: QueryOf<typeof getClientStatement>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<Buffer> {
-    const file = await this.statements.render(params.clientId, query);
+    const file = await this.statements.render(staff, params.clientId, query);
     reply
       .header('content-type', 'application/pdf')
       .header('content-disposition', attachmentDisposition(file.filename))

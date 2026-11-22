@@ -100,7 +100,7 @@ const TITLE_FIELDS = ['title', 'slug', 'brand', 'carrier', 'country'] as const;
 /**
  * Tells whether the body of a row's `PATCH` carries a price key.
  *
- * Why: plan 31 section 5.1: a retail price needs `storefront:update` today, so `retailPrice` and `pricing` need it too, and a role that
+ * Why: plan 31 section 5.1: a retail price needs `pricing:update` (decision 046), so `retailPrice` and `pricing` need it too, and a role that
  * may only prepare previews cannot set shop prices through one.
  *
  * @param edit the body
@@ -113,7 +113,7 @@ export function editsPrice(edit: Pick<RowEdit, 'retailPrice' | 'pricing'>): bool
 /**
  * Tells whether a reset of a row would throw away a price choice staff made in it.
  *
- * Why: plan 31 section 5.1: a price needs `storefront:update`, and a reset puts the row back on the default price. On a row with a typed
+ * Why: plan 31 section 5.1: a price needs `pricing:update`, and a reset puts the row back on the default price. On a row with a typed
  * price or a rule chosen over a typed price that is a price edit (a role that may only prepare previews must not swap a typed 50.00 for the
  * rule's 13.00); on any other row a reset leaves the price alone.
  *

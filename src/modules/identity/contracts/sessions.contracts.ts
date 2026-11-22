@@ -62,7 +62,8 @@ export const revokeSession = defineRoute({
   summary: 'End a session',
   description:
     'Ends any live session of the list (staff or merchant). Ending your own session signs you out on your next request. A ' +
-    "session that is no longer live by the list's rule (revoked, expired or idle) answers 404.",
+    "session that is no longer live by the list's rule (revoked, expired or idle) answers 404. " +
+    "A session of another staff member is ended only by an owner when that member is an owner, and only by a caller who holds every permission of the member's role (`403 FORBIDDEN`, decision 046).",
   tags: ['sessions'],
   surface: 'admin',
   access: 'staff-permission',

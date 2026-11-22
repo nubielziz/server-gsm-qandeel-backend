@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService, PdfRenderer } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { type StatementData, statementDocument, statementFilename, statementTotals } from '../domain/client-statement';
@@ -55,6 +56,7 @@ export class ClientStatementService {
   /**
    * Makes the statement of a merchant.
    *
+   * @param caller the signed-in staff member (the same ledger lines as the wallet statement, so `wallet:read` too, decision 046)
    * @param clientId the merchant
    * @param query the optional first and last day (`YYYY-MM-DD`, both included); a missing `to` is today, a missing `from` the day of
    *   the first wallet line, or, when the history holds more than `maxRows` lines, the day of the first of the most recent
@@ -62,15 +64,18 @@ export class ClientStatementService {
    *   newest `maxRows`
    * @param maxRows the most lines (or invoices) a statement holds; the route never changes the default, a test lowers it
    * @returns the file name and the PDF bytes
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `from`) when `from` is after `to`, or when an explicit `from` period holds more
+   * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `wallet:read`; `VALIDATION_FAILED` (422 on `from`) when `from` is after `to`, or when an explicit `from` period holds more
    *   than `maxRows` lines or more than `maxRows` invoices (a request without `from` is never refused for size); `NOT_FOUND` when
    *   there is no merchant with this id
    */
   async render(
+    caller: PermissionHolder,
     clientId: number,
     query: { from?: string | undefined; to?: string | undefined },
     maxRows = STATEMENT_PDF_MAX_ROWS,
   ): Promise<StatementFile> {
+    // The same ledger lines as the wallet statement, with its permission (decision 046).
+    requirePermission(caller, 'wallet:read');
     const now = this.clock.now();
     const today = now.toISOString().slice(0, 10);
     const to = query.to ?? today;

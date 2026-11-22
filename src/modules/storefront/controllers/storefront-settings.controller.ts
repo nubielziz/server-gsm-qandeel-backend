@@ -1,6 +1,7 @@
 // HTTP controller of the storefront policies (map domain H, stage 16, route PATCH /admin/storefront/settings).
 import { Body, Controller } from '@nestjs/common';
 import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { StorefrontSettingsService } from '../application/storefront-settings.service';
 import { updateStorefrontSettings } from '../contracts/storefront-settings.contracts';
 
@@ -18,12 +19,16 @@ export class StorefrontSettingsController {
   /**
    * Changes policies.
    *
+   * @param staff the signed-in staff member (decision 046: `require3ds` also needs `risk:*`)
    * @param body the keys to change
    * @returns the policies after the change
    * @route PATCH /admin/storefront/settings
    */
   @Route(updateStorefrontSettings)
-  update(@Body() body: BodyOf<typeof updateStorefrontSettings>): Promise<ResultOf<typeof updateStorefrontSettings>> {
-    return this.settings.update(body);
+  update(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof updateStorefrontSettings>,
+  ): Promise<ResultOf<typeof updateStorefrontSettings>> {
+    return this.settings.update(staff, body);
   }
 }

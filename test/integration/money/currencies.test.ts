@@ -58,7 +58,7 @@ async function create(staff: Staff, body: Record<string, unknown>) {
 
 describe('POST /admin/currencies', () => {
   it('adds a currency: code upper-cased, rate and markup normalised, rate stamped now, audited', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const row = await create(staff, { ...GBP, code: 'gbp', name: '  Pound sterling ' });
     expect(row).toEqual({
       id: row.id,
@@ -88,7 +88,7 @@ describe('POST /admin/currencies', () => {
   });
 
   it('applies the defaults of an omitted switch and keeps a long rate exact', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const row = await create(staff, { code: 'JPY', name: 'Japanese yen', rateToBase: '150.12345678' });
     expect(row).toMatchObject({
       rateToBase: '150.12345678',
@@ -100,7 +100,7 @@ describe('POST /admin/currencies', () => {
   });
 
   it('validates every field with 422 and creates nothing', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const fieldsOf = async (body: Record<string, unknown>) => {
       const res = await send(staff, 'POST', '/admin/currencies', body);
       expect(res.statusCode).toBe(422);
@@ -128,7 +128,7 @@ describe('POST /admin/currencies', () => {
   });
 
   it('refuses a code that is already listed, however it is written, and lets only one of two simultaneous requests win', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     await create(staff, GBP);
     const again = await send(staff, 'POST', '/admin/currencies', { ...GBP, code: 'gbp' });
     expect(again.statusCode).toBe(422);
@@ -144,7 +144,7 @@ describe('POST /admin/currencies', () => {
   it('needs settings:update and a CSRF token', async () => {
     const reader = await signInStaff(t, ['wallet:read']);
     expect((await send(reader, 'POST', '/admin/currencies', GBP)).json().code).toBe('FORBIDDEN');
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const noToken = await t.app.inject({
       method: 'POST',
       url: '/admin/currencies',
@@ -157,7 +157,7 @@ describe('POST /admin/currencies', () => {
 
 describe('GET /admin/currencies', () => {
   async function seeded() {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     await create(staff, USD);
     await create(staff, GBP);
     await create(staff, { ...GBP, code: 'EUR', name: 'Euro', rateToBase: '0.92', isStorefront: false });
@@ -210,7 +210,7 @@ describe('GET /admin/currencies', () => {
   });
 
   it('marks a non-base currency stale once its rate is more than 24 hours old, to the millisecond, and never the base', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     await create(staff, USD);
     const gbp = await create(staff, GBP);
     // Sessions follow the same clock: after a jump of days a fresh sign-in reads.
@@ -239,7 +239,7 @@ describe('GET /admin/currencies', () => {
 
 describe('GET /admin/currencies/:id', () => {
   it('answers one currency, 404 for an unknown id and 422 for a bad one', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const gbp = await create(staff, GBP);
     const one = await get(staff, `/admin/currencies/${gbp.id}`);
     expect(one.json()).toEqual(gbp);
@@ -250,12 +250,12 @@ describe('GET /admin/currencies/:id', () => {
 
 describe('PATCH /admin/currencies/:id', () => {
   it('changes only the fields sent; a new rate restarts the stale clock, a markup alone does not', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const gbp = await create(staff, GBP);
     clock.advance(30 * HOUR);
     const url = `/admin/currencies/${gbp.id}`;
     // Thirty hours later the staff session (one hour of idle time by default) is gone; sign in again.
-    const staff2 = await signInStaff(t, ['settings:update']);
+    const staff2 = await signInStaff(t, ['settings:update', 'currencies:update']);
     expect((await get(staff2, url)).json<{ isStale: boolean }>().isStale).toBe(true);
 
     const markup = await send(staff2, 'PATCH', url, { markupPercent: '3' });
@@ -278,7 +278,7 @@ describe('PATCH /admin/currencies/:id', () => {
   });
 
   it('switches the storefront and the activity flags and renames', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const gbp = await create(staff, GBP);
     const res = await send(staff, 'PATCH', `/admin/currencies/${gbp.id}`, {
       isStorefront: false,
@@ -297,7 +297,7 @@ describe('PATCH /admin/currencies/:id', () => {
   });
 
   it('audits before and after, even for a change that alters nothing', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const gbp = await create(staff, GBP);
     await send(staff, 'PATCH', `/admin/currencies/${gbp.id}`, { markupPercent: '4' });
     await send(staff, 'PATCH', `/admin/currencies/${gbp.id}`, {});
@@ -313,7 +313,7 @@ describe('PATCH /admin/currencies/:id', () => {
   });
 
   it('validates the fields it receives with 422 and changes nothing', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const gbp = await create(staff, GBP);
     const url = `/admin/currencies/${gbp.id}`;
     const fieldsOf = async (body: Record<string, unknown>) => {
@@ -333,7 +333,7 @@ describe('PATCH /admin/currencies/:id', () => {
   });
 
   it('refuses a new rate, a markup or switching off on the base currency, but accepts the values it already has', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     const usd = await create(staff, USD);
     const url = `/admin/currencies/${usd.id}`;
     for (const [body, field] of [
@@ -351,7 +351,7 @@ describe('PATCH /admin/currencies/:id', () => {
   });
 
   it('answers 404 for an unknown currency and 403 without settings:update', async () => {
-    const staff = await signInStaff(t, ['settings:update']);
+    const staff = await signInStaff(t, ['settings:update', 'currencies:update']);
     expect((await send(staff, 'PATCH', '/admin/currencies/9999', { name: 'x y' })).json().code).toBe('NOT_FOUND');
     const gbp = await create(staff, GBP);
     const other = await signInStaff(t, ['wallet:adjust']);
@@ -360,5 +360,30 @@ describe('PATCH /admin/currencies/:id', () => {
     );
     const { db } = await testDb();
     expect((await db.select().from(s.currencies).where(eq(s.currencies.id, gbp.id)))[0]!.name).toBe('Pound sterling');
+  });
+});
+
+describe('the permission of a rate (decision 046)', () => {
+  it('adding a currency, and a rate or markup change, also need currencies:update; a name change does not', async () => {
+    const { db } = await testDb();
+    const settingsOnly = await signInStaff(t, ['settings:update']);
+    const refusedCreate = await send(settingsOnly, 'POST', '/admin/currencies', GBP);
+    expect(refusedCreate.statusCode).toBe(403);
+    expect(refusedCreate.json().code).toBe('FORBIDDEN');
+    expect(refusedCreate.json().detail).toBe('You need the currencies:update permission to do this.');
+    expect(await db.select().from(s.currencies)).toHaveLength(0);
+
+    const rated = await signInStaff(t, ['settings:update', 'currencies:update']);
+    const gbp = await create(rated, GBP);
+    const url = `/admin/currencies/${gbp.id}`;
+    for (const change of [{ rateToBase: '0.8' }, { markupPercent: '2' }]) {
+      const refused = await send(settingsOnly, 'PATCH', url, change);
+      expect(refused.statusCode).toBe(403);
+      expect(refused.json().detail).toBe('You need the currencies:update permission to do this.');
+    }
+    const stored = (await db.select().from(s.currencies).where(eq(s.currencies.id, gbp.id)))[0]!;
+    expect(stored.rateToBase).toBe('0.79000000');
+    expect(stored.markupPercent).toBe('2.5000');
+    expect((await send(settingsOnly, 'PATCH', url, { name: 'Pound' })).statusCode).toBe(200);
   });
 });

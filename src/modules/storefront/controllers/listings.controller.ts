@@ -68,6 +68,7 @@ export class ListingsController {
   /**
    * Changes a listing.
    *
+   * @param staff the signed-in staff member (decision 046: a price and a switch-on need a second permission)
    * @param params the listing id
    * @param body the fields to change: the switch, the retail price and/or the content
    * @returns the updated listing
@@ -75,10 +76,11 @@ export class ListingsController {
    */
   @Route(updateListing)
   update(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof updateListing>,
     @Body() body: BodyOf<typeof updateListing>,
   ): Promise<ResultOf<typeof updateListing>> {
-    return this.listings.update(params.id, body);
+    return this.listings.update(staff, params.id, body);
   }
 
   /**

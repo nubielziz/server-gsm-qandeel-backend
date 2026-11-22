@@ -97,6 +97,46 @@ export interface WebhookSecretChange {
 }
 
 /**
+ * Tells whether a gateway request sets, replaces or removes one of its secrets.
+ *
+ * Why: decision 046: the API secret and the webhook secrets are what payment confirmations are checked against, so only an Owner
+ * sets them. Removing a second webhook secret that the method does not have changes nothing, so it is not a change of credentials.
+ *
+ * @param change what the request sent
+ * @param stored the webhook secrets stored for the method, first one first; leave it out for a method that is being added
+ * @returns true for a non-empty `secret` or `webhookSecret`, or any `secondaryWebhookSecret` (a value, or `null` to remove it) except
+ *   a `null` for a stored method that has no second secret
+ */
+export function changesCredentials(
+  change: { readonly secret?: string | undefined } & WebhookSecretChange,
+  stored?: readonly string[],
+): boolean {
+  if (change.secret || change.webhookSecret) return true;
+  if (change.secondaryWebhookSecret === undefined) return false;
+  return !(change.secondaryWebhookSecret === null && stored !== undefined && stored.length < 2);
+}
+
+/**
+ * Tells whether a change touches the automatic setup of a payment method: its kind or its driver while it is automatic.
+ *
+ * Why: decision 046: the driver and the manual or automatic kind decide who confirms a payment and with which stored keys, so any
+ * change of `isManual` or of `driver` on a method that is automatic before or after the change (a manual method made automatic, an
+ * automatic one made manual, a new driver) is kept for Owners like the secrets. A method that is manual before and after keeps its
+ * plain rule.
+ *
+ * @param current the stored kind and driver
+ * @param next the kind and driver after the change
+ * @returns true when the method is automatic before or after the change and its kind or its driver differs
+ */
+export function changesAutomaticSetup(
+  current: { readonly isManual: boolean; readonly driver: string },
+  next: { readonly isManual: boolean; readonly driver: string },
+): boolean {
+  const automatic = !current.isManual || !next.isManual;
+  return automatic && (current.isManual !== next.isManual || current.driver !== next.driver);
+}
+
+/**
  * The webhook signing keys a gateway keeps after a change.
  *
  * Why: plan 24C § 3: a gateway keeps up to two keys (a second Stripe endpoint, or the new key while rotating); the second exists only next

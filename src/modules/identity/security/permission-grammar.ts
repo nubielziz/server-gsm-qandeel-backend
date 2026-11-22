@@ -58,3 +58,23 @@ export function grants(granted: readonly string[], required: string): boolean {
   }
   return false;
 }
+
+/**
+ * The requested permissions that granted ones do not cover.
+ *
+ * Why: decision 046 (privilege ceiling): a staff member grants, assigns or acts on permissions only when they hold each of
+ * them, by the rule of `grants`: a held `area:*` covers its actions, single actions never cover `area:*`, and only `*` covers
+ * `*`.
+ *
+ * @param granted the permissions of the caller's role
+ * @param requested the permissions the caller wants to give, assign or act on
+ * @returns the entries of `requested` that are not covered, each once, in the order asked; empty for an Owner
+ */
+export function uncoveredPermissions(granted: readonly string[], requested: readonly string[]): string[] {
+  if (grantsEverything(granted)) return [];
+  const missing: string[] = [];
+  for (const permission of requested) {
+    if (!missing.includes(permission) && !grants(granted, permission)) missing.push(permission);
+  }
+  return missing;
+}

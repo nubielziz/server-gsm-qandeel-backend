@@ -27,7 +27,7 @@ import {
 } from '../infra/staff-admin.repository';
 import { countLiveStaffSessions } from '../infra/session-admin.repository';
 import { grantsEverything } from '../security/permission-grammar';
-import { assertOwnerTargetAllowed } from '../security/principal';
+import { assertOwnerTargetAllowed, assertWithinCeiling } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { SessionPolicy } from '../security/session-policy';
 import { SessionService } from '../security/session.service';
@@ -90,7 +90,9 @@ function invalid(field: string, message: string): AppError {
  * RESOLUTIONS identity-platform-4 and -14): actions on an Owner account need `*`; nobody changes their own role; the last
  * active Owner cannot be demoted or suspended (checked under an advisory lock); nobody suspends themselves; a suspension, a
  * password reset with `revokeSessions`, "end all sessions" and a 2FA reset end the member's sessions in the same transaction.
- * Sensitive actions re-check the caller's account in the database, not the cached session.
+ * Sensitive actions re-check the caller's account in the database, not the cached session. Privilege ceiling (decision 046): the
+ * role given to a new member or by a role change, and the role of any other member the caller acts on, may hold nothing the caller
+ * does not hold (an Owner passes always).
  *
  * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views after the
  * commit; never writes a password, token or secret to the audit log.
@@ -142,7 +144,8 @@ export class StaffAdminService {
    * @param input name, email, role and how the member gets a first password
    * @returns the new member (status `invited`) and, for the temporary-password onboarding, the password (shown once)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `name` or `roleId`), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a role that
-   *   grants `*` needs an Owner), `ACCOUNT_SUSPENDED` (403: the caller was suspended meanwhile)
+   *   grants `*` needs an Owner; the role has permissions the caller does not hold, decision 046), `ACCOUNT_SUSPENDED` (403: the
+   *   caller was suspended meanwhile)
    */
   async create(
     caller: StaffPrincipal,
@@ -162,6 +165,7 @@ export class StaffAdminService {
       const role = await lockRole(work.tx, input.roleId);
       if (!role) throw invalid('roleId', 'Choose a role.');
       if (grantsEverything(role.permissions)) assertOwnerTargetAllowed(caller, role);
+      assertWithinCeiling(caller, role.permissions, 'role');
       const now = this.clock.now();
       let created: StaffUser;
       try {
@@ -218,7 +222,8 @@ export class StaffAdminService {
    * @returns the updated member
    * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422 on `name` or `roleId`), `EMAIL_TAKEN` (409),
    *   `CANNOT_CHANGE_OWN_ROLE` (409 on `roleId`), `LAST_OWNER` (409 on `roleId`), `FORBIDDEN` (403: an Owner account, or a
-   *   role that grants `*`, needs an Owner)
+   *   role that grants `*`, needs an Owner; another member's role, or the new role, has permissions the caller does not hold,
+   *   decision 046)
    */
   async update(caller: StaffPrincipal, id: number, changes: StaffChanges): Promise<StaffMemberView> {
     const name = changes.name === undefined ? undefined : collapse(changes.name);
@@ -228,7 +233,7 @@ export class StaffAdminService {
       // A role change can remove an Owner: serialise it with the other Owner-affecting changes.
       if (changes.roleId !== undefined) await lockOwnerChanges(work.tx);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
 
       const roleChanged = changes.roleId !== undefined && changes.roleId !== target.staff.roleId;
       if (roleChanged) await this.checkRoleChange(work.tx, caller, target, changes.roleId);
@@ -271,8 +276,8 @@ export class StaffAdminService {
    * @param id the member
    * @param input the mode and whether to end the member's sessions
    * @returns `{ temporaryPassword }` for the temporary mode (shown once), `{}` for the link
-   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner), `RATE_LIMITED` (429: the link mode,
-   *   five mails an hour per member)
+   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner; another member's role has
+   *   permissions the caller does not hold, decision 046), `RATE_LIMITED` (429: the link mode, five mails an hour per member)
    */
   async setPassword(
     caller: StaffPrincipal,
@@ -281,6 +286,8 @@ export class StaffAdminService {
   ): Promise<{ temporaryPassword?: string }> {
     const existing = await findStaffRow(this.db.db, id);
     if (!existing) throw new AppError('NOT_FOUND', { detail: 'No staff member has this id.' });
+    // Decision 046: a refused caller must not spend the member's link mails; the check under the lock below is the one that counts.
+    this.assertMayActOn(caller, existing.staff.id, existing.role.permissions);
     // Mail bombing guard: five link mails an hour per member (O-11); the temporary mode sends no mail.
     if (input.mode === 'reset_link')
       await this.limits.enforce('account-mail', accountMailKey('staff', id, 'password_link'));
@@ -293,7 +300,7 @@ export class StaffAdminService {
     await this.db.runInTransaction(async (work) => {
       await this.assertCallerActive(work.tx, caller);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
       const now = this.clock.now();
       if (passwordHash !== undefined) {
         await updateStaffRow(work.tx, id, { passwordHash, mustChangePassword: true, passwordChangedAt: now });
@@ -330,14 +337,15 @@ export class StaffAdminService {
    *
    * @param caller the signed-in staff member
    * @param id the member
-   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner)
+   * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner; another member's role has
+   *   permissions the caller does not hold, decision 046)
    */
   async revokeSessions(caller: StaffPrincipal, id: number): Promise<void> {
     const idle = await idleLimitsOf(this.policy);
     await this.db.runInTransaction(async (work) => {
       await this.assertCallerActive(work.tx, caller);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
       const live = (await countLiveStaffSessions(work.tx, [id], this.clock.now(), idle)).get(id) ?? 0;
       await this.sessions.revokeAllOf('staff', id, {}, work);
       await this.audit.record(work.tx, {
@@ -358,14 +366,14 @@ export class StaffAdminService {
    * @param id the member
    * @param reason "Reason" or "Reason: note", as the console writes it
    * @throws {AppError} `NOT_FOUND` (404), `CANNOT_SUSPEND_SELF`, `ALREADY_SUSPENDED`, `LAST_OWNER` (409), `FORBIDDEN` (403: an
-   *   Owner account needs an Owner)
+   *   Owner account needs an Owner; another member's role has permissions the caller does not hold, decision 046)
    */
   async suspend(caller: StaffPrincipal, id: number, reason: string): Promise<void> {
     await this.db.runInTransaction(async (work) => {
       await this.assertCallerActive(work.tx, caller);
       await lockOwnerChanges(work.tx);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
       if (target.staff.id === caller.staffId) {
         throw new AppError('CANNOT_SUSPEND_SELF', { detail: 'You cannot suspend your own account.' });
       }
@@ -402,13 +410,14 @@ export class StaffAdminService {
    *
    * @param caller the signed-in staff member
    * @param id the member
-   * @throws {AppError} `NOT_FOUND` (404), `NOT_SUSPENDED` (409), `FORBIDDEN` (403: an Owner account needs an Owner)
+   * @throws {AppError} `NOT_FOUND` (404), `NOT_SUSPENDED` (409), `FORBIDDEN` (403: an Owner account needs an Owner; another
+   *   member's role has permissions the caller does not hold, decision 046)
    */
   async reactivate(caller: StaffPrincipal, id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
       await this.assertCallerActive(work.tx, caller);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
       if (target.staff.status !== 'suspended') throw new AppError('NOT_SUSPENDED');
       const status = target.staff.lastLoginAt === null ? 'invited' : 'active';
       await updateStaffRow(work.tx, id, { status, suspendedAt: null, suspendedReason: null, suspendedBy: null });
@@ -430,13 +439,14 @@ export class StaffAdminService {
    *
    * @param caller the signed-in staff member
    * @param id the member
-   * @throws {AppError} `NOT_FOUND` (404), `TWOFA_NOT_ENABLED` (409), `FORBIDDEN` (403: an Owner account needs an Owner)
+   * @throws {AppError} `NOT_FOUND` (404), `TWOFA_NOT_ENABLED` (409), `FORBIDDEN` (403: an Owner account needs an Owner; another
+   *   member's role has permissions the caller does not hold, decision 046)
    */
   async resetTwoFactor(caller: StaffPrincipal, id: number): Promise<void> {
     await this.db.runInTransaction(async (work) => {
       await this.assertCallerActive(work.tx, caller);
       const target = await this.lockTarget(work.tx, id);
-      assertOwnerTargetAllowed(caller, { permissions: target.permissions });
+      this.assertMayActOn(caller, target.staff.id, target.permissions);
       if (!target.staff.twofaEnabled) throw new AppError('TWOFA_NOT_ENABLED');
       await updateStaffRow(work.tx, id, { twofaEnabled: false, totpSecretEnc: null, totpLastStep: null });
       // The caller keeps their own session (they set 2FA up again at the next sign-in); everyone else is signed out.
@@ -452,6 +462,12 @@ export class StaffAdminService {
     });
   }
 
+  /** Decision 046: an Owner account needs an Owner, and another member's role may hold nothing the caller lacks. */
+  private assertMayActOn(caller: StaffPrincipal, targetId: number, permissions: readonly string[]): void {
+    assertOwnerTargetAllowed(caller, { permissions });
+    if (targetId !== caller.staffId) assertWithinCeiling(caller, permissions, 'account');
+  }
+
   /** The caller's account is read again: a suspension that landed a moment ago stops the next write. */
   private async assertCallerActive(tx: TransactionContext['tx'], caller: StaffPrincipal): Promise<void> {
     const status = await statusOfStaff(tx, caller.staffId);
@@ -465,7 +481,10 @@ export class StaffAdminService {
     return target;
   }
 
-  /** The rules of changing a member's role: not your own, a role that exists, `*` only by an Owner, never the last Owner. */
+  /**
+   * The rules of changing a member's role: not your own, a role that exists, `*` only by an Owner, a role the caller holds
+   * entirely (decision 046), never the last Owner.
+   */
   private async checkRoleChange(
     tx: TransactionContext['tx'],
     caller: StaffPrincipal,
@@ -480,6 +499,7 @@ export class StaffAdminService {
     const role = await lockRole(tx, roleId);
     if (!role) throw invalid('roleId', 'Choose a role.');
     if (grantsEverything(role.permissions)) assertOwnerTargetAllowed(caller, role);
+    assertWithinCeiling(caller, role.permissions, 'role');
     if (
       target.staff.status === 'active' &&
       grantsEverything(target.permissions) &&

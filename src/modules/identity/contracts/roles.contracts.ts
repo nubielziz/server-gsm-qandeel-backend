@@ -64,7 +64,8 @@ export const createRole = defineRoute({
   summary: 'Create a role',
   description:
     'Permissions are catalog entries (`GET /admin/permissions`), an area wildcard `area:*` of a known area, or `*`. Only an ' +
-    'owner can create a role that grants `*`.',
+    'owner can create a role that grants `*`. Every permission given must be one the caller holds (a held `area:*` covers its ' +
+    'actions; single actions never cover `area:*`): otherwise `403 FORBIDDEN` naming the ones not held (decision 046).',
   tags: ['roles'],
   surface: 'admin',
   access: 'staff-permission',
@@ -83,8 +84,10 @@ export const updateRole = defineRoute({
   key: 'PATCH /admin/roles/:id',
   summary: 'Update a role',
   description:
-    'Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Removing ' +
-    '`*` from the role of the last active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.',
+    'Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Only an ' +
+    'owner edits the role they hold: for everyone else it is `409 CANNOT_CHANGE_OWN_ROLE`. The caller must hold every ' +
+    'permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Removing `*` from the role of the last ' +
+    'active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.',
   tags: ['roles'],
   surface: 'admin',
   access: 'staff-permission',
@@ -94,7 +97,15 @@ export const updateRole = defineRoute({
     .object({ name: RoleName.optional(), permissions: PermissionList.optional() })
     .refine((body) => body.name !== undefined || body.permissions !== undefined, 'Send a name or permissions.'),
   success: { status: 200, schema: RoleRow },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'LAST_OWNER'],
+  errors: [
+    'UNAUTHORIZED',
+    'FORBIDDEN',
+    'CSRF_FAILED',
+    'NOT_FOUND',
+    'VALIDATION_FAILED',
+    'CANNOT_CHANGE_OWN_ROLE',
+    'LAST_OWNER',
+  ],
   examples: { request: { name: 'Support team' }, response: { ...ROLE_EXAMPLE, name: 'Support team' } },
 });
 
@@ -102,6 +113,9 @@ export const updateRole = defineRoute({
 export const deleteRole = defineRoute({
   key: 'DELETE /admin/roles/:id',
   summary: 'Delete a role',
+  description:
+    'Deletes a role nobody holds: a role any staff member holds, of any status, is `409 ROLE_IN_USE` (so is the role you ' +
+    'hold). An owner role needs an owner, and the caller must hold every permission of the role (`403 FORBIDDEN`, decision 046).',
   tags: ['roles'],
   surface: 'admin',
   access: 'staff-permission',

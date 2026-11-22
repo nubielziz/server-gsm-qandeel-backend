@@ -7,6 +7,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
 import type { CurrencySchema } from '../contracts/currencies.contracts';
 import type { Currency } from '../db/schema';
@@ -108,12 +109,15 @@ export class CurrencyService {
   /**
    * Adds a currency.
    *
+   * @param caller the signed-in staff member (a currency always sets a rate, so `currencies:update` too, decision 046)
    * @param input the request body
    * @returns the new currency
-   * @throws {AppError} `VALIDATION_FAILED` for a bad code (format or already listed), a blank name, a rate that is not above
+   * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `currencies:update`; `VALIDATION_FAILED` for a bad code (format or already listed), a blank name, a rate that is not above
    *   zero, a markup outside 0 to 10 or decimals outside 0 to 4
    */
-  async create(input: CreateCurrencyInput): Promise<WireCurrency> {
+  async create(caller: PermissionHolder, input: CreateCurrencyInput): Promise<WireCurrency> {
+    // An exchange rate and its markup move money: they need the permission of the rate refresh (decision 046).
+    requirePermission(caller, 'currencies:update');
     const code = input.code.toUpperCase();
     const name = input.name.trim();
     const errors: FieldError[] = [];
@@ -166,13 +170,18 @@ export class CurrencyService {
   /**
    * Changes a currency.
    *
+   * @param caller the signed-in staff member (`rateToBase` and `markupPercent` also need `currencies:update`, decision 046)
    * @param id the currency id
    * @param input the fields to change
    * @returns the changed currency
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for a bad rate, markup, decimals or name, a code change, or a change
+   * @throws {AppError} `FORBIDDEN` (403) when a rate or markup is sent without `currencies:update`; `NOT_FOUND`; `VALIDATION_FAILED` for a bad rate, markup, decimals or name, a code change, or a change
    *   of rate, markup or activity on the base currency
    */
-  async update(id: number, input: UpdateCurrencyInput): Promise<WireCurrency> {
+  async update(caller: PermissionHolder, id: number, input: UpdateCurrencyInput): Promise<WireCurrency> {
+    // An exchange rate and its markup move money: they need the permission of the rate refresh (decision 046).
+    if (input.rateToBase !== undefined || input.markupPercent !== undefined) {
+      requirePermission(caller, 'currencies:update');
+    }
     return this.db.runInTransaction(async ({ tx }) => {
       const current = await findCurrency(tx, id, true);
       if (!current) throw notFound();

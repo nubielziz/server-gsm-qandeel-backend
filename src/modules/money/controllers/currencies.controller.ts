@@ -1,6 +1,7 @@
 // HTTP controller of currencies and exchange rates (map domain E, stage 3, routes /admin/currencies).
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { createCurrency, getCurrency, listCurrencies, updateCurrency } from '../contracts/currencies.contracts';
 import { CurrencyService } from '../application/currency.service';
 
@@ -45,18 +46,23 @@ export class CurrenciesController {
   /**
    * Adds a currency.
    *
+   * @param staff the signed-in staff member (decision 046: `currencies:update` too)
    * @param body the new currency
    * @returns the created currency
    * @route POST /admin/currencies
    */
   @Route(createCurrency)
-  create(@Body() body: BodyOf<typeof createCurrency>): Promise<ResultOf<typeof createCurrency>> {
-    return this.currencies.create(body);
+  create(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof createCurrency>,
+  ): Promise<ResultOf<typeof createCurrency>> {
+    return this.currencies.create(staff, body);
   }
 
   /**
    * Changes a currency.
    *
+   * @param staff the signed-in staff member (decision 046: a rate or markup change needs `currencies:update` too)
    * @param params the currency id
    * @param body the fields to change
    * @returns the changed currency
@@ -64,9 +70,10 @@ export class CurrenciesController {
    */
   @Route(updateCurrency)
   update(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof updateCurrency>,
     @Body() body: BodyOf<typeof updateCurrency>,
   ): Promise<ResultOf<typeof updateCurrency>> {
-    return this.currencies.update(params.id, body);
+    return this.currencies.update(staff, params.id, body);
   }
 }

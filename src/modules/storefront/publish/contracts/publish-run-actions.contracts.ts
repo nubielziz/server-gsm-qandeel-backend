@@ -49,14 +49,15 @@ export const editPublishItem = defineRoute({
     '`brand` and `carrier` (at most 80), `country` (two letters or empty), `retailPrice` (a typed price), `pricing` (`rule` or `keep`), ' +
     '`included` (the tick) and `reset` (back to what was detected, alone in the body). At least one key. A row that the new facts block ' +
     '(the service was disabled since, a typed price under a floor that rose) is stored `blocked` and unticked, with `200`. `403` ' +
-    'naming `storefront:update` when the body carries `retailPrice` or `pricing`, or `reset` on a row that holds a typed price or a rule ' +
+    'naming `pricing:update` when the body carries `retailPrice` or `pricing`, or `reset` on a row that holds a typed price or a rule ' +
     'chosen over a typed price, and the role lacks it. `409` when the run is no longer ' +
     'a draft, or the service is gone. `422`: `retailPrice` `invalid` (zero or less) or `below_floor` ("Below the storefront floor of ' +
     '$X."); `slug` `invalid` or `duplicate` (a listing or another row holds it); `pricing` `invalid` (`keep` on a service with no ' +
     'retail price); `included` `blocked` (the row is blocked after the change: the sentence names the reason); `retailPrice` ' +
     'beside `pricing`, or `reset` beside anything, with the code `conflict`. One transaction takes the run row `FOR SHARE` and checks ' +
     'the `draft` under it, then the row `FOR UPDATE`, so an edit and an apply never interleave. audit: false: a draft is not a record ' +
-    'of the shop; apply, cancel and the run switch are audited.',
+    'of the shop; apply, cancel and the run switch are audited. ' +
+    'A price needs the permission it needs on the listing route (decision 046).',
   tags: ['storefront-publish'],
   surface: 'admin',
   access: 'staff-permission',

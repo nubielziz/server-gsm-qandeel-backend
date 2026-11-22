@@ -60,18 +60,23 @@ export class GatewaysController {
   /**
    * Adds a gateway.
    *
+   * @param staff the signed-in staff member (decision 046: automatic methods and secrets are for Owners)
    * @param body the new gateway
    * @returns the stored gateway
    * @route POST /admin/payment-gateways
    */
   @Route(createGateway)
-  create(@Body() body: BodyOf<typeof createGateway>): Promise<ResultOf<typeof createGateway>> {
-    return this.gateways.create(body);
+  create(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof createGateway>,
+  ): Promise<ResultOf<typeof createGateway>> {
+    return this.gateways.create(staff, body);
   }
 
   /**
    * Changes a gateway.
    *
+   * @param staff the signed-in staff member (decision 046: secrets and automatic methods are for Owners)
    * @param params the gateway id
    * @param body the fields to change
    * @returns the stored gateway
@@ -79,10 +84,11 @@ export class GatewaysController {
    */
   @Route(updateGateway)
   update(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof updateGateway>,
     @Body() body: BodyOf<typeof updateGateway>,
   ): Promise<ResultOf<typeof updateGateway>> {
-    return this.gateways.update(params.id, body);
+    return this.gateways.update(staff, params.id, body);
   }
 
   /**

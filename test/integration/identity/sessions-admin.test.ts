@@ -51,7 +51,7 @@ const sessionRow = async (id: number) => {
 const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
 const ids = (body: Array<{ id: number }>) => body.map((row) => row.id);
 
-async function viewer(permissions = ['sessions:read', 'sessions:revoke'], name = 'Rami K.') {
+async function viewer(permissions = ['sessions:read', 'sessions:revoke', 'staff:read'], name = 'Rami K.') {
   return adminWith(t, permissions, { name });
 }
 
@@ -270,6 +270,36 @@ describe('DELETE /admin/sessions/:id', () => {
     expect((await rami.get('/admin/sessions')).body.map((row: { id: number }) => row.id)).toEqual([
       rami.session.sessionId,
     ]);
+  });
+
+  it('refuses ending a session of an Owner without *, or of a member whose role the caller does not hold, and keeps both live (decision 046)', async () => {
+    const rami = await viewer();
+    const { db } = await testDb();
+    const ownerRole = await insertRole(db, ['*'], 'Owner');
+    const ownerId = await insertStaff(db, ownerRole, { name: 'Boss' });
+    const ownerSession = await openSession(t, { type: 'staff', id: ownerId });
+    const finance = await insertRole(db, ['staff:read', 'wallet:adjust'], 'Finance');
+    const nadia = await insertStaff(db, finance, { name: 'Nadia H.' });
+    const nadiaSession = await openSession(t, { type: 'staff', id: nadia });
+    const merchant = await insertMerchant(db);
+    const merchantSession = await openSession(t, { type: 'client', id: merchant });
+
+    const owner = await rami.delete(`/admin/sessions/${ownerSession.sessionId}`);
+    expect(owner.status).toBe(403);
+    expect(owner.body.detail).toBe('Only an owner can do this to an owner account.');
+    const member = await rami.delete(`/admin/sessions/${nadiaSession.sessionId}`);
+    expect(member.status).toBe(403);
+    expect(member.body.detail).toBe('This account has permissions you do not hold yourself.');
+    expect((await sessionRow(ownerSession.sessionId)).revokedAt).toBeNull();
+    expect((await sessionRow(nadiaSession.sessionId)).revokedAt).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
+    // A merchant's session and the caller's own session are not about another member's permissions.
+    expect((await rami.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(204);
+
+    // An Owner ends the same sessions.
+    const chief = await adminWith(t, ['*'], { name: 'Chief' });
+    expect((await chief.delete(`/admin/sessions/${ownerSession.sessionId}`)).status).toBe(204);
+    expect((await chief.delete(`/admin/sessions/${nadiaSession.sessionId}`)).status).toBe(204);
   });
 
   it('lets a staff member end their own session: the next request is signed out', async () => {

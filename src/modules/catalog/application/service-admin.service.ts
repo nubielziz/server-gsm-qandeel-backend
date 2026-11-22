@@ -7,6 +7,7 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor, isForeignKeyViolation, isUniqueViolation } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
 import type {
   FulfillmentMode,
@@ -383,14 +384,17 @@ export class ServiceAdminService {
   /**
    * Changes a service.
    *
+   * @param caller the signed-in staff member (`basePrice` and `minProfit` also need `pricing:update`, decision 046)
    * @param id the service id
    * @param changes the keys to change
    * @returns the updated service with its figures worked out again
-   * @throws {AppError} `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `basePrice` under the floor, on
+   * @throws {AppError} `FORBIDDEN` (403: `basePrice` or `minProfit` is sent without `pricing:update`); `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `basePrice` under the floor, on
    *   `categoryId` or `type` when they disagree, on `minQty`, `maxQty` or `qtyOptions` for a quantity rule that breaks
    *   `resolveQuantityRule`); `CODE_TAKEN` (409)
    */
-  async update(id: number, changes: UpdateServiceInput): Promise<ServiceView> {
+  async update(caller: PermissionHolder, id: number, changes: UpdateServiceInput): Promise<ServiceView> {
+    // The base price and the minimum profit set the price floor: a pricing decision (decision 046). `minProfit: null` counts as sent.
+    if (changes.basePrice !== undefined || changes.minProfit !== undefined) requirePermission(caller, 'pricing:update');
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const before = await lockLiveService(tx, id);

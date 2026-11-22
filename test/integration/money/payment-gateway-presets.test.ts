@@ -45,6 +45,9 @@ afterAll(async () => {
   await closeTestDb();
 });
 
+/** An Owner: only an Owner adds an automatic method, sends a secret or changes the driver of an automatic method (decision 046). */
+const owner = () => adminWith(t, ['*'], { name: 'Owner' });
+
 const sha256 = (data: Uint8Array) => createHash('sha256').update(data).digest('hex');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON
 const json = (res: LightMyRequestResponse): any => JSON.parse(res.body);
@@ -354,7 +357,8 @@ describe('PATCH /admin/payment-gateways/:id and the preset', () => {
   it('leaves a custom method free to change its driver and kind as before', async () => {
     const plain = await admin.post('/admin/payment-gateways', custom());
     const url = `/admin/payment-gateways/${plain.body.id}`;
-    const changed = await admin.patch(url, {
+    const boss = await owner();
+    const changed = await boss.patch(url, {
       isManual: false,
       driver: 'card',
       secret: 'sk_live_abcdef4f2a',
@@ -362,7 +366,7 @@ describe('PATCH /admin/payment-gateways/:id and the preset', () => {
     });
     expect(changed.status).toBe(200);
     expect(changed.body).toMatchObject({ preset: null, isManual: false, driver: 'card', secretHint: '••••4f2a' });
-    expect((await admin.patch(url, { isManual: true, driver: 'cliq' })).status).toBe(200);
+    expect((await boss.patch(url, { isManual: true, driver: 'cliq' })).status).toBe(200);
   });
 
   it('keeps a row of an entry that is not available editable (no unavailable check), with its kind and driver pinned', async () => {
@@ -679,7 +683,9 @@ describe('preset and logoUrl on every list of methods', () => {
     const { db } = await testDb();
     await insertUsd(db);
     await walletSettings(t, db, { 'wallet.customer.card_topups': true });
-    const made = await admin.post(
+    const made = await (
+      await owner()
+    ).post(
       '/admin/payment-gateways',
       custom({
         code: 'nowpayments-custom',
@@ -716,7 +722,9 @@ describe('preset and logoUrl on every list of methods', () => {
 
   it("shows them on the shop config's paymentMethods (an automatic method with a driver), and lists no manual preset there", async () => {
     await admin.post('/admin/payment-gateways', fromPreset('vodafone_cash', { audience: 'b2c' }));
-    const card = await admin.post('/admin/payment-gateways', {
+    const card = await (
+      await owner()
+    ).post('/admin/payment-gateways', {
       ...custom(),
       code: 'card-shop',
       driver: 'card',

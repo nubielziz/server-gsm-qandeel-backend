@@ -33,7 +33,7 @@ feature 6.
   (`domain/service-figures.ts` is the same rule in code; a test compares the two). Create sets the server defaults (`active`,
   `auto`, `fixed`, `block_open`, cost 0) and derives `delivery_time` from `slaMinutes`; change refuses a `basePrice` under the
   floor (the minimum profit being saved counts), clears `cost_was` when a base price is saved, keeps category and type in
-  agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; delete archives (`archived_at`, status `disabled`, service
+  agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; a `basePrice` or `minProfit` change also needs `pricing:update` (decision 046); delete archives (`archived_at`, status `disabled`, service
   pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
   read here and their code is free again.
 - **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
@@ -359,7 +359,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 ## Permissions
 
 Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
-rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`.
+rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046).
 
 API key scopes on its REST v1 routes: `services:read`.
 

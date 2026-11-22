@@ -76,7 +76,7 @@ const storedSecrets = async (id: number) => {
 
 describe('webhook secrets on /admin/payment-gateways (24C)', () => {
   it('stores two secrets, answers both hints in create, list and show, and never the values', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const created = await admin.post(
       '/admin/payment-gateways',
       gatewayBody({ webhookSecret: FIRST, secondaryWebhookSecret: SECOND }),
@@ -93,14 +93,14 @@ describe('webhook secrets on /admin/payment-gateways (24C)', () => {
   });
 
   it('a gateway without webhook secrets answers null hints', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const created = await admin.post('/admin/payment-gateways', gatewayBody());
     expect(created.body).toMatchObject({ webhookSecretHint: null, secondaryWebhookSecretHint: null });
     expect(await storedSecrets(created.body.id)).toBeNull();
   });
 
   it('replacing the first keeps the second; null removes the second; the audit says changed without values', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const { id } = (await admin.post('/admin/payment-gateways', gatewayBody({ webhookSecret: FIRST }))).body;
     const added = await admin.patch(`/admin/payment-gateways/${id}`, { secondaryWebhookSecret: `  ${SECOND}  ` });
     expect(added.status).toBe(200);
@@ -129,7 +129,7 @@ describe('webhook secrets on /admin/payment-gateways (24C)', () => {
   });
 
   it('refuses a second secret without a first (422 on secondaryWebhookSecret), and a blank one', async () => {
-    const admin = await adminWith(t, ['payments:gateways']);
+    const admin = await adminWith(t, ['*']);
     const alone = await admin.post('/admin/payment-gateways', gatewayBody({ secondaryWebhookSecret: SECOND }));
     expect(alone.status).toBe(422);
     expect(alone.body.errors).toEqual([

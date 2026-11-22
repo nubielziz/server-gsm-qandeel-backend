@@ -8,6 +8,8 @@ import {
   type ActiveIpRule,
   compileIpRules,
   decideIpAccess,
+  shutOut,
+  shutOutNowOrLater,
 } from '@src/modules/identity/security/ip-rules/ip-rule-matcher';
 
 const NOW = Date.parse('2026-03-01T12:00:00.000Z');
@@ -130,5 +132,152 @@ describe('the admin allowlist', () => {
     expect(decide([office], undefined, 'admin', true).reason).toBe('not_listed');
     expect(decide([office], undefined, 'admin', false).reason).toBe('open');
     expect(decide([rule('block', 'all', '0.0.0.0/0')], undefined, 'store').reason).toBe('open');
+  });
+});
+
+describe('shutOut', () => {
+  const owner = parseIpAddress('203.0.113.7');
+  if (owner === undefined) throw new Error('the test address must parse');
+  const compile = (rules: ActiveIpRule[], restricted = false) => compileIpRules({ version: 'v', restricted, rules });
+  const shut = (
+    before: ActiveIpRule[],
+    after: ActiveIpRule[],
+    restrictedBefore = false,
+    restrictedAfter = restrictedBefore,
+  ) => shutOut([owner], compile(before, restrictedBefore), compile(after, restrictedAfter), NOW);
+
+  it('finds an address that a new block of the console or of everything refuses', () => {
+    expect(shut([], [rule('block', 'admin', '203.0.113.0/24')])).toEqual([owner]);
+    expect(shut([], [rule('block', 'all', '203.0.113.7')])).toEqual([owner]);
+    expect(shut([], [rule('block', 'store', '203.0.113.0/24')])).toEqual([]);
+  });
+
+  it('finds an address that loses its only allow rule while the restriction is on', () => {
+    const entry = rule('allow', 'admin', '203.0.113.0/24');
+    const other = rule('allow', 'admin', '192.0.2.0/24');
+    expect(shut([entry, other], [other], true)).toEqual([owner]);
+    expect(shut([entry, other], [entry], true)).toEqual([]);
+  });
+
+  it('finds an address left outside the allow list when the restriction is turned on', () => {
+    const elsewhere = rule('allow', 'admin', '192.0.2.0/24');
+    expect(shut([elsewhere], [elsewhere], false, true)).toEqual([owner]);
+    expect(
+      shut(
+        [elsewhere, rule('allow', 'admin', '203.0.113.7')],
+        [elsewhere, rule('allow', 'admin', '203.0.113.7')],
+        false,
+        true,
+      ),
+    ).toEqual([]);
+  });
+
+  it('ignores an address that was already refused before the change', () => {
+    const block = rule('block', 'admin', '203.0.113.7');
+    expect(shut([block], [block, rule('block', 'all', '203.0.113.0/24')])).toEqual([]);
+    expect(shut([], [], true)).toEqual([]);
+  });
+
+  it('is empty when nothing changes, and for an expired rule', () => {
+    const entry = rule('allow', 'admin', '203.0.113.7');
+    expect(shut([entry], [entry], true)).toEqual([]);
+    const expired = rule('block', 'admin', '203.0.113.7', '2026-03-01T11:59:59.999Z');
+    expect(shut([], [expired])).toEqual([]);
+  });
+});
+
+describe('shutOutNowOrLater', () => {
+  const owner = parseIpAddress('203.0.113.7');
+  if (owner === undefined) throw new Error('the test address must parse');
+  const SOON = '2026-03-01T12:02:00.000Z';
+  const compile = (rules: ActiveIpRule[], restricted: boolean) => compileIpRules({ version: 'v', restricted, rules });
+  const judge = (
+    before: ActiveIpRule[],
+    after: ActiveIpRule[],
+    restrictedBefore: boolean,
+    restrictedAfter = restrictedBefore,
+  ) => shutOutNowOrLater([owner], compile(before, restrictedBefore), compile(after, restrictedAfter), NOW);
+
+  it('finds what shutOut finds now', () => {
+    expect(judge([], [rule('block', 'admin', '203.0.113.0/24')], false)).toEqual([owner]);
+    const entry = rule('allow', 'admin', '203.0.113.7');
+    expect(judge([entry], [], true)).toEqual([owner]);
+  });
+
+  it('finds an owner who is covered only by an allow rule that runs out when the restriction is turned on', () => {
+    const own = rule('allow', 'admin', '203.0.113.50');
+    const short = rule('allow', 'admin', '203.0.113.7', SOON);
+    expect(shutOut([owner], compile([own, short], false), compile([own, short], true), NOW)).toEqual([]);
+    expect(judge([own, short], [own, short], false, true)).toEqual([owner]);
+  });
+
+  it('finds an owner who loses the lasting allow rule while a short one still covers the address', () => {
+    const lasting = rule('allow', 'admin', '203.0.113.7');
+    const short = rule('allow', 'admin', '203.0.113.0/24', SOON);
+    const other = rule('allow', 'admin', '203.0.113.50');
+    expect(shutOut([owner], compile([lasting, short, other], true), compile([short, other], true), NOW)).toEqual([]);
+    expect(judge([lasting, short, other], [short, other], true)).toEqual([owner]);
+  });
+
+  it('lets an unrelated change through when an owner is covered only by an allow rule that runs out', () => {
+    const short = rule('allow', 'admin', '203.0.113.7', SOON);
+    const other = rule('allow', 'admin', '203.0.113.50');
+    expect(judge([short, other], [short], true)).toEqual([]);
+    expect(judge([short, other], [short, other, rule('block', 'store', '198.51.100.9')], true)).toEqual([]);
+    expect(judge([short, other], [short, other], true)).toEqual([]);
+  });
+
+  it('lets a lasting rule be added or an unrelated lasting rule be removed', () => {
+    const lasting = rule('allow', 'admin', '203.0.113.7');
+    const other = rule('allow', 'admin', '203.0.113.50');
+    expect(judge([lasting], [lasting, other], true)).toEqual([]);
+    expect(judge([lasting, other], [lasting], true)).toEqual([]);
+  });
+
+  it('finds an owner whose long allow rule is removed while a short rule still covers the address', () => {
+    const MONTH = '2026-03-31T12:00:00.000Z';
+    const month = rule('allow', 'admin', '203.0.113.7', MONTH);
+    const short = rule('allow', 'admin', '203.0.113.0/29', SOON);
+    const other = rule('allow', 'admin', '203.0.113.50');
+    // With the short rule present the removal is harmless now but leaves the address refused once the short rule is gone.
+    expect(shutOut([owner], compile([month, short, other], true), compile([short, other], true), NOW)).toEqual([]);
+    expect(judge([month, short, other], [short, other], true)).toEqual([owner]);
+    // Without the short rule the same removal is refused now.
+    expect(judge([month, other], [other], true)).toEqual([owner]);
+    // The month rule alone, with no other change, is not a reason to refuse an unrelated removal.
+    expect(judge([month, short, other], [month, short], true)).toEqual([]);
+  });
+
+  it('finds the lasting allow rule removed, and the restriction turned on, while a temporary block hides the address', () => {
+    const block = rule('block', 'admin', '203.0.113.7', SOON);
+    const lasting = rule('allow', 'admin', '203.0.113.7');
+    const other = rule('allow', 'admin', '203.0.113.50');
+    // The owner is refused by the block now, so neither change shows at this moment.
+    expect(shutOut([owner], compile([lasting, block, other], true), compile([block, other], true), NOW)).toEqual([]);
+    expect(judge([lasting, block, other], [block, other], true)).toEqual([owner]);
+
+    expect(shutOut([owner], compile([block, other], false), compile([block, other], true), NOW)).toEqual([]);
+    expect(judge([block, other], [block, other], false, true)).toEqual([owner]);
+    // With a lasting allow rule for the address the restriction may be turned on.
+    expect(judge([block, other, lasting], [block, other, lasting], false, true)).toEqual([]);
+  });
+
+  it('finds a second block that outlasts a temporary block over the address', () => {
+    const first = rule('block', 'admin', '203.0.113.0/24', SOON);
+    const second = rule('block', 'all', '203.0.113.7', '2026-03-01T13:00:00.000Z');
+    expect(shutOut([owner], compile([first], false), compile([first, second], false), NOW)).toEqual([]);
+    expect(judge([first], [first, second], false)).toEqual([owner]);
+    // A second block that ends no later than the first one changes nothing the address could use.
+    const within = rule('block', 'admin', '203.0.113.7', '2026-03-01T12:01:00.000Z');
+    expect(judge([first], [first, within], false)).toEqual([]);
+  });
+
+  it('treats a rule that expires exactly now as gone, and judges a later expiry as the state right after it', () => {
+    const other = rule('allow', 'admin', '203.0.113.50');
+    const exactlyNow = rule('allow', 'admin', '203.0.113.7', '2026-03-01T12:00:00.000Z');
+    expect(judge([exactlyNow, other], [other], true)).toEqual([]);
+    // One millisecond later it still counts now, and the removal is found.
+    const justAfter = rule('allow', 'admin', '203.0.113.7', '2026-03-01T12:00:00.001Z');
+    expect(judge([justAfter, other], [other], true)).toEqual([owner]);
   });
 });

@@ -1,8 +1,7 @@
 // HTTP controller of the supplier quick add routes (feature 26, B214; routes beyond the map). Thin: the rules live in QuickAddService.
 import { Body, Controller, Param } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
-import { AppError } from '../../../common/errors';
-import { CurrentStaff, type StaffPrincipal, grants } from '../../identity';
+import { CurrentStaff, type StaffPrincipal, requirePermission } from '../../identity';
 import { QuickAddService } from '../application/quick-add.service';
 import { listServiceGroups, showQuickAddRun, startQuickAdd } from '../contracts/quick-add.contracts';
 
@@ -53,9 +52,7 @@ export class QuickAddController {
     @Body() body: BodyOf<typeof startQuickAdd>,
   ): Promise<ResultOf<typeof startQuickAdd>> {
     // The route's own permission is catalog:create; publishing is a second decision (fact 16), checked before anything is read.
-    if (body.publish !== undefined && !grants(staff.permissions, PUBLISH_PERMISSION)) {
-      throw new AppError('FORBIDDEN', { detail: `You need the ${PUBLISH_PERMISSION} permission to do this.` });
-    }
+    if (body.publish !== undefined) requirePermission(staff, PUBLISH_PERMISSION);
     return this.quickAdd.start(params.id, body, staff.staffId);
   }
 

@@ -8,6 +8,7 @@ import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db';
 import { CatalogPriceVersion, type RetailWrite, RetailPrices, RetailPricing, marginPercent } from '../../catalog';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import type { UploadedFile } from '../../../common/multipart';
 import { AuditService, PUBLIC_MEDIA_PATH, PublicImages } from '../../platform';
 import { lockOf, lockedDetail } from '../domain/listing-rules';
@@ -29,6 +30,7 @@ import {
   slugTaken,
   updateListingFields,
 } from '../infra/listing.repository';
+import { PRICE_PERMISSION, PUBLISH_PERMISSION } from '../publish/application/publish-permissions';
 import { checkTypedPrice, createListingRow, switchListing, switchRefusal } from './listing-writes';
 
 const DAY_MS = 86_400_000;
@@ -276,15 +278,22 @@ export class ListingAdminService {
    * fields never half applies. The content and the facts of the service (`brand`, `carrier`, `country`, `isFeatured`, `sort`) live
    * on the service's one listing. The first switch-on sets `listedAt`, which never resets.
    *
+   * @param caller the signed-in staff member (`retailPrice` and `retailPricing` need `pricing:update`, switching a listing on needs
+   *   `storefront:publish`, decision 046)
    * @param id the listing id
    * @param changes the fields to change
    * @returns the updated listing, with its figures worked out again
-   * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `retailPrice`: zero or less, or under the floor; on
+   * @throws {AppError} `FORBIDDEN` (403: a price key without `pricing:update`, or a real switch-on without `storefront:publish`);
+   *   `NOT_FOUND` (404); `VALIDATION_FAILED` (422 on `retailPrice`: zero or less, or under the floor; on
    *   `retailPricing`: `conflict` with `retailPrice`, `no_rule`, `no_cost`; on `slug`: not a valid form); `LISTING_EXISTS` (409 on
    *   `slug`: used by another listing); `SERVICE_DISABLED` (409: switching a disabled service on); `LISTING_LOCKED` (409:
    *   switching on or pricing a service that can never be public)
    */
-  async update(id: number, changes: UpdateListingInput): Promise<ListingDetailView> {
+  async update(caller: PermissionHolder, id: number, changes: UpdateListingInput): Promise<ListingDetailView> {
+    // Decision 046: a retail price is a pricing decision, here as on the group price page.
+    if (changes.retailPrice !== undefined || changes.retailPricing !== undefined) {
+      requirePermission(caller, PRICE_PERMISSION);
+    }
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const listing = await findListing(tx, id);
@@ -296,6 +305,8 @@ export class ListingAdminService {
       if (!(await lockListing(tx, id))) throw notFound();
       const row = await findListingRow(tx, id);
       if (!row) throw notFound();
+      // Putting a listing on the shop is a publishing decision; switching off, or a no-op on a listed one, is not.
+      if (changes.isListed === true && !row.listing.isListed) requirePermission(caller, PUBLISH_PERMISSION);
       const lock = lockOf({
         serviceStatus: row.service.status,
         categoryName: row.category.name,

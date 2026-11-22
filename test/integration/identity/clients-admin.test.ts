@@ -915,3 +915,102 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
     expect((await api.patch(`/admin/clients/${merchant.id}`, { email: 'change-4@example.com' })).status).toBe(200);
   });
 });
+
+describe('second permissions (decision 046)', () => {
+  it('a credit limit above zero at invitation also needs wallet:credit_limit; zero does not', async () => {
+    const { vip } = await groups();
+    const creator = await adminWith(t, ['clients:create', 'groups:update'], { ip: CALLER_IP });
+    const refused = await invite(creator, { groupId: vip, creditLimit: '500.0000' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the wallet:credit_limit permission to do this.');
+    expect(await clientRows()).toHaveLength(0);
+
+    expect((await invite(creator, { groupId: vip, creditLimit: '0.0000' })).status).toBe(201);
+
+    const lender = await adminWith(t, ['clients:create', 'groups:update', 'wallet:credit_limit'], { ip: CALLER_IP });
+    const lent = await invite(lender, { groupId: vip, creditLimit: '500.0000', email: 'second@zainmobilehub.example' });
+    expect(lent.status).toBe(201);
+    const wallet = (await ledgerRowsOf(lent.body.id)).find((account) => account.kind === 'client_wallet');
+    expect(wallet?.overdraftLimit).toBe('500.0000');
+  });
+
+  it('a group other than the default one at invitation also needs groups:update; no group and the default group do not', async () => {
+    const { vip, standard, retail } = await groups();
+    const creator = await adminWith(t, ['clients:create'], { ip: CALLER_IP });
+    const auditsBefore = (await auditRows()).length;
+
+    const refused = await invite(creator, { groupId: vip });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the groups:update permission to do this.');
+    expect(await clientRows()).toHaveLength(0);
+    expect(await outboxRows()).toHaveLength(0);
+    expect(await (await testDb()).db.select().from(s.authTokens)).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(auditsBefore);
+
+    // The validation answers first, for everyone.
+    expect((await invite(creator, { groupId: retail })).status).toBe(422);
+    expect((await invite(creator, { groupId: 999_999 })).status).toBe(422);
+    expect(await clientRows()).toHaveLength(0);
+
+    // No group, or the default group's own id, needs only the route's permission.
+    expect((await invite(creator, { email: 'none@zainmobilehub.example' })).status).toBe(201);
+    const inDefault = await invite(creator, { groupId: standard, email: 'default@zainmobilehub.example' });
+    expect(inDefault.status).toBe(201);
+    expect((await clientRows()).map((row) => row.groupId)).toEqual([standard, standard]);
+
+    const grouper = await adminWith(t, ['clients:create', 'groups:update'], { ip: CALLER_IP });
+    const placed = await invite(grouper, { groupId: vip, email: 'vip@zainmobilehub.example' });
+    expect(placed.status).toBe(201);
+    expect((await clientRow(placed.body.id)).groupId).toBe(vip);
+  });
+
+  it('suspending, declining and reactivating need clients:security and a group move needs groups:update; approving needs only clients:update', async () => {
+    const { vip, standard } = await groups();
+    const { db } = await testDb();
+    const rami = await owner();
+    const pendingOne = (await invite(rami, { groupId: vip })).body.id as number;
+    const toDecline = (await invite(rami, { groupId: vip, email: 'decline@zainmobilehub.example' })).body.id as number;
+    const active = await insertMerchant(db, { status: 'active' });
+    const suspended = await insertMerchant(db, { status: 'suspended', suspendedReason: 'Fraud check' });
+    const auditsBefore = (await auditRows()).length;
+
+    const editor = await adminWith(t, ['clients:read', 'clients:update'], { ip: CALLER_IP });
+    const needing = async (answer: Promise<{ status: number; body: { detail?: string } }>, permission: string) => {
+      const res = await answer;
+      expect(res.status).toBe(403);
+      expect(res.body.detail).toBe(`You need the ${permission} permission to do this.`);
+    };
+    await needing(
+      editor.patch(`/admin/clients/${active}`, { status: 'suspended', reason: 'Fraud check' }),
+      'clients:security',
+    );
+    await needing(
+      editor.patch(`/admin/clients/${toDecline}`, { status: 'suspended', reason: 'Not a shop' }),
+      'clients:security',
+    );
+    await needing(editor.patch(`/admin/clients/${suspended}`, { status: 'active' }), 'clients:security');
+    await needing(editor.patch(`/admin/clients/${pendingOne}`, { groupId: standard }), 'groups:update');
+    expect((await clientRow(active)).status).toBe('active');
+    expect((await clientRow(toDecline)).status).toBe('pending');
+    expect((await clientRow(suspended)).status).toBe('suspended');
+    expect((await clientRow(pendingOne)).groupId).toBe(vip);
+    expect(await auditRows()).toHaveLength(auditsBefore);
+
+    // Approving stays under the route's own permission.
+    expect((await editor.patch(`/admin/clients/${pendingOne}`, { status: 'active' })).status).toBe(200);
+
+    const full = await adminWith(t, ['clients:read', 'clients:update', 'clients:security', 'groups:update'], {
+      ip: CALLER_IP,
+    });
+    expect((await full.patch(`/admin/clients/${active}`, { status: 'suspended', reason: 'Fraud check' })).status).toBe(
+      200,
+    );
+    expect(
+      (await full.patch(`/admin/clients/${toDecline}`, { status: 'suspended', reason: 'Not a shop' })).status,
+    ).toBe(200);
+    expect((await full.patch(`/admin/clients/${suspended}`, { status: 'active' })).status).toBe(200);
+    expect((await full.patch(`/admin/clients/${pendingOne}`, { groupId: standard })).status).toBe(200);
+  });
+});

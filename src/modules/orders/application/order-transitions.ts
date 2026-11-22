@@ -53,6 +53,11 @@ export interface TransitionRequest {
    */
   readonly audit?: string;
   /**
+   * The use case's own check of the decided transition, run after the machine's refusals and before anything is written (decision 046:
+   * a staff reject that gives a storefront payment back needs the refund permission as well). It throws to stop the transition.
+   */
+  readonly authorize?: (tx: DbExecutor, decision: OrderTransition, order: Order) => Promise<void>;
+  /**
    * The supplier and reference a supplier's answer was asked about: the transition applies only while the order still names them
    * (decision 044).
    */
@@ -143,8 +148,9 @@ export class OrderTransitions {
    * @param request the order, the action, who acts and the texts that go with it
    * @returns the order after the change, whether anything was written, and the machine's decision
    * @throws {AppError} `NOT_FOUND` (an unknown order, or another merchant's); the machine's `409` refusals (`ALREADY_SENT` also while
-   *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event); `INVALID_TRANSITION` when the guarded update found the order already changed, or
-   *   when `asked` names a supplier or reference the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
+   *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event); whatever the
+   *   request's `authorize` throws (`FORBIDDEN`, decision 046); `INVALID_TRANSITION` when the guarded update found the order already
+   *   changed, or when `asked` names a supplier or reference the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
    */
   async apply(tx: DbExecutor, request: TransitionRequest): Promise<TransitionOutcome> {
     const order = await findOrder(tx, request.orderId);
@@ -164,6 +170,7 @@ export class OrderTransitions {
     const decision = decideOrderAction(orderStateOf(order, completedBefore, everDispatched), request.action);
     if (!decision.ok) throw refusalError(decision);
     if (decision.noop) return { order, applied: false, decision };
+    if (request.authorize) await request.authorize(tx, decision, order);
 
     const now = this.clock.now();
     const updated = await updateOrderGuarded(

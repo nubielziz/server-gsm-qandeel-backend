@@ -17,7 +17,7 @@ slices B3a and B3b.
 | `GET /admin/publish-runs` | `storefront:read` | the history; filters `status`, `source`, `quickAddRunId`; sorts `id` (default, newest first), `createdAt`. |
 | `GET /admin/publish-runs/:id` | `storefront:read` | one run with its live counts. A live run (or switch) without a heartbeat for 5 minutes **reads** `failed`; a read never writes. |
 | `GET /admin/publish-runs/:id/items` | `storefront:read` | the rows: filters `state`, `included`, `result` (`pending`), `flag`, `brandKind`, `afterId`; search `q` over title, slug, service name and code; sorts `id` (default), `title`, `cost`. |
-| `PATCH /admin/publish-runs/:id/items/:itemId` | `storefront:create` (a price key also needs `storefront:update`) | edit one row of a draft: `title`, `slug` (`''` makes it from the title again), `brand`, `carrier`, `country`, `retailPrice`, `pricing` (`rule`, `keep`), `included`, `reset` (alone); answers `200` with the row judged again. `409` when the run is not a draft or the service is gone; `422` with a field and a code (see Editing a draft). No audit row. |
+| `PATCH /admin/publish-runs/:id/items/:itemId` | `storefront:create` (a price key also needs `pricing:update`) | edit one row of a draft: `title`, `slug` (`''` makes it from the title again), `brand`, `carrier`, `country`, `retailPrice`, `pricing` (`rule`, `keep`), `included`, `reset` (alone); answers `200` with the row judged again. `409` when the run is not a draft or the service is gone; `422` with a field and a code (see Editing a draft). No audit row. |
 | `POST /admin/publish-runs/:id/items/bulk` | `storefront:create` | `{ select: { itemIds } or { filter }, set: { included, brand, carrier, country } }` answers `{ changed, refused }`. No audit row. |
 | `POST /admin/publish-runs/:id/apply` | `storefront:publish` | `{ listed? }` answers `202`, the run `queued`; a run that failed or stalled resumes. `409 JOB_ALREADY_RUNNING`, `409 CONFLICT`, `422` `nothing_included`. Audited. |
 | `POST /admin/publish-runs/:id/cancel` | `storefront:create` (a run that is `queued` or `running` also needs `storefront:publish`) | `{}` answers `200`, the run `cancelled`. `409` for a run that is over. Audited. |
@@ -120,7 +120,7 @@ none during an apply).
   changed title only. A `bulk` of the facts does the same for each row, in pages of 500 (`UPDATE ... FROM (VALUES ...)`); a fact never
   blocks or unblocks a row and no tick moves; `changed` counts the rows whose value differed, `refused` the blocked rows that could not take
   `included: true`.
-- **The second permission.** A body with `retailPrice` or `pricing` needs `storefront:update` as well (the controller reads the role with
+- **The second permission.** A body with `retailPrice` or `pricing` needs `pricing:update` as well, the permission of a retail price on the listing route (decision 046; the controller reads the role with
   `grants`): `403 FORBIDDEN` naming it. So does `reset` on a row that holds a typed price or a rule chosen over a typed price (the use
   case decides it under the row lock): a reset would throw that choice away. A reset of any other row needs only the route's permission.
 

@@ -1,6 +1,11 @@
 // Unit tests of the permission grammar (decision 018, ALIGNMENT § 4): wildcards, the required x:* rule, validity, Owner.
 import { describe, expect, it } from 'bun:test';
-import { grants, grantsEverything, isValidPermission } from '@src/modules/identity/security/permission-grammar';
+import {
+  grants,
+  grantsEverything,
+  isValidPermission,
+  uncoveredPermissions,
+} from '@src/modules/identity/security/permission-grammar';
 
 describe('grants', () => {
   it('grants an exact permission', () => {
@@ -76,5 +81,37 @@ describe('isValidPermission', () => {
     ]) {
       expect(isValidPermission(value), JSON.stringify(value)).toBe(false);
     }
+  });
+});
+
+describe('uncoveredPermissions', () => {
+  it('is empty for an Owner, whatever is asked', () => {
+    for (const owner of [['*'], ['*:*']]) {
+      expect(uncoveredPermissions(owner, ['*', 'staff:*', 'wallet:adjust'])).toEqual([]);
+    }
+  });
+
+  it('lets an action be covered by itself or by its area wildcard', () => {
+    expect(
+      uncoveredPermissions(['staff:*', 'orders:read'], ['staff:read', 'staff:suspend', 'staff:*', 'orders:read']),
+    ).toEqual([]);
+  });
+
+  it('lists what is not held, once each, in the order asked', () => {
+    expect(
+      uncoveredPermissions(['staff:read'], ['wallet:adjust', 'staff:read', 'wallet:adjust', 'refunds:approve']),
+    ).toEqual(['wallet:adjust', 'refunds:approve']);
+  });
+
+  it('never lets single actions cover an area wildcard, nor anything but * cover *', () => {
+    expect(uncoveredPermissions(['risk:read', 'risk:create', 'risk:decide', 'risk:delete'], ['risk:*'])).toEqual([
+      'risk:*',
+    ]);
+    expect(uncoveredPermissions(['staff:*', 'roles:*', 'access:*'], ['*'])).toEqual(['*']);
+  });
+
+  it('is empty for an empty list', () => {
+    expect(uncoveredPermissions([], [])).toEqual([]);
+    expect(uncoveredPermissions(['staff:read'], [])).toEqual([]);
   });
 });

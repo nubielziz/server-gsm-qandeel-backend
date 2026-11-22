@@ -183,7 +183,8 @@ export const adminCreateClientApiKey = defineRoute({
     `${RATE_LIMIT_PER_MIN_RANGE.max}, default 60). The answer carries the full key once as \`secret\` (\`Cache-Control: no-store\`); ` +
     'only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` ' +
     'records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` ' +
-    `never holds the key. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`.`,
+    `never holds the key. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`. ` +
+    'Only an owner may create one (`403 FORBIDDEN` for everyone else, decision 046); a merchant creates its own keys in the portal.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

@@ -7,6 +7,8 @@ import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { type SessionWithSubject, findListedSession, listLiveSessions } from '../infra/session-admin.repository';
+import { findStaffRow } from '../infra/staff-admin.repository';
+import { assertOwnerTargetAllowed, assertWithinCeiling } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import type { IdleLimits } from '../security/session.repository';
 import { SessionPolicy } from '../security/session-policy';
@@ -72,13 +74,21 @@ export class SessionAdminService {
    *
    * @param caller the signed-in staff member
    * @param id the session id
-   * @throws {AppError} `NOT_FOUND` (404) when the session is unknown or no longer live by the list's rule
+   * @throws {AppError} `NOT_FOUND` (404) when the session is unknown or no longer live by the list's rule, `FORBIDDEN` (403: the
+   *   session belongs to another staff member who is an Owner and the caller is not, or whose role has permissions the caller does
+   *   not hold, decision 046)
    */
   async remove(caller: StaffPrincipal, id: number): Promise<void> {
     const idle = await this.idleLimits();
     await this.db.runInTransaction(async (work) => {
       const found = await findListedSession(work.tx, id, this.clock.now(), idle);
       if (!found) throw new AppError('NOT_FOUND', { detail: 'No live session has this id.' });
+      // Decision 046: ending another member's session acts on that account (the Owner rule and the privilege ceiling).
+      if (found.session.subjectType === 'staff' && found.session.subjectId !== caller.staffId) {
+        const permissions = (await findStaffRow(work.tx, found.session.subjectId))?.role.permissions ?? [];
+        assertOwnerTargetAllowed(caller, { permissions });
+        assertWithinCeiling(caller, permissions, 'account');
+      }
       // False only when a parallel request ended it first: the end state is the one asked for.
       await this.sessions.revoke(id, work);
       // A merchant's session is filed under the merchant, so the merchant page's audit history shows it (feature 20, O-12).

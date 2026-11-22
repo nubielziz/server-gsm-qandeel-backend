@@ -147,6 +147,20 @@ export class B2cRefunds {
   }
 
   /**
+   * Tells whether a storefront order has a captured payment on record (the one a rejection gives back).
+   *
+   * Why: decision 046: a staff reject that gives a payment back needs the refund permission as well; the payments are this module's,
+   * so the orders module asks here.
+   *
+   * @param db the database or the transition's transaction
+   * @param orderId the order
+   * @returns true when `onOrderRefund` would find a payment to give back
+   */
+  async hasCapturedPayment(db: DbExecutor, orderId: number): Promise<boolean> {
+    return (await findPaymentOfOrder(db, orderId)) !== undefined;
+  }
+
+  /**
    * Refunds a payment that arrived for a checkout that was already paid.
    *
    * Why: two payments can be open for one checkout (the buyer tried another method); when both confirm, the second has no order to pay

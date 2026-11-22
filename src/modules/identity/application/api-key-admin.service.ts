@@ -21,6 +21,7 @@ import {
   updateKey,
 } from '../infra/api-key-manage.repository';
 import { lockClient } from '../infra/client-admin.repository';
+import { requireOwner } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { ApiKeyIssuer } from './api-key-issuer';
@@ -46,7 +47,7 @@ export interface CreatedClientApiKey {
  *
  * Why: the merchants tab of the console lists a merchant's keys with their last use, revokes one that leaked or is no longer wanted
  * (map rows `GET /admin/clients/:id/api-keys`, `DELETE /admin/api-keys/:id`, MISMATCHES B31) and, since feature 20 (O-9), creates a key
- * for an active merchant (`api_keys:create`, shown once, recorded in `api_keys.created_by`, the merchant is mailed) and changes a
+ * for an active merchant (`api_keys:create` and an Owner, decision 046; shown once, recorded in `api_keys.created_by`, the merchant is mailed) and changes a
  * key's per-minute limit and allowed addresses (`api_keys:update`). Every change is effective at once: the cached view of the key is
  * dropped after the commit (P2.5c), and each one writes an audit row under the merchant.
  *
@@ -88,10 +89,13 @@ export class ApiKeyAdminService {
    * @param clientId the merchant id
    * @param input the name, scopes, allowed addresses, expiry and per-minute limit
    * @returns the stored key (`createdByStaff: true`) and the full key text
-   * @throws {AppError} `NOT_FOUND` (404), `NOT_ACTIVE` (409: the merchant is pending or suspended, so the key could not be used),
-   *   `VALIDATION_FAILED` (422) on `scopes.N`, `allowedIps.N`, `expiresAt`, `rateLimitPerMin` or `name` (10 live keys already)
+   * @throws {AppError} `FORBIDDEN` (403: only an Owner creates a key for a merchant, decision 046), `NOT_FOUND` (404), `NOT_ACTIVE`
+   *   (409: the merchant is pending or suspended, so the key could not be used), `VALIDATION_FAILED` (422) on `scopes.N`,
+   *   `allowedIps.N`, `expiresAt`, `rateLimitPerMin` or `name` (10 live keys already)
    */
   async create(caller: StaffPrincipal, clientId: number, input: CreateClientApiKeyInput): Promise<CreatedClientApiKey> {
+    // Decision 046: a key that spends a merchant's money is made by the merchant, or by an Owner.
+    requireOwner(caller, 'Only an owner can create an API key for a merchant.');
     return this.db.runInTransaction(async (work) => {
       // Lock order: the merchant's key lock first, then the merchant row. The merchant's own creation takes the key lock and then reads the
       // merchant row for the foreign key of the insert (a shared row lock that waits for `FOR UPDATE`): the reverse order would deadlock.

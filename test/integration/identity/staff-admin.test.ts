@@ -736,6 +736,115 @@ describe('POST /admin/staff/:id/reset-2fa', () => {
   });
 });
 
+describe('the privilege ceiling (decision 046)', () => {
+  const FINANCE = ['staff:read', 'wallet:adjust'];
+
+  it('refuses adding a member with a role that has a permission the caller does not hold, and shows no password', async () => {
+    const admin = await adminWith(t, ['staff:create', 'staff:read']);
+    const finance = await roleNamed('Finance', FINANCE);
+    const { db } = await testDb();
+    const before = (await db.select().from(s.staffUsers)).length;
+    const refused = await admin.post('/admin/staff', {
+      name: 'New Member',
+      email: 'new.member@example.com',
+      roleId: finance,
+      onboarding: 'temporary_password',
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('This role has permissions you do not hold yourself.');
+    expect(refused.body.temporaryPassword).toBeUndefined();
+    expect((await db.select().from(s.staffUsers)).length).toBe(before);
+    expect(await auditRows()).toHaveLength(0);
+
+    const plain = await roleNamed('Plain', ['staff:read']);
+    const created = await admin.post('/admin/staff', {
+      name: 'New Member',
+      email: 'new.member@example.com',
+      roleId: plain,
+      onboarding: 'temporary_password',
+    });
+    expect(created.status).toBe(201);
+  });
+
+  it('refuses moving a member to a role the caller does not hold', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read']);
+    const finance = await roleNamed('Finance', FINANCE);
+    const support = await roleNamed('Support', ['staff:read']);
+    const { db } = await testDb();
+    const lina = await insertStaff(db, support, { name: 'Lina S.' });
+    const refused = await admin.patch(`/admin/staff/${lina}`, { roleId: finance });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe('This role has permissions you do not hold yourself.');
+    expect((await staffRow(lina)).roleId).toBe(support);
+  });
+
+  it('refuses every action on a member whose role has a permission the caller does not hold, and changes nothing', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:suspend', 'staff:read']);
+    const finance = await roleNamed('Finance', FINANCE);
+    const { db } = await testDb();
+    const nadia = await insertStaff(db, finance, { name: 'Nadia H.', twofaEnabled: true, passwordHash: 'old-hash' });
+    const session = await openSession(t, { type: 'staff', id: nadia });
+    const base = `/admin/staff/${nadia}`;
+    const attempts = [
+      admin.patch(base, { name: 'X Y' }),
+      admin.post(`${base}/password`, { mode: 'temporary_password', revokeSessions: true }),
+      admin.post(`${base}/password`, { mode: 'reset_link', revokeSessions: false }),
+      admin.post(`${base}/reset-2fa`),
+      admin.post(`${base}/sessions/revoke`),
+      admin.post(`${base}/suspend`, { reason: 'Test' }),
+    ];
+    for (const answer of await Promise.all(attempts)) {
+      expect(answer.status).toBe(403);
+      expect(answer.body.code).toBe('FORBIDDEN');
+      expect(answer.body.detail).toBe('This account has permissions you do not hold yourself.');
+    }
+    const row = await staffRow(nadia);
+    expect(row).toMatchObject({ name: 'Nadia H.', passwordHash: 'old-hash', twofaEnabled: true, status: 'active' });
+    expect((await sessionsOf(nadia)).find((entry) => entry.id === session.sessionId)?.revokedAt).toBeNull();
+    expect(await tokensOf(nadia)).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+
+    await db.update(s.staffUsers).set({ status: 'suspended' }).where(eq(s.staffUsers.id, nadia));
+    const reactivate = await admin.post(`${base}/reactivate`);
+    expect(reactivate.status).toBe(403);
+    expect((await staffRow(nadia)).status).toBe('suspended');
+  });
+
+  it("does not spend the member's link mails on a refused password link", async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read']);
+    const finance = await roleNamed('Finance', FINANCE);
+    const { db } = await testDb();
+    const nadia = await insertStaff(db, finance, { name: 'Nadia H.' });
+    for (let i = 0; i < 7; i++) {
+      const refused = await admin.post(`/admin/staff/${nadia}/password`, { mode: 'reset_link', revokeSessions: false });
+      expect(refused.status).toBe(403);
+    }
+
+    // The refusals spent none of the member's five link mails an hour: a caller who is allowed still has all of them.
+    const rami = await owner();
+    for (let i = 0; i < 5; i++) {
+      const sent = await rami.post(`/admin/staff/${nadia}/password`, { mode: 'reset_link', revokeSessions: false });
+      expect(sent.status).toBe(200);
+    }
+    const sixth = await rami.post(`/admin/staff/${nadia}/password`, { mode: 'reset_link', revokeSessions: false });
+    expect(sixth.status).toBe(429);
+  });
+
+  it('lets the caller act on members whose role it holds, and on its own account', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read']);
+    const support = await roleNamed('Support', ['staff:read']);
+    const { db } = await testDb();
+    const lina = await insertStaff(db, support, { name: 'Lina S.' });
+    expect((await admin.patch(`/admin/staff/${lina}`, { name: 'Nadia H.' })).status).toBe(200);
+    expect((await admin.patch(`/admin/staff/${admin.staffId}`, { name: 'Dana Admin' })).status).toBe(200);
+    expect(
+      (await admin.post(`/admin/staff/${admin.staffId}/password`, { mode: 'reset_link', revokeSessions: false }))
+        .status,
+    ).toBe(200);
+  });
+});
+
 describe('the hash of a link is what is stored', () => {
   it('never keeps the token itself', async () => {
     const rami = await owner();

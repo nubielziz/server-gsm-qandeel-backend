@@ -4,16 +4,23 @@
 import { Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
+import { B2cRefunds } from '../../money';
 import { AuditService } from '../../platform';
 import { SYSTEM_ACTOR } from '../domain/order-timeline';
 import { merchantOf } from '../infra/foreign-reads.repository';
 import { findOrder, insertEvents, setAdminNote } from '../infra/order.repository';
-import { OrderTransitions } from './order-transitions';
+import { OrderTransitions, type TransitionRequest } from './order-transitions';
 
 /** Who is acting: the signed-in staff member. */
 export interface StaffActor {
   readonly staffId: number;
 }
+
+/** The permission of a refund decision: a staff reject that gives a storefront payment back needs it as well (decision 046). */
+const REFUND_PERMISSION = 'refunds:approve';
+/** The permission of the direct refund route: the verification decision `refund` needs it as well (decision 046). */
+const REOPEN_PERMISSION = 'orders:reopen';
 
 /** The audit verb phrases of the demo (ANSWERS audit Q3): the console prints `<actor> <action> <entityLabel>`. */
 export const ORDER_AUDIT_ACTIONS = {
@@ -39,6 +46,9 @@ export const ORDER_AUDIT_ACTIONS = {
  * Side effects: each action runs in one transaction that updates `orders`, posts the ledger move, appends `order_events`,
  * writes the `order.status_changed` outbox row when the status changes and one `audit_logs` row.
  *
+ * Second permissions (decision 046): a reject that gives a storefront payment back also needs `refunds:approve`, and the
+ * verification decision `refund` also needs `orders:reopen`.
+ *
  * @see docs/contract/endpoints/orders.md
  */
 @Injectable()
@@ -46,6 +56,7 @@ export class OrderActionsService {
   constructor(
     private readonly db: DbService,
     private readonly transitions: OrderTransitions,
+    private readonly refunds: B2cRefunds,
     private readonly audit: AuditService,
   ) {}
 
@@ -87,10 +98,23 @@ export class OrderActionsService {
    * @param orderId the order
    * @param reason the buyer-visible reason
    * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (the order is being sent to its supplier: wait for the
-   *   answer, decision 044), `USE_REFUNDS`
+   *   answer, decision 044), `USE_REFUNDS`, `FORBIDDEN` (403: the reject gives a captured storefront payment back and the caller lacks
+   *   `refunds:approve`, decision 046)
    */
-  async reject(staff: StaffActor, orderId: number, reason: string): Promise<void> {
-    await this.run(staff, orderId, { kind: 'reject' }, ORDER_AUDIT_ACTIONS.reject, { reason });
+  async reject(staff: StaffActor & PermissionHolder, orderId: number, reason: string): Promise<void> {
+    await this.run(
+      staff,
+      orderId,
+      { kind: 'reject' },
+      ORDER_AUDIT_ACTIONS.reject,
+      { reason },
+      async (tx, decision, order) => {
+        // Decision 046: giving a storefront payment back is a refund decision.
+        if (decision.money === 'b2c_refund' && (await this.refunds.hasCapturedPayment(tx, order.id))) {
+          requirePermission(staff, REFUND_PERMISSION);
+        }
+      },
+    );
   }
 
   /**
@@ -124,14 +148,17 @@ export class OrderActionsService {
    * @param orderId the order
    * @param decision `accept` or `refund`
    * @param note the optional note (it becomes the refund's reason)
-   * @throws {AppError} `NOT_FOUND`, `NOT_IN_VERIFICATION`, `USE_REFUNDS` (a storefront order)
+   * @throws {AppError} `NOT_FOUND`, `NOT_IN_VERIFICATION`, `USE_REFUNDS` (a storefront order), `FORBIDDEN` (403: `refund` needs
+   *   `orders:reopen`, decision 046)
    */
   async decideVerification(
-    staff: StaffActor,
+    staff: StaffActor & PermissionHolder,
     orderId: number,
     decision: 'accept' | 'refund',
     note?: string,
   ): Promise<void> {
+    // Decision 046: a refund of a completed order needs the permission of the direct refund route.
+    if (decision === 'refund') requirePermission(staff, REOPEN_PERMISSION);
     await this.run(
       staff,
       orderId,
@@ -178,6 +205,7 @@ export class OrderActionsService {
       comment?: string | undefined;
       note?: string | undefined;
     },
+    authorize?: TransitionRequest['authorize'],
   ): Promise<void> {
     await this.db.runInTransaction(({ tx }) =>
       this.transitions.apply(tx, {
@@ -185,6 +213,7 @@ export class OrderActionsService {
         action,
         actor: { type: 'staff', id: staff.staffId },
         audit,
+        ...(authorize === undefined ? {} : { authorize }),
         ...texts,
       }),
     );

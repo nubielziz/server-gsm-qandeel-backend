@@ -32,7 +32,7 @@ beforeEach(async () => {
   fake.reset();
   await resetDb();
   await clearIdentityCaches(t);
-  staff = await adminWith(t, ['settings:storefront', 'settings:read'], { name: 'Layla Haddad' });
+  staff = await adminWith(t, ['settings:storefront', 'settings:read', 'risk:*'], { name: 'Layla Haddad' });
 });
 
 const patch = (body: unknown) => staff.patch('/admin/storefront/settings', body);
@@ -152,6 +152,17 @@ describe('PATCH /admin/storefront/settings', () => {
     expect((await staff.anonymous('PATCH', '/admin/storefront/settings', { guestCheckout: false })).status).toBe(401);
     expect((await staff.withoutCsrf('PATCH', '/admin/storefront/settings', { guestCheckout: false })).status).toBe(403);
     expect(await db.select().from(s.settings)).toHaveLength(0);
+  });
+
+  it('require3ds also needs risk:*; the other policies do not (decision 046)', async () => {
+    const editor = await adminWith(t, ['settings:storefront', 'settings:read'], { name: 'Editor' });
+    const refused = await editor.patch('/admin/storefront/settings', { require3ds: false });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the risk:* permission to do this.');
+    expect(await db.select().from(s.settings)).toHaveLength(0);
+    expect((await editor.patch('/admin/storefront/settings', { guestCheckout: false })).status).toBe(200);
+    expect((await staff.patch('/admin/storefront/settings', { require3ds: false })).status).toBe(200);
   });
 
   it('reaches the checkout at once: the withdrawal waiver off drops its consent, 3-D Secure off drops the gateway request', async () => {

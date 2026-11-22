@@ -151,7 +151,9 @@ export const createClient = defineRoute({
     'in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) ' +
     'and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with ' +
     '`POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a ' +
-    'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group.',
+    'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. ' +
+    'A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` ' +
+    '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -214,7 +216,8 @@ export const updateClient = defineRoute({
     '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
     'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
     'password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five ' +
-    'email changes of one merchant in an hour).',
+    'email changes of one merchant in an hour). ' +
+    'Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

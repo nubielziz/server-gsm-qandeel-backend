@@ -333,7 +333,7 @@
   "paths": {
     "/admin/access/restriction": {
       "put": {
-        "description": "Stores the setting `adminAllowlistOnly`. Turning it on is `409 IP_NOT_IN_ALLOWLIST` unless a live allow rule covers the caller's own address, so nobody locks themselves out. Turning it off is always allowed. Idempotent.",
+        "description": "Stores the setting `adminAllowlistOnly`. Turning it on is `409 IP_NOT_IN_ALLOWLIST` unless a live allow rule covers the caller's own address, so nobody locks themselves out. Turning it off is always allowed. Idempotent. A caller who is not an owner gets `403 FORBIDDEN` when turning it on would shut out an address an active owner uses (decision 046). The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
         "operationId": "putAdminAccessRestriction",
         "parameters": [],
         "requestBody": {
@@ -19349,7 +19349,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Creates the merchant as `pending` with a generated Dhru username and referral code, opens its wallet and hold accounts in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with `POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group.",
+        "description": "Creates the merchant as `pending` with a generated Dhru username and referral code, opens its wallet and hold accounts in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with `POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` (`403 FORBIDDEN`, after the validation and before anything is written; decision 046).",
         "operationId": "postAdminClients",
         "parameters": [],
         "requestBody": {
@@ -21203,7 +21203,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). `status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` (declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: `422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, `taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour).",
+        "description": "One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). `status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` (declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: `422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, `taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminClientsById",
         "parameters": [
           {
@@ -22904,7 +22904,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Only for an `active` merchant (`409 NOT_ACTIVE` otherwise: a key of a pending or suspended merchant cannot be used). The body is the merchant's own creation plus `rateLimitPerMin` (an integer from 1 to 6000, default 60). The answer carries the full key once as `secret` (`Cache-Control: no-store`); only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` never holds the key. A merchant may hold 10 live keys: the next one is `422` on `name`.",
+        "description": "Only for an `active` merchant (`409 NOT_ACTIVE` otherwise: a key of a pending or suspended merchant cannot be used). The body is the merchant's own creation plus `rateLimitPerMin` (an integer from 1 to 6000, default 60). The answer carries the full key once as `secret` (`Cache-Control: no-store`); only a keyed hash is stored, so a lost key cannot be shown again. The key is marked `createdByStaff` and `api_keys.created_by` records the staff member, the merchant is sent a security notice by email, and the audit entry `created API key for <merchant>` never holds the key. A merchant may hold 10 live keys: the next one is `422` on `name`. Only an owner may create one (`403 FORBIDDEN` for everyone else, decision 046); a merchant creates its own keys in the portal.",
         "operationId": "postAdminClientsByIdApiKeys",
         "parameters": [
           {
@@ -39166,7 +39166,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a currency. `code` is three capital letters and unique; `rateToBase` is above zero (up to eight decimal places); `markupPercent` is 0 to 10; `decimals` is 0 to 4. The rate is stamped with the current time. Audited.",
+        "description": "Adds a currency. `code` is three capital letters and unique; `rateToBase` is above zero (up to eight decimal places); `markupPercent` is 0 to 10; `decimals` is 0 to 4. The rate is stamped with the current time. Audited. It also needs `currencies:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminCurrencies",
         "parameters": [],
         "requestBody": {
@@ -40607,7 +40607,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a new rate, a new markup and being switched off. The code cannot be changed once created. Audited.",
+        "description": "Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a new rate, a new markup and being switched off. The code cannot be changed once created. Audited. Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminCurrenciesById",
         "parameters": [
           {
@@ -71052,7 +71052,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "An allow rule is always for the admin console (the scope is forced to `admin`). A block needs a `reason`. `cidr` is an address or a range of at least /16 (IPv4) or /48 (IPv6) with no bits set after the prefix. A live rule with the same range and kind (and, for blocks, scope) is refused. A block of the admin console or of everything that covers the caller's own address is `409 SELF_LOCKOUT`. The rule cache is cleared after the commit.",
+        "description": "An allow rule is always for the admin console (the scope is forced to `admin`). A block needs a `reason`. `cidr` is an address or a range of at least /16 (IPv4) or /48 (IPv6) with no bits set after the prefix. A live rule with the same range and kind (and, for blocks, scope) is refused. A block of the admin console or of everything that covers the caller's own address is `409 SELF_LOCKOUT`. The rule cache is cleared after the commit. A caller who is not an owner gets `403 FORBIDDEN` for a block of the admin console or of everything that would shut out an address an active owner uses: an address of a live owner session, or an active owner's last sign-in address (decision 046). The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
         "operationId": "postAdminIpRules",
         "parameters": [],
         "requestBody": {
@@ -72703,7 +72703,7 @@
         "x-gsm-surface": "admin"
       },
       "delete": {
-        "description": "Unblocks an address or removes an allowed one. Removing the only live allow rule that lets the caller in, while the restriction is on, is `409 SELF_LOCKOUT`; removing a rule that does not cover the caller is always allowed.",
+        "description": "Unblocks an address or removes an allowed one. Removing the only live allow rule that lets the caller in, while the restriction is on, is `409 SELF_LOCKOUT`; removing a rule that does not cover the caller is always allowed. A caller who is not an owner gets `403 FORBIDDEN` when, with the restriction on, the removal would shut out an address an active owner uses (decision 046). The change is judged as things are and at each later moment a rule runs out: an owner's address may not be refused at any moment at which it would have been allowed without the change.",
         "operationId": "deleteAdminIpRulesById",
         "parameters": [
           {
@@ -101173,7 +101173,7 @@
     },
     "/admin/orders/{id}/reject": {
       "post": {
-        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.",
+        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminOrdersByIdReject",
         "parameters": [
           {
@@ -102900,7 +102900,7 @@
     },
     "/admin/orders/{id}/verification": {
       "post": {
-        "description": "Decides the verification request of a completed order. `accept` keeps the charge (`verification_status` `accepted`). `refund` rejects the order with the note (or a default text) as its result and refunds it like `POST /admin/orders/:id/refund`: revenue back to the wallet, cost kept (`verification_status` `refunded`). Writes a `verification` event (and the refund events) and an audit row.",
+        "description": "Decides the verification request of a completed order. `accept` keeps the charge (`verification_status` `accepted`). `refund` rejects the order with the note (or a default text) as its result and refunds it like `POST /admin/orders/:id/refund`: revenue back to the wallet, cost kept (`verification_status` `refunded`). Writes a `verification` event (and the refund events) and an audit row. `refund` also needs `orders:reopen`, the permission of `POST /admin/orders/:id/refund` (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminOrdersByIdVerification",
         "parameters": [
           {
@@ -104392,7 +104392,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. `preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
+        "description": "Adds a gateway. `secret` (the API credential), `webhookSecret` and `secondaryWebhookSecret` are write-only and stored encrypted. `preset` makes it a ready-made method of the catalog (its logo, kind and driver are the catalog entry's). Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited. Only an owner may add an automatic method (`isManual` false) or send `secret`, `webhookSecret` or `secondaryWebhookSecret` (`403 FORBIDDEN`, after the validation above; decision 046).",
         "operationId": "postAdminPaymentGateways",
         "parameters": [],
         "requestBody": {
@@ -105726,7 +105726,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. `secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. A `preset` in the body is ignored: the preset of a method never changes, and a method made from one keeps its kind and driver: a merged `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a merged `driver` that is not the preset driver is 422 on `driver` (`preset_driver`). A custom method may still change both. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited.",
+        "description": "Changes the fields sent (the on/off switch sends `{ isActive }`). The code never changes (it is part of the webhook address): a different code is 422 on `code`. A non-empty `secret` or `webhookSecret` replaces the stored one; leaving it out keeps it. `secondaryWebhookSecret` sets the second webhook secret, `null` removes it, leaving it out keeps it. A `preset` in the body is ignored: the preset of a method never changes, and a method made from one keeps its kind and driver: a merged `isManual` that is not the preset kind is 422 on `isManual` (`preset_kind`), a merged `driver` that is not the preset driver is 422 on `driver` (`preset_driver`). A custom method may still change both. The merged gateway is validated as on create. Validation (422 with the field): a non-blank name, driver and code (lower-case letters, digits, `-` and `_`); a code that no other gateway uses; audience b2c, b2b or both; a fee of 0 to 100 percent; money fields of 0 or more (a maximum above zero is not below the minimum); whole `holdHours` from 0 to 720; `allowedGroupIds` that are existing client groups; a `secondaryWebhookSecret` of 1 to 500 characters, only next to a first webhook secret. Audited. Only an owner may send `secret`, `webhookSecret` or `secondaryWebhookSecret` (a `null` for a method that has no second secret changes nothing and is open to the route's own permission), change `isManual` of a method that is automatic before or after the change (turning an automatic method manual included), or change the `driver` of such a method (`403 FORBIDDEN`, after the validation; decision 046). The other fields of an automatic method stay under the route's own permission.",
         "operationId": "patchAdminPaymentGatewaysById",
         "parameters": [
           {
@@ -123114,7 +123114,7 @@
     },
     "/admin/publish-runs/{id}/items/{itemId}": {
       "patch": {
-        "description": "Changes one row of a draft and judges it again on the service as it is now (`200` with the row). Keys: `title` (1 to 200, one line), `slug` (an address, or an empty text to make it from the title again; an address that is not typed follows an edited title), `brand` and `carrier` (at most 80), `country` (two letters or empty), `retailPrice` (a typed price), `pricing` (`rule` or `keep`), `included` (the tick) and `reset` (back to what was detected, alone in the body). At least one key. A row that the new facts block (the service was disabled since, a typed price under a floor that rose) is stored `blocked` and unticked, with `200`. `403` naming `storefront:update` when the body carries `retailPrice` or `pricing`, or `reset` on a row that holds a typed price or a rule chosen over a typed price, and the role lacks it. `409` when the run is no longer a draft, or the service is gone. `422`: `retailPrice` `invalid` (zero or less) or `below_floor` (\"Below the storefront floor of $X.\"); `slug` `invalid` or `duplicate` (a listing or another row holds it); `pricing` `invalid` (`keep` on a service with no retail price); `included` `blocked` (the row is blocked after the change: the sentence names the reason); `retailPrice` beside `pricing`, or `reset` beside anything, with the code `conflict`. One transaction takes the run row `FOR SHARE` and checks the `draft` under it, then the row `FOR UPDATE`, so an edit and an apply never interleave. audit: false: a draft is not a record of the shop; apply, cancel and the run switch are audited.",
+        "description": "Changes one row of a draft and judges it again on the service as it is now (`200` with the row). Keys: `title` (1 to 200, one line), `slug` (an address, or an empty text to make it from the title again; an address that is not typed follows an edited title), `brand` and `carrier` (at most 80), `country` (two letters or empty), `retailPrice` (a typed price), `pricing` (`rule` or `keep`), `included` (the tick) and `reset` (back to what was detected, alone in the body). At least one key. A row that the new facts block (the service was disabled since, a typed price under a floor that rose) is stored `blocked` and unticked, with `200`. `403` naming `pricing:update` when the body carries `retailPrice` or `pricing`, or `reset` on a row that holds a typed price or a rule chosen over a typed price, and the role lacks it. `409` when the run is no longer a draft, or the service is gone. `422`: `retailPrice` `invalid` (zero or less) or `below_floor` (\"Below the storefront floor of $X.\"); `slug` `invalid` or `duplicate` (a listing or another row holds it); `pricing` `invalid` (`keep` on a service with no retail price); `included` `blocked` (the row is blocked after the change: the sentence names the reason); `retailPrice` beside `pricing`, or `reset` beside anything, with the code `conflict`. One transaction takes the run row `FOR SHARE` and checks the `draft` under it, then the row `FOR UPDATE`, so an edit and an apply never interleave. audit: false: a draft is not a record of the shop; apply, cancel and the run switch are audited. A price needs the permission it needs on the listing route (decision 046).",
         "operationId": "patchAdminPublishRunsByIdItemsByItemId",
         "parameters": [
           {
@@ -132166,7 +132166,7 @@
     },
     "/admin/reports/client-statement/{clientId}": {
       "get": {
-        "description": "A PDF (`application/pdf`, `Content-Disposition: attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\"` with the UTF-8 form, `Cache-Control: no-store`) made on the spot from the ledger, not stored. It shows the merchant (name, company, country), the period, the opening balance, the wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), the totals, the closing balance, the credit limit and the invoices issued in the period. Amounts are USD with 4 decimals. `from` and `to` are UTC days, both included; the default is the whole history (from the day of the first wallet line to today). Lines are ordered by ledger entry id, so the closing balance is the wallet balance. Without `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit `from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row (`exported statement of`). It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.",
+        "description": "A PDF (`application/pdf`, `Content-Disposition: attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\"` with the UTF-8 form, `Cache-Control: no-store`) made on the spot from the ledger, not stored. It shows the merchant (name, company, country), the period, the opening balance, the wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), the totals, the closing balance, the credit limit and the invoices issued in the period. Amounts are USD with 4 decimals. `from` and `to` are UTC days, both included; the default is the whole history (from the day of the first wallet line to today). Lines are ordered by ledger entry id, so the closing balance is the wallet balance. Without `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit `from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row (`exported statement of`). It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row. It also needs `wallet:read`, as the wallet statement does (`403 FORBIDDEN`, decision 046).",
         "operationId": "getAdminReportsClientStatementByClientId",
         "parameters": [
           {
@@ -142948,7 +142948,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Permissions are catalog entries (`GET /admin/permissions`), an area wildcard `area:*` of a known area, or `*`. Only an owner can create a role that grants `*`.",
+        "description": "Permissions are catalog entries (`GET /admin/permissions`), an area wildcard `area:*` of a known area, or `*`. Only an owner can create a role that grants `*`. Every permission given must be one the caller holds (a held `area:*` covers its actions; single actions never cover `area:*`): otherwise `403 FORBIDDEN` naming the ones not held (decision 046).",
         "operationId": "postAdminRoles",
         "parameters": [],
         "requestBody": {
@@ -143720,7 +143720,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Removing `*` from the role of the last active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.",
+        "description": "Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Only an owner edits the role they hold: for everyone else it is `409 CANNOT_CHANGE_OWN_ROLE`. The caller must hold every permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Removing `*` from the role of the last active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.",
         "operationId": "patchAdminRolesById",
         "parameters": [
           {
@@ -144112,7 +144112,7 @@
             }
           },
           "409": {
-            "description": "LAST_OWNER: There must always be one active owner.",
+            "description": "CANNOT_CHANGE_OWN_ROLE: You cannot change your own role.\nLAST_OWNER: There must always be one active owner.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -144142,6 +144142,7 @@
                     "code": {
                       "type": "string",
                       "enum": [
+                        "CANNOT_CHANGE_OWN_ROLE",
                         "LAST_OWNER"
                       ]
                     },
@@ -144178,6 +144179,17 @@
                   }
                 },
                 "examples": {
+                  "CANNOT_CHANGE_OWN_ROLE": {
+                    "summary": "You cannot change your own role.",
+                    "value": {
+                      "type": "https://errors.gsm.example/cannot-change-own-role",
+                      "title": "You cannot change your own role.",
+                      "status": 409,
+                      "code": "CANNOT_CHANGE_OWN_ROLE",
+                      "detail": "You cannot change your own role.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "LAST_OWNER": {
                     "summary": "There must always be one active owner.",
                     "value": {
@@ -144311,6 +144323,7 @@
         "x-gsm-surface": "admin"
       },
       "delete": {
+        "description": "Deletes a role nobody holds: a role any staff member holds, of any status, is `409 ROLE_IN_USE` (so is the role you hold). An owner role needs an owner, and the caller must hold every permission of the role (`403 FORBIDDEN`, decision 046).",
         "operationId": "deleteAdminRolesById",
         "parameters": [
           {
@@ -156642,7 +156655,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: `retailPrice` writes the retail group price of the service, so it applies only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"); a typed price stops the price following a rule. `retailPricing: \"rule\"` writes the price the retail price rule of the service gives now and makes it follow the rule from then on (decision 040); it is `422` on `retailPricing` with the code `conflict` when `retailPrice` is sent too, `no_rule` when no active rule covers the service, `no_cost` when the service has no cost, and `409 LISTING_LOCKED` as for a price. Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never resets. Content: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by another listing is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), `isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`).",
+        "description": "Any of the fields below; at least one. `isListed` and `retailPrice` (4-decimal net USD before VAT) work as before: `retailPrice` writes the retail group price of the service, so it applies only to new storefront checkouts; a price of zero or less, or under `floorPrice`, is `422` on `retailPrice` (\"Below the storefront floor of $X.\"); a typed price stops the price following a rule. `retailPricing: \"rule\"` writes the price the retail price rule of the service gives now and makes it follow the rule from then on (decision 040); it is `422` on `retailPricing` with the code `conflict` when `retailPrice` is sent too, `no_rule` when no active rule covers the service, `no_cost` when the service has no cost, and `409 LISTING_LOCKED` as for a price. Switching a disabled service on is `409 SERVICE_DISABLED`; switching on or pricing a service that can never be public is `409 LISTING_LOCKED`. Switching off is always allowed. Switching on for the first time sets `listedAt`; it never resets. Content: `publicTitle`, `slug` (a form that is not lower-case words joined by hyphens is `422` on `slug`; one used by another listing is `409 LISTING_EXISTS` on `slug`; changing it changes the public link), `summary`, `descriptionMd`, `requirementsMd`, `etaText`, `seoTitle`, `seoDescription`, `brand`, `carrier`, `country` (empty or two letters), `isFeatured`, `sort`. Every refusal is decided before the first write. Each change is audited (`listed on storefront`, `unlisted from storefront`, `changed retail price of`, `edited listing of`; the audit row keeps the length of the Markdown bodies, not their text). Every row also says whether its price follows a rule (`retailPriceSource`, `retailPriceRule`, `retailPriceWaiting`). Besides `storefront:update`: switching a listing on (`isListed` true while it is off) also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminServiceListingsById",
         "parameters": [
           {
@@ -162368,7 +162381,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, `maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, `duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ \"qtyOptions\": [5, 10, 25] }`. The audit row `edited service` holds the three values before and after.",
+        "description": "Only the keys sent change. Saving `basePrice` clears `costChangedFrom`; a `minProfit`-only change does not; `minProfit: null` goes back to the default policy. A `basePrice` under the floor (effective cost plus the minimum profit being saved) or not above zero is `422` on `basePrice`. The category and type must agree (`422` on `categoryId`, or on `type` when only the type was sent). A code another live service has is `409 CODE_TAKEN`. `allowCancel`, `allowVerify` and `verifyWindowH` (0 to 720 hours, `0` = no window) set what a merchant may do with this service's orders. `minQty`, `maxQty` and `qtyOptions` set what one order may buy; a key left out keeps its stored value, and when any of them is sent the whole rule is checked again (the same refusals as on create: `below_min`, `above_max`, `invalid_pack`, `duplicate_pack`, `packs_set`, all `422`). Packs are stored ascending and set `minQty` and `maxQty` to the smallest and largest pack. `qtyOptions: []` clears the packs; the service then sells the range `minQty..maxQty`, so send both in the same request (left out, the stored ones, the former smallest and largest pack, stay). Example body: `{ \"qtyOptions\": [5, 10, 25] }`. The audit row `edited service` holds the three values before and after. Sending `basePrice` or `minProfit` also needs `pricing:update` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminServicesById",
         "parameters": [
           {
@@ -166851,7 +166864,7 @@
     },
     "/admin/sessions/{id}": {
       "delete": {
-        "description": "Ends any live session of the list (staff or merchant). Ending your own session signs you out on your next request. A session that is no longer live by the list's rule (revoked, expired or idle) answers 404.",
+        "description": "Ends any live session of the list (staff or merchant). Ending your own session signs you out on your next request. A session that is no longer live by the list's rule (revoked, expired or idle) answers 404. A session of another staff member is ended only by an owner when that member is an owner, and only by a caller who holds every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "deleteAdminSessionsById",
         "parameters": [
           {
@@ -168575,7 +168588,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`.",
+        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`. The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaff",
         "parameters": [],
         "requestBody": {
@@ -169872,7 +169885,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role (`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and giving a role that grants `*` need an owner.",
+        "description": "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role (`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and giving a role that grants `*` need an owner. On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminStaffById",
         "parameters": [
           {
@@ -170704,7 +170717,7 @@
     },
     "/admin/staff/{id}/password": {
       "post": {
-        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member.",
+        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaffByIdPassword",
         "parameters": [
           {
@@ -171273,7 +171286,7 @@
     },
     "/admin/staff/{id}/reactivate": {
       "post": {
-        "description": "The status becomes `active` if the member ever signed in, else `invited`; the reason is cleared. No session comes back: the member signs in again with the current password and authenticator.",
+        "description": "The status becomes `active` if the member ever signed in, else `invited`; the reason is cleared. No session comes back: the member signs in again with the current password and authenticator. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaffByIdReactivate",
         "parameters": [
           {
@@ -171695,7 +171708,7 @@
     },
     "/admin/staff/{id}/reset-2fa": {
       "post": {
-        "description": "Turns 2FA off and clears the secret; the next sign-in asks for a new setup. The member's sessions end unless the member is the caller.",
+        "description": "Turns 2FA off and clears the secret; the next sign-in asks for a new setup. The member's sessions end unless the member is the caller. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaffByIdReset2fa",
         "parameters": [
           {
@@ -172117,7 +172130,7 @@
     },
     "/admin/staff/{id}/sessions/revoke": {
       "post": {
-        "description": "Ends every session of the member, including a sign-in step in progress. Ending your own signs you out.",
+        "description": "Ends every session of the member, including a sign-in step in progress. Ending your own signs you out. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaffByIdSessionsRevoke",
         "parameters": [
           {
@@ -172449,7 +172462,7 @@
     },
     "/admin/staff/{id}/suspend": {
       "post": {
-        "description": "Sets `suspended`, ends every session and voids unused links; the history stays and the name stays on old audit entries. Suspending yourself or the last active owner is refused.",
+        "description": "Sets `suspended`, ends every session and voids unused links; the history stays and the name stays on old audit entries. Suspending yourself or the last active owner is refused. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
         "operationId": "postAdminStaffByIdSuspend",
         "parameters": [
           {
@@ -173012,7 +173025,7 @@
     },
     "/admin/storefront/settings": {
       "patch": {
-        "description": "A flat partial object of the eight policy keys: `guestCheckout`, `require3ds`, `withdrawalWaiver`, `autoRefundFailed` and `imeiPrecheck` must be JSON booleans; `refundHoursBeforeDispatch` a whole number from 0 to 72, `abandonedMinutes` from 5 to 1440 and `imeiRetentionDays` from 0 to 3650. Any other key is `422` on that key (\"This is not a storefront setting.\"); so is a value that does not fit. Every changed key writes an audit row. The answer holds the policies that have a value after the change (the same values `GET /admin/settings` shows). `require3ds` is also the risk rule of that name: one stored value, so a change here shows on `GET /admin/risk/rules`.",
+        "description": "A flat partial object of the eight policy keys: `guestCheckout`, `require3ds`, `withdrawalWaiver`, `autoRefundFailed` and `imeiPrecheck` must be JSON booleans; `refundHoursBeforeDispatch` a whole number from 0 to 72, `abandonedMinutes` from 5 to 1440 and `imeiRetentionDays` from 0 to 3650. Any other key is `422` on that key (\"This is not a storefront setting.\"); so is a value that does not fit. Every changed key writes an audit row. The answer holds the policies that have a value after the change (the same values `GET /admin/settings` shows). `require3ds` is also the risk rule of that name: one stored value, so a change here shows on `GET /admin/risk/rules`. Sending `require3ds` also needs `risk:*`, the permission of `PUT /admin/risk/rules` (`403 FORBIDDEN`, decision 046).",
         "operationId": "patchAdminStorefrontSettings",
         "parameters": [],
         "requestBody": {

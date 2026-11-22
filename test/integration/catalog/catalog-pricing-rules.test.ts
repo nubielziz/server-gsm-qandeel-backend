@@ -414,7 +414,7 @@ describe('what a rule changes in the service list', () => {
     await insertRule(db, { scope: 'service', targetId: service, minProfit: '2' });
     const refused = await admin.patch(`/admin/services/${service}`, { basePrice: '11.9900' });
     expect(refused.status).toBe(403); // pricing admin has no catalog:update
-    const catalogAdmin = await adminWith(t, ['catalog:*']);
+    const catalogAdmin = await adminWith(t, ['catalog:*', 'pricing:update']);
     const tooLow = await catalogAdmin.patch(`/admin/services/${service}`, { basePrice: '11.9900' });
     expect(tooLow.status).toBe(422);
     expect(tooLow.body.errors[0]).toMatchObject({

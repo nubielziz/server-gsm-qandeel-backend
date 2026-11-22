@@ -27,6 +27,20 @@ export function canMoveClient(from: ClientStatus, to: ClientStatus): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
+/**
+ * The permission a merchant status change needs besides `clients:update`.
+ *
+ * Why: decision 046: a suspension, a declined application and lifting a suspension decide who may use the account, so they need
+ * the account-security permission; approving a pending merchant stays under the route's own permission.
+ *
+ * @param from the current status
+ * @param to the wanted status
+ * @returns `clients:security` for a move into or out of `suspended`, else `null`
+ */
+export function statusChangePermission(from: ClientStatus, to: ClientStatus): 'clients:security' | null {
+  return from === 'suspended' || to === 'suspended' ? 'clients:security' : null;
+}
+
 /** The shortest and longest suspension reason (the console's dialog and the endpoint doc). */
 export const SUSPEND_REASON_LENGTH = { min: 3, max: 140 } as const;
 

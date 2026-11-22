@@ -3,6 +3,8 @@ import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
   type GatewayFields,
+  changesAutomaticSetup,
+  changesCredentials,
   checkDepositAmount,
   checkGatewayFields,
   depositFee,
@@ -141,5 +143,49 @@ describe('checkDepositAmount', () => {
     expect(
       checkDepositAmount(Money.of('5'), { ...limits, minAmount: '0', maxAmount: '0', depositLimit: '0' }),
     ).toBeUndefined();
+  });
+});
+
+describe('changesCredentials', () => {
+  it('is true for a sent secret, webhook secret or second webhook secret (also null), false for empty and absent ones', () => {
+    expect(changesCredentials({ secret: 'sk_live_1' })).toBe(true);
+    expect(changesCredentials({ webhookSecret: 'whsec_1' })).toBe(true);
+    expect(changesCredentials({ secondaryWebhookSecret: 'whsec_2' })).toBe(true);
+    expect(changesCredentials({ secondaryWebhookSecret: null })).toBe(true);
+    expect(changesCredentials({})).toBe(false);
+    expect(changesCredentials({ secret: '', webhookSecret: '', secondaryWebhookSecret: undefined })).toBe(false);
+  });
+
+  it('does not count removing a second webhook secret that the stored method does not have', () => {
+    expect(changesCredentials({ secondaryWebhookSecret: null }, [])).toBe(false);
+    expect(changesCredentials({ secondaryWebhookSecret: null }, ['whsec_1'])).toBe(false);
+    expect(changesCredentials({ secondaryWebhookSecret: null }, ['whsec_1', 'whsec_2'])).toBe(true);
+    // Every other value is still a change, whatever is stored.
+    expect(changesCredentials({ secondaryWebhookSecret: 'whsec_2' }, ['whsec_1'])).toBe(true);
+    expect(changesCredentials({ webhookSecret: 'whsec_3', secondaryWebhookSecret: null }, ['whsec_1'])).toBe(true);
+    expect(changesCredentials({ secret: 'sk_1', secondaryWebhookSecret: null }, [])).toBe(true);
+    expect(changesCredentials({}, ['whsec_1', 'whsec_2'])).toBe(false);
+  });
+});
+
+describe('changesAutomaticSetup', () => {
+  const manual = { isManual: true, driver: 'bank' };
+  const automatic = { isManual: false, driver: 'card' };
+
+  it('is true when a manual method becomes automatic, and when an automatic method becomes manual', () => {
+    expect(changesAutomaticSetup(manual, { isManual: false, driver: 'bank' })).toBe(true);
+    expect(changesAutomaticSetup(automatic, { ...automatic, isManual: true })).toBe(true);
+  });
+
+  it('is true when the driver changes while the method is automatic before or after the change', () => {
+    expect(changesAutomaticSetup(automatic, { ...automatic, driver: 'wise' })).toBe(true);
+    expect(changesAutomaticSetup(automatic, { isManual: true, driver: 'bank' })).toBe(true);
+    expect(changesAutomaticSetup(manual, { isManual: false, driver: 'card' })).toBe(true);
+  });
+
+  it('is false for a manual method that stays manual, and for an automatic one that keeps its driver', () => {
+    expect(changesAutomaticSetup(manual, { ...manual, driver: 'cash' })).toBe(false);
+    expect(changesAutomaticSetup(manual, manual)).toBe(false);
+    expect(changesAutomaticSetup(automatic, automatic)).toBe(false);
   });
 });
