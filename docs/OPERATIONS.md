@@ -540,9 +540,10 @@ enrolment): entering them again seals them with the active key. The twelve encry
 - **Logs** are JSON lines on stdout (decision 012): `gsmc logs -f api worker caddy`. Every line of a request has its request id, which is
   also the `X-Request-Id` the client got; give it to whoever reads the log. Secrets are redacted and e-mail, phone and IMEI masked at any
   depth of a log line; a database failure is logged as its SQLSTATE, table, constraint and a fixed sentence, never the statement or its
-  values (decision 054). Caddy's access log replaces link tokens, the Telegram webhook path, searches and IMEIs in the address and the
-  Referer, and leaves out credential headers. Docker keeps at most 5 × 20 MB of logs per container (the compose file sets the `local` log
-  driver for every service, decision 055); a rotation in `/etc/docker/daemon.json` (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`)
+  values (decision 054). Caddy's access log replaces link tokens, the Telegram webhook path, searches and IMEIs, and the signature and
+  file-name parameters of a signed file link, in the address and the Referer, and leaves out credential headers and the answer's
+  Content-Disposition, which names a downloaded file. Docker keeps at most 5 × 20 MB of logs per container (the compose file sets the
+  `local` log driver for every service, decision 055); a rotation in `/etc/docker/daemon.json` (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`)
   is still useful for any other container on the host.
 - **Health:** `GET /health` always answers 200 with `ok`, `degraded` or `down` and the checks; `GET /health?strict=1` answers 503 when
   Postgres is down (this is what the container healthcheck calls). The answer comes from a check at most 3 seconds old, one check at a time

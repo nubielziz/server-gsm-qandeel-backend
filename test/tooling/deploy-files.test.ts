@@ -579,6 +579,8 @@ describe('deploy/Caddyfile', () => {
       'request>headers>Next-Url',
       'request>headers>Next-Router-State-Tree',
       'resp_headers>X-Csrf-Token',
+      // The answer of a download names the stored file in it.
+      'resp_headers>Content-Disposition',
     ]) {
       expect(accessLog, header).toContain(`${header} delete`);
     }
@@ -731,6 +733,52 @@ describe('deploy/Caddyfile', () => {
       // The path of the object is not secret and stays.
       expect(written, field).toStartWith('/gsm-files/files/2026/11/a.pdf?');
     }
+  });
+
+  it("does not write the stored file's name that a file link carries: the response-content-* values are replaced in the address and the Referer", () => {
+    const disposition =
+      'attachment%3B%20filename%3D%22Rania%20Haddad%20passport.png%22%3B%20filename%2A%3DUTF-8%27%27Rania%2520Haddad%2520passport.png';
+    const withDisposition = `/gsm-files/uploads/kyc/1/0b6f3c1e?response-content-disposition=${disposition}&X-Amz-Signature=9f2c`;
+    const withTwoParameters = `/gsm-files/files/2026/11/a.pdf?X-Amz-Signature=9f2c&response-content-type=application%2Fpdf&response-content-disposition=${disposition}`;
+    const atTheEnd = `/gsm-files/files/2026/11/a.pdf?X-Amz-Signature=9f2c&response-content-disposition=${disposition}`;
+    const cases: Array<[string, string]> = [
+      [
+        withDisposition,
+        '/gsm-files/uploads/kyc/1/0b6f3c1e?response-content-disposition=[redacted]&X-Amz-Signature=[redacted]',
+      ],
+      [
+        withTwoParameters,
+        '/gsm-files/files/2026/11/a.pdf?X-Amz-Signature=[redacted]&response-content-type=[redacted]&response-content-disposition=[redacted]',
+      ],
+      [atTheEnd, '/gsm-files/files/2026/11/a.pdf?X-Amz-Signature=[redacted]&response-content-disposition=[redacted]'],
+    ];
+    for (const field of ['request>uri', 'request>headers>Referer']) {
+      const prefix = field === 'request>uri' ? '' : 'https://files.example.com';
+      for (const [input, expected] of cases) {
+        const written = applyRules(field, prefix + input);
+        expect(written, input).toBe(prefix + expected);
+        expect(written, input).not.toContain('Rania');
+        expect(written, input).not.toContain('Haddad');
+        expect(written, input).not.toContain('passport');
+      }
+    }
+    // Other parameters of other addresses are not touched.
+    expect(applyRules('request>uri', '/admin/files?response=1&content=2')).toBe('/admin/files?response=1&content=2');
+  });
+
+  it("does not write the stored file's name that the answer of a download carries in Content-Disposition", () => {
+    const filter = accessLog.split('\n').map((line) => line.trim());
+    // The header is dropped from the log whole, so no rule has to know the file name's spelling.
+    expect(filter).toContain('resp_headers>Content-Disposition delete');
+    expect(filter.filter((line) => line.startsWith('resp_headers>Content-Disposition'))).toEqual([
+      'resp_headers>Content-Disposition delete',
+    ]);
+    // The delete line sits inside the log's filter, next to the other answer headers that are removed.
+    const filterStart = accessLog.indexOf('format filter {');
+    expect(accessLog.indexOf('resp_headers>Content-Disposition delete')).toBeGreaterThan(filterStart);
+    expect(accessLog.indexOf('resp_headers>Content-Disposition delete')).toBeGreaterThan(
+      accessLog.indexOf('resp_headers>X-Csrf-Token delete'),
+    );
   });
 
   it('compresses everything except the live event streams (decision 037)', () => {
