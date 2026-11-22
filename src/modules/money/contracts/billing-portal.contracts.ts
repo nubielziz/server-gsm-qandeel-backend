@@ -187,7 +187,8 @@ export const createMyInvoice = defineRoute({
     'fixed`, `netAmount = amount - fee` (the wallet is credited with it when the invoice is paid). A manual method answers ' +
     '`{ invoice, instructions }`; an automatic one opens a checkout and answers `{ invoice, paymentUrl }` (`502 GATEWAY_ERROR` when ' +
     'the gateway fails: the invoice reserved for it is voided). 422 on `gatewayId` for a method the merchant may not use, and on ' +
-    '`amount` outside the method limits, above the group limit per deposit, or too small for the fee. A card method asks for ' +
+    '`amount` outside the method limits, above the group limit per deposit, too small for the fee, or (for an automatic method) with ' +
+    'more decimals than it can charge exactly (`not_chargeable`, two for a card page). A card method asks for ' +
     "3-D Secure while the shop's `require3ds` policy is on. A merchant holds at most five unpaid top-up invoices that are less than " +
     '24 hours old or have a receipt in review: the next one is `409 CONFLICT`, before any payment page is opened (decision 049).',
   tags: ['finance'],

@@ -15,7 +15,7 @@ import type { TopUpDetailSchema } from '../contracts/customer-topups.contracts';
 import { type Invoice, type Payment, type PaymentGateway, RECEIPT_LIVE_INDEX } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { type CustomerWalletPolicy, checkTopUp, topUpStatusOf } from '../domain/customer-wallet-policy';
-import { REQUIRE_3DS_KEY, asks3ds, depositFee, topupMethodOf } from '../domain/gateway-rules';
+import { REQUIRE_3DS_KEY, asks3ds, checkChargeableAmount, depositFee, topupMethodOf } from '../domain/gateway-rules';
 import {
   DEFAULT_INVOICE_DUE_DAYS,
   INVOICE_DUE_DAYS_BOUNDS,
@@ -190,7 +190,8 @@ export class CustomerTopUps {
    * @param key the `Idempotency-Key`
    * @returns the top-up with its instructions or page, and whether it was a replay
    * @throws {AppError} `WALLET_DISABLED`, `RATE_LIMITED`, `VALIDATION_FAILED` (`amount`: `format`, `range`, `min`, `max`, `fee`,
-   *   `daily_count`, `daily_amount`, `max_balance`; `gatewayId`: `unavailable`), `CONFLICT` (three unpaid top-ups), `WALLET_FROZEN`,
+   *   `daily_count`, `daily_amount`, `max_balance`, `not_chargeable` (an automatic method that cannot charge the amount exactly);
+   *   `gatewayId`: `unavailable`), `CONFLICT` (three unpaid top-ups), `WALLET_FROZEN`,
    *   `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_PROGRESS`, `UNAUTHORIZED` (no active account), `GATEWAY_ERROR`
    */
   async create(customerId: number, input: { amount: string; gatewayId: number }, key: string): Promise<CreatedTopUp> {
@@ -251,6 +252,11 @@ export class CustomerTopUps {
         if ('conflict' in refusal) throw new AppError('CONFLICT', { detail: refusal.conflict });
         throw new AppError('VALIDATION_FAILED', { errors: [refusal.field] });
       }
+      // An automatic method that cannot charge this amount exactly would charge it rounded: refused before a top-up is reserved.
+      const unchargeable = gateway.isManual
+        ? undefined
+        : checkChargeableAmount(amount, driverFor(gateway.driver)?.maxChargeDecimals?.(BASE_CURRENCY));
+      if (unchargeable) throw new AppError('VALIDATION_FAILED', { errors: [unchargeable] });
       // Stored value carries no VAT (O9): the tax rate is 0 and the invoice has no PDF.
       const totals = topupInvoiceTotals(amount, fee, '0');
       const id = await reserveInvoiceId(tx);

@@ -11,7 +11,14 @@ import { OutboundHttp } from '../../../infra/http';
 import { ClientGroupDirectory } from '../../catalog';
 import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
-import { REQUIRE_3DS_KEY, asks3ds, checkDepositAmount, depositFee, topupMethodOf } from '../domain/gateway-rules';
+import {
+  REQUIRE_3DS_KEY,
+  asks3ds,
+  checkChargeableAmount,
+  checkDepositAmount,
+  depositFee,
+  topupMethodOf,
+} from '../domain/gateway-rules';
 import {
   B2B_VAT_RATE_KEY,
   DEFAULT_INVOICE_DUE_DAYS,
@@ -187,7 +194,8 @@ export class MerchantBillingService {
    * @param clientId the signed-in merchant
    * @param input the amount and the gateway
    * @returns the invoice with the transfer instructions (manual) or the checkout address (automatic)
-   * @throws {AppError} `VALIDATION_FAILED` on `gatewayId` or `amount`; `CONFLICT` (409) when the merchant has five live unpaid
+   * @throws {AppError} `VALIDATION_FAILED` on `gatewayId` or `amount` (`not_chargeable`: an automatic method that cannot charge the
+   *   amount exactly, such as a card page for a third decimal); `CONFLICT` (409) when the merchant has five live unpaid
    *   top-up invoices (decision 049), before any gateway is asked; `GATEWAY_ERROR` (502) when the gateway fails: the invoice is voided
    */
   async createInvoice(clientId: number, input: { amount: string; gatewayId: number }): Promise<CreatedInvoice> {
@@ -204,6 +212,11 @@ export class MerchantBillingService {
       feeFixed: gateway.feeFixed,
     });
     if (problem) throw new AppError('VALIDATION_FAILED', { errors: [problem] });
+    // An automatic method that cannot charge this amount exactly would charge it rounded: refused before an invoice is reserved.
+    const unchargeable = gateway.isManual
+      ? undefined
+      : checkChargeableAmount(parsed.amount, driverFor(gateway.driver)?.maxChargeDecimals?.(BASE_CURRENCY));
+    if (unchargeable) throw new AppError('VALIDATION_FAILED', { errors: [unchargeable] });
 
     const now = this.clock.now();
     const since = new Date(now.getTime() - MERCHANT_OPEN_TOPUPS.liveHours * 3_600_000);

@@ -103,7 +103,8 @@ export const createMyTopUp = defineRoute({
     'method answers the transfer `instructions` (then upload the receipt); an automatic one answers the `paymentUrl`. The ' +
     '`Idempotency-Key` header is required: a retry with the same key and body answers the same top-up (`idempotency-replayed: true`); ' +
     'the same key with another body is `IDEMPOTENCY_KEY_REUSED`. Limits answer `422` on `amount` (`min`, `max`, `fee`, `daily_count`, ' +
-    '`daily_amount`, `max_balance`) or `409 CONFLICT` (three unpaid top-ups). Refused while the balance is switched off ' +
+    '`daily_amount`, `max_balance`, and `not_chargeable` for an automatic method that cannot charge the amount exactly: a card page ' +
+    'takes two decimals) or `409 CONFLICT` (three unpaid top-ups). Refused while the balance is switched off ' +
     '(`WALLET_DISABLED`), and through an automatic method while it is on hold (`WALLET_FROZEN`). A card method asks for 3-D Secure ' +
     "while the shop's `require3ds` policy is on (decision 049).",
   tags: ['account'],

@@ -5,6 +5,7 @@ import {
   asks3ds,
   changesAutomaticSetup,
   changesCredentials,
+  checkChargeableAmount,
   checkDepositAmount,
   checkGatewayFields,
   depositFee,
@@ -145,6 +146,26 @@ describe('checkDepositAmount', () => {
     expect(
       checkDepositAmount(Money.of('5'), { ...limits, minAmount: '0', maxAmount: '0', depositLimit: '0' }),
     ).toBeUndefined();
+  });
+});
+
+describe('checkChargeableAmount', () => {
+  it('accepts every amount when the method states no limit, and an amount within the decimals it states', () => {
+    expect(checkChargeableAmount(Money.of('100.0050'), undefined)).toBeUndefined();
+    for (const amount of ['100', '100.1', '100.0100', '100.1000']) {
+      expect(checkChargeableAmount(Money.of(amount), 2), amount).toBeUndefined();
+    }
+    expect(checkChargeableAmount(Money.of('100.0000'), 0)).toBeUndefined();
+  });
+
+  it('refuses more significant decimals than the method charges, on amount', () => {
+    for (const amount of ['100.005', '100.0049', '0.0001']) {
+      expect(checkChargeableAmount(Money.of(amount), 2), amount).toMatchObject({
+        field: 'amount',
+        code: 'not_chargeable',
+      });
+    }
+    expect(checkChargeableAmount(Money.of('100.50'), 0)).toMatchObject({ field: 'amount', code: 'not_chargeable' });
   });
 });
 

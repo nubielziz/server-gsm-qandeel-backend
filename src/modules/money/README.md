@@ -120,7 +120,9 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
     receipt content lock); a merchant holds at most five live unpaid top-up invoices and five top-up receipts in review
     (`MERCHANT_OPEN_TOPUPS`, counted under `lockMerchantTopUps`; the invoice is reserved before an automatic method's page is opened and
     voided when the gateway fails); a staff-issued invoice records `issued_by` and its issuer cannot approve its payment unless an Owner;
-    card top-ups ask for 3-D Secure under `require3ds` (`asks3ds`, also used by shop card payments).
+    card top-ups ask for 3-D Secure under `require3ds` (`asks3ds`, also used by shop card payments); an amount an automatic method
+    cannot charge exactly (a card page takes two decimals at most) is `422` on `amount` (`not_chargeable`, `checkChargeableAmount`)
+    before an invoice or a customer top-up is reserved or a page is asked for, while a manual method keeps the amount as typed.
   - **Money rules.** A deposit posts the map event `deposit` (Dr `bank` for a manual gateway or `gateway_clearing` for an automatic one, Cr `client_wallet` net, Cr `fee_income` fee) with ref `payment`, key `deposit:payment:<id>`, memo
     `Deposit PAY-<id> (<method>)`. Lock order everywhere: the payment row, then its invoice, then the ledger accounts. Approve and reject re-check under the lock: not pending → `409 PAYMENT_ALREADY_REVIEWED`; an automatic gateway
     whose payment was not sent to review → `409 PAYMENT_AUTO_CREDIT_PENDING` (user rule 6). Reject voids a top-up invoice and leaves a staff-issued manual invoice open.

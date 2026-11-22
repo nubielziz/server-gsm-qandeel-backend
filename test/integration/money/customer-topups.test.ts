@@ -253,6 +253,39 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
     expect((await create(store, { amount: '27', gatewayId: cliq })).statusCode).toBe(201);
   });
 
+  it('refuses an amount a card page cannot charge exactly before a top-up is reserved, and takes a manual one as typed', async () => {
+    const { db } = await testDb();
+    await walletSettings(t, db, { 'wallet.customer.card_topups': true });
+    const card = await insertGateway(t, db, {
+      code: 'card',
+      driver: 'card',
+      audience: 'b2c',
+      name: 'Card',
+      apiBase: fake.url,
+    });
+    const { customer, store } = await signedIn();
+    const sessions = () => fake.requests.filter((request) => request.path === '/v1/checkout/sessions');
+    const before = sessions().length;
+    for (const amount of ['25.005', '25.0049']) {
+      const res = await create(store, { amount, gatewayId: card }, `card-${amount}`);
+      expect(res.statusCode, amount).toBe(422);
+      expect(res.json().errors[0], amount).toMatchObject({ field: 'amount', code: 'not_chargeable' });
+    }
+    expect(sessions()).toHaveLength(before);
+    expect(await db.select().from(s.invoices).where(eq(s.invoices.customerId, customer.id))).toHaveLength(0);
+
+    // The same key is free again: a refusal reserved nothing.
+    const exact = await create(store, { amount: '25.01', gatewayId: card }, 'card-25.005');
+    expect(exact.statusCode).toBe(201);
+    expect(sessions()).toHaveLength(before + 1);
+    expect(new URLSearchParams(sessions().at(-1)!.body).get('line_items[0][price_data][unit_amount]')).toBe('2501');
+    expect((await create(store, { amount: '25.1000', gatewayId: card })).statusCode).toBe(201);
+
+    const manual = await create(store, { amount: '25.005', gatewayId: cliq });
+    expect(manual.statusCode).toBe(201);
+    expect(manual.json().amount).toBe('25.0050');
+  });
+
   it("asks for 3-D Secure on a card top-up under the shop's policy (decision 049)", async () => {
     const { db } = await testDb();
     await walletSettings(t, db, { 'wallet.customer.card_topups': true });

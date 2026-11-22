@@ -299,6 +299,37 @@ describe('POST /client/invoices', () => {
     expect(await db.select().from(s.invoices)).toHaveLength(0);
   });
 
+  it('refuses an amount an automatic method cannot charge exactly before anything is reserved, and takes a manual one as typed', async () => {
+    const { portal } = await merchant();
+    const cardId = await card();
+    const bankId = await bank({ minAmount: '0' });
+    const sessions = () => fake.requests.filter((request) => request.path === '/v1/checkout/sessions');
+    for (const amount of ['100.005', '100.0049', '100.0001']) {
+      const res = await portal.call('POST', '/client/invoices', { amount, gatewayId: cardId });
+      expect(res.status, amount).toBe(422);
+      expect(res.body.errors[0], amount).toMatchObject({ field: 'amount', code: 'not_chargeable' });
+    }
+    expect(sessions()).toHaveLength(0);
+    expect(await db.select().from(s.invoices)).toHaveLength(0);
+
+    // Two decimals, with or without trailing zeros, are charged exactly.
+    const exact: Array<[string, string]> = [
+      ['100.01', '10001'],
+      ['100.1000', '10010'],
+      ['100', '10000'],
+    ];
+    for (const [amount, minor] of exact) {
+      const res = await portal.call('POST', '/client/invoices', { amount, gatewayId: cardId });
+      expect(res.status, amount).toBe(201);
+      expect(new URLSearchParams(sessions().at(-1)!.body).get('line_items[0][price_data][unit_amount]')).toBe(minor);
+    }
+
+    // A bank transfer is paid by hand: the amount stays as typed.
+    const manual = await portal.call('POST', '/client/invoices', { amount: '100.005', gatewayId: bankId });
+    expect(manual.status).toBe(201);
+    expect(manual.body.invoice.amount).toBe('100.0050');
+  });
+
   it('refuses a request without the CSRF token', async () => {
     const { portal } = await merchant();
     const gatewayId = await bank();

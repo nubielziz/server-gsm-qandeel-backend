@@ -3,6 +3,7 @@
 import type { FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { GATEWAY_AUDIENCES, type TopupMethod } from '../db/schema';
+import { fractionDigits } from './b2c-money';
 
 /** A gateway code or driver name: lower-case letters, digits, `-` and `_`, up to 40 (it is a URL segment, `/webhooks/payments/:gateway`). */
 export const GATEWAY_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -274,6 +275,29 @@ export function checkDepositAmount(amount: Money, limits: DepositLimits): FieldE
     return fail('fee', 'The amount does not cover the fee of this payment method.');
   }
   return undefined;
+}
+
+/**
+ * Checks that an automatic method can charge an amount exactly.
+ *
+ * Why: a card page is asked for the amount in the method's own steps (0.01, or whole units); an amount with more decimals would be
+ * charged rounded, and the confirmation for that amount could never match the invoice, so the money that arrived could not be credited
+ * through the normal path (decision 048 for shop payments; the same rule for wallet top-ups). It is refused before an invoice is reserved.
+ *
+ * @param amount the amount to charge (positive, up to four decimals)
+ * @param maxDecimals the most significant decimals the method's driver charges exactly (`undefined`: the method states no limit)
+ * @returns the problem on `amount` (`not_chargeable`), or `undefined`
+ */
+export function checkChargeableAmount(amount: Money, maxDecimals: number | undefined): FieldError | undefined {
+  if (maxDecimals === undefined || fractionDigits(amount) <= maxDecimals) return undefined;
+  return {
+    field: 'amount',
+    code: 'not_chargeable',
+    message:
+      maxDecimals === 0
+        ? 'This payment method charges whole amounts only. Enter an amount without decimals.'
+        : `This payment method charges at most ${maxDecimals} decimals. Enter an amount like 25 or 25.50.`,
+  };
 }
 
 /** The storefront policy that asks a cardholder for 3-D Secure (RULES settings 5; also the risk rule of that name): on unless switched off. */
