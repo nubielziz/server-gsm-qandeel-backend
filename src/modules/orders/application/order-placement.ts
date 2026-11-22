@@ -339,11 +339,15 @@ export class OrderPlacement {
           message: 'This service does not take an IMEI.',
         });
       }
-      // A service may define a field keyed `imei` (it carries the pattern the supplier wants): it receives the IMEI itself.
-      const fieldInputs =
-        imei !== undefined && fields.some((field) => field.key === 'imei') ? { imei, ...inputs } : inputs;
+      // A service may define a field keyed `imei` (it carries the pattern the supplier wants): it receives the IMEI itself. The typed
+      // IMEI is the value stored in `orders.imei` and sent to the supplier, so it is the one the pattern judges: a value under
+      // `inputs.imei` never stands in for it.
+      const hasImeiField = fields.some((field) => field.key === 'imei');
+      const fieldInputs = imei !== undefined && hasImeiField ? { ...inputs, imei } : inputs;
       problems.push(...inputProblems(fields, fieldInputs));
+      // What is stored under that key is the typed IMEI too, so the order never shows two different IMEIs.
       const stored = { ...inputs };
+      if (imei !== undefined && hasImeiField && 'imei' in stored) stored.imei = imei;
       return {
         mainInput: mainInputOf({ type: service.type, imei, inputs: fieldInputs, fields, fileName }),
         inputs: stored,
