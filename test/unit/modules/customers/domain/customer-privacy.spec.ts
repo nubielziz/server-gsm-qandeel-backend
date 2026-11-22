@@ -89,6 +89,7 @@ describe('buildCustomerExport', () => {
         taxCountry: 'GB',
         status: 'paid',
         ip: '203.0.113.9',
+        ipCountry: 'GB',
         userAgent: 'Firefox',
         orderId: 5,
         createdAt: new Date('2026-10-02T00:00:00.000Z'),
@@ -128,6 +129,7 @@ describe('buildCustomerExport', () => {
       'dataRequests',
     ]);
     expect((file.checkoutSessions as Array<{ imei: string }>)[0]!.imei).toBe('checkout:353890113898412');
+    expect((file.checkoutSessions as Array<{ ipCountry: string | null }>)[0]!.ipCountry).toBe('GB');
     expect((file.imeiChecks as Array<{ imei: string | null }>)[0]!.imei).toBeNull();
     // What staff keep to protect the shop is not in the file; what the customer gave is.
     const profile = file.profile as Record<string, unknown>;

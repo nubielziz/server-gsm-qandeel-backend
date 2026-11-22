@@ -27,7 +27,13 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   (RULES customers 6), the `currency` and the locked `fx_rate` (8 decimals, the markup included), `tax_country`, the encrypted
   IMEI, `inputs`, `utm`, `ip` (the trusted-proxy address) and the user agent; the token is 128 random bits (base64url, 22
   characters), `expires_at` is 30 minutes after the clock's time (`CHECKOUT_SESSION_TTL_MINUTES`). Maintenance with scope
-  `checkout` or `store` already answers `503 MAINTENANCE` before this runs (the pipeline hook).
+  `checkout` or `store` already answers `503 MAINTENANCE` before this runs (the pipeline hook). Decision 050: right after the
+  guest-checkout switch, `CustomerProfileRules.assertCheckoutCountry` refuses a `country` without a tax window in force while the shop
+  has a window for any country (the profile's own refusal: `422` on `country`, code `unsupported`, "Choose a country."); a shop with no
+  window in force accepts every country without tax. The session also keeps `ip_country`, the visitor's country read by the controller
+  from the header named by `GEOIP_COUNTRY_HEADER` (`countryFromHeader`, only when the setting is set, else null; the edge removes a
+  visitor's own copy of that header). A guest is refused by a blocklist entry limited to guest checkouts (the same neutral
+  `ACCOUNT_SUSPENDED`); a signed-in customer is not.
 - **Status** (RESOLUTIONS b2c-14): `open | paid | expired`; an `open` session past `expires_at` reads `expired` for every reader at
   once without a job (`effectiveStatus`); `paid` is feature 16's.
 - **Read** (`GET`): the capability guard of the identity module resolves the token (`CheckoutTokenResolver`, registered in
@@ -58,7 +64,8 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   is not the account's (any case), skips the `guestCheckout` switch, and the session's `customer_id` is the account. **Consents**
   records `marketing` for an account holder only when the request carries the signed-in session of the checkout session's own
   customer, and then also sets `customers.marketing_opt_in` to the recorded answer (as `PATCH /store/v1/me` does); any other request
-  keeps the guest rule above.
+  keeps the guest rule above. The screening of the payment of a signed-in checkout uses the account's own history; a guest checkout's
+  does not, even with the email of an account (decision 050).
 - **Anti-bot**: opening a session is `turnstile: true` (decision 034).
 - **Pay** (feature 16, scenario b2c-paid steps 4 and 5): `POST /store/v1/checkout-sessions/:token/pay`, body `{ gateway, returnUrl }`, header `Idempotency-Key` (required, ALIGNMENT § 7), answer `201 { payment, gateway, paymentUrl }`.
   `CheckoutPayService` judges the checkout and hands the money side to the money module's `StorefrontPayments.start`: a replay of an earlier call (same key, same body) answers before any check, so a retry after the session expired still receives the page it missed
@@ -143,7 +150,8 @@ and `domain/customer-export.ts`, and the reads and writes that reach other modul
 - **Anonymize** (`POST /admin/customers/:id/anonymize`, `customers:privacy`, B50, RESOLUTIONS b2c-4): irreversible. Name `Deleted
   customer`, email `deleted-<id>@redacted.invalid` (free again), phone and notes cleared, marketing off, account closed (credentials
   deleted, sessions revoked, links voided); the IMEI of their orders and checkout sessions is cut to the TAC and a mask (the risk
-  module's `ImeiErasure` does the same for their IMEI checks); the erasure request is completed; payments and ledger entries stay.
+  module's `ImeiErasure` does the same for their IMEI checks); the sessions' visitor country (`ip_country`) is cleared with the address
+  (decision 050); the erasure request is completed; payments and ledger entries stay.
   The audit row names the customer by number (the log is append-only). Other modules clear what they hold through
   `CustomerErasureHooks` (run in the same transaction; the support module registers its ticket-link hook there).
 

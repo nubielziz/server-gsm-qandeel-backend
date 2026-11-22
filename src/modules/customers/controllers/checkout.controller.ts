@@ -1,10 +1,12 @@
 // HTTP controller of the storefront checkout (map domain I, stage 14): open a session, read it, record consents. Thin: the rules live
 // in CheckoutSessionService and ConsentService. The token routes read the session id the capability guard resolved.
-import { Body, Controller, Req, Res } from '@nestjs/common';
+import { Body, Controller, Inject, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, ContractHeaders, type HeadersOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { APP_CONFIG, type AppConfig } from '../../../config';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
+import { countryFromHeader } from '../../risk';
 import { CheckoutSessionService } from '../application/checkout-session.service';
 import { CheckoutBalancePayService } from '../application/checkout-balance-pay.service';
 import { CheckoutPayService } from '../application/checkout-pay.service';
@@ -48,13 +50,26 @@ export class CheckoutController {
     private readonly signedIn: OptionalCustomerSession,
     private readonly pay: CheckoutPayService,
     private readonly balancePay: CheckoutBalancePayService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
+
+  /**
+   * The visitor's country, when the setting names the header a trusted proxy writes.
+   *
+   * Why: decision 050: the IP-country rule and the tax-country check need the visitor's country; only the header a trusted proxy writes
+   * counts, and only when the setting names it (the edge removes a visitor's own copy, deploy/Caddyfile).
+   */
+  private visitorCountry(request: FastifyRequest): string | null {
+    const header = this.config.http.geoipCountryHeader;
+    return header === undefined ? null : countryFromHeader(request.headers[header]);
+  }
 
   /**
    * Opens a checkout, as the signed-in customer when the request carries a customer session.
    *
    * @param body the service, the buyer's email and country, and the order input
-   * @param request the request, for the session cookie, the visitor's address and user agent
+   * @param request the request, for the session cookie, the visitor's address and user agent, and the visitor's country header when
+   *   `GEOIP_COUNTRY_HEADER` is set
    * @param reply the reply, for the cache header
    * @returns the new session
    * @throws {AppError} `CSRF_FAILED` when a customer session comes without its CSRF header (nothing is written)
@@ -68,7 +83,13 @@ export class CheckoutController {
   ): Promise<ResultOf<typeof openCheckoutSession>> {
     reply.header('cache-control', NO_STORE);
     const customerId = await this.signedIn.customerId(request);
-    return this.sessions.open({ ...body, customerId, ip: request.ip, userAgent: userAgentOf(request) });
+    return this.sessions.open({
+      ...body,
+      customerId,
+      ip: request.ip,
+      userAgent: userAgentOf(request),
+      ipCountry: this.visitorCountry(request),
+    });
   }
 
   /**

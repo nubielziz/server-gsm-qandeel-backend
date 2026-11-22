@@ -114,8 +114,8 @@ const ADDITIONS: Record<string, string[]> = {
   currencies: ['rate_held_at'],
   // Feature 21: the freeze state of a customer wallet; whether a checkout was opened by a signed-in customer.
   ledger_accounts: ['frozen_at', 'frozen_reason'],
-  // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token.
-  checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc'],
+  // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token. Feature 40 (decision 050): the visitor's country.
+  checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc', 'ip_country'],
   orders: ['public_token_hash', 'public_token_enc'],
   kyc_submissions: ['submitted_note'],
   // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
@@ -156,7 +156,8 @@ const ADDITIONS: Record<string, string[]> = {
   suppliers: ['api_key_hint', 'prices_synced_at'],
   supplier_api_logs: ['outcome'],
   imei_checks: ['country'],
-  blocklist_entries: ['customer_id'],
+  // Feature 40 (decision 050): an entry limited to guest checkouts.
+  blocklist_entries: ['customer_id', 'guest_only'],
   // Feature 22 (storefront catalog): first publication, 30-day sales for the popularity sort, the service picture.
   service_listings: ['listed_at', 'sales_30d', 'image_file_id'],
   // Feature 32 (migration 0040): the ready-made method a payment method was made from, and the logo staff uploaded for it.
@@ -353,6 +354,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['payments', ['auto_credit_at', 'card_fingerprint']],
       ['commission_accruals', ['approved_at']],
       ['blocklist_entries', ['customer_id']],
+      ['checkout_sessions', ['ip_country']],
     ];
     for (const [table, columns] of optional) {
       for (const name of columns) expect(columnOf(table, name).notNull, `${table}.${name}`).toBe(false);
@@ -384,6 +386,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['checkout_sessions', 'status', 'open'],
       ['payments', 'brand', ''],
       ['payments', 'review_required', false],
+      ['blocklist_entries', 'guest_only', false],
     ];
     for (const [table, name, value] of defaults) {
       expect(columnOf(table, name).default, `${table}.${name}`).toEqual(value);
@@ -412,7 +415,7 @@ describe('audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003)', () 
       ['alert_events', ['alert_events_comparator_check', 'alert_events_unit_check', 'alert_events_subject_type_check']],
       ['commission_accruals', ['commission_accruals_status_check', 'commission_accruals_approved_at_check']],
       ['commission_plans', ['commission_plans_tiers_check']],
-      ['checkout_sessions', ['checkout_sessions_status_check']],
+      ['checkout_sessions', ['checkout_sessions_status_check', 'checkout_sessions_ip_country_check']],
       ['consent_records', ['consent_records_purpose_check', 'consent_records_subject_type_check']],
       ['legal_documents', ['legal_documents_type_check']],
       ['imei_checks', ['imei_checks_country_check', 'imei_checks_imei_erased_check']],

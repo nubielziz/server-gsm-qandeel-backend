@@ -72,6 +72,30 @@ export async function hasCurrentTaxRate(db: DbExecutor, country: string, now: Da
 }
 
 /**
+ * Tells whether any country has a tax window in force.
+ *
+ * Why: decision 050: a shop with no window in force sells everywhere without tax, so the checkout refuses a country without a window only
+ * while the shop has some; this is the same notion of "in force" as `GET /store/v1/config`'s `taxRates` and {@link hasCurrentTaxRate}.
+ *
+ * @param db the database or a transaction
+ * @param now the clock's time (decision 031): the window must have started and not ended
+ * @returns true when any `tax_rates` row has `valid_from <= now` and no end, or an end after `now`
+ */
+export async function hasAnyCurrentTaxRate(db: DbExecutor, now: Date): Promise<boolean> {
+  const rows = await db
+    .select({ id: s.taxRates.id })
+    .from(s.taxRates)
+    .where(
+      and(
+        sql`${s.taxRates.validFrom} <= ${now}`,
+        sql`(${s.taxRates.validTo} is null or ${s.taxRates.validTo} > ${now})`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
  * Counts the live sessions of a customer.
  *
  * @param db the database or a transaction

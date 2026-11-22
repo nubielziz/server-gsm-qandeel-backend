@@ -36,8 +36,13 @@ export interface ScreeningFacts {
   /** Gross USD of the payment (incl. VAT). */
   readonly amountUsd: Money;
   readonly paymentMethod: 'card' | 'wallet' | 'crypto' | 'balance';
-  /** The customer has no earlier order that was not rejected. */
+  /** The customer has no earlier order that was not rejected (always true for a guest payment, decision 050). */
   readonly firstOrder: boolean;
+  /**
+   * A guest payment (decision 050) whose email or customer row has earlier orders that were not rejected: the first-order signal says
+   * that history does not count.
+   */
+  readonly guestWithHistory?: boolean;
   /** Earlier orders from this email in the last 24 hours, not counting this one. */
   readonly ordersLast24hByEmail: number;
   /** Earlier orders from this device (address or customer) in the last hour, not counting this one. */
@@ -73,6 +78,46 @@ export interface ScreeningVerdict {
  */
 export function firstOrderSignal(usd: number): string {
   return `New customer, first order above $${usd}`;
+}
+
+/**
+ * The sentence of the first-order signal of a guest payment whose email has earlier orders.
+ *
+ * Why: decision 050: a guest checkout is judged as a first order and never on the account's history; the sentence tells the reviewer that
+ * the account's history is not the buyer's.
+ *
+ * @param usd the rule's amount in whole USD
+ * @returns for example `Guest checkout, treated as a first order above $40`
+ */
+export function guestFirstOrderSignal(usd: number): string {
+  return `Guest checkout, treated as a first order above $${usd}`;
+}
+
+/**
+ * The signal of a declared tax country that the evidence contradicts.
+ *
+ * Why: decision 050: the buyer chooses the tax country, so it is one piece of evidence; the card's issuing country is the stronger one and
+ * the visitor's country stands in when the card does not say. The caller adds the signal as a review reason (`withReviewReasons`), so it
+ * holds the payment whatever the score and never adds points. Inputs are compared as given (the screening upper-cases them).
+ *
+ * @param facts the declared tax country, the card's country and the visitor's country (`null` or `undefined`: unknown)
+ * @returns the sentence naming both countries, or `undefined` when there is no declared country, no evidence, or the evidence agrees
+ */
+export function taxEvidenceSignal(facts: {
+  readonly taxCountry?: string | null | undefined;
+  readonly cardCountry?: string | null | undefined;
+  readonly ipCountry?: string | null | undefined;
+}): string | undefined {
+  const declared = facts.taxCountry ?? null;
+  if (declared === null) return undefined;
+  const card = facts.cardCountry ?? null;
+  if (card !== null)
+    return card === declared ? undefined : `Tax country ${declared} differs from the card country ${card}`;
+  const visitor = facts.ipCountry ?? null;
+  if (visitor !== null) {
+    return visitor === declared ? undefined : `Tax country ${declared} differs from the IP country ${visitor}`;
+  }
+  return undefined;
 }
 
 /**
@@ -117,7 +162,12 @@ export function scorePayment(facts: ScreeningFacts, rules: RiskRuleSet): Screeni
     facts.firstOrder &&
     facts.amountUsd.cmp(Money.of(firstOrderLimit.value)) > 0
   ) {
-    add(firstOrderSignal(firstOrderLimit.value), SIGNAL_POINTS.firstOrderAbove);
+    add(
+      facts.guestWithHistory === true
+        ? guestFirstOrderSignal(firstOrderLimit.value)
+        : firstOrderSignal(firstOrderLimit.value),
+      SIGNAL_POINTS.firstOrderAbove,
+    );
   }
   if (facts.proxyIp) add('VPN or proxy IP', SIGNAL_POINTS.proxyIp);
   if (
@@ -159,8 +209,10 @@ function decide(score: number, hardBlock: boolean, rules: RiskRuleSet): RiskDeci
  * Adds the review reasons the payment side found to a verdict.
  *
  * Why: decision 048: some facts need staff review whatever the score (a payment made after the checkout's price lock ended): each is a
- * signal and the decision is at least `review`. The reasons come first, so the first one is the hold sentence; a `block` keeps its hard
- * signals first, so its refund reason does not change.
+ * signal and the decision is at least `review`. Decision 050 adds the declared tax country the evidence contradicts
+ * ({@link taxEvidenceSignal}): the caller passes every reason in one call (the payment side's first, then the tax signal), so the review
+ * is applied once. The reasons come first, so the first one is the hold sentence; a `block` keeps its hard signals first, so its refund
+ * reason does not change.
  *
  * @param verdict the verdict of the rules
  * @param reasons the review reasons, in order (empty: none)

@@ -1,7 +1,7 @@
 // Risk tables (map domain K): IMEI checks, risk assessments, the blocklist and data-subject requests.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
-import { check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigId,
   createdAt,
@@ -217,7 +217,8 @@ export type NewRiskAssessment = typeof riskAssessments.$inferInsert;
  * The blocklist: email, domain, IMEI, card fingerprint, device and country. IP addresses live in ip_rules.
  *
  * Why: Blocked emails, domains, IMEIs, cards, devices and countries, stored as hashes with a display form (routes
- * /admin/blocklist).
+ * /admin/blocklist). An entry with `guest_only` matches only a checkout opened without a signed-in session and the payment of such a
+ * checkout (decision 050).
  */
 export const blocklistEntries = pgTable(
   'blocklist_entries',
@@ -231,6 +232,8 @@ export const blocklistEntries = pgTable(
     reason: text().notNull().default(''),
     expiresAt: timestampTz(),
     source: text().$type<BlocklistSource>().notNull().default('manual'),
+    /** true: the entry blocks guest checkouts only (an email of a guest order whose email belonged to an account before it); the account keeps its use (decision 050) */
+    guestOnly: boolean().notNull().default(false),
     /** the customer a block came from (POST /admin/customers/:id/block); kept null if the customer is deleted (RESOLUTIONS b2c-5) */
     customerId: bigId().references((): AnyPgColumn => customers.id, { onDelete: 'set null' }),
     createdBy: fk((): AnyPgColumn => staffUsers.id),

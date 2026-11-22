@@ -2,12 +2,22 @@
 // the gateway, the credit from gateway_clearing, the payments that go to staff, a gateway that is slow or down, a flagged payment,
 // and the guarantee that two runs (or a run and a staff decision) credit once.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { type Database, schema as s } from '@src/infra/db';
+import { DbService, type Database, schema as s } from '@src/infra/db';
 import { OutboundHttp } from '@src/infra/http';
 import { JobRunsService } from '@src/modules/health';
-import { PaymentAutoCredit, PaymentAutoCreditModule } from '@src/modules/money';
+import {
+  GATEWAY_HTTP_POLICY,
+  PaymentAutoCredit,
+  PaymentAutoCreditModule,
+  TOP_UP_SCREENING_UNAVAILABLE,
+  TopUpScreeningHooks,
+} from '@src/modules/money';
+import { GatewayCredentialsVault } from '@src/modules/money/application/gateway-credentials';
+import { PaymentCrediting } from '@src/modules/money/application/payment-crediting';
 import { driverFor } from '@src/modules/money/infra/gateway-drivers/drivers';
+import { AuditService } from '@src/modules/platform';
 import { PaymentAutoCreditProcessor } from '@src/modules/money/jobs/payment-auto-credit.processor';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -72,6 +82,52 @@ async function confirmed(gatewayOverrides: Record<string, unknown> = {}, referen
 
 const reload = async (id: number) => (await db.select().from(s.payments).where(eq(s.payments.id, id)))[0]!;
 const tick = async () => job.run(await job.due());
+
+/** The job built the way the app builds it, but with a hook list that no module registered a hook with (a process without the risk module). */
+function jobWithoutScreening(): PaymentAutoCredit {
+  const get = <T>(token: abstract new (...args: never[]) => T): T => t.app.get(token, { strict: false });
+  return new PaymentAutoCredit(
+    get(DbService),
+    get(PaymentCrediting),
+    new TopUpScreeningHooks(),
+    get(GatewayCredentialsVault),
+    get(AuditService),
+    get(OutboundHttp),
+    clock,
+    t.app.get(GATEWAY_HTTP_POLICY, { strict: false }),
+  );
+}
+
+describe('PaymentAutoCredit without a risk screening (decision 050)', () => {
+  it('sends a due top-up to staff review when no risk screening is registered', async () => {
+    const bare = jobWithoutScreening();
+    const { merchant, payment } = await confirmed();
+    clock.advance(11 * MINUTE);
+    expect(await bare.run(await bare.due())).toMatchObject({ checked: 1, credited: 0, review: 1, failed: 0 });
+    expect(await reload(payment.id)).toMatchObject({
+      status: 'pending',
+      reviewRequired: true,
+      autoCreditAt: null,
+      reviewNote: TOP_UP_SCREENING_UNAVAILABLE,
+    });
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    expect((await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id }))!.balance).toBe('0.0000');
+  });
+
+  it('logs an error at boot when no risk screening is registered, and none when the risk module registered its hook', () => {
+    const spy = spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    try {
+      jobWithoutScreening().onApplicationBootstrap();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0]![0])).toContain('No risk screening is registered');
+      spy.mockClear();
+      job.onApplicationBootstrap();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
 
 describe('PaymentAutoCredit', () => {
   it('credits the wallet 10 minutes after the confirmation, once the gateway says confirmed again', async () => {

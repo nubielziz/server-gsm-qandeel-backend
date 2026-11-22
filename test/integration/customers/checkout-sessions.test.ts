@@ -20,6 +20,7 @@ import {
   TURNSTILE_HEADERS,
   insertLegal,
   insertListing,
+  insertTaxWindow,
   storefrontWorld,
   type StorefrontWorld,
 } from '../../support/storefront';
@@ -189,9 +190,56 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect(fresh.taxRate).toBe('5.0000');
   });
 
-  it('prices in USD without tax for a country that has no tax window, and defaults the currency', async () => {
+  it('refuses a country without a tax window while the shop has one, as the customer profile does', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
+    const before = await counts();
+    const res = await open({
+      serviceId: world.icloud.serviceId,
+      email: 'sam@mail.example',
+      country: 'us',
+      imei: APPLE_IMEI,
+    });
+    expect(res.statusCode).toBe(422);
+    expect(body(res)).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      detail: 'Choose a country.',
+      errors: [{ field: 'country', code: 'unsupported', message: 'Choose a country.' }],
+    });
+    expect(await counts()).toEqual(before);
+    // A signed-in buyer is refused the same way.
+    const { customer, client } = await signedInCustomer();
+    const signedIn = await client.call('POST', OPEN_URL, valid(world, { email: customer.email, country: 'US' }));
+    expect(signedIn.statusCode).toBe(422);
+    expect(body(signedIn).errors).toEqual([{ field: 'country', code: 'unsupported', message: 'Choose a country.' }]);
+    expect((await db.select().from(s.checkoutSessions)).length).toBe(0);
+    // A country with a window in force opens.
+    expect((await open(valid(world))).statusCode).toBe(201);
+  });
+
+  it('does not count a tax window that ended as one in force, and counts one that starts in the future as none', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db.delete(s.taxRates);
+    await insertTaxWindow(db, { country: 'GB', validTo: new Date(clock.nowMs() - 24 * 60 * MINUTE) });
+    await insertTaxWindow(db, { country: 'FR', validFrom: new Date(clock.nowMs() + 24 * 60 * MINUTE) });
+    const ask = (country: string) =>
+      open({ serviceId: world.icloud.serviceId, email: 'sam@mail.example', country, imei: APPLE_IMEI });
+    // No window in force at all: the shop sells everywhere without tax.
+    expect((await ask('US')).statusCode).toBe(201);
+    await insertTaxWindow(db, { country: 'DE', ratePercent: '19', label: 'German VAT' });
+    const refused = await ask('US');
+    expect(refused.statusCode).toBe(422);
+    expect(body(refused).errors[0]).toMatchObject({ field: 'country', code: 'unsupported' });
+    // The window that ended does not open its own country while another one is in force.
+    expect((await ask('GB')).statusCode).toBe(422);
+    expect((await ask('DE')).statusCode).toBe(201);
+  });
+
+  it('prices without tax a country with no window when the shop has no tax window at all, and defaults the currency', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await db.delete(s.taxRates);
     const res = await open({
       serviceId: world.icloud.serviceId,
       email: 'sam@mail.example',
@@ -209,6 +257,14 @@ describe('POST /store/v1/checkout-sessions', () => {
         display: { net: '3.9900', tax: '0.0000', gross: '3.9900' },
       },
     });
+  });
+
+  it('keeps no visitor country while GEOIP_COUNTRY_HEADER is not set', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    expect((await open(valid(world), { ...TURNSTILE_HEADERS, 'cf-ipcountry': 'US' })).statusCode).toBe(201);
+    const [row] = await db.select().from(s.checkoutSessions);
+    expect(row!.ipCountry).toBeNull();
   });
 
   it('multiplies the price by the quantity before the tax and checks it against the service', async () => {
@@ -500,6 +556,25 @@ async function signedInCustomer(overrides: Parameters<typeof makeCustomer>[1] = 
   return { customer, client };
 }
 const OPEN_URL = '/store/v1/checkout-sessions';
+
+describe('POST /store/v1/checkout-sessions and an email blocked for guest checkouts only (decision 050)', () => {
+  it('refuses a guest with that email like any blocked email and accepts the signed-in account', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const { customer, client } = await signedInCustomer();
+    await insertBlock(t, db, 'email', customer.email, { guestOnly: true });
+    const refused = await open(valid(world, { email: customer.email }));
+    expect(refused.statusCode).toBe(403);
+    expect(body(refused)).toMatchObject({
+      code: 'ACCOUNT_SUSPENDED',
+      detail: 'This account cannot start a new order. Contact support.',
+    });
+    const accepted = await client.call('POST', OPEN_URL, valid(world, { email: customer.email }));
+    expect(accepted.statusCode).toBe(201);
+    const [row] = await db.select().from(s.checkoutSessions);
+    expect(row).toMatchObject({ customerId: customer.id, openedSignedIn: true });
+  });
+});
 
 describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)', () => {
   it('opens the checkout as the account, even with guest checkout off, whatever the case of the typed email', async () => {

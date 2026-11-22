@@ -141120,7 +141120,7 @@
     },
     "/admin/risk/orders/{id}/refund": {
       "post": {
-        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request waits on the Refunds page instead (decision 048).",
+        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request waits on the Refunds page instead (decision 048). For a guest checkout (opened without a signed-in session) `blockEmail` also blocks the card that paid the order, and blocks the checkout’s email for guest checkouts only when that email belonged to an account before the order: the account keeps signing in and ordering signed in, and its status is never changed here (decision 050).",
         "operationId": "postAdminRiskOrdersByIdRefund",
         "parameters": [
           {
@@ -141150,7 +141150,7 @@
                   },
                   "blockEmail": {
                     "default": false,
-                    "description": "Add the customer’s email to the blocklist.",
+                    "description": "Add the order’s email to the blocklist. For an order whose checkout was not opened signed in (a guest checkout) the card that paid the order is blocked too, and the email is blocked for guest checkouts only when it belonged to an account before that order (decision 050).",
                     "type": "boolean"
                   },
                   "blockDevice": {
@@ -247296,7 +247296,7 @@
     },
     "/store/v1/checkout-sessions": {
       "post": {
-        "description": "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
+        "description": "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
         "operationId": "postStoreV1CheckoutSessions",
         "parameters": [
           {
@@ -247334,7 +247334,7 @@
                     "maxLength": 254
                   },
                   "country": {
-                    "description": "The buyer's country: the tax of its window is locked on the session.",
+                    "description": "The buyer's country: the tax of its window is locked on the session. While the shop has a tax window in force, it must be a country that has one (the `taxRates` of `GET /store/v1/config`).",
                     "type": "string",
                     "pattern": "^[A-Za-z]{2}$"
                   },

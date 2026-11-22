@@ -7,6 +7,8 @@
 # exactly the compose subnet (TRUST_PROXY=172.30.0.0/24). Do not add `trusted_proxies` unless a CDN is placed in front.
 # The console's and the shop's pages get the anti-framing, nosniff and referrer headers of decision 045; the API's answers keep the
 # API's own headers.
+# Every host removes the visitor-country header (GEOIP_COUNTRY_HEADER) before the API: this edge writes no country, so no visitor can
+# choose the one the API reads (decision 050).
 # Every host writes the same access log (decision 054): the token part of the shop's link addresses, the Telegram webhook path, link
 # tokens, searches and IMEIs in the query, and credential headers are not written.
 {
@@ -111,6 +113,9 @@
 {$SHOP_HOST} {
 	import common
 	import access_log
+	# Decision 050: removed at the top of the host, before any route, so it holds for the requests that go straight to the API and for
+	# those the site's own server forwards. With a CDN in front, keep it only from the CDN's addresses (docs/OPERATIONS.md, Visitor country).
+	request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}
 	@api path /client/* /store/v1/*
 	handle @api {
 		reverse_proxy api:3000
@@ -124,6 +129,8 @@
 {$ADMIN_HOST} {
 	import common
 	import access_log
+	# Decision 050: see the shop host.
+	request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}
 	@api path /admin/* /health /reference /reference/* /store/v1/media/*
 	handle @api {
 		reverse_proxy api:3000
@@ -137,6 +144,8 @@
 {$API_HOST} {
 	import common
 	import access_log
+	# Decision 050: see the shop host.
+	request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}
 	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
 	handle @api {
 		reverse_proxy api:3000

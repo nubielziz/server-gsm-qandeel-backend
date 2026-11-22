@@ -1,7 +1,23 @@
 // Drizzle queries on `risk_assessments` (risk module): the new assessment of a payment and the staff decision on a held order.
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type NewRiskAssessment, type RiskAssessment, type RiskOutcome, riskAssessments } from '../db/schema';
+
+/**
+ * Serialises the screenings of one buyer until the transaction ends.
+ *
+ * Why: decision 050: two payments of one email screened at the same moment run one after the other, so the second counts the first one's
+ * order. Lock order: the payment and checkout-session rows the caller holds, then this lock, then the order, stock and ledger rows of the
+ * placement; no caller takes it in another order, and no network call happens while it is held.
+ *
+ * Side effects: takes `pg_advisory_xact_lock`, released at commit or rollback.
+ *
+ * @param db the caller's transaction
+ * @param email the buyer's email, trimmed and lower case
+ */
+export async function lockBuyer(db: DbExecutor, email: string): Promise<void> {
+  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`risk-buyer:${email}`}, 0))`);
+}
 
 /**
  * Inserts an assessment.

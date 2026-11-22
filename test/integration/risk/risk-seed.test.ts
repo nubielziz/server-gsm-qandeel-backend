@@ -76,6 +76,7 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
         amountUsd: '10.0000',
         paymentMethod: 'card',
         imei: '353890118842019',
+        openedSignedIn: false,
       }),
     );
     expect(blocked.block).toBe(true);

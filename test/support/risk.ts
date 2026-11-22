@@ -36,6 +36,8 @@ export interface HeldOptions {
   readonly cardFingerprint?: string;
   /** The checkout session's encrypted IMEI (`checkout_sessions.imei_enc`). */
   readonly sessionImeiEnc?: string;
+  /** Whether a signed-in customer opened the checkout (`checkout_sessions.opened_signed_in`); default `false`, as the column. */
+  readonly openedSignedIn?: boolean;
 }
 
 /**
@@ -79,6 +81,7 @@ export async function insertHeldOrder(world: OrdersWorld, options: HeldOptions =
       ip: '203.0.113.25',
       userAgent: 'Mozilla/5.0',
       imeiEnc: options.sessionImeiEnc ?? null,
+      ...(options.openedSignedIn === undefined ? {} : { openedSignedIn: options.openedSignedIn }),
       expiresAt: new Date('2099-01-01T00:00:00.000Z'),
     })
     .returning();

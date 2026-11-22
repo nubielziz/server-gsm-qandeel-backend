@@ -82,8 +82,8 @@ export async function eraseOrderImeis(tx: DbExecutor, customerId: number, now: D
 /**
  * Removes the personal data from a customer's checkout sessions (a table the customers module owns).
  *
- * Why: B50: the session keeps the price, tax and status the accounting needs; the buyer's IMEI (ciphertext), email, address and
- * browser go, and IMEI-looking inputs are masked.
+ * Why: B50: the session keeps the price, tax and status the accounting needs; the buyer's IMEI (ciphertext), email, address (and the
+ * visitor's country read from it, decision 050) and browser go, and IMEI-looking inputs are masked.
  *
  * @param tx the anonymization's transaction
  * @param customerId the customer
@@ -105,7 +105,15 @@ export async function eraseCheckoutSessions(
   for (const row of rows) {
     await tx
       .update(s.checkoutSessions)
-      .set({ imeiEnc: null, email, ip: null, userAgent: '', inputs: scrubInputs(row.inputs ?? {}), updatedAt: now })
+      .set({
+        imeiEnc: null,
+        email,
+        ip: null,
+        ipCountry: null,
+        userAgent: '',
+        inputs: scrubInputs(row.inputs ?? {}),
+        updatedAt: now,
+      })
       .where(eq(s.checkoutSessions.id, row.id));
   }
   return rows.length;
@@ -152,6 +160,8 @@ export interface ExportSession {
   readonly taxCountry: string | null;
   readonly status: string;
   readonly ip: string | null;
+  /** The visitor's country as the proxy in front supplied it when the checkout was opened (decision 050); null when unknown. */
+  readonly ipCountry: string | null;
   readonly userAgent: string;
   readonly orderId: number | null;
   readonly createdAt: Date;
@@ -271,6 +281,7 @@ export async function exportRowsOf(db: DbExecutor, customerId: number): Promise<
       taxCountry: s.checkoutSessions.taxCountry,
       status: s.checkoutSessions.status,
       ip: s.checkoutSessions.ip,
+      ipCountry: s.checkoutSessions.ipCountry,
       userAgent: s.checkoutSessions.userAgent,
       orderId: s.checkoutSessions.orderId,
       createdAt: s.checkoutSessions.createdAt,

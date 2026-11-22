@@ -35,8 +35,9 @@ cache (a rule decides whether a customer's money is held).
 
 **At the storefront capture** (`CheckoutCaptureService` of the customers module) every confirmed payment is assessed on the webhook's
 transaction before `CustomerOrderPlacement.place`, with what the capture knows (customer, email, checkout session, USD gross incl. VAT,
-payment method, the session's IMEI, the event's card fingerprint, the tax country, the session's address). `allow` places the order as
-before. `review` places it `held` (no stock claimed, no `order.dispatch_requested`, a `review` timeline line with `holdReason`).
+payment method, the session's IMEI, the card's fingerprint, country and funding from the card driver's charge details, the tax country, the
+session's address and visitor country (`checkout_sessions.ip_country`), and whether the account itself opened the checkout: decision 050).
+`allow` places the order as before. `review` places it `held` (no stock claimed, no `order.dispatch_requested`, a `review` timeline line with `holdReason`).
 `block` places it `held` and `RiskDecisionsService.refundBlocked` rejects it at once as the system: a `processing` refund, the
 `b2c_refund` journal and the `refund.process` event of feature 16, the first signal as the reason, no blocklist entry, no audit row,
 and the assessment records outcome `refunded` with no reviewer. A risk refund is always paid out, even while `autoRefundFailed` is off,
@@ -58,7 +59,40 @@ late payment at once when the gateway can refund.
 - **Thresholds**: at or above `blockThreshold` (80) the decision is `block`, at or above `reviewThreshold` (50) it is `review`
   (held); a threshold whose switch is off does not apply.
 - **Top-ups**: `RiskScreening.reviewTopUp(db, { email, cardFingerprint })` answers `{ flagged, reason }` from the blocklist, for the
-  auto-credit job of billing to set `payments.review_required` (RESOLUTIONS money-3). `RiskServicesModule.onModuleInit` registers it with money's `TopUpScreeningHooks` (money cannot import risk: decision 032), the worker imports `RiskServicesModule`, and the job asks the hook under the payment's lock before it credits.
+  auto-credit job of billing to set `payments.review_required` (RESOLUTIONS money-3). `RiskServicesModule.onModuleInit` registers it with money's `TopUpScreeningHooks` (money cannot import risk: decision 032), the worker imports `RiskServicesModule`, and the job asks the hook under the payment's lock before it credits. A process without the risk module's hook sends every automatic top-up to staff review (decision 050).
+
+**Inputs and where they come from** (decision 050). A rule or signal whose input this installation cannot supply never applies.
+
+| Rule or signal | Needs | Source in this installation | Without it |
+|---|---|---|---|
+| Hold when the IP country differs from the card country (`reviewIpCountryMismatch`, +25, card payments) | the visitor's and the card's country | card: the card driver; visitor: `checkout_sessions.ip_country` from `GEOIP_COUNTRY_HEADER` | never applies; named at boot while on |
+| Prepaid card BIN (+12) | the card's funding | the card driver | never applies (no card details) |
+| VPN or proxy IP (+15) | a VPN or proxy lookup | none | never applies; named at boot |
+| Block blacklisted IMEIs (`blockBlacklistedImei`) and "IMEI was checked blacklisted before" (+30) | an IMEI check stored as `blacklisted` | none writes one (the storefront check stores `unknown`) | applies only to a check stored so; named at boot while on |
+| Country blocklist | the declared tax country, the visitor's and the card's country | as above | matches the countries known |
+| Tax country evidence (no switch) | the card's country, else the visitor's | as above | the declared country stands |
+
+At boot the API logs `Risk rule without an input source: <rule>. <reason>` for each gap (`application/risk-input-check.ts`,
+`domain/risk-inputs.ts`); the rules page itself does not say it yet.
+
+- **Guest checkouts** (decision 050). A payment is *proven* when its checkout was opened by a signed-in customer
+  (`checkout_sessions.opened_signed_in`) and the customer is known. A proven payment is judged on that account's own signed-in checkouts: its
+  history (first order) and its daily and hourly counts. A guest payment is always a first order, is counted on its email and the customer
+  row of that email, and adds nothing to the history of the account that owns the email. When the email has earlier orders the first-order
+  signal reads `Guest checkout, treated as a first order above $<n>`, so the reviewer does not read the account's history as the buyer's.
+  The blocklist's guest-checkout entries match a guest payment only.
+- **Tax country evidence** (decision 050). The card's issuing country decides, and the visitor's country when the card does not say. When it
+  differs from the declared tax country, the signal `Tax country <XX> differs from the card country <YY>` (or `... from the IP country <YY>`)
+  is a review reason (`withReviewReasons`, after the payment side's own reasons, so it is the hold sentence only when there is none): the
+  order is held whatever the score and the review switch, a block stays a block. It has no rule switch and applies only while the shop has a
+  tax window in force. Staff approve (the declared country stands) or refund.
+- **Velocity** (decision 050). The daily and burst counts also count the buyer's other checkouts whose order payment is `pending` (an open
+  payment page, or a confirmation held for staff) and has no order yet, for 24 hours, so pages opened with a guest's email can send that
+  guest's next payment to review (held, never refused; a signed-in account's counts do not include guest checkouts). Orders and in-flight
+  checkouts are read in one SQL statement. `assess` first takes `pg_advisory_xact_lock(hashtextextended('risk-buyer:<email>', 0))`, so two
+  payments of one email screened at the same moment run one after the other and the second sees the first one's order. Lock order: the payment
+  and checkout-session rows the caller holds, then this lock, then the order, stock and ledger rows of the placement; no network call is made
+  while it is held.
 
 ### The review queue (feature 18)
 
@@ -71,7 +105,10 @@ into the machine's `b2c_refund` move like a staff rejection: one `refunds` row o
 `b2c_refund` journal and one `refund.process` event, never a second. The audit row names the blocklist entries it added by kind and
 mask (an IMEI as its TAC and bullets), never a readable IMEI. `RiskDecisionsService` lives in `RiskServicesModule` so the capture can
 call it. A customer's history on a card counts the orders the customer created before the held one; the captured amount is the USD
-gross the checkout locked (the figure the Refunds page shows).
+gross the checkout locked (the figure the Refunds page shows). Refund on a guest order (decision 050): `blockEmail` adds the card that paid
+the order, and blocks the checkout's email for guest checkouts only when that email belonged to an account before the order (a staff-made
+account, or an email verified before the order); otherwise it blocks the email everywhere, as on a signed-in order, which adds no card. The
+limited entry's reason ends with " (guest checkouts only)" and the audit row says `emailScope: 'guest checkouts'`.
 
 ### The rules (feature 18)
 
@@ -91,6 +128,15 @@ email or its domain is blocked: the customers module asks it for admin create an
 checkout (`POST /store/v1/checkout-sessions` also asks for the IMEI) refuses a match with the `ACCOUNT_SUSPENDED` a blocked customer gets,
 one message whichever entry matched.
 
+An entry has one of two scopes (`guest_only`, decision 050). The default blocks everywhere. An entry limited to guest checkouts is matched
+by a guest use only: a checkout opened without a signed-in session and the screening of its payment. Sign-in by link, a staff create, an
+email change, a signed-in checkout, a signed-in payment and a top-up do not match it, and `isEmailBlocked` does not count it. Only the risk
+refund of a guest order writes one. A block that staff add by hand over it (`POST /admin/blocklist`) widens the entry to a full one (the
+route answers `201`, the audit row's `before` says `scope: 'guest checkouts'`); a full entry stays `409 ALREADY_BLOCKED`. The risk refund
+of an order that is not a limited guest order widens it the same way when it blocks the email (the audit row's `blocked` lists the email and
+`emailScopeBefore` says `guest checkouts`), so a full block is never refused because a narrower entry of that email exists. The customer
+block keeps `ON CONFLICT DO NOTHING`: it leaves a limited entry as it is, and the customer's `blocked` status refuses the account anyway.
+
 ### The IMEI log and its erasure (feature 18)
 
 `GET /admin/imei-checks` decrypts `imei_enc` for the answer, and shows `tac` plus bullets once it was erased (15 bullets when the TAC is
@@ -109,7 +155,7 @@ export download and an anonymization call to close the customer's waiting reques
 
 ## Public API (`index.ts`)
 
-`IMEI_CHECK_AAD`, `imeiHashInput`, `maskedImei`, `erasedMainInput`, `RISK_RULE_IDS`, `holdReason`, `blockDisplay`, `blockHashInput`,
+`IMEI_CHECK_AAD`, `imeiHashInput`, `countryFromHeader`, `maskedImei`, `erasedMainInput`, `RISK_RULE_IDS`, `holdReason`, `blockDisplay`, `blockHashInput`,
 `normalizeBlockValue`, the services `RiskScreening`, `RiskDecisionsService`, `Blocklist`, `RiskRules`, `ImeiErasure`, `DataRequestService`, and the modules
 `ImeiCheckModule`, `RiskServicesModule` (the services without controllers), `RiskAdminModule` (the routes), `DataRetentionModule` (the
 worker's nightly job), `RiskModule`. Other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).

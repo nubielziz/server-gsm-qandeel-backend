@@ -150,7 +150,12 @@ export const RefundHeldBodySchema = z.object({
     .max(MAX_BLOCK_REASON_LENGTH, `Use at most ${MAX_BLOCK_REASON_LENGTH} characters.`)
     .optional()
     .describe('Left out or blank: the server writes "Refunded after risk review: <first signal>".'),
-  blockEmail: z.boolean().default(false).describe('Add the customer’s email to the blocklist.'),
+  blockEmail: z
+    .boolean()
+    .default(false)
+    .describe(
+      'Add the order’s email to the blocklist. For an order whose checkout was not opened signed in (a guest checkout) the card that paid the order is blocked too, and the email is blocked for guest checkouts only when it belonged to an account before that order (decision 050).',
+    ),
   blockDevice: z.boolean().default(false).describe('Add the order’s IMEI (the device) to the blocklist.'),
 });
 
@@ -164,7 +169,10 @@ export const refundHeldOrder = defineRoute({
     'entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The ' +
     'customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order ' +
     'is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request ' +
-    'waits on the Refunds page instead (decision 048).',
+    'waits on the Refunds page instead (decision 048). For a guest checkout (opened without a signed-in session) `blockEmail` ' +
+    'also blocks the card that paid the order, and blocks the checkout’s email for guest checkouts only when that email belonged to ' +
+    'an account before the order: the account keeps signing in and ordering signed in, and its status is never changed here ' +
+    '(decision 050).',
   tags: ['risk'],
   surface: 'admin',
   access: 'staff-permission',

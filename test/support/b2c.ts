@@ -29,6 +29,10 @@ export interface TestCard {
   readonly fingerprint?: string;
   readonly threeDs?: boolean;
   readonly wallet?: string;
+  /** The issuing country the charge reports (decision 050); absent: the charge says none. */
+  readonly country?: string;
+  /** How the card is funded (`credit`, `debit`, `prepaid`); absent: the charge says none. */
+  readonly funding?: string;
 }
 
 /** The card of a payment when the test names none. */
@@ -123,6 +127,8 @@ function paymentIntentOf(id: string, intent: TestIntent): Record<string, unknown
           fingerprint: card.fingerprint ?? 'fp_1',
           three_d_secure: card.threeDs === false ? null : { result: 'authenticated' },
           wallet: card.wallet ? { type: card.wallet } : null,
+          ...(card.country === undefined ? {} : { country: card.country }),
+          ...(card.funding === undefined ? {} : { funding: card.funding }),
         },
       },
     },
@@ -301,12 +307,14 @@ export async function openCheckout(
     country?: string;
     /** The values of the service's order fields (a server service). */
     inputs?: Record<string, string>;
+    /** Extra request headers of the open call (for example the visitor-country header of a proxy). */
+    headers?: Record<string, string>;
   } = {},
 ): Promise<{ token: string; session: ReturnType<typeof json> }> {
   const res = await t.app.inject({
     method: 'POST',
     url: '/store/v1/checkout-sessions',
-    headers: { 'user-agent': 'Mozilla/5.0 (test)', ...TURNSTILE_HEADERS },
+    headers: { 'user-agent': 'Mozilla/5.0 (test)', ...TURNSTILE_HEADERS, ...options.headers },
     remoteAddress: freshClientIp(),
     payload: {
       serviceId: options.serviceId ?? world.icloud.serviceId,
@@ -551,9 +559,14 @@ export async function paidOrder(
     currency?: string;
     card?: TestCard;
     inputs?: Record<string, string>;
+    /** Extra request headers of the checkout open call (the visitor-country header of a proxy). */
+    openHeaders?: Record<string, string>;
   } = {},
 ): Promise<PaidOrder> {
-  const { token } = await openCheckout(t, world, options);
+  const { token } = await openCheckout(t, world, {
+    ...options,
+    ...(options.openHeaders === undefined ? {} : { headers: options.openHeaders }),
+  });
   const started = await pay(t, token, undefined);
   if (started.statusCode !== 201) throw new Error(`pay answered ${started.statusCode}: ${started.body}`);
   const { payment } = json(started);

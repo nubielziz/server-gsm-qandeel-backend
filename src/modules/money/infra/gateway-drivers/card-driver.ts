@@ -8,6 +8,8 @@ import type { Money } from '../../../../common/money';
 import { assertWebhookSignature } from '../../../../infra/crypto';
 import type { PaymentAftermath } from '../../domain/payment-rules';
 import {
+  CARD_FUNDINGS,
+  type CardFunding,
   type CheckoutRequest,
   DETAILS_TIMEOUT_MS,
   type DisputeEvent,
@@ -62,9 +64,21 @@ function minorOf(amount: Money, currency: string, what: string): string {
   return minor;
 }
 
+/** The two-letter issuing country of a card (upper case), or `undefined` when the gateway gave none or something else. */
+function issuerCountryOf(value: unknown): string | undefined {
+  const code = textOf(value)?.trim().toUpperCase();
+  return code !== undefined && /^[A-Z]{2}$/.test(code) ? code : undefined;
+}
+
+/** How a card is funded, when the gateway names one of the known values exactly (it writes them in lower case). */
+function fundingOf(value: unknown): CardFunding | undefined {
+  const text = textOf(value);
+  return CARD_FUNDINGS.find((funding) => funding === text);
+}
+
 /**
  * How a payment was made, from the `card` of a Charge's `payment_method_details`: brand (the wallet's name for Apple Pay or Google
- * Pay), last digits, fingerprint, 3-D Secure and wallet.
+ * Pay), last digits, fingerprint, 3-D Secure, wallet, issuing country and funding.
  */
 function cardDetailsOf(charge: Record<string, unknown> | undefined): PaymentDetails | undefined {
   const card = objectOf(objectOf(charge?.['payment_method_details'])?.['card']);
@@ -77,6 +91,8 @@ function cardDetailsOf(charge: Record<string, unknown> | undefined): PaymentDeta
     fingerprint: textOf(card['fingerprint']),
     threeDs: threeDs !== undefined && THREE_DS_PASSED.has(threeDs),
     wallet,
+    country: issuerCountryOf(card['country']),
+    funding: fundingOf(card['funding']),
   };
 }
 

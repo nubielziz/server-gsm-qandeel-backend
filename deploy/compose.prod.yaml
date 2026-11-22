@@ -28,6 +28,8 @@ services:
       ADMIN_HOST: ${ADMIN_HOST:?}
       API_HOST: ${API_HOST:?}
       ACME_EMAIL: ${ACME_EMAIL:?}
+      # Decision 050: the header Caddy removes from every request before the API; the placeholder keeps the Caddyfile line valid while nothing is set.
+      GEOIP_COUNTRY_HEADER: ${GEOIP_COUNTRY_HEADER:-X-Visitor-Country}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -61,6 +63,8 @@ services:
     # The API holds only the search key of the search engine (feature 29, decision 038): it can search and read an alias, never write.
     environment:
       TYPESENSE_SEARCH_KEY: ${TYPESENSE_SEARCH_KEY:?set it in deploy/.env}
+      # Decision 050: one setting for the API and Caddy, from deploy/.env; empty means not set, and a value in .env.production is not used.
+      GEOIP_COUNTRY_HEADER: ${GEOIP_COUNTRY_HEADER:-}
     # The image's own healthcheck calls GET /health?strict=1 (503 when Postgres is down, decision 015).
     depends_on:
       postgres:

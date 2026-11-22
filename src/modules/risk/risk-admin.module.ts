@@ -3,6 +3,7 @@
 import { Module } from '@nestjs/common';
 import { BlocklistAdminService } from './application/blocklist-admin.service';
 import { ImeiCheckAdminService } from './application/imei-check-admin.service';
+import { RiskInputCheck } from './application/risk-input-check';
 import { RiskQueueService } from './application/risk-queue.service';
 import { BlocklistController } from './controllers/blocklist.controller';
 import { DataRequestsController, StorePrivacyController } from './controllers/data-requests.controller';
@@ -15,7 +16,8 @@ import { RiskServicesModule } from './risk-services.module';
  * customer routes belong to the customers module).
  *
  * Why: the use cases need the global database, crypto, audit, settings and clock providers and the security stack, which a
- * database-less test app does not have. The held-order decisions (`RiskDecisionsService`) come from `RiskServicesModule`.
+ * database-less test app does not have. The held-order decisions (`RiskDecisionsService`) come from `RiskServicesModule`. `RiskInputCheck`
+ * is here because only the API serves checkouts: it names the rules without an input at boot (decision 050).
  */
 @Module({
   imports: [RiskServicesModule],
@@ -26,6 +28,6 @@ import { RiskServicesModule } from './risk-services.module';
     DataRequestsController,
     StorePrivacyController,
   ],
-  providers: [RiskQueueService, BlocklistAdminService, ImeiCheckAdminService],
+  providers: [RiskQueueService, BlocklistAdminService, ImeiCheckAdminService, RiskInputCheck],
 })
 export class RiskAdminModule {}

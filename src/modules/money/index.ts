@@ -106,7 +106,7 @@ export type { WireRefType } from './domain/ref-types';
 export { PaymentGateways } from './application/payment-gateways';
 export { INVOICE_PAID_EVENT, InvoiceOutbox } from './application/invoice-outbox';
 export { MoneyOutboxModule } from './money-outbox.module';
-export { TopUpScreeningHooks } from './application/top-up-screening-hooks';
+export { TOP_UP_SCREENING_UNAVAILABLE, TopUpScreeningHooks } from './application/top-up-screening-hooks';
 export type {
   TopUpScreeningAnswer,
   TopUpScreeningFacts,

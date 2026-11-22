@@ -5,8 +5,10 @@ import { defaultRuleSet, mergeRules } from '@src/modules/risk/domain/risk-rules'
 import {
   SIGNAL_POINTS,
   type ScreeningFacts,
+  guestFirstOrderSignal,
   holdReason,
   scorePayment,
+  taxEvidenceSignal,
   withReviewReasons,
 } from '@src/modules/risk/domain/risk-scoring';
 
@@ -199,5 +201,88 @@ describe('withReviewReasons (decision 048)', () => {
     });
     const verdict = { score: 10, signals: ['VPN or proxy IP'], decision: 'allow' } as const;
     expect(withReviewReasons(verdict, [])).toBe(verdict);
+  });
+});
+
+describe('the first-order signal of a guest payment (decision 050)', () => {
+  const rules = defaultRuleSet();
+
+  it("says when a guest's first order is judged without the history of its email", () => {
+    const guest = scorePayment(
+      facts({ firstOrder: true, guestWithHistory: true, amountUsd: Money.of('40.0001') }),
+      rules,
+    );
+    expect(guest.signals).toEqual(['Guest checkout, treated as a first order above $40']);
+    expect(guest.score).toBe(18);
+    expect(guestFirstOrderSignal(100)).toBe('Guest checkout, treated as a first order above $100');
+    const plain = scorePayment(facts({ firstOrder: true, amountUsd: Money.of('40.0001') }), rules);
+    expect(plain.signals).toEqual(['New customer, first order above $40']);
+  });
+});
+
+describe('taxEvidenceSignal (decision 050)', () => {
+  it('names the declared country and the card country when they differ', () => {
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: 'US', ipCountry: 'GB' })).toBe(
+      'Tax country GB differs from the card country US',
+    );
+  });
+
+  it("uses the visitor's country as evidence only when the card does not say its country", () => {
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: null, ipCountry: 'US' })).toBe(
+      'Tax country GB differs from the IP country US',
+    );
+    expect(taxEvidenceSignal({ taxCountry: 'GB', ipCountry: 'US' })).toBe(
+      'Tax country GB differs from the IP country US',
+    );
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: 'GB', ipCountry: 'US' })).toBeUndefined();
+  });
+
+  it('keeps the declared country when no evidence is known or the evidence agrees', () => {
+    expect(taxEvidenceSignal({ taxCountry: null, cardCountry: 'US', ipCountry: 'US' })).toBeUndefined();
+    expect(taxEvidenceSignal({ cardCountry: 'US', ipCountry: 'US' })).toBeUndefined();
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: null, ipCountry: null })).toBeUndefined();
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: 'GB', ipCountry: null })).toBeUndefined();
+    expect(taxEvidenceSignal({ taxCountry: 'GB', cardCountry: null, ipCountry: 'GB' })).toBeUndefined();
+  });
+
+  describe('as a review reason', () => {
+    const rules = defaultRuleSet();
+    const tax = 'Tax country GB differs from the card country US';
+    const late = "Paid 31 minutes after the checkout's price lock ended";
+
+    it('holds a payment the score allows, with no points, whatever the review switch says', () => {
+      const calm = scorePayment(CALM, rules);
+      expect(withReviewReasons(calm, [tax])).toEqual({ score: 0, signals: [tax], decision: 'review' });
+      const merged = mergeRules(rules, [{ id: 'reviewThreshold', on: false, value: 50 }]);
+      if (!merged.ok) throw new Error('unexpected');
+      const off = scorePayment(
+        facts({ disposableEmail: true, proxyIp: true, prepaidCard: true, ordersLastHourByDevice: 3 }),
+        merged.next,
+      );
+      expect(off.decision).toBe('allow');
+      expect(withReviewReasons(off, [tax]).decision).toBe('review');
+    });
+
+    it('comes after the payment side’s own reasons, and a block stays a block with the signal last', () => {
+      const calm = scorePayment(CALM, rules);
+      expect(withReviewReasons(calm, [late, tax])).toEqual({ score: 0, signals: [late, tax], decision: 'review' });
+      const blocked = scorePayment(facts({ blocklistHits: ['Email is on the blocklist'] }), rules);
+      expect(withReviewReasons(blocked, [late, tax])).toEqual({
+        score: 100,
+        signals: ['Email is on the blocklist', late, tax],
+        decision: 'block',
+      });
+    });
+
+    it('is applied once for every reason together: the score and the decision are those of one review', () => {
+      const scored = scorePayment(facts({ disposableEmail: true, prepaidCard: true }), rules); // 34 points: allow
+      const verdict = withReviewReasons(scored, [late, tax]);
+      expect(verdict).toEqual({
+        score: 34,
+        signals: [late, tax, 'Disposable email domain', 'Prepaid card BIN'],
+        decision: 'review',
+      });
+      expect(holdReason(verdict)).toBe(`Risk hold: score 34. ${late} and 3 more signals`);
+    });
   });
 });

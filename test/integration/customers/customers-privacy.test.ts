@@ -263,6 +263,7 @@ describe('GET /admin/customers/:id/export', () => {
   it('answers a JSON file with everything held about the customer, the IMEIs decrypted and no card data', async () => {
     const { customer, order, db } = await buyer({ fingerprint: 'fp_secret_card' });
     await insertImeiCheck(t, db, IMEI_ORDER, { customerId: customer.id, ip: '203.0.113.9' });
+    await db.update(s.checkoutSessions).set({ ipCountry: 'DE' }).where(eq(s.checkoutSessions.id, order.sessionId));
     await db
       .insert(s.consentRecords)
       .values({ subjectType: 'customer', subjectId: customer.id, purpose: 'terms', granted: true, ip: '203.0.113.25' });
@@ -309,6 +310,7 @@ describe('GET /admin/customers/:id/export', () => {
     expect(file.checkoutSessions[0]).toMatchObject({
       imei: IMEI_SESSION,
       ip: '203.0.113.25',
+      ipCountry: 'DE',
       userAgent: 'Mozilla/5.0',
     });
     expect(file.imeiChecks[0]).toMatchObject({ imei: IMEI_ORDER, ip: '203.0.113.9' });
@@ -494,6 +496,7 @@ describe('POST /admin/customers/:id/anonymize', () => {
       .update(s.orders)
       .set({ inputs: { imei: IMEI_ORDER, note: 'keep me' } })
       .where(eq(s.orders.id, order.orderId));
+    await db.update(s.checkoutSessions).set({ ipCountry: 'DE' }).where(eq(s.checkoutSessions.id, order.sessionId));
     const ledgerBefore = await db.select().from(s.ledgerEntries);
     await staff.post(`/admin/customers/${customer.id}/anonymize`);
     const [stored] = await db.select().from(s.orders).where(eq(s.orders.id, order.orderId));
@@ -509,6 +512,8 @@ describe('POST /admin/customers/:id/anonymize', () => {
       imeiEnc: null,
       email: `deleted-${customer.id}@redacted.invalid`,
       ip: null,
+      // The visitor's country is read from the address, so it goes with it (decision 050).
+      ipCountry: null,
       userAgent: '',
       grossAmount: '14.9900',
       currency: 'USD',

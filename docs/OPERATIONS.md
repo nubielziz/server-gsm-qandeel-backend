@@ -52,6 +52,28 @@ storefront.
 | `site` | the storefront (profile `site`: it is left out until the storefront ships its image; start with `gsmc --profile site up -d site`) |
 | `backup` | backup tools, started by the host's timer (profile `tools`) |
 
+### Visitor country (`GEOIP_COUNTRY_HEADER`)
+
+The visitor's country is read when a checkout is opened and kept on it (`checkout_sessions.ip_country`). The risk rules (the IP country
+against the card country), the check of the declared tax country, the country blocklist and `imei_checks.country` use it (decision 050).
+A visitor can send any header, so only a CDN in front of Caddy that writes this header on every request may supply it. **The bundled
+stack has none: leave the setting unset.** The API's boot log then names the IP-country rule as a rule without an input source, and the
+rule never applies. The setting lives in `deploy/.env`: compose passes it to the API (a value in `.env.production` is not used) and to
+Caddy, which removes that header from every request on all three hosts (the line `request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}`
+at the top of each host block), so no value a visitor sends ever reaches the API. With the setting on but the Caddyfile left as it is,
+`ip_country` stays empty and the boot log names no gap: the query of step 5 is the check.
+
+With a CDN in front:
+1. Set `GEOIP_COUNTRY_HEADER` in `deploy/.env` to the header the CDN writes (Cloudflare: `CF-IPCountry`).
+2. Let only the CDN reach ports 80 and 443 (the firewall of the host).
+3. In `deploy/Caddyfile` add the CDN's address ranges as `trusted_proxies static <ranges>` in the global options, and in the shop host's
+   block replace the `request_header` line by a matcher `@not_cdn not remote_ip <ranges>` and the line
+   `request_header @not_cdn -{$GEOIP_COUNTRY_HEADER}` (the CDN form replaces the plain removal on that host; the other two hosts keep it).
+4. Add the same ranges to `TRUST_PROXY`, so the API sees the visitor's address and not the CDN's.
+5. `gsmc up -d caddy api`, open a checkout from the shop, then:
+   `gsmc exec postgres psql -U gsm -d gsm -c "select id, ip_country, created_at from checkout_sessions order by id desc limit 3;"`
+   shows your country.
+
 ## 2. First deploy
 
 1. **Make the secrets** (keep them out of git and out of chat; two offline copies, section 5):
@@ -201,6 +223,22 @@ changes nothing and names them (see "One order per checkout session" in section 
   origin.
 - Storefront payments that were already held for staff before this release appear as findings of the money integrity check on its first run.
 - `supportsRefunds` is off by default for a payment method: until it is switched on, money of a held or late payment is paid back by hand.
+
+### Release with decision 050 (risk inputs)
+
+Additive (two nullable or defaulted columns); the usual order applies. What to do around it:
+- **Tax windows.** Before the first tax window is created, create one for every country the shop sells to (0 % with the type "no tax"
+  where no tax is due, in Settings → Tax): from then on a checkout for a country without a window in force is refused (`422` on
+  `country`), and a payment whose card or visitor country differs from the declared one is held for review (this hold has no rule
+  switch: it applies as long as a tax window is in force). While no window is in force
+  the shop sells everywhere without tax and neither rule applies. To see the windows in force:
+  `gsmc exec postgres psql -U gsm -d gsm -c "select country, region, rate_percent, tax_type from tax_rates where valid_from <= now() and (valid_to is null or valid_to > now()) order by country, region;"`
+- If `.env.production` sets `GEOIP_COUNTRY_HEADER`, delete it there and follow "Visitor country" (section 1): the compose file passes it from `deploy/.env`.
+- After step 4: `gsmc up -d caddy` (its environment changed), then read the API's boot log for `Risk rule without an input source` lines: they
+  name the rules that have no input here (the VPN or proxy signal and the blacklisted-IMEI rule always; the IP-country rule until a CDN
+  supplies the header).
+- A guest checkout is judged as a first order; an email blocked from a guest order may be limited to guest checkouts (the blocklist page
+  shows the scope in the reason of the entry).
 
 ### Release with decision 045 (origins per surface)
 
@@ -639,6 +677,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] `LOOKUP_HASH_KEY` is set (on an installation with data: the value of its `TOKEN_PEPPER`).
 - [ ] `COOKIE_SECURE=true`, `REFERENCE_DOCS=staff`, the dev seed was never run on this database.
 - [ ] `.env.production` has no `CORS_ORIGINS`, and the four base URLs are https (decision 045).
+- [ ] Every country the shop sells to has a tax window in force (0 % "no tax" included): once any window exists, any other country is
+      refused at checkout (decision 050).
 - [ ] Every supplier address starts with https://, and suppliers.allowPlainHttp is not true (only an Owner can change it).
 - [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
 - [ ] Docker log rotation is set, and the host has disk space for the volumes (database, files, Prometheus).

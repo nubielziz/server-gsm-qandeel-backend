@@ -108,7 +108,7 @@ describe('deploy/compose.prod.yaml', () => {
     // The API must boot without search: started, never healthy.
     for (const name of ['api', 'worker'])
       expect(service(name).depends_on?.typesense, name).toEqual({ condition: 'service_started' });
-    expect(Object.keys(service('api').environment ?? {})).toEqual(['TYPESENSE_SEARCH_KEY']);
+    expect(Object.keys(service('api').environment ?? {})).toEqual(['TYPESENSE_SEARCH_KEY', 'GEOIP_COUNTRY_HEADER']);
     expect(Object.keys(service('worker').environment ?? {})).toEqual([
       'TYPESENSE_INDEXER_KEY',
       'DATABASE_STATEMENT_TIMEOUT_MS',
@@ -201,6 +201,26 @@ describe('deploy/Caddyfile', () => {
       .join('\n');
     expect(active).not.toContain('script-src');
     expect(active).toContain('header Strict-Transport-Security "max-age=31536000"');
+  });
+
+  it('removes the visitor-country header before the API on every host, with the name the API reads (decision 050)', () => {
+    // The bundled edge writes no country: a value a visitor sends must never reach the API, whatever the operator sets.
+    for (const host of ['SHOP_HOST', 'ADMIN_HOST', 'API_HOST']) {
+      const text = block(host);
+      expect(text, host).toContain('request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}');
+      // At the top of the host, before every handle (the site's own server forwards visitor headers to the API).
+      expect(text.indexOf('request_header'), host).toBeLessThan(text.indexOf('handle'));
+    }
+    expect(service('caddy').environment?.['GEOIP_COUNTRY_HEADER']).toBe('${GEOIP_COUNTRY_HEADER:-X-Visitor-Country}');
+    expect(service('api').environment?.['GEOIP_COUNTRY_HEADER']).toBe('${GEOIP_COUNTRY_HEADER:-}');
+    // Nothing else reads a request: the worker and the migration get no copy.
+    expect(service('worker').environment?.['GEOIP_COUNTRY_HEADER']).toBeUndefined();
+    expect(service('migrate').environment?.['GEOIP_COUNTRY_HEADER']).toBeUndefined();
+    const active = caddyfile
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(active).not.toContain('trusted_proxies');
   });
 
   it('answers 404 on the API host except for the machine surfaces', () => {

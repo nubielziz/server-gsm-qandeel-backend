@@ -89,6 +89,46 @@ export async function insertEntriesIgnoringDuplicates(
 }
 
 /**
+ * Turns an entry limited to guest checkouts into a full one.
+ *
+ * Why: decision 050: a staff add over a narrower entry of the same value widens it. The guarded update (`where guest_only`) changes nothing
+ * for a full entry or when another writer widened it first.
+ *
+ * @param db the caller's transaction
+ * @param change the entry's kind and hash, the new reason, the staff member and the clock's time
+ * @returns the widened entry, or `undefined` when none matched
+ */
+export async function widenGuestEntry(
+  db: DbExecutor,
+  change: {
+    readonly kind: BlocklistKind;
+    readonly valueHash: string;
+    readonly reason: string;
+    readonly createdBy: number | null;
+    readonly now: Date;
+  },
+): Promise<BlocklistEntry | undefined> {
+  const [row] = await db
+    .update(blocklistEntries)
+    .set({
+      guestOnly: false,
+      reason: change.reason,
+      createdBy: change.createdBy,
+      createdAt: change.now,
+      updatedAt: change.now,
+    })
+    .where(
+      and(
+        eq(blocklistEntries.kind, change.kind),
+        eq(blocklistEntries.valueHash, change.valueHash),
+        eq(blocklistEntries.guestOnly, true),
+      ),
+    )
+    .returning();
+  return row;
+}
+
+/**
  * Deletes one entry.
  *
  * @param db the caller's transaction

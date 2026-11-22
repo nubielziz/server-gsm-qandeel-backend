@@ -217,6 +217,16 @@ describe('card driver payment details', () => {
     }
   });
 
+  it("reads the card's issuing country and funding from the latest charge", async () => {
+    const read2 = async (card: Record<string, unknown>) => (await read(intent({ brand: 'visa', ...card }))).details;
+    expect(await read2({ country: 'gb', funding: 'prepaid' })).toMatchObject({ country: 'GB', funding: 'prepaid' });
+    expect(await read2({ country: ' us ', funding: 'credit' })).toMatchObject({ country: 'US', funding: 'credit' });
+    for (const funding of ['debit', 'unknown'] as const) expect((await read2({ funding }))?.funding).toBe(funding);
+    for (const country of ['GBR', 'G', null, 44, '', 'G1']) expect((await read2({ country }))?.country).toBeUndefined();
+    for (const funding of ['Prepaid', 'gift', null, 3]) expect((await read2({ funding }))?.funding).toBeUndefined();
+    expect(await read2({})).toMatchObject({ country: undefined, funding: undefined });
+  });
+
   it('reads nothing for a reference that is not a PaymentIntent, a charge without a card, or no charge', async () => {
     const cs = await read(intent({ brand: 'visa' }), 'cs_1');
     expect(cs.details).toBeUndefined();

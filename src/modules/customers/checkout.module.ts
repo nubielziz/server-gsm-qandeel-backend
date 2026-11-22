@@ -11,6 +11,7 @@ import { CheckoutTokenResolver } from './application/checkout-token.resolver';
 import { ConsentService } from './application/consent.service';
 import { OptionalCustomerSession } from './application/optional-customer-session';
 import { CheckoutController } from './controllers/checkout.controller';
+import { CustomerProfileRules } from './application/customer-profile-rules';
 
 /**
  * Provides `/store/v1/checkout-sessions*` (open, read, consents, pay, and pay from the store balance: feature 21) and the capture that turns a confirmed payment into the order.
@@ -18,7 +19,9 @@ import { CheckoutController } from './controllers/checkout.controller';
  * Why: these use cases need the global database, crypto, clock, catalog, money and storefront providers and the identity guard's
  * resolver registry, which a database-less test app does not have. It imports `MoneyAdminModule` for `StorefrontPayments` (the pay call and
  * the capture): a test app that leaves this module out leaves that import out with it. `RiskServicesModule` gives the capture the screening
- * of every payment and the refund of a blocked one (feature 18).
+ * of every payment and the refund of a blocked one (feature 18). The checkout shares the profile's country rule (`CustomerProfileRules`,
+ * stateless: `CustomersAccountsModule` keeps its own), so a country without a tax window is refused the way the profile refuses it
+ * (decision 050).
  */
 @Module({
   imports: [MoneyAdminModule, StorefrontMailsModule, RiskServicesModule],
@@ -31,6 +34,7 @@ import { CheckoutController } from './controllers/checkout.controller';
     CheckoutPayService,
     CheckoutCaptureService,
     CheckoutBalancePayService,
+    CustomerProfileRules,
   ],
 })
 export class CheckoutModule {}

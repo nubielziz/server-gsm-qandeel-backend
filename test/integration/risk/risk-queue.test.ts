@@ -372,6 +372,82 @@ describe('POST /admin/risk/orders/:id/refund', () => {
     }
   });
 
+  describe('the blocks of a guest order (decision 050)', () => {
+    const labels = async () =>
+      (await blocklistRows(world.db)).map((entry) => [entry.kind, entry.guestOnly] as const).sort();
+    const refundWithEmailBlock = (orderId: number) =>
+      staff.post(`/admin/risk/orders/${orderId}/refund`, { blockEmail: true });
+    const refundAudit = async (orderId: number) =>
+      (await auditRows(world.db, 'order', orderId)).find((row) => row.action === 'refunded after risk review')!;
+
+    it('adds the card that paid a guest order when its email is blocked, and blocks the email everywhere when no account existed before', async () => {
+      const held = await insertHeldOrder(world, { cardFingerprint: 'fp_x' });
+      expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([
+        ['card', false],
+        ['email', false],
+      ]);
+      const audit = await refundAudit(held.orderId);
+      expect(audit.after).toMatchObject({
+        blocked: [expect.stringMatching(/^email /), expect.stringMatching(/^card /)],
+      });
+      expect((audit.after as Record<string, unknown>)['emailScope']).toBeUndefined();
+    });
+
+    it('limits the email to guest checkouts when an account of that email existed before the order, and says so', async () => {
+      const at = new Date(clock.nowMs());
+      const held = await insertHeldOrder(world, {
+        cardFingerprint: 'fp_x',
+        createdAt: at,
+        customer: { emailVerifiedAt: new Date(at.getTime() - DAY) },
+      });
+      expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([
+        ['card', false],
+        ['email', true],
+      ]);
+      const entries = await blocklistRows(world.db);
+      expect(entries.find((entry) => entry.kind === 'email')!.reason).toEndWith(' (guest checkouts only)');
+      expect(entries.find((entry) => entry.kind === 'card')!.reason).not.toContain('guest checkouts only');
+      expect((await refundAudit(held.orderId)).after).toMatchObject({ emailScope: 'guest checkouts' });
+    });
+
+    it('limits the email too when staff made the account, and does not when the email was verified only after the order', async () => {
+      const at = new Date(clock.nowMs());
+      const byStaff = await insertHeldOrder(world, { createdAt: at, customer: { createdBy: staff.staffId } });
+      expect((await refundWithEmailBlock(byStaff.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([['email', true]]);
+      const later = await insertHeldOrder(world, {
+        createdAt: at,
+        customer: { emailVerifiedAt: new Date(at.getTime() + DAY) },
+      });
+      expect((await refundWithEmailBlock(later.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([
+        ['email', false],
+        ['email', true],
+      ]);
+    });
+
+    it('blocks the email everywhere and adds no card for a signed-in order', async () => {
+      const held = await insertHeldOrder(world, { cardFingerprint: 'fp_x', openedSignedIn: true });
+      expect((await refundWithEmailBlock(held.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([['email', false]]);
+      expect((await refundAudit(held.orderId)).after).not.toHaveProperty('emailScope');
+    });
+
+    it('adds no card when the guest order has none or the email is not asked for', async () => {
+      const none = await insertHeldOrder(world);
+      expect((await refundWithEmailBlock(none.orderId)).status).toBe(204);
+      expect(await labels()).toEqual([['email', false]]);
+      const asked = await insertHeldOrder(world, { cardFingerprint: 'fp_y' });
+      expect((await staff.post(`/admin/risk/orders/${asked.orderId}/refund`, { blockDevice: true })).status).toBe(204);
+      expect(await labels()).toEqual([
+        ['email', false],
+        ['imei', false],
+      ]);
+    });
+  });
+
   it('writes the default reason from the first signal and blocks nothing when no switch is on', async () => {
     const { db } = world;
     const held = await insertHeldOrder(world, { signals: ['Prepaid card BIN', 'VPN or proxy IP'] });

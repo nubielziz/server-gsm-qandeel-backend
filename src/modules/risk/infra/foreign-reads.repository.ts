@@ -7,7 +7,7 @@
 // plain selects, like the foreign-read files of orders and customers. Two list joins outside this file are the known exceptions: the
 // blocklist list joins `staff_users` for the name of who added an entry, and the data-request list joins `customers` for the name and
 // status of the requester. Every other foreign table is named only here.
-import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
@@ -351,6 +351,17 @@ export interface HeldOrderContext {
   readonly decision: string;
   readonly reviewedAt: Date | null;
   readonly signals: unknown;
+  /** The email the checkout was opened with (`checkout_sessions.email`); `null` when the order has no checkout session. */
+  readonly sessionEmail: string | null;
+  /** The checkout's `opened_signed_in`; `null` when the order has no checkout session (decision 050). */
+  readonly openedSignedIn: boolean | null;
+  /** The card fingerprint of the order's own payment, when the gateway gave one. */
+  readonly cardFingerprint: string | null;
+  /**
+   * An account existed before the order: the customer row was made by staff, or its email was verified (a link was used) before the
+   * order was placed. Only then does blocking a guest order's email leave the account its use (decision 050).
+   */
+  readonly accountBeforeOrder: boolean;
 }
 
 /**
@@ -358,7 +369,8 @@ export interface HeldOrderContext {
  *
  * Why: approve and refund must see the same state: two staff members deciding at once queue on the assessment lock, and the second
  * finds it decided (`409 NOT_HELD`) instead of racing the order update. Lock order: the assessment first, then the order (the order
- * transition), then the ledger accounts.
+ * transition), then the ledger accounts. Decision 050: it also reads what the refund's blocks need to tell a guest order from a signed-in
+ * one (the checkout's email and flag, the order's card, and whether an account existed before the order); only the assessment row is locked.
  *
  * @param tx the caller's transaction
  * @param orderId the order id
@@ -378,10 +390,17 @@ export async function lockHeldContext(tx: DbExecutor, orderId: number): Promise<
       decision: s.riskAssessments.decision,
       reviewedAt: s.riskAssessments.reviewedAt,
       signals: s.riskAssessments.signals,
+      sessionEmail: s.checkoutSessions.email,
+      openedSignedIn: s.checkoutSessions.openedSignedIn,
+      cardFingerprint: sql<
+        string | null
+      >`(select p.card_fingerprint from ${s.payments} p where p.order_id = ${s.orders.id} and p.purpose = 'order' and p.card_fingerprint is not null order by p.id limit 1)`,
+      accountBeforeOrder: sql<boolean>`(${s.customers.createdBy} is not null or (${s.customers.emailVerifiedAt} is not null and ${s.customers.emailVerifiedAt} < ${s.orders.createdAt}))`,
     })
     .from(s.riskAssessments)
     .innerJoin(s.orders, eq(s.orders.id, s.riskAssessments.orderId))
     .innerJoin(s.customers, eq(s.customers.id, s.orders.customerId))
+    .leftJoin(s.checkoutSessions, eq(s.checkoutSessions.id, s.orders.checkoutSessionId))
     .where(and(eq(s.orders.id, orderId), newestOfOrder))
     .limit(1)
     .for('update', { of: s.riskAssessments });
@@ -426,47 +445,102 @@ export interface OrderCounts {
 }
 
 /**
- * Counts the earlier storefront orders the score looks at.
+ * Counts the earlier storefront orders, and the checkouts with a payment in flight, that the score looks at.
  *
  * Why: the signals "more than N orders in 24 hours from one email", "4 orders in one hour from one device" and "first order of a new
- * customer". An order belongs to an email through the checkout session it was paid from; the device is the address the session
- * came from (or the same customer). The order being screened, when it exists, is not counted. A rejected order is not an earlier
- * order of the customer (the customer never received anything).
+ * customer". An order belongs to an email through the checkout session it was paid from; the device is the address the session came from
+ * (or the same buyer). Decision 050: the buyer of a signed-in checkout is the account's own signed-in checkouts; the buyer of a guest
+ * checkout is its email and the customer row of that email; a checkout of the buyer with a payment pending or held and no order yet counts
+ * like an order in the two windows; all of it is one statement, so a payment being captured in parallel is seen once, as its pending row or
+ * as its order. The order being screened, when it exists, and the checkout being screened are not counted. A rejected order is not an
+ * earlier order of the customer (the customer never received anything).
  *
  * @param db the database or a transaction
- * @param who the email, the customer if known, the address and the order being screened
+ * @param who the email (trimmed, lower case), the customer if known, the address, the order and the checkout being screened, and whether
+ *   the payment is proven (a signed-in checkout of a known customer)
  * @param now the clock's time (decision 031)
  * @returns the three counts
  */
 export async function countEarlierOrders(
   db: DbExecutor,
-  who: { email: string; customerId: number | null; ip: string | null; exceptOrderId: number | null },
+  who: {
+    email: string;
+    customerId: number | null;
+    ip: string | null;
+    exceptOrderId: number | null;
+    exceptSessionId: number | null;
+    proven: boolean;
+  },
   now: Date,
 ): Promise<OrderCounts> {
-  const dayAgo = new Date(now.getTime() - 24 * 3_600_000);
-  const hourAgo = new Date(now.getTime() - 3_600_000);
-  const except = who.exceptOrderId === null ? sql`true` : sql`${s.orders.id} <> ${who.exceptOrderId}`;
-  const email = who.email.toLowerCase();
-  // The same person: the checkout's email, or the customer account.
-  const sameBuyer = sql`(lower(${s.checkoutSessions.email}) = ${email}${
-    who.customerId === null ? sql`` : sql` or ${s.orders.customerId} = ${who.customerId}`
-  })`;
-  // The same device: the same person, or the address the checkout came from.
-  const sameDevice = sql`(${sameBuyer}${who.ip === null ? sql`` : sql` or ${s.checkoutSessions.ip} = ${who.ip}`})`;
-  const [row] = await db
-    .select({
-      lastDayByEmail: sql<number>`count(*) filter (where lower(${s.checkoutSessions.email}) = ${email} and ${s.orders.createdAt} >= ${dayAgo})::int`,
-      lastHourByDevice: sql<number>`count(*) filter (where ${s.orders.createdAt} >= ${hourAgo})::int`,
-      earlierOrders: sql<number>`count(*) filter (where ${sameBuyer} and ${s.orders.status} <> 'rejected')::int`,
-    })
-    .from(s.orders)
-    .leftJoin(s.checkoutSessions, eq(s.checkoutSessions.id, s.orders.checkoutSessionId))
-    .where(and(isNotNull(s.orders.customerId), except, sameDevice));
+  const dayAgo = new Date(now.getTime() - 24 * 3_600_000).toISOString();
+  const hourAgo = new Date(now.getTime() - 3_600_000).toISOString();
+  const email = who.email.trim().toLowerCase();
+  const { customerId } = who;
+  const proven = who.proven && customerId !== null;
+  // `col` is the customer column of the side being counted (the order's, or the in-flight checkout's); `cs` is its checkout session.
+  const sameBuyer = (col: SQL): SQL =>
+    proven
+      ? sql`(${col} = ${customerId} and cs.opened_signed_in)`
+      : sql`(lower(cs.email) = ${email}${customerId === null ? sql`` : sql` or ${col} = ${customerId}`})`;
+  const sameEmail = (col: SQL): SQL => (proven ? sameBuyer(col) : sql`lower(cs.email) = ${email}`);
+  const sameDevice = (col: SQL): SQL => sql`(${sameBuyer(col)}${who.ip === null ? sql`` : sql` or cs.ip = ${who.ip}`})`;
+  const exceptOrder = who.exceptOrderId === null ? sql`true` : sql`o.id <> ${who.exceptOrderId}`;
+  const exceptSession = who.exceptSessionId === null ? sql`true` : sql`cs.id <> ${who.exceptSessionId}`;
+  const orderCustomer = sql.raw('o.customer_id');
+  const flyingCustomer = sql.raw('cs.customer_id');
+  const result = await db.execute(sql`
+    select ord.day + fly.day as last_day_by_email, ord.hour + fly.hour as last_hour_by_device, ord.earlier as earlier_orders
+    from (
+      select count(*) filter (where ${sameEmail(orderCustomer)} and o.created_at >= ${dayAgo}::timestamptz)::int as day,
+             count(*) filter (where o.created_at >= ${hourAgo}::timestamptz)::int as hour,
+             count(*) filter (where ${sameBuyer(orderCustomer)} and o.status <> 'rejected')::int as earlier
+      from ${s.orders} o
+      left join ${s.checkoutSessions} cs on cs.id = o.checkout_session_id
+      where o.customer_id is not null and ${exceptOrder} and ${sameDevice(orderCustomer)}
+    ) ord, (
+      -- Decision 050: a checkout whose payment is in flight (a page open, or a confirmation held for staff) counts like an order.
+      select count(distinct cs.id) filter (where ${sameEmail(flyingCustomer)} and p.created_at >= ${dayAgo}::timestamptz)::int as day,
+             count(distinct cs.id) filter (where p.created_at >= ${hourAgo}::timestamptz)::int as hour
+      from ${s.payments} p
+      join ${s.checkoutSessions} cs on cs.id = p.checkout_session_id
+      where p.purpose = 'order' and p.status = 'pending' and p.order_id is null and cs.order_id is null
+        and p.created_at >= ${dayAgo}::timestamptz
+        and ${exceptSession} and ${sameDevice(flyingCustomer)}
+    ) fly
+  `);
+  const row = result.rows[0] as
+    { last_day_by_email?: number; last_hour_by_device?: number; earlier_orders?: number } | undefined;
   return {
-    lastDayByEmail: row?.lastDayByEmail ?? 0,
-    lastHourByDevice: row?.lastHourByDevice ?? 0,
-    earlierOrders: row?.earlierOrders ?? 0,
+    lastDayByEmail: row?.last_day_by_email ?? 0,
+    lastHourByDevice: row?.last_hour_by_device ?? 0,
+    earlierOrders: row?.earlier_orders ?? 0,
   };
+}
+
+/**
+ * Tells whether any country has a tax window in force.
+ *
+ * Why: decision 050: a declared tax country that the card or the visitor contradicts holds the payment only while the shop taxes by country
+ * (at least one window in force, the condition of the checkout's country refusal); with none, the declared country decides no tax. The
+ * money module owns the table; this is a foreign read like the others in this file.
+ *
+ * @param db the database or a transaction
+ * @param now the clock's time (decision 031)
+ * @returns true when any `tax_rates` row has started and has not ended
+ */
+export async function hasAnyCurrentTaxRate(db: DbExecutor, now: Date): Promise<boolean> {
+  const rows = await db
+    .select({ id: s.taxRates.id })
+    .from(s.taxRates)
+    .where(
+      and(
+        sql`${s.taxRates.validFrom} <= ${now}`,
+        sql`(${s.taxRates.validTo} is null or ${s.taxRates.validTo} > ${now})`,
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 /** What the IMEI log shows next to a check besides the check itself: the order it led to and two names. */

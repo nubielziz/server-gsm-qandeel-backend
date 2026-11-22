@@ -33,7 +33,9 @@ const OpenBody = z.object({
     .describe(
       'Where the receipt and the tracking link go; with no account the email is the identity of a guest customer.',
     ),
-  country: zCountryCode.describe("The buyer's country: the tax of its window is locked on the session."),
+  country: zCountryCode.describe(
+    "The buyer's country: the tax of its window is locked on the session. While the shop has a tax window in force, it must be a country that has one (the `taxRates` of `GET /store/v1/config`).",
+  ),
   region: z
     .string()
     .trim()
@@ -153,7 +155,11 @@ export const openCheckoutSession = defineRoute({
     'without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 ' +
     'INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ' +
     'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
-    'shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. ' +
+    'shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is ' +
+    '`422` on `country` (code `unsupported`, "Choose a country."), the refusal of the customer profile; a shop with no tax window in ' +
+    'force accepts any country without tax. An email that staff blocked for guest checkouts is refused to a guest like any blocked email ' +
+    '(`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). ' +
+    'The answer carries the session token: the whole credential of the next two routes. ' +
     'Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. ' +
     '`currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).',
   tags: ['checkout'],

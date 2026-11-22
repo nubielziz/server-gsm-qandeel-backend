@@ -209,6 +209,8 @@ export const checkoutSessions = pgTable(
     taxCountry: text(),
     utm: jsonObject(),
     ip: text(),
+    /** the visitor's country (ISO-2) a trusted proxy reported when the checkout was opened (GEOIP_COUNTRY_HEADER); null when unknown (decision 050) */
+    ipCountry: text(),
     userAgent: text().notNull().default(''),
     status: text().$type<CheckoutSessionStatus>().notNull().default('open'),
     expiresAt: timestampTz().notNull(),
@@ -229,6 +231,7 @@ export const checkoutSessions = pgTable(
     check('checkout_sessions_token_form_check', sql`(${t.token} is null) <> (${t.tokenHash} is null)`),
     check('checkout_sessions_token_enc_check', sql`(${t.tokenHash} is null) = (${t.tokenEnc} is null)`),
     check('checkout_sessions_status_check', inList(t.status, CHECKOUT_SESSION_STATUSES)),
+    check('checkout_sessions_ip_country_check', sql`${t.ipCountry} is null or ${t.ipCountry} ~ '^[A-Z]{2}$'`),
     index('checkout_sessions_status_created_idx').on(t.status, t.createdAt.desc()),
     index('checkout_sessions_created_idx').on(t.createdAt.desc()),
     index('checkout_sessions_customer_id_idx').on(t.customerId),

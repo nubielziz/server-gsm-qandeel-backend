@@ -1,7 +1,7 @@
-// Public API of the risk module: the IMEI helpers other modules share (the keyed-hash input and the encryption context of the
-// stored IMEI), the services the payment, the checkout and the customer routes call (screening, blocklist, rules, erasure, data
+// Public API of the risk module: the IMEI helpers and the visitor-country header reader other modules share (the keyed-hash input and
+// the encryption context of the stored IMEI), the services the payment, the checkout and the customer routes call (screening, blocklist, rules, erasure, data
 // requests), the held-order decisions, the pure rules they share, and the modules. Other modules import only this file.
-export { IMEI_CHECK_AAD, imeiHashInput } from './domain/imei-check';
+export { IMEI_CHECK_AAD, countryFromHeader, imeiHashInput } from './domain/imei-check';
 export { maskedImei, erasedMainInput } from './domain/imei-mask';
 export { RISK_RULE_IDS } from './domain/risk-rules';
 export type { RiskRuleId, RiskRuleSet } from './domain/risk-rules';

@@ -49,7 +49,9 @@ function inputsOf(raw: Record<string, unknown> | null): Record<string, string> {
  * (`StorefrontPayments.holdConfirmation`; money that arrived goes back when the gateway can refund). A payment made more than 30 minutes after the checkout's price lock ended (judged on the gateway's time of the payment, else
  * the event's, else when the payment opened) is not used at the old price: its order is placed held with that review reason and is
  * refunded at once when the gateway can refund, else it waits in the risk queue. Every captured
- * payment is screened by the risk rules before the order is placed (RESOLUTIONS orders-suppliers-11): `allow` places the order as always;
+ * payment is screened by the risk rules before the order is placed (RESOLUTIONS orders-suppliers-11; decision 050: the screening gets the
+ * card's country and funding from the gateway's record, the visitor's country kept on the checkout, and whether the account itself opened
+ * the checkout): `allow` places the order as always;
  * `review` places it `held` (no dispatch, the hold sentence on the timeline) for the Risk page; `block` places it `held` and refunds it at once
  * as the system, so the customer gets the money back and nothing is sent to a supplier. The buyer's `order.received` email (and
  * `order.completed` when stock delivered the order at once) is written in this transaction through the notification delivery (12a), except for
@@ -161,6 +163,11 @@ export class CheckoutCaptureService implements StorefrontCapture, OnModuleInit {
       cardDetailsMissing: event.details?.unavailable === true,
       country: session.taxCountry,
       ip: session.ip,
+      // Decision 050: the card's country and funding, the visitor's country, and whether the account itself opened the checkout.
+      ipCountry: session.ipCountry,
+      cardCountry: event.details?.country ?? null,
+      prepaidCard: event.details?.funding === 'prepaid',
+      openedSignedIn: session.openedSignedIn,
       ...(late === undefined ? {} : { reviewReasons: [lateConfirmationSignal(late)] }),
     });
     // A blocked payment is placed held too: the machine refunds only a held order, and the timeline keeps why.

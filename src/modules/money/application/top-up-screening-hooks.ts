@@ -3,6 +3,15 @@
 import { Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 
+/**
+ * The review note of a top-up screened while no risk screening is registered in the process.
+ *
+ * Why: decision 050: a process that cannot screen never credits a top-up unscreened; the payment waits for staff with this sentence as
+ * its note (and as the hint of a manual receipt).
+ */
+export const TOP_UP_SCREENING_UNAVAILABLE =
+  'Risk review: no risk screening is available in this process, so this top-up waits for staff.';
+
 /** What the automatic credit knows about a top-up that risk may judge. */
 export interface TopUpScreeningFacts {
   /** The gateway's card fingerprint of the payment (`payments.card_fingerprint`), when the gateway gave one. */
@@ -34,8 +43,9 @@ export interface TopUpScreeningHook {
  * The list of hooks the automatic credit asks before it credits a top-up.
  *
  * Why: RESOLUTIONS money-3: a flagged automatic top-up gets `review_required` instead of a credit. The rules live in the risk module,
- * which registers its hook at boot (`RiskServicesModule`); the money module only asks the list. An empty list flags nothing, so a
- * process that does not load the risk module credits as before; the worker loads it (see `worker.module.ts`).
+ * which registers its hook at boot (`RiskServicesModule`); the money module only asks the list. An empty list flags every top-up
+ * (decision 050): a process that does not load the risk module sends top-ups to staff instead of crediting them; the worker and the API
+ * load it.
  *
  * Side effects: none of its own; a hook reads on the credit's transaction.
  */
@@ -53,14 +63,25 @@ export class TopUpScreeningHooks {
   }
 
   /**
+   * The number of registered hooks.
+   *
+   * Why: decision 050: the automatic credit checks at boot that the risk module registered its hook.
+   */
+  get size(): number {
+    return this.hooks.length;
+  }
+
+  /**
    * Asks every hook until one flags the top-up.
    *
    * @param db the credit's transaction
    * @param facts what is known about the top-up
-   * @returns the first flagged answer, else not flagged
+   * @returns the first flagged answer, else not flagged; flagged with {@link TOP_UP_SCREENING_UNAVAILABLE} when no hook is registered
    * @throws whatever a hook throws (the payment is not credited this tick: the screen fails closed)
    */
   async screen(db: DbExecutor, facts: TopUpScreeningFacts): Promise<TopUpScreeningAnswer> {
+    // Fails closed (decision 050): a process without the risk module never credits a top-up unscreened.
+    if (this.hooks.length === 0) return { flagged: true, reason: TOP_UP_SCREENING_UNAVAILABLE };
     for (const hook of this.hooks) {
       const answer = await hook.screenTopUp(db, facts);
       if (answer.flagged) return answer;

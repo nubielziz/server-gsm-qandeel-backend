@@ -11,6 +11,7 @@ import {
   deleteManualEntriesOfCustomer,
   findLiveMatches,
   insertEntriesIgnoringDuplicates,
+  widenGuestEntry,
 } from '../infra/blocklist.repository';
 
 /** A value to add to the blocklist. */
@@ -26,6 +27,11 @@ export interface BlockRequest {
   readonly customerId?: number | null;
   /** When the entry stops blocking; `null` for ever. */
   readonly expiresAt?: Date | null;
+  /**
+   * Block guest checkouts only (an email of a guest order whose email belonged to an account before it, decision 050); default false.
+   * Such an entry never blocks the account's own sign-in or signed-in checkout.
+   */
+  readonly guestOnly?: boolean;
 }
 
 /** What to look up. Every field is optional; a missing one is not checked. */
@@ -33,8 +39,13 @@ export interface BlockProbeInput {
   readonly email?: string | null;
   readonly imei?: string | null;
   readonly card?: string | null;
-  /** Countries to check (the checkout's tax country, the IP country). */
+  /** Countries to check (the checkout's tax country, the IP country, the card's country). */
   readonly countries?: ReadonlyArray<string | null | undefined>;
+  /**
+   * True for a guest use (a checkout opened without a signed-in session, or its payment): entries limited to guest checkouts count too.
+   * Default false (decision 050).
+   */
+  readonly guest?: boolean;
 }
 
 /** One entry a probe matched. */
@@ -62,7 +73,9 @@ const KIND_WORDS: Readonly<Record<BlocklistKind, string>> = {
  * Why: RESOLUTIONS b2c-5 and the brief: "Blocklist (b2c-5). Manual block adds email, card and IMEI entries with ON CONFLICT DO NOTHING,
  * unblock removes only the customer's manual entries; checks at checkout and registration." Values are stored only as keyed hashes
  * (decision 019; keyed with `LOOKUP_HASH_KEY`, decision 054) plus a masked display, so the table never holds a readable email or IMEI. An entry past its `expires_at` does not
- * block (the clock's time is a parameter, decision 031).
+ * block (the clock's time is a parameter, decision 031). Decision 050: an entry has one of two scopes: everywhere (the default), or limited
+ * to guest checkouts (`guest_only`), which a guest probe matches and no other use does (sign-in by link, a staff create, an email change,
+ * a signed-in checkout or payment, a top-up).
  *
  * Side effects: `add` inserts `blocklist_entries` rows on the caller's transaction (no audit: the caller audits its own action).
  */
@@ -97,6 +110,7 @@ export class Blocklist {
           reason: request.reason,
           expiresAt: request.expiresAt ?? null,
           source: request.source,
+          guestOnly: request.guestOnly ?? false,
           customerId: request.customerId ?? null,
           createdBy: request.createdBy,
           createdAt: now,
@@ -107,6 +121,32 @@ export class Blocklist {
     // Two requests for the same value in one call would conflict with each other: keep the first.
     const unique = [...new Map(rows.map((row) => [`${row.kind}:${row.valueHash}`, row])).values()];
     return insertEntriesIgnoringDuplicates(tx, unique);
+  }
+
+  /**
+   * Makes an entry that is limited to guest checkouts a full one.
+   *
+   * Why: decision 050: a block added by staff for the whole shop (the blocklist route, or the email block of a risk refund) must not be
+   * refused because a narrower entry of the same value exists; the entry keeps its row and becomes a full one with the new reason and the
+   * staff member. A full entry is left as it is.
+   *
+   * @param tx the caller's transaction
+   * @param request the kind, the value as typed, the new reason and the staff member
+   * @returns the widened entry, or `undefined` when no entry limited to guest checkouts has this value (none, or already a full one)
+   */
+  async widenGuestOnly(
+    tx: DbExecutor,
+    request: Pick<BlockRequest, 'kind' | 'value' | 'reason' | 'createdBy'>,
+  ): Promise<BlocklistEntry | undefined> {
+    const value = normalizeBlockValue(request.kind, request.value);
+    if (!value.ok) return undefined;
+    return widenGuestEntry(tx, {
+      kind: request.kind,
+      valueHash: this.hashOf(request.kind, value.value),
+      reason: request.reason,
+      createdBy: request.createdBy,
+      now: this.clock.now(),
+    });
   }
 
   /**
@@ -127,7 +167,8 @@ export class Blocklist {
    * Finds what a payment, a checkout or a registration matches on the blocklist.
    *
    * @param db the database or a transaction
-   * @param probe the email, IMEI, card fingerprint and countries to look up
+   * @param probe the email, IMEI, card fingerprint and countries to look up, and whether this is a guest use (an entry limited to guest
+   *   checkouts matches a guest use only)
    * @returns one hit per matching live entry; empty when nothing is blocked
    */
   async match(db: DbExecutor, probe: BlockProbeInput): Promise<BlockHit[]> {
@@ -147,7 +188,8 @@ export class Blocklist {
       if (code?.ok) probes.push({ kind: 'country', valueHash: this.hashOf('country', code.value) });
     }
     const entries = await findLiveMatches(db, probes, this.clock.now());
-    return entries.map((entry) => ({
+    const usable = probe.guest === true ? entries : entries.filter((entry) => !entry.guestOnly);
+    return usable.map((entry) => ({
       entryId: entry.id,
       kind: entry.kind,
       source: entry.source,
@@ -162,7 +204,8 @@ export class Blocklist {
    * Tells whether an email, or the domain it is on, is blocked.
    *
    * Why: RULES risk 5: a blocked email or domain cannot sign up, sign in by link, be given to a customer by staff or open a checkout. The
-   * customers module asks this instead of reading the table (decision 016).
+   * customers module asks this instead of reading the table (decision 016). An entry limited to guest checkouts does not count: signing in
+   * by link, a staff create and an email change are not guest uses (decision 050).
    *
    * @param db the database or a transaction
    * @param email the email as typed (normalised here)

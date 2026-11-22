@@ -22,6 +22,7 @@ import {
 import { DAY, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
+import { insertTaxWindow } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -96,6 +97,8 @@ async function books(): Promise<{ card: PaidOrder; refunded: PaidOrder; wallet: 
   const [dispute] = await db.select().from(s.disputes);
   expect((await staff.post(`/admin/disputes/${dispute!.id}/accept`, {})).status).toBe(200);
   clock.advance(MINUTE);
+  // Decision 050: a checkout for a country needs a tax window while the shop has one (0 % of the type none opens the US).
+  await insertTaxWindow(db, { country: 'US', ratePercent: '0', taxType: 'none', label: 'US' });
   const crypto = await paidOrder(t, clock, world, { email: 'd@mail.example', country: 'US', currency: 'USD' });
   await db
     .update(s.payments)

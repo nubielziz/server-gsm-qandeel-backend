@@ -150,6 +150,9 @@ export class CheckoutBalancePayService {
         cardFingerprint: null,
         country: session.taxCountry,
         ip: session.ip,
+        // Decision 050: the visitor's country kept on the checkout; the account itself opened it (the route's guard).
+        ipCountry: session.ipCountry,
+        openedSignedIn: session.openedSignedIn,
       });
       // A blocked payment is placed held too: the machine refunds only a held order (back to the balance, plan § 5.6.7).
       const held = screening.hold || screening.block;

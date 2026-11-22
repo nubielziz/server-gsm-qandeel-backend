@@ -60,9 +60,10 @@ function viewOf(row: BlocklistRow): BlocklistEntryView {
  *
  * Why: ANSWERS risk Q4 and B79: `POST` takes a typed value, normalises it, hashes it and derives the display; a duplicate is `409
  * ALREADY_BLOCKED`; any entry, one the system added after a chargeback included, can be removed; both are audited (`added to
- * blocklist`, `removed from blocklist`, entity `blocklist`, label `<kind> <display>`).
+ * blocklist`, `removed from blocklist`, entity `blocklist`, label `<kind> <display>`). Decision 050: an add over an entry limited to guest
+ * checkouts widens that entry to a full one (the answer is the same `201`, and the audit row says which scope it replaced).
  *
- * Side effects: `create` inserts a `blocklist_entries` row and an `audit_logs` row; `remove` deletes the row and audits it.
+ * Side effects: `create` inserts (or widens) a `blocklist_entries` row and inserts an `audit_logs` row; `remove` deletes the row and audits it.
  */
 @Injectable()
 export class BlocklistAdminService {
@@ -101,8 +102,8 @@ export class BlocklistAdminService {
    *
    * @param staffId the signed-in staff member
    * @param input the kind, the typed value and the reason
-   * @returns the new entry
-   * @throws {AppError} `VALIDATION_FAILED` (422, on `value`), `ALREADY_BLOCKED` (409)
+   * @returns the new entry (or the entry that was limited to guest checkouts and is now a full one)
+   * @throws {AppError} `VALIDATION_FAILED` (422, on `value`), `ALREADY_BLOCKED` (409: a full entry of this value exists)
    */
   async create(staffId: number, input: BlockInput): Promise<BlocklistEntryView> {
     const value = normalizeBlockValue(input.kind, input.value);
@@ -112,16 +113,18 @@ export class BlocklistAdminService {
       });
     }
     return this.db.runInTransaction(async (work) => {
-      const [entry] = await this.blocklist.add(work.tx, [
-        { kind: input.kind, value: value.value, reason: input.reason, source: 'manual', createdBy: staffId },
-      ]);
+      const request = { kind: input.kind, value: value.value, reason: input.reason, createdBy: staffId } as const;
+      const [added] = await this.blocklist.add(work.tx, [{ ...request, source: 'manual' }]);
+      // An entry limited to guest checkouts is widened by a staff add of the same value (decision 050); a full one stays a conflict.
+      const widened = added ? undefined : await this.blocklist.widenGuestOnly(work.tx, request);
+      const entry = added ?? widened;
       if (!entry) throw new AppError('ALREADY_BLOCKED');
       await this.audit.record(work.tx, {
         action: 'added to blocklist',
         entityType: 'blocklist',
         entityId: entry.id,
         entityLabel: auditBlockLabel(entry),
-        before: null,
+        before: widened ? { scope: 'guest checkouts' } : null,
         after: { kind: entry.kind, display: auditBlockDisplay(entry), reason: entry.reason },
       });
       const row = await findBlocklistRow(work.tx, entry.id);

@@ -1,6 +1,6 @@
 // The automatic credit of confirmed top-ups of automatic gateways (user rule 6, RESOLUTIONS money-3): the use case the worker's
 // payment_auto_credit job runs. One payment at a time: ask the gateway, then decide and write under the payment's lock.
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnApplicationBootstrap, Optional } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
@@ -67,10 +67,12 @@ interface GatewayAnswer {
  * the invoice's amount and currency as received; any difference sends it to staff review with a note that names it, and a record that
  * ended unpaid counts as "no longer confirmed". Other automatic gateways are asked for the payment's status (`checkStatus`).
  *
+ * With no risk screening registered every due top-up goes to staff review with `TOP_UP_SCREENING_UNAVAILABLE` (decision 050).
+ *
  * Side effects: calls the gateway's API; credits wallets (see {@link PaymentCrediting}); writes `payments` and `audit_logs` rows.
  */
 @Injectable()
-export class PaymentAutoCredit {
+export class PaymentAutoCredit implements OnApplicationBootstrap {
   private readonly logger = new Logger(PaymentAutoCredit.name);
 
   constructor(
@@ -83,6 +85,20 @@ export class PaymentAutoCredit {
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(GATEWAY_HTTP_POLICY) private readonly policy?: GatewayHttpPolicy,
   ) {}
+
+  /**
+   * Logs one error when no risk screening is registered in this process.
+   *
+   * Why: decision 050: every module's `onModuleInit` (where the risk module registers its hook) has run before this, so an empty list
+   * means this process sends every automatic top-up to staff instead of crediting it. The sentence never names a payment.
+   */
+  onApplicationBootstrap(): void {
+    if (this.screening.size === 0) {
+      this.logger.error(
+        'No risk screening is registered in this process: automatic top-ups go to staff review instead of being credited (decision 050).',
+      );
+    }
+  }
 
   /**
    * Lists the payments that are due now.

@@ -101,6 +101,7 @@ export function buildCustomerExport(
       taxCountry: session.taxCountry,
       status: session.status,
       ip: session.ip,
+      ipCountry: session.ipCountry,
       userAgent: session.userAgent,
       orderId: session.orderId,
       createdAt: session.createdAt.toISOString(),

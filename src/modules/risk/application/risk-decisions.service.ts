@@ -12,11 +12,14 @@ import { markDecided } from '../infra/assessment.repository';
 import { type HeldOrderContext, lockHeldContext, serviceDispatchFacts } from '../infra/foreign-reads.repository';
 import { Blocklist, type BlockRequest } from './blocklist';
 
+/** The words added to the reason of an email entry that is limited to guest checkouts, so the blocklist row shows its scope (decision 050). */
+const GUEST_ONLY_SUFFIX = ' (guest checkouts only)';
+
 /** What `POST /admin/risk/orders/:id/refund` carries. */
 export interface RefundHeldInput {
   /** The reviewer's reason; blank means the default sentence made from the first signal. */
   readonly reason?: string | undefined;
-  /** Add the customer's email to the blocklist. */
+  /** Add the customer's email to the blocklist (a guest order's email, with its card: decision 050). */
   readonly blockEmail: boolean;
   /** Add the order's IMEI (the device) to the blocklist. */
   readonly blockDevice: boolean;
@@ -31,8 +34,10 @@ export interface RefundHeldInput {
  * Both run in one transaction: the assessment row is locked first (a second staff member waits and then finds it decided, `409
  * NOT_HELD`), then the order moves through `OrderTransitions` (the guarded update, the ledger, the timeline lines, the outbox),
  * then the assessment records who decided and how. The customer's status is not changed: blocking the customer stays
- * `POST /admin/customers/:id/block` (B77). The refunds row and the gateway refund of a storefront payment are feature 16's, hooked
- * into the machine's `b2c_refund` move like a staff rejection: the whole payment goes back through `B2cRefunds` (one `refunds` row
+ * `POST /admin/customers/:id/block` (B77). Decision 050: for an order whose checkout was not opened signed in (a guest checkout),
+ * `blockEmail` also blocks the card that paid it, and the email entry is limited to guest checkouts when the email belonged to an account
+ * before the order (the account keeps signing in and ordering signed in); otherwise it blocks the email everywhere, as before. The
+ * refunds row and the gateway refund of a storefront payment are feature 16's, hooked into the machine's `b2c_refund` move like a staff rejection: the whole payment goes back through `B2cRefunds` (one `refunds` row
  * requested by the staff member, one `b2c_refund` journal, one `refund.process` event), never a second journal or refund.
  * {@link RiskDecisionsService.refundBlocked} is the same refund done by the system for a payment the rules blocked at capture.
  *
@@ -90,6 +95,10 @@ export class RiskDecisionsService {
   /**
    * Refunds a held order and optionally blocks the buyer.
    *
+   * Decision 050: on a guest order `blockEmail` adds the checkout's email (limited to guest checkouts when an account of that email
+   * existed before the order) and the card that paid it; the audit row says `emailScope: 'guest checkouts'` for a limited entry. A full
+   * email block widens an entry of that email that is limited to guest checkouts (the audit row says `emailScopeBefore: 'guest checkouts'`).
+   *
    * @param staffId the signed-in staff member
    * @param orderId the order id
    * @param input the reason and the two blocklist switches
@@ -101,7 +110,7 @@ export class RiskDecisionsService {
       const held = await this.lockHeld(tx, orderId);
       const reason = refundReason(signalsOf(held.signals), input.reason);
       await this.rejectAndRefund(tx, held.assessmentId, orderId, { type: 'staff', id: staffId }, reason, now);
-      const blocked = await this.addBlocks(tx, held, input, staffId, reason);
+      const { labels: blocked, guestEmail, widenedEmail } = await this.addBlocks(tx, held, input, staffId, reason);
       await this.audit.record(tx, {
         action: 'refunded after risk review',
         entityType: 'order',
@@ -109,7 +118,13 @@ export class RiskDecisionsService {
         entityLabel: `ORD-${orderId} for ${held.customerName}`,
         before: { risk_decision: 'review' },
         // The audit row keeps no readable IMEI: it names the kind and the masked display (the blocklist page has the rest).
-        after: { risk_decision: 'refunded', reason, ...(blocked.length > 0 ? { blocked } : {}) },
+        after: {
+          risk_decision: 'refunded',
+          reason,
+          ...(blocked.length > 0 ? { blocked } : {}),
+          ...(guestEmail ? { emailScope: 'guest checkouts' } : {}),
+          ...(widenedEmail ? { emailScopeBefore: 'guest checkouts' } : {}),
+        },
       });
     });
   }
@@ -175,6 +190,13 @@ export class RiskDecisionsService {
   /**
    * Adds the entries the reviewer chose. They are manual entries of the reviewer and keep `customer_id` empty: only the customer's
    * own block links entries to a customer (RESOLUTIONS b2c-5). A value that is already blocked is skipped silently.
+   *
+   * Decision 050: what a guest order used is blocked, never the account's standing. For a guest order (a checkout opened without a
+   * signed-in session) `blockEmail` adds the checkout's own email and the card that paid; the email entry is limited to guest checkouts
+   * when an account of that email existed before the order (a staff-made account, or a verified email), so that account keeps its use, and
+   * its reason says so. A signed-in order, or one without a checkout, blocks the email everywhere and adds no card. A full email block
+   * is never refused because a narrower entry of that email exists: an entry limited to guest checkouts is widened to a full one, the
+   * same rule `POST /admin/blocklist` applies.
    */
   private async addBlocks(
     tx: DbExecutor,
@@ -182,16 +204,44 @@ export class RiskDecisionsService {
     input: RefundHeldInput,
     staffId: number,
     reason: string,
-  ): Promise<string[]> {
+  ): Promise<{ labels: string[]; guestEmail: boolean; widenedEmail: boolean }> {
+    const guestOrder = held.openedSignedIn === false;
+    const limited = guestOrder && held.accountBeforeOrder;
     const requests: BlockRequest[] = [];
     if (input.blockEmail) {
-      requests.push({ kind: 'email', value: held.customerEmail, reason, source: 'manual', createdBy: staffId });
+      requests.push({
+        kind: 'email',
+        value: held.sessionEmail ?? held.customerEmail,
+        reason: limited ? `${reason}${GUEST_ONLY_SUFFIX}` : reason,
+        source: 'manual',
+        createdBy: staffId,
+        guestOnly: limited,
+      });
+      if (guestOrder && held.cardFingerprint !== null) {
+        requests.push({ kind: 'card', value: held.cardFingerprint, reason, source: 'manual', createdBy: staffId });
+      }
     }
     const imei = (held.imei ?? '').replace(/[\s-]/g, '');
     if (input.blockDevice && /^\d{15}$/.test(imei)) {
       requests.push({ kind: 'imei', value: imei, reason, source: 'manual', createdBy: staffId });
     }
     const added = await this.blocklist.add(tx, requests);
-    return added.map((entry) => auditBlockLabel(entry));
+    const labels = added.map((entry) => auditBlockLabel(entry));
+    // The insert skips a duplicate, so a full request over a narrower entry of the same email needs the guarded widening (decision 050).
+    const widened =
+      input.blockEmail && !limited && !added.some((entry) => entry.kind === 'email')
+        ? await this.blocklist.widenGuestOnly(tx, {
+            kind: 'email',
+            value: held.sessionEmail ?? held.customerEmail,
+            reason,
+            createdBy: staffId,
+          })
+        : undefined;
+    if (widened) labels.push(auditBlockLabel(widened));
+    return {
+      labels,
+      guestEmail: added.some((entry) => entry.kind === 'email' && entry.guestOnly),
+      widenedEmail: widened !== undefined,
+    };
   }
 }

@@ -3,6 +3,7 @@
 // of any source, the audit rows and the permissions.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { TokenService } from '@src/infra/crypto';
+import { Blocklist } from '@src/modules/risk';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -115,6 +116,32 @@ describe('POST /admin/blocklist', () => {
     const [a, b] = await Promise.all([staff.post('/admin/blocklist', body), staff.post('/admin/blocklist', body)]);
     expect([a.status, b.status].sort()).toEqual([201, 409]);
     expect(await blocklistRows((await testDb()).db)).toHaveLength(1);
+  });
+
+  it('widens an entry limited to guest checkouts: the add answers 201, the entry becomes a full one and the audit row says which scope it replaced', async () => {
+    const { db } = await testDb();
+    const limited = await insertBlock(t, db, 'email', 'shared@example.com', {
+      guestOnly: true,
+      reason: 'Fraud (guest checkouts only)',
+      createdBy: null,
+    });
+    const body = { kind: 'email', value: 'Shared@Example.com', reason: 'Chargeback lost' };
+    const res = await staff.post('/admin/blocklist', body);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({
+      id: limited.id,
+      kind: 'email',
+      reason: 'Chargeback lost',
+      source: 'manual',
+      createdBy: { id: staff.staffId, name: 'Lina S.' },
+    });
+    expect(await blocklistRows(db)).toMatchObject([{ id: limited.id, guestOnly: false, reason: 'Chargeback lost' }]);
+    expect(await t.app.get(Blocklist).isEmailBlocked(db, 'shared@example.com')).toBe(true);
+    expect(await auditRows(db, 'blocklist', limited.id)).toMatchObject([
+      { action: 'added to blocklist', before: { scope: 'guest checkouts' }, after: { reason: 'Chargeback lost' } },
+    ]);
+    // The entry is a full one now: the same add is a plain duplicate.
+    expect((await staff.post('/admin/blocklist', body)).status).toBe(409);
   });
 
   it('answers 422 on value or reason: a short IMEI, a bad email, an empty reason, a kind that cannot be added', async () => {

@@ -24,6 +24,16 @@ export interface GatewayCredentials {
   readonly webhookSecrets: readonly string[];
 }
 
+/**
+ * How a card is funded, in the gateway's words.
+ *
+ * Why: decision 050: a prepaid card adds the prepaid-card risk signal; the other values only say what the gateway reported.
+ */
+export const CARD_FUNDINGS = ['credit', 'debit', 'prepaid', 'unknown'] as const;
+
+/** How a card is funded (one of {@link CARD_FUNDINGS}). */
+export type CardFunding = (typeof CARD_FUNDINGS)[number];
+
 /** What a driver read about how a storefront payment was made (never card data: a brand, the last digits, a fingerprint). */
 export interface PaymentDetails {
   /** The card brand (`visa`), or the wallet's name when `wallet` is set. */
@@ -31,6 +41,13 @@ export interface PaymentDetails {
   readonly last4?: string | undefined;
   /** The gateway's card fingerprint, kept for the blocklist (RESOLUTIONS b2c-5). */
   readonly fingerprint?: string | undefined;
+  /**
+   * The two-letter country of the card's issuer, upper case, when the gateway reports it: risk evidence for the IP-country rule, the
+   * tax-country check and the country blocklist (decision 050).
+   */
+  readonly country?: string | undefined;
+  /** How the card is funded, when the gateway reports it; `prepaid` adds the prepaid-card risk signal (decision 050). */
+  readonly funding?: CardFunding | undefined;
   /** True when the cardholder passed 3-D Secure. */
   readonly threeDs?: boolean | undefined;
   /** The wallet's name (`apple_pay`) when the customer paid with one: the payment then counts as `wallet`. */

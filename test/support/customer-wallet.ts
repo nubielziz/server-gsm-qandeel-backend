@@ -111,14 +111,15 @@ export async function customerWalletRow(db: Database, customerId: number) {
  * @param client the signed-in store client
  * @param world the storefront
  * @param email the account's email
- * @param options `consent: false` leaves the consents out; `currency`, `serviceId` change the checkout
+ * @param options `consent: false` leaves the consents out; `currency`, `serviceId` change the checkout; `headers` are added to the open call (the
+ *   visitor-country header of a proxy)
  * @returns the checkout token and the session as opened
  */
 export async function openSignedInCheckout(
   client: StoreClient,
   world: StorefrontWorld,
   email: string,
-  options: { consent?: boolean; currency?: string; serviceId?: number } = {},
+  options: { consent?: boolean; currency?: string; serviceId?: number; headers?: Record<string, string> } = {},
 ): Promise<{ token: string; session: Record<string, unknown> }> {
   const res = await client.call(
     'POST',
@@ -130,7 +131,7 @@ export async function openSignedInCheckout(
       currency: options.currency ?? 'GBP',
       imei: APPLE_IMEI,
     },
-    { headers: { 'user-agent': 'Mozilla/5.0 (test)' } },
+    { headers: { 'user-agent': 'Mozilla/5.0 (test)', ...options.headers } },
   );
   if (res.statusCode !== 201) throw new Error(`open checkout answered ${res.statusCode}: ${res.body}`);
   const session = res.json<Record<string, unknown> & { token: string }>();
