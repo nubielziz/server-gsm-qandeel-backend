@@ -2,7 +2,7 @@
 // reply answers per item. Bodies match the console (`src/features/orders/api/actions.ts`, `bulkReply.ts`).
 import { z } from 'zod';
 import { defineRoute, zId, zIdParam } from '../../../common/contract';
-import { MAX_BULK_ITEMS } from '../domain/bulk-reply';
+import { MAX_BULK_ITEMS, RECENT_REJECTION_DAYS } from '../domain/bulk-reply';
 
 const id = z.object({ id: zIdParam });
 
@@ -215,6 +215,9 @@ export const addOrderNote = defineRoute({
 
 const LINE_STATUSES = ['matched', 'not_found', 'ambiguous', 'invalid', 'not_open'] as const;
 
+/** A joined record as the console names it (`NamedRef`). */
+const namedRef = z.object({ id: zId, name: z.string() });
+
 /** `POST /admin/orders/bulk-reply/preview`. */
 export const previewBulkReply = defineRoute({
   key: 'POST /admin/orders/bulk-reply/preview',
@@ -223,7 +226,9 @@ export const previewBulkReply = defineRoute({
     `Reads the pasted text (at most ${MAX_BULK_ITEMS} lines): each non-blank line is an input followed by a code, separated by ` +
     'whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never ' +
     'matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` ' +
-    '(several open orders) or `matched` (with the order id). Changes nothing, so it writes no audit row.',
+    '(several open orders, or one open order while another order with that input but another buyer or another service was cancelled ' +
+    `or rejected in the last ${RECENT_REJECTION_DAYS} days) or \`matched\` (with the order id and the merchant or customer and the ` +
+    'service of that order). Changes nothing, so it writes no audit row.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -241,6 +246,17 @@ export const previewBulkReply = defineRoute({
           code: z.string().nullable(),
           orderId: zId.nullable(),
           status: z.enum(LINE_STATUSES),
+          // The server sends these three on every line; they are optional here because the console's type and its mock answer
+          // do not carry them yet (an additive field the console may ignore).
+          client: namedRef
+            .nullable()
+            .optional()
+            .describe('The merchant of the matched order; null unless matched to a merchant order.'),
+          customer: namedRef
+            .nullable()
+            .optional()
+            .describe('The storefront customer of the matched order; null unless matched to a storefront order.'),
+          service: namedRef.nullable().optional().describe('The service of the matched order; null unless matched.'),
         }),
       ),
     }),
@@ -257,6 +273,9 @@ export const previewBulkReply = defineRoute({
           code: 'Unlocked: 8842',
           orderId: 48101,
           status: 'matched',
+          client: { id: 12, name: 'Cairo GSM Lab' },
+          customer: null,
+          service: { id: 7, name: 'AT&T USA Premier Unlock' },
         },
       ],
     },

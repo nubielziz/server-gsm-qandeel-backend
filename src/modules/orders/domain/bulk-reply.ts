@@ -4,6 +4,11 @@
 /** The most lines one paste or one apply may hold (RESOLUTIONS orders-suppliers-19: at most 500 items per apply). */
 export const MAX_BULK_ITEMS = 500;
 
+/** How long an order closed by a cancel or a reject still keeps its input from matching another buyer's or service's order. */
+export const RECENT_REJECTION_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** How the server read one pasted line (the console's `BulkReplyLineStatus`). */
 export type BulkReplyLineStatus = 'matched' | 'not_found' | 'ambiguous' | 'invalid' | 'not_open';
 
@@ -18,10 +23,46 @@ export interface ParsedLine {
   readonly code: string | null;
 }
 
-/** An order a line may match: only its id, whether it is open and its input. */
+/** An order a line may match: its id, whether it is open, whose order of which service it is, and whether it was rejected lately. */
 export interface MatchCandidate {
   readonly id: number;
   readonly open: boolean;
+  /** The buyer and the service of the order as one key (`ownerKey`). */
+  readonly owner: string;
+  /** True when a cancel or a reject closed the order within the last `RECENT_REJECTION_DAYS` days (`isRecentRejection`). */
+  readonly recentlyRejected: boolean;
+}
+
+/**
+ * Names the buyer and the service of an order as one key.
+ *
+ * Why: a pasted result belongs to one buyer's order of one service; two orders with the same input but another merchant, another
+ * storefront customer or another service are different work, so `matchLine` compares these keys.
+ *
+ * @param order the order's merchant or customer and its service
+ * @returns a key equal for two orders exactly when they have the same buyer and the same service
+ */
+export function ownerKey(order: {
+  readonly clientId: number | null;
+  readonly customerId: number | null;
+  readonly serviceId: number;
+}): string {
+  const buyer = order.clientId === null ? `customer ${order.customerId ?? 'none'}` : `client ${order.clientId}`;
+  return `${buyer} service ${order.serviceId}`;
+}
+
+/**
+ * Says whether an order was closed by a cancel or a reject within the last `RECENT_REJECTION_DAYS` days.
+ *
+ * Why: staff may still hold the supplier's answer for an order that was cancelled or rejected while they worked on it; for a week
+ * such an order keeps its input from matching another buyer's or service's open order.
+ *
+ * @param order the order's status and when it was closed
+ * @param now the current time
+ * @returns true for a `rejected` order closed at most `RECENT_REJECTION_DAYS` days before `now` (or after it)
+ */
+export function isRecentRejection(order: { readonly status: string; readonly closedAt: Date }, now: Date): boolean {
+  return order.status === 'rejected' && now.getTime() - order.closedAt.getTime() <= RECENT_REJECTION_DAYS * DAY_MS;
 }
 
 /**
@@ -64,7 +105,10 @@ export function parseBulkLines(text: string): ParsedLine[] {
  * Decides the status of one line from the orders that carry its input.
  *
  * Why: the console shows `invalid` (no input or no code), `not_found` (no order with that input), `not_open` (only closed
- * ones), `ambiguous` (several open ones: staff must pick) and `matched`; only a matched line carries an order id.
+ * ones), `ambiguous` and `matched`; only a matched line carries an order id. A line is matched only when exactly one order with
+ * its input is open and no order with that input but another buyer or another service is open or was closed by a cancel or a
+ * reject in the last `RECENT_REJECTION_DAYS` days: a result must complete the order it was meant for, so staff reply to such a
+ * line on the order itself.
  *
  * @param line the parsed line
  * @param candidates every order whose input equals the line's input, whitespace removed
@@ -79,5 +123,11 @@ export function matchLine(
   const open = candidates.filter((candidate) => candidate.open);
   if (open.length === 0) return { status: 'not_open', orderId: null };
   if (open.length > 1) return { status: 'ambiguous', orderId: null };
-  return { status: 'matched', orderId: open[0]!.id };
+  const match = open[0]!;
+  const rival = candidates.some(
+    (candidate) =>
+      candidate.id !== match.id && candidate.owner !== match.owner && (candidate.open || candidate.recentlyRejected),
+  );
+  if (rival) return { status: 'ambiguous', orderId: null };
+  return { status: 'matched', orderId: match.id };
 }

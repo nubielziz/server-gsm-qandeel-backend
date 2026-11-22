@@ -1,6 +1,14 @@
 // Unit tests of the bulk reply reading and matching (docs/contract/endpoints/orders.md, bulk-reply/preview).
 import { describe, expect, it } from 'bun:test';
-import { MAX_BULK_ITEMS, matchLine, parseBulkLines, squash } from '@src/modules/orders/domain/bulk-reply';
+import {
+  MAX_BULK_ITEMS,
+  RECENT_REJECTION_DAYS,
+  isRecentRejection,
+  matchLine,
+  ownerKey,
+  parseBulkLines,
+  squash,
+} from '@src/modules/orders/domain/bulk-reply';
 
 describe('parseBulkLines', () => {
   it('splits the input from the code on whitespace, comma or semicolon and keeps the rest of the line as typed', () => {
@@ -52,32 +60,71 @@ describe('parseBulkLines', () => {
 
 describe('matchLine', () => {
   const line = (imei: string | null, code: string | null) => ({ line: 1, raw: '', imei, code });
+  const order = (id: number, open: boolean, owner = 'client 1 service 1', recentlyRejected = false) => ({
+    id,
+    open,
+    owner,
+    recentlyRejected,
+  });
   it('is invalid without an input or a code', () => {
     expect(matchLine(line(null, 'x'), [])).toEqual({ status: 'invalid', orderId: null });
-    expect(matchLine(line('1', null), [{ id: 5, open: true }])).toEqual({ status: 'invalid', orderId: null });
+    expect(matchLine(line('1', null), [order(5, true)])).toEqual({ status: 'invalid', orderId: null });
   });
 
   it('is not_found without orders, not_open with only closed ones, ambiguous with several open ones and matched with one', () => {
     expect(matchLine(line('1', 'x'), [])).toEqual({ status: 'not_found', orderId: null });
-    expect(matchLine(line('1', 'x'), [{ id: 5, open: false }])).toEqual({ status: 'not_open', orderId: null });
-    expect(
-      matchLine(line('1', 'x'), [
-        { id: 5, open: true },
-        { id: 6, open: true },
-      ]),
-    ).toEqual({
+    expect(matchLine(line('1', 'x'), [order(5, false)])).toEqual({ status: 'not_open', orderId: null });
+    expect(matchLine(line('1', 'x'), [order(5, true), order(6, true)])).toEqual({
       status: 'ambiguous',
       orderId: null,
     });
-    expect(
-      matchLine(line('1', 'x'), [
-        { id: 5, open: false },
-        { id: 6, open: true },
-      ]),
-    ).toEqual({
+    expect(matchLine(line('1', 'x'), [order(5, false), order(6, true)])).toEqual({
       status: 'matched',
       orderId: 6,
     });
+  });
+
+  it('is ambiguous when an order of another buyer or service with the input was rejected lately', () => {
+    const open = order(6, true, 'client 1 service 1');
+    expect(matchLine(line('1', 'x'), [order(5, false, 'client 1 service 2', true), open])).toEqual({
+      status: 'ambiguous',
+      orderId: null,
+    });
+    expect(matchLine(line('1', 'x'), [order(5, false, 'customer 4 service 1', true), open])).toEqual({
+      status: 'ambiguous',
+      orderId: null,
+    });
+    // The same buyer's earlier order of the same service, or an order of another buyer that was not rejected lately, does not count.
+    expect(matchLine(line('1', 'x'), [order(5, false, 'client 1 service 1', true), open])).toEqual({
+      status: 'matched',
+      orderId: 6,
+    });
+    expect(matchLine(line('1', 'x'), [order(5, false, 'client 2 service 1', false), open])).toEqual({
+      status: 'matched',
+      orderId: 6,
+    });
+  });
+});
+
+describe('ownerKey', () => {
+  it('is equal for the same buyer and service and differs for another merchant, customer or service', () => {
+    const key = ownerKey({ clientId: 1, customerId: null, serviceId: 3 });
+    expect(ownerKey({ clientId: 1, customerId: null, serviceId: 3 })).toBe(key);
+    expect(ownerKey({ clientId: 2, customerId: null, serviceId: 3 })).not.toBe(key);
+    expect(ownerKey({ clientId: 1, customerId: null, serviceId: 4 })).not.toBe(key);
+    expect(ownerKey({ clientId: null, customerId: 1, serviceId: 3 })).not.toBe(key);
+  });
+});
+
+describe('isRecentRejection', () => {
+  const now = new Date('2026-11-22T12:00:00.000Z');
+  const ago = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  it('holds for a rejected order up to the window and for no other status', () => {
+    expect(RECENT_REJECTION_DAYS).toBe(7);
+    expect(isRecentRejection({ status: 'rejected', closedAt: ago(7) }, now)).toBe(true);
+    expect(isRecentRejection({ status: 'rejected', closedAt: ago(7.001) }, now)).toBe(false);
+    expect(isRecentRejection({ status: 'completed', closedAt: ago(1) }, now)).toBe(false);
+    expect(isRecentRejection({ status: 'pending', closedAt: ago(0) }, now)).toBe(false);
   });
 });
 

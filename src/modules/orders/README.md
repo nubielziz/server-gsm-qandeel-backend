@@ -89,7 +89,10 @@ the one `POST /api/index.php` transport route.
 - **Bulk reply** (`application/bulk-reply.service.ts`, `domain/bulk-reply.ts`): preview matches pasted lines (first token is the
   input, the rest the code; a line ends at CRLF, CR, LF, U+2028 or U+2029, so reading a line takes time in proportion to its length,
   decision 051; whitespace-insensitive, non-empty inputs only, index `orders_imei_squashed_idx`) and refuses a paste of
-  more than 500 lines; apply runs each item as its own `reply` transaction and reports refusals in `failed`, plus one summary audit row
+  more than 500 lines. A line is `matched` only when exactly one order with its input is open and no order with that input but
+  another buyer (merchant or storefront customer) or another service is open or was cancelled or rejected in the last 7 days
+  (`RECENT_REJECTION_DAYS`); otherwise it is `ambiguous` and staff reply on the order itself. A matched line names the merchant or
+  customer and the service of its order (`client`, `customer`, `service`). Apply runs each item as its own `reply` transaction and reports refusals in `failed`, plus one summary audit row
   for the request (so an apply where every item failed is still audited).
 - **Export** (`application/order-export.service.ts`): counts first (more than 100,000 rows: `422`), writes one `audit_logs` row
   (staff), then streams the CSV in batches of 1,000 by keyset paging on `(sort value, id)`, so rows never repeat or get skipped while

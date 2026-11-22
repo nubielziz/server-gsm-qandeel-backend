@@ -244,25 +244,52 @@ export async function exportOrderRows(
     .limit(limit);
 }
 
+/** An order that carries a pasted input, with what the bulk reply needs to match it and to name it. */
+export interface InputMatchRow {
+  readonly id: number;
+  readonly squashed: string;
+  readonly status: Order['status'];
+  readonly clientId: number | null;
+  readonly customerId: number | null;
+  readonly serviceId: number;
+  /** When the order was closed (`completed_at`, else `updated_at` for a row closed without it). */
+  readonly closedAt: Date;
+  readonly clientName: string | null;
+  readonly customerName: string | null;
+  readonly serviceName: string;
+}
+
 /**
  * Finds the orders whose input matches pasted inputs, ignoring whitespace.
  *
  * Why: the bulk reply preview matches on `orders.imei` with whitespace removed on both sides, only for non-empty inputs
- * (RESOLUTIONS orders-suppliers-2). The expression is backed by the index `orders_imei_squashed_idx`.
+ * (RESOLUTIONS orders-suppliers-2). The expression is backed by the index `orders_imei_squashed_idx`. The buyer, the service and the
+ * closing time let the preview keep a line from another buyer's or service's order and name the order a line completes.
  *
  * @param db the database or a transaction
  * @param squashedInputs the inputs from the pasted lines, whitespace already removed
- * @returns the matching orders with their squashed input and status
+ * @returns the matching orders with their squashed input, status, buyer, service, closing time and names
  */
-export async function findOrdersByInputs(
-  db: DbExecutor,
-  squashedInputs: readonly string[],
-): Promise<Array<{ id: number; squashed: string; status: Order['status'] }>> {
+export async function findOrdersByInputs(db: DbExecutor, squashedInputs: readonly string[]): Promise<InputMatchRow[]> {
   if (squashedInputs.length === 0) return [];
   const squashed = sql<string>`regexp_replace(${orders.imei}, '\\s', '', 'g')`;
   return db
-    .select({ id: orders.id, squashed, status: orders.status })
+    .select({
+      id: orders.id,
+      squashed,
+      status: orders.status,
+      clientId: orders.clientId,
+      customerId: orders.customerId,
+      serviceId: orders.serviceId,
+      closedAt: sql<Date>`coalesce(${orders.completedAt}, ${orders.updatedAt})`.mapWith(orders.completedAt),
+      clientName: f.clients.name,
+      customerName: f.customers.name,
+      serviceName: f.services.name,
+    })
     .from(orders)
+    .innerJoin(f.services, eq(f.services.id, orders.serviceId))
+    .leftJoin(f.clients, eq(f.clients.id, orders.clientId))
+    .leftJoin(f.customers, eq(f.customers.id, orders.customerId))
     .where(and(sql`${orders.imei} is not null and ${orders.imei} <> ''`, inArray(squashed, [...squashedInputs])))
     .orderBy(asc(orders.id));
 }

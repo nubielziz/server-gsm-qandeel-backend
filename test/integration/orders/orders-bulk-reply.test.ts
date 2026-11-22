@@ -7,7 +7,8 @@ import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { TestClock } from '../../support/clock';
+import { insertService } from '../../support/catalog';
+import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
 import {
@@ -23,6 +24,7 @@ import {
   systemBalance,
   walletOf,
 } from '../../support/orders';
+import { insertCustomer } from '../../support/support';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -53,7 +55,7 @@ async function place(serviceId: number, imei: string): Promise<number> {
 
 describe('POST /admin/orders/bulk-reply/preview', () => {
   it('matches each line to its order and says why a line does not match', async () => {
-    const { db, auto, manual } = world;
+    const { db, auto, manual, merchant } = world;
     const open = await place(auto.serviceId, IMEIS[0]);
     const closed = await place(auto.serviceId, IMEIS[1]);
     await staff.post(`/admin/orders/${closed}/reject`, { reason: 'No' });
@@ -73,6 +75,13 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
     ].join('\r\n');
     const res = await staff.post('/admin/orders/bulk-reply/preview', { text });
     expect(res.status).toBe(200);
+    // A matched line names the buyer and the service of the order it completes; other lines name none.
+    const target = {
+      client: { id: merchant.id, name: 'Cairo GSM Lab' },
+      customer: null,
+      service: { id: auto.serviceId, name: 'AT&T USA Premier Unlock' },
+    };
+    const none = { client: null, customer: null, service: null };
     expect(res.body.lines).toEqual([
       {
         line: 1,
@@ -81,10 +90,35 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
         code: 'Unlocked: code 1',
         orderId: open,
         status: 'matched',
+        ...target,
       },
-      { line: 3, raw: `${IMEIS[1]},Unlocked 2`, imei: IMEIS[1], code: 'Unlocked 2', orderId: null, status: 'not_open' },
-      { line: 4, raw: `${IMEIS[2]};code 3`, imei: IMEIS[2], code: 'code 3', orderId: null, status: 'ambiguous' },
-      { line: 5, raw: '352905112490861', imei: '352905112490861', code: null, orderId: null, status: 'invalid' },
+      {
+        line: 3,
+        raw: `${IMEIS[1]},Unlocked 2`,
+        imei: IMEIS[1],
+        code: 'Unlocked 2',
+        orderId: null,
+        status: 'not_open',
+        ...none,
+      },
+      {
+        line: 4,
+        raw: `${IMEIS[2]};code 3`,
+        imei: IMEIS[2],
+        code: 'code 3',
+        orderId: null,
+        status: 'ambiguous',
+        ...none,
+      },
+      {
+        line: 5,
+        raw: '352905112490861',
+        imei: '352905112490861',
+        code: null,
+        orderId: null,
+        status: 'invalid',
+        ...none,
+      },
       {
         line: 6,
         raw: '999999999999991 code 4',
@@ -92,6 +126,7 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
         code: 'code 4',
         orderId: null,
         status: 'not_found',
+        ...none,
       },
       {
         line: 7,
@@ -100,6 +135,7 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
         code: 'trimmed code',
         orderId: open,
         status: 'matched',
+        ...target,
       },
     ]);
     expect([first, second]).toHaveLength(2);
@@ -141,6 +177,155 @@ describe('POST /admin/orders/bulk-reply/preview', () => {
     expect((await staff.post('/admin/orders/bulk-reply/preview', {})).status).toBe(422);
     const reader = await adminWith(t, ['orders:read']);
     expect((await reader.post('/admin/orders/bulk-reply/preview', { text: 'a b' })).status).toBe(403);
+  });
+});
+
+describe('POST /admin/orders/bulk-reply/preview: a line completes only the order it was meant for', () => {
+  /** A manual service the merchant may cancel, priced well above the manual service of the world. */
+  async function cancellableService(): Promise<number> {
+    return insertService(world.db, world.auto.categoryId, {
+      name: 'Premium manual unlock',
+      fulfillment: 'manual',
+      cost: '40.0000',
+      effectiveCost: '40.0000',
+      basePrice: '50.0000',
+      minProfit: '1.0000',
+      allowCancel: true,
+    });
+  }
+
+  async function lineOf(text: string) {
+    const res = await staff.post('/admin/orders/bulk-reply/preview', { text });
+    expect(res.status).toBe(200);
+    return res.body.lines[0];
+  }
+
+  const ambiguous = { status: 'ambiguous', orderId: null, client: null, customer: null, service: null };
+
+  it('is ambiguous when an order of the same merchant for another service was cancelled', async () => {
+    const { db, merchant, manual } = world;
+    const premium = await cancellableService();
+    const cancelled = await (async () => {
+      const res = await (
+        await portalFor(t, merchant.id)
+      ).post('/client/orders', { serviceId: premium, imei: IMEIS[0] });
+      expect(res.statusCode).toBe(201);
+      return json(res).orders[0].id as number;
+    })();
+    const other = await place(manual.serviceId, IMEIS[0]);
+    expect((await (await portalFor(t, merchant.id)).post(`/client/orders/${cancelled}/cancel`, {})).statusCode).toBe(
+      204,
+    );
+
+    expect(await lineOf(`${IMEIS[0]} RESULT-1`)).toMatchObject(ambiguous);
+    expect((await orderRow(db, other)).status).toBe('pending');
+  });
+
+  it('is ambiguous when an order of another merchant with the same input was cancelled or rejected', async () => {
+    const { merchant, other, manual, auto } = world;
+    const premium = await cancellableService();
+    const portalA = await portalFor(t, merchant.id);
+    const ofA = json(await portalA.post('/client/orders', { serviceId: premium, imei: IMEIS[1] })).orders[0]
+      .id as number;
+    const ofB = json(
+      await (await portalFor(t, other.id)).post('/client/orders', { serviceId: manual.serviceId, imei: IMEIS[1] }),
+    ).orders[0].id as number;
+    expect(ofB).toBeGreaterThan(0);
+    expect((await portalA.post(`/client/orders/${ofA}/cancel`, {})).statusCode).toBe(204);
+    expect(await lineOf(`${IMEIS[1]} RESULT-A`)).toMatchObject(ambiguous);
+
+    // The same service for both merchants: a staff reject of the first order counts as well.
+    const rejected = await place(auto.serviceId, IMEIS[2]);
+    expect((await staff.post(`/admin/orders/${rejected}/reject`, { reason: 'No' })).status).toBe(204);
+    await (await portalFor(t, other.id)).post('/client/orders', { serviceId: auto.serviceId, imei: IMEIS[2] });
+    expect(await lineOf(`${IMEIS[2]} RESULT-B`)).toMatchObject(ambiguous);
+  });
+
+  it('counts a cancel or a reject for 7 days, and never a completed order of another buyer', async () => {
+    const { db, merchant, other, manual } = world;
+    const now = clock.now().getTime();
+    const openOf = async (imei: string) =>
+      (await insertOrderRow(db, { clientId: other.id, serviceId: manual.serviceId, imei, dispatchState: 'manual' })).id;
+    const closed = (imei: string, status: 'rejected' | 'completed', ageMs: number) =>
+      insertOrderRow(db, {
+        clientId: merchant.id,
+        serviceId: manual.serviceId,
+        imei,
+        status,
+        dispatchState: 'done',
+        completedAt: new Date(now - ageMs),
+      });
+    await closed(IMEIS[0], 'rejected', 6 * DAY);
+    await openOf(IMEIS[0]);
+    await closed(IMEIS[1], 'rejected', 8 * DAY);
+    const old = await openOf(IMEIS[1]);
+    await closed(IMEIS[2], 'completed', DAY);
+    const afterCompleted = await openOf(IMEIS[2]);
+
+    const res = await staff.post('/admin/orders/bulk-reply/preview', {
+      text: [`${IMEIS[0]} a`, `${IMEIS[1]} b`, `${IMEIS[2]} c`].join('\n'),
+    });
+    const target = { client: { id: other.id, name: 'Erbil Mobile Parts' }, customer: null };
+    expect(res.body.lines).toEqual([
+      expect.objectContaining(ambiguous),
+      expect.objectContaining({ status: 'matched', orderId: old, ...target }),
+      expect.objectContaining({ status: 'matched', orderId: afterCompleted, ...target }),
+    ]);
+  });
+
+  it('treats a storefront order like the order of any other buyer, and names its customer', async () => {
+    const { db, merchant, manual } = world;
+    const customer = await insertCustomer(db, { name: 'Sam Buyer' });
+    const storefront = (imei: string, values: Partial<typeof s.orders.$inferInsert> = {}) =>
+      insertOrderRow(db, {
+        clientId: null,
+        customerId: customer.id,
+        serviceId: manual.serviceId,
+        source: 'store',
+        imei,
+        dispatchState: 'manual',
+        ...values,
+      });
+    const alone = await storefront(IMEIS[3]);
+    expect(await lineOf(`${IMEIS[3]} R`)).toMatchObject({
+      status: 'matched',
+      orderId: alone.id,
+      client: null,
+      customer: { id: customer.id, name: 'Sam Buyer' },
+      service: { id: manual.serviceId, name: 'Manual unlock' },
+    });
+
+    // A merchant's open order and a storefront order with the same input that was rejected two days ago.
+    await storefront(IMEIS[4], {
+      status: 'rejected',
+      dispatchState: 'done',
+      completedAt: new Date(clock.now().getTime() - 2 * DAY),
+    });
+    await insertOrderRow(db, {
+      clientId: merchant.id,
+      serviceId: manual.serviceId,
+      imei: IMEIS[4],
+      dispatchState: 'manual',
+    });
+    expect(await lineOf(`${IMEIS[4]} R`)).toMatchObject(ambiguous);
+  });
+
+  it("still matches when the earlier order of the input was the same merchant's order of the same service", async () => {
+    const { merchant, manual } = world;
+    const first = await place(manual.serviceId, IMEIS[0]);
+    expect((await staff.post(`/admin/orders/${first}/reject`, { reason: 'Wrong IMEI' })).status).toBe(204);
+    const again = await place(manual.serviceId, IMEIS[0]);
+    expect(await lineOf(`${IMEIS[0]} RESULT`)).toEqual({
+      line: 1,
+      raw: `${IMEIS[0]} RESULT`,
+      imei: IMEIS[0],
+      code: 'RESULT',
+      orderId: again,
+      status: 'matched',
+      client: { id: merchant.id, name: 'Cairo GSM Lab' },
+      customer: null,
+      service: { id: manual.serviceId, name: 'Manual unlock' },
+    });
   });
 });
 

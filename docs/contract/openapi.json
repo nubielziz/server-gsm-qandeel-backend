@@ -96403,7 +96403,7 @@
     },
     "/admin/orders/bulk-reply/preview": {
       "post": {
-        "description": "Reads the pasted text (at most 500 lines): each non-blank line is an input followed by a code, separated by whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` (several open orders) or `matched` (with the order id). Changes nothing, so it writes no audit row.",
+        "description": "Reads the pasted text (at most 500 lines): each non-blank line is an input followed by a code, separated by whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` (several open orders, or one open order while another order with that input but another buyer or another service was cancelled or rejected in the last 7 days) or `matched` (with the order id and the merchant or customer and the service of that order). Changes nothing, so it writes no audit row.",
         "operationId": "postAdminOrdersBulkReplyPreview",
         "parameters": [],
         "requestBody": {
@@ -96491,6 +96491,99 @@
                               "invalid",
                               "not_open"
                             ]
+                          },
+                          "client": {
+                            "description": "The merchant of the matched order; null unless matched to a merchant order.",
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "x-gsm-alias": "Id",
+                                    "description": "Numeric record id.",
+                                    "examples": [
+                                      42
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "customer": {
+                            "description": "The storefront customer of the matched order; null unless matched to a storefront order.",
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "x-gsm-alias": "Id",
+                                    "description": "Numeric record id.",
+                                    "examples": [
+                                      42
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "service": {
+                            "description": "The service of the matched order; null unless matched.",
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991,
+                                    "x-gsm-alias": "Id",
+                                    "description": "Numeric record id.",
+                                    "examples": [
+                                      42
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -96518,7 +96611,16 @@
                       "imei": "352905112490861",
                       "code": "Unlocked: 8842",
                       "orderId": 48101,
-                      "status": "matched"
+                      "status": "matched",
+                      "client": {
+                        "id": 12,
+                        "name": "Cairo GSM Lab"
+                      },
+                      "customer": null,
+                      "service": {
+                        "id": 7,
+                        "name": "AT&T USA Premier Unlock"
+                      }
                     }
                   ]
                 }
