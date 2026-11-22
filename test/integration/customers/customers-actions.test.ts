@@ -4,12 +4,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { PasswordHasher } from '@src/infra/crypto';
+import { CUSTOMER_SECURITY_NOTICE_PHRASES } from '@src/modules/customers/application/mail/customer-security-notices';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, signInStaff } from '../../support/auth';
+import { clearIdentityCaches, openSession, signInStaff } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { auditOfCustomer } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { mailbox, seedDefaultTemplates, sendAllQueued } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
 import {
   STORE_ORIGIN,
@@ -52,6 +54,10 @@ const post = (staff: Staff, url: string, payload?: unknown) =>
 const staffWith = (...permissions: string[]) => signInStaff(t, permissions);
 const problem = (res: { json: () => unknown }) => res.json() as { code: string; errors?: Array<{ field: string }> };
 const store = (ip = '127.0.0.1') => new StoreClient(t, ip);
+const securityNotices = async () => {
+  const { db } = await testDb();
+  return (await db.select().from(s.notifications)).filter((row) => row.event === 'customer.security_notice');
+};
 const liveSessions = async (customerId: number) => {
   const { db } = await testDb();
   const sessions = await db.select().from(s.sessions).where(eq(s.sessions.subjectId, customerId));
@@ -139,6 +145,89 @@ describe('POST /admin/customers/:id/account', () => {
     expect((await customerRow(guest.id)).hasAccount).toBe(false);
     const reader = await staffWith('customers:read');
     expect((await post(reader, `/admin/customers/${guest.id}/account`, { mode: 'reset_link' })).statusCode).toBe(403);
+  });
+});
+
+describe('a temporary password set by staff', () => {
+  it('ends every session and tells the customer, whatever revokeSessions says (set on an account)', async () => {
+    const { db } = await testDb();
+    await seedDefaultTemplates(db);
+    mailbox(t).reset();
+    const customer = await makeCustomer(t, { name: 'Nadia Owner' });
+    const phone = store();
+    await phone.login(customer.email);
+    const staff = await staffWith('customers:password');
+    expect((await phone.me()).statusCode).toBe(200);
+
+    const res = await post(staff, `/admin/customers/${customer.id}/password`, {
+      mode: 'temporary_password',
+      revokeSessions: false,
+    });
+    expect(res.statusCode).toBe(200);
+    const { temporaryPassword } = res.json<{ temporaryPassword: string }>();
+    // Signed out at once: the request cannot keep the session alive.
+    expect((await phone.me()).statusCode).toBe(401);
+    expect(await liveSessions(customer.id)).toHaveLength(0);
+
+    const notices = await securityNotices();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ recipientType: 'customer', recipientId: customer.id, channel: 'email' });
+    expect(notices[0]!.payload).toMatchObject({
+      to: customer.email,
+      variables: { change: CUSTOMER_SECURITY_NOTICE_PHRASES.temporary_password },
+    });
+    expect(JSON.stringify(notices[0]!.payload)).not.toContain(temporaryPassword);
+    const [audit] = (await auditOfCustomer(db, customer.id)).slice(-1);
+    expect(audit).toMatchObject({ before: { sessions: 1 }, after: { sessions: 0 } });
+
+    await sendAllQueued(t);
+    const sent = mailbox(t).sent;
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: customer.email, subject: 'A security change on your account' });
+    expect(sent[0]!.text).toContain('Hi Nadia Owner,');
+    expect(sent[0]!.text).toContain(CUSTOMER_SECURITY_NOTICE_PHRASES.temporary_password);
+    expect(sent[0]!.text).not.toContain(temporaryPassword);
+  });
+
+  it('tells the guest and ends any session when an account is created with it', async () => {
+    const { db } = await testDb();
+    await seedDefaultTemplates(db);
+    const guest = await makeCustomer(t, { guest: true, name: 'Sofia Alvarez' });
+    await openSession(t, { type: 'customer', id: guest.id });
+    const staff = await staffWith('customers:update', 'customers:password');
+
+    const res = await post(staff, `/admin/customers/${guest.id}/account`, { mode: 'temporary_password' });
+    expect(res.statusCode).toBe(200);
+    const { temporaryPassword } = res.json<{ temporaryPassword: string }>();
+    expect(await liveSessions(guest.id)).toHaveLength(0);
+
+    const notices = await securityNotices();
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ recipientType: 'customer', recipientId: guest.id, channel: 'email' });
+    expect(notices[0]!.payload).toMatchObject({
+      to: guest.email,
+      variables: { change: CUSTOMER_SECURITY_NOTICE_PHRASES.account_created_with_temporary_password },
+    });
+    expect(JSON.stringify(notices[0]!.payload)).not.toContain(temporaryPassword);
+    expect(CUSTOMER_SECURITY_NOTICE_PHRASES.account_created_with_temporary_password).not.toBe(
+      CUSTOMER_SECURITY_NOTICE_PHRASES.temporary_password,
+    );
+  });
+
+  it('sends no security notice for the link modes, and the link mode still keeps sessions unless asked', async () => {
+    const guest = await makeCustomer(t, { guest: true });
+    const customer = await makeCustomer(t);
+    const phone = store();
+    await phone.login(customer.email);
+    const staff = await staffWith('customers:update', 'customers:password');
+    expect((await post(staff, `/admin/customers/${guest.id}/account`, { mode: 'reset_link' })).statusCode).toBe(200);
+    const link = await post(staff, `/admin/customers/${customer.id}/password`, {
+      mode: 'reset_link',
+      revokeSessions: false,
+    });
+    expect(link.statusCode).toBe(200);
+    expect((await phone.me()).statusCode).toBe(200);
+    expect(await securityNotices()).toHaveLength(0);
   });
 });
 

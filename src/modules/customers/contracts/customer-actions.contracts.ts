@@ -17,7 +17,7 @@ export const createCustomerAccount = defineRoute({
     '`reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once ' +
     '(`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password.' +
     ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.' +
-    ' `temporary_password` also needs `customers:password` (`403 FORBIDDEN`, decision 047).',
+    ' `temporary_password` also needs `customers:password` (`403 FORBIDDEN`, decision 047), ends every session of the customer and sends the customer a security notice.',
   tags: ['customers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -44,8 +44,9 @@ export const setCustomerPassword = defineRoute({
   description:
     'For an account only (`409 NO_ACCOUNT` for a guest). `mode` `reset_link` emails a new one-hour, single-use link and voids ' +
     'the older ones; `temporary_password` sets a generated 14-character password that the answer shows once and that must be ' +
-    'changed at the first sign-in, and voids outstanding links. `revokeSessions` ends every session of the customer. The ' +
-    'current password is never shown and never enters the audit log.' +
+    'changed at the first sign-in, and voids outstanding links; it also ends every session of the customer, whatever ' +
+    '`revokeSessions` says, and sends the customer a security notice. `revokeSessions` ends every session of the customer in ' +
+    'the link mode. The current password is never shown and never enters the audit log.' +
     ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['customers'],
   surface: 'admin',

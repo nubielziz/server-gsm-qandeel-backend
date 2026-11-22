@@ -25,6 +25,7 @@ import { findCustomerById, updateCustomerRow } from '../infra/customer.repositor
 import { activeSessionCount } from '../infra/foreign-reads.repository';
 import { customerNotFound } from './customer-errors';
 import { CustomerLinks } from './customer-links';
+import { CustomerSecurityNotices } from './mail/customer-security-notices';
 
 /** How a customer gets a password. */
 export type PasswordMode = 'reset_link' | 'temporary_password';
@@ -42,7 +43,10 @@ export interface PasswordResult {
  * transaction; no password, hash or token ever enters the audit log. Suspending ends every session in the same transaction, so
  * the customer is signed out at once and keeps no way in; orders in progress are not touched, so they complete.
  *
- * Side effects: write `customers`, `customer_credentials`, `auth_tokens`, `outbox_events`, `sessions` and `audit_logs`.
+ * A temporary password is a working credential for the account, so in the same transaction it ends every session of the customer
+ * (the request cannot keep them) and writes the customer's security notice, as the merchant side does (decision 047).
+ *
+ * Side effects: write `customers`, `customer_credentials`, `auth_tokens`, `outbox_events`, `notifications`, `sessions` and `audit_logs`.
  *
  * @see docs/contract/endpoints/customers.md
  */
@@ -56,11 +60,13 @@ export class CustomerAccountAdminService {
     private readonly sessions: SessionService,
     private readonly links: CustomerLinks,
     private readonly signInLock: SignInLock,
+    private readonly notices: CustomerSecurityNotices,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
-   * Creates an account for a guest.
+   * Creates an account for a guest. A temporary password also ends every session of the customer and writes the security notice to
+   * the customer's address, in the same transaction.
    *
    * @param staff the signed-in staff member
    * @param id the customer id
@@ -90,17 +96,22 @@ export class CustomerAccountAdminService {
         updatedBy: staff.staffId,
         now,
       });
+      let ended = 0;
       if (temporary === undefined) {
         await this.links.send(work, { kind: 'invited', customerId: id, createdBy: staff.staffId, ip });
+      } else {
+        ended = await this.endSessions(work, id, now);
+        await this.notices.temporaryPasswordSet(work, locked, 'account_created_with_temporary_password');
       }
       await this.audit.record(work.tx, {
         action: 'created account for',
         entityType: 'customer',
         entityId: id,
         entityLabel: locked.name,
-        before: { account: 'guest' },
+        before: { account: 'guest', ...(ended > 0 ? { sessions: ended } : {}) },
         after: {
           account: 'account',
+          ...(ended > 0 ? { sessions: 0 } : {}),
           // Not `password`: the audit log redacts every key that ends in it, and this is only the way the password was set.
           credential: temporary === undefined ? 'invite link emailed' : 'temporary password set',
         },
@@ -114,9 +125,12 @@ export class CustomerAccountAdminService {
   /**
    * Sends a password link or sets a temporary password.
    *
+   * Why: a temporary password always ends every session of the customer, whatever `revokeSessions` says, and writes the customer's
+   * security notice in the same transaction; a reset link ends sessions only when asked.
+   *
    * @param staff the signed-in staff member
    * @param id the customer id
-   * @param input the mode and whether to end the customer's sessions
+   * @param input the mode and whether to end the customer's sessions (a temporary password ends them either way)
    * @param ip the request address, for the link record
    * @returns the temporary password in that mode, else nothing
    * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409), `NO_ACCOUNT` (409)
@@ -148,10 +162,12 @@ export class CustomerAccountAdminService {
         });
         // An older link must not undo the temporary password.
         await this.authTokens.voidOpen(work, id, CUSTOMER_PASSWORD_LINK_PURPOSES);
+        await this.notices.temporaryPasswordSet(work, locked, 'temporary_password');
         // A customer who asked staff for help may be locked out: the new password opens the door again.
         work.afterCommit(() => this.signInLock.clear('shop', locked.email));
       }
-      const ended = input.revokeSessions ? await this.endSessions(work, id, now) : 0;
+      // A temporary password is a working credential: nobody stays signed in across it, whatever the request asked.
+      const ended = input.revokeSessions || temporary !== undefined ? await this.endSessions(work, id, now) : 0;
       await this.audit.record(work.tx, {
         action: temporary === undefined ? 'sent a password reset link to' : 'set a temporary password for',
         entityType: 'customer',

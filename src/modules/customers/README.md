@@ -127,7 +127,9 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
   (`403 FORBIDDEN`, checked on the locked row before anything is written), ends every session of the customer (`SessionService.revokeAllOf`, the ended count goes
   into the audit row as `sessions`) and writes the security notice `customer.security_notice` through `CustomerSecurityNotices` (`application/mail/customer-security-notices.ts`,
   provided and exported by `CustomerMailModule`) to the address before the change (decision 047; a guest's address needs only `customers:update` and sends no notice); a blocklisted email is `422` on `email`; a country without a current `tax_rates` row is `422` on `country`; the currency is the country's storefront currency, else USD), account for a guest, password link
-  or temporary password (creating the account with a temporary password also needs `customers:password`, decision 047; the link mode needs only `customers:update`),
+  or temporary password (creating the account with a temporary password also needs `customers:password`, decision 047; the link mode needs only `customers:update`;
+  a temporary password, set on an account or given to a new one, ends every session of the customer whatever `revokeSessions` says and writes the
+  security notice `customer.security_notice` to the customer's address in the same transaction, with a fixed sentence for each case),
   end sessions, suspend and reactivate. Every write is audited with the demo's verb phrases and never writes a
   password (the audit key is `credential`, because the audit log redacts keys ending in `password`).
 - **Foreign reads** (decision 016 deviation, one file `infra/foreign-reads.repository.ts`): `currencies`, `tax_rates`, `orders`, `sessions`,
