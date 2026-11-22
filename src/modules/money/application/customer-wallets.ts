@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor, escapeLike } from '../../../infra/db';
@@ -260,12 +261,18 @@ export class CustomerWallets {
   /**
    * Lists customer wallets for staff.
    *
-   * @param query the parsed list request (`state`, sorts, `q` on the customer's name and email)
+   * @param query the parsed list request (`state`, sorts, `q` on the customer's name and, for a caller who may read customers, email)
+   * @param contact what the caller may see of a customer's address (decision 047, rule A and the search)
    * @returns the page and the total
    */
-  async list(query: ParsedListQuery<'balance' | 'updatedAt'>): Promise<{ rows: WalletListRow[]; total: number }> {
+  async list(
+    query: ParsedListQuery<'balance' | 'updatedAt'>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WalletListRow[]; total: number }> {
     const db = this.db.db;
-    const ids = query.search ? await findCustomerIdsByNameOrEmail(db, `%${escapeLike(query.search.text)}%`) : undefined;
+    const ids = query.search
+      ? await findCustomerIdsByNameOrEmail(db, `%${escapeLike(query.search.text)}%`, contact === 'full')
+      : undefined;
     const page = await listCustomerWallets(db, query, ids);
     const customers = await loadWalletCustomers(
       db,
@@ -279,7 +286,7 @@ export class CustomerWallets {
           customer: {
             id: row.ownerId,
             name: customer?.name ?? '',
-            email: customer?.email ?? '',
+            email: customerEmailIn(contact, customer?.email ?? ''),
             status: customer?.status ?? 'anonymized',
           },
           balance: row.balance,

@@ -335,6 +335,25 @@ describe('ticket.updated', () => {
   });
 });
 
+describe('the staff view of a ticket (decision 047)', () => {
+  it("sends the staff ticket row with the customer's address masked, also to a stream of a caller who holds customers:read", async () => {
+    const { ticket, customer } = await customerTicket();
+    const reader = await supportStaff(t, ['support:*', 'customers:read'], 'Rami K.');
+    const plain = await staffStream(staff);
+    const customersReader = await staffStream(reader);
+    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { priority: 'high' })).status).toBe(200);
+    const masked = customer.email.replace(/^(.{2}).*(@.*)$/, '$1•••$2');
+    for (const team of [plain, customersReader]) {
+      const frame = await team.next('ticket.updated');
+      expect(frame.data.ticket).toMatchObject({ id: ticket.id, requester: { name: 'Victor Hale', email: masked } });
+      expect(JSON.stringify(frame.data)).not.toContain(customer.email);
+    }
+    // The REST answer still gives the holder of customers:read the address in full.
+    expect((await reader.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(customer.email);
+    expect((await staff.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(masked);
+  });
+});
+
 describe('typing', () => {
   it('rings once per 2.5 s however many pings, shows the requester to staff, and stores nothing', async () => {
     const { ticket } = await customerTicket();

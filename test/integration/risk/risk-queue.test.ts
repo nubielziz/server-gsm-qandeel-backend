@@ -100,6 +100,20 @@ describe('GET /admin/risk/queue', () => {
     expect(res.body.held[0].fxRate).toMatch(/^1(\.0+)?$/);
   });
 
+  it('masks a held order’s customer address without customers:read, and shows it in full with it (decision 047)', async () => {
+    const held = await insertHeldOrder(world, { imei: '353890113898412' });
+    const queueOf = async (api: AdminApi) => (await api.get('/admin/risk/queue')).body.held[0].customer;
+    const masked = await queueOf(staff);
+    expect(masked.id).toBe(held.customerId);
+    expect(masked.email).toMatch(/^.{2}•••@.+$/);
+    expect(masked.name).toBe('Jack Turner');
+    const reader = await adminWith(t, ['risk:read', 'customers:read']);
+    const full = await queueOf(reader);
+    expect(full.email).not.toContain('•');
+    expect(full.email.replace(/^(.{2}).*(@.*)$/, '$1•••$2')).toBe(masked.email);
+    expect((await queueOf(await adminWith(t, ['risk:*', 'customers:*']))).email).toBe(full.email);
+  });
+
   it('lists the oldest payment first, leaves out an order that is not held, and counts the buyer’s earlier orders', async () => {
     const { db } = world;
     const newer = await insertHeldOrder(world, { createdAt: new Date('2026-11-08T11:30:00.000Z') });

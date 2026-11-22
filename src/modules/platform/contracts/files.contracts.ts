@@ -10,7 +10,12 @@ export const openAdminFile = defineRoute({
   summary: 'Download a file',
   description:
     'Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the ' +
-    'stored file name, `Cache-Control: no-store`). `:id` is `orders.inputFileId`, `result.fileId` of an order or a KYC document. The ' +
+    'stored file name, `Cache-Control: no-store`). `:id` is `orders.inputFileId`, `result.fileId` of an order, a KYC document, a payment receipt, an invoice PDF, dispute ' +
+    'evidence or a ticket attachment. Besides `files:read` the caller needs the read permission of every record that uses the file: ' +
+    '`kyc:read` (a KYC document), `payments:read` (a payment receipt), `disputes:read` (dispute evidence), `orders:read` (an order’s input ' +
+    'or result), `invoices:read` (an invoice PDF), `support:read` (a ticket attachment), `customers:privacy` (a data export); `403 FORBIDDEN` ' +
+    'names the first one missing. A file nothing uses yet, and a public picture, need only `files:read`. Every download of a KYC document or a ' +
+    'payment receipt writes an audit row (decision 047). The ' +
     'console renders a plain link, so an error is shown raw in the new tab: the `detail` is readable.',
   tags: ['files'],
   surface: 'admin',

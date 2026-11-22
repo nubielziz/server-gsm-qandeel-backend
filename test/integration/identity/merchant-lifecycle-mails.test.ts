@@ -194,7 +194,13 @@ describe('suspension', () => {
 });
 
 describe('the security notice', () => {
-  const KINDS: readonly SecurityNoticeKind[] = ['temporary_password', 'twofa_reset', 'api_key_created'];
+  const KINDS: readonly SecurityNoticeKind[] = [
+    'temporary_password',
+    'twofa_reset',
+    'api_key_created',
+    // Decision 047: the notice a staff change of the merchant's email sends (to the address before the change).
+    'email_changed',
+  ];
 
   it('names the fixed sentence of the action, the same for every merchant, never anything else', async () => {
     const first = await makeMerchant(t, { name: 'English Shop' });
@@ -209,7 +215,7 @@ describe('the security notice', () => {
     }
     await sendAllQueued(t);
     const sent = mailbox(t).sent;
-    expect(sent).toHaveLength(6);
+    expect(sent).toHaveLength(8);
     for (const kind of KINDS) {
       for (const merchant of [first, second]) {
         const mail = sent.find((m) => m.to === merchant.email && m.text.includes(SECURITY_NOTICE_PHRASES[kind]));
@@ -231,6 +237,36 @@ describe('the security notice', () => {
     const texts = mailbox(t).sent.map((mail) => mail.text);
     expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.twofa_reset))).toBe(true);
     expect(texts.some((text) => text.includes(SECURITY_NOTICE_PHRASES.temporary_password))).toBe(true);
+  });
+
+  it('sends the security notice with its shipped text when its template is switched off or deleted (decision 047)', async () => {
+    const { db } = await testDb();
+    const merchant = await makeMerchant(t, { twofa: true });
+    const api = await staff();
+    const notice = eq(s.notificationTemplates.event, 'merchant.security_notice');
+    await db.update(s.notificationTemplates).set({ isActive: false }).where(notice);
+    expect((await api.post(`/admin/clients/${merchant.id}/reset-2fa`)).status).toBeLessThan(300);
+    expect(await rows()).toHaveLength(1);
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mailbox(t).sent[0]).toMatchObject({
+      to: merchant.email,
+      subject: 'A security change on your merchant account',
+    });
+    expect(mailbox(t).sent[0]!.text).toContain(SECURITY_NOTICE_PHRASES.twofa_reset);
+    await db.delete(s.notificationTemplates).where(notice);
+    expect(
+      (await api.post(`/admin/clients/${merchant.id}/password`, { mode: 'temporary_password' })).status,
+    ).toBeLessThan(300);
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toHaveLength(2);
+    expect(mailbox(t).sent[1]!.text).toContain(SECURITY_NOTICE_PHRASES.temporary_password);
+    // The words come from the shipped text, so the logged warning names the reason, not the text.
+    const warnings = logSink.lines.filter(
+      (line) => typeof line.msg === 'string' && line.msg.includes('the shipped text is used'),
+    );
+    expect(warnings.map((line) => line.msg as string).join('\n')).toContain('no stored template');
+    expect(warnings.map((line) => line.msg as string).join('\n')).not.toContain('Our support team');
   });
 });
 

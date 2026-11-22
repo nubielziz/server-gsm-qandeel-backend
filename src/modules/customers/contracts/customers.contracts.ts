@@ -187,7 +187,8 @@ export const createCustomer = defineRoute({
   description:
     'Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a ' +
     'password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and ' +
-    'the customer must change at the first sign-in. `409 EMAIL_TAKEN` when another customer, guest or account, has the email; ' +
+    'the customer must change at the first sign-in; that mode also needs `customers:password` (`403 FORBIDDEN` without it, nothing is created; decision 047). ' +
+    '`409 EMAIL_TAKEN` when another customer, guest or account, has the email; ' +
     '`422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else ' +
     "`422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password." +
     ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
@@ -222,7 +223,7 @@ export const updateCustomer = defineRoute({
   summary: 'Edit a customer',
   description:
     'Changes the fields sent: `name`, `email`, `country`, `phone`, `internalNotes` (at most 300 characters). A ' +
-    'different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email. A country change ' +
+    'different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email; for an account the change also needs `customers:password` (`403 FORBIDDEN`), ends every session of the customer and emails a security notice to the address before the change (decision 047). A country change ' +
     'derives the currency again (storefront currency of the country, else USD); a new country with no current tax rate is `422` on ' +
     '`country`. `409 ANONYMIZED` for an anonymized customer, `409 EMAIL_TAKEN`, `422` on `email` for a ' +
     'blocklisted address. Audited with the old and new values.',

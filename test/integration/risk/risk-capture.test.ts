@@ -130,7 +130,8 @@ describe('a payment the rules hold', () => {
       capturedAmount: '4.7900',
       currency: 'GBP',
       paymentMethod: 'card',
-      customer: { email: 'sam@mail.example' },
+      // Decision 047: the risk role of this test does not hold customers:read, so the address comes masked.
+      customer: { email: 'sa•••@mail.example' },
     });
   });
 

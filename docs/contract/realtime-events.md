@@ -206,13 +206,14 @@ data: {"ticketId":null,"number":"T-1042","message":{"id":9003,"from":"support","
 
 The ticket changed: a new ticket, a message, a status, assignee or priority change, a rating. No `id`. Staff view: `ticket` is exactly
 a row of `GET /admin/support-tickets` (with `hasUnread` and the seen marks). Requester view: the fields of the ticket page and the
-requester's own `hasUnread` (a support reply after their seen mark).
+requester's own `hasUnread` (a support reply after their seen mark). The staff view carries a storefront customer's address masked
+(decision 047).
 
 Staff view:
 
 ```
 event: ticket.updated
-data: {"ticket":{"id":1042,"number":"T-1042","subject":"Where is my unlock? (SF-20431)","channel":"web","requesterType":"customer","requesterId":28,"requester":{"name":"Victor Hale","email":"victor@mail.example"},"orderId":20431,"category":"delay","priority":"normal","status":"open","assigneeId":2,"assignee":{"id":2,"name":"Lina S."},"slaDueAt":"2026-11-08T19:00:00.000Z","firstResponseAt":"2026-11-08T10:12:00.000Z","resolvedAt":null,"csatScore":null,"createdAt":"2026-11-08T09:30:00.000Z","updatedAt":"2026-11-08T11:00:00.000Z","lastPublicAt":"2026-11-08T11:00:00.000Z","late":false,"hasUnread":true,"requesterSeenMessageId":9001,"requesterSeenAt":"2026-11-08T10:20:00.000Z","staffSeenMessageId":9000,"staffSeenAt":"2026-11-08T10:05:00.000Z"}}
+data: {"ticket":{"id":1042,"number":"T-1042","subject":"Where is my unlock? (SF-20431)","channel":"web","requesterType":"customer","requesterId":28,"requester":{"name":"Victor Hale","email":"vi•••@mail.example"},"orderId":20431,"category":"delay","priority":"normal","status":"open","assigneeId":2,"assignee":{"id":2,"name":"Lina S."},"slaDueAt":"2026-11-08T19:00:00.000Z","firstResponseAt":"2026-11-08T10:12:00.000Z","resolvedAt":null,"csatScore":null,"createdAt":"2026-11-08T09:30:00.000Z","updatedAt":"2026-11-08T11:00:00.000Z","lastPublicAt":"2026-11-08T11:00:00.000Z","late":false,"hasUnread":true,"requesterSeenMessageId":9001,"requesterSeenAt":"2026-11-08T10:20:00.000Z","staffSeenMessageId":9000,"staffSeenAt":"2026-11-08T10:05:00.000Z"}}
 
 ```
 

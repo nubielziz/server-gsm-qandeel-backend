@@ -6,9 +6,9 @@ import { eq } from 'drizzle-orm';
 import type { PoolClient } from 'pg';
 import { PasswordHasher, TokenService } from '@src/infra/crypto';
 import { DbService, schema as s } from '@src/infra/db';
-import { CustomerAuthTokens } from '@src/modules/identity';
+import { CustomerAuthTokens, SessionService } from '@src/modules/identity';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, signInStaff } from '../../support/auth';
+import { clearIdentityCaches, openSession, signInStaff } from '../../support/auth';
 import { DAY, HOUR, TestClock } from '../../support/clock';
 import {
   auditOfCustomer,
@@ -20,6 +20,7 @@ import {
 } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
+import { mailbox, seedDefaultTemplates, sendAllQueued } from '../../support/notifications';
 import { insertOrderRow } from '../../support/orders';
 import { insertBlock } from '../../support/risk';
 import {
@@ -506,7 +507,8 @@ describe('POST /admin/customers', () => {
   it('creates an account with a temporary password: shown once, only the hash stored, a forced change, no link', async () => {
     const { db } = await testDb();
     await insertStoreCurrencies(db);
-    const staff = await staffWith('customers:create');
+    // Decision 047: a temporary password also needs customers:password.
+    const staff = await staffWith('customers:create', 'customers:password');
     const res = await send(staff, 'POST', '/admin/customers', body({ password: { mode: 'temporary_password' } }));
     expect(res.statusCode).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
@@ -529,6 +531,41 @@ describe('POST /admin/customers', () => {
     const { StoreClient } = await import('../../support/store');
     const login = await new StoreClient(t).login('daniel.whitmore@example.com', temporaryPassword);
     expect(login.json()).toEqual({ next: 'password' });
+  });
+
+  it('needs customers:password to create an account with a temporary password; the invitation link needs only customers:create (decision 047)', async () => {
+    const { db } = await testDb();
+    await insertStoreCurrencies(db);
+    const staff = await staffWith('customers:create');
+    const auditsBefore = (await db.select().from(s.auditLogs)).length;
+
+    const refused = await send(staff, 'POST', '/admin/customers', body({ password: { mode: 'temporary_password' } }));
+    expect(refused.statusCode).toBe(403);
+    expect(problem(refused)).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the customers:password permission to do this.',
+    });
+    // Nothing was made: no customer, no credentials, no audit row, and no password in the answer.
+    expect(await db.select().from(s.customers)).toHaveLength(0);
+    expect(await db.select().from(s.customerCredentials)).toHaveLength(0);
+    expect((await db.select().from(s.auditLogs)).length).toBe(auditsBefore);
+    expect(JSON.stringify(refused.json())).not.toContain('temporaryPassword');
+
+    // The link mode needs only the route's permission.
+    const invited = await send(staff, 'POST', '/admin/customers', body());
+    expect(invited.statusCode).toBe(201);
+    expect(invited.json()).not.toHaveProperty('temporaryPassword');
+    // With the second permission the same request works, for the address that was refused.
+    const holder = await staffWith('customers:create', 'customers:password');
+    const created = await send(
+      holder,
+      'POST',
+      '/admin/customers',
+      body({ email: 'second@example.com', password: { mode: 'temporary_password' } }),
+    );
+    expect(created.statusCode).toBe(201);
+    expect(created.json<{ temporaryPassword: string }>().temporaryPassword).toHaveLength(14);
+    expect(await db.select().from(s.customers)).toHaveLength(2);
   });
 
   it('derives the currency from the country: its storefront currency when active, else USD', async () => {
@@ -640,7 +677,8 @@ describe('POST /admin/customers', () => {
     expect(problem(created).errors).toMatchObject([{ field: 'email', message: 'This email is blocked.' }]);
     expect(await db.select().from(s.customers)).toHaveLength(0);
     const customer = await makeCustomer(t, { email: 'fine@example.com' });
-    const editor = await staffWith('customers:update');
+    // Decision 047: the email of an account also needs customers:password.
+    const editor = await staffWith('customers:update', 'customers:password');
     const changed = await send(editor, 'PATCH', `/admin/customers/${customer.id}`, { email: 'moved@tempbox.example' });
     expect(changed.statusCode).toBe(422);
     expect(problem(changed).errors).toMatchObject([{ field: 'email', message: 'This email is blocked.' }]);
@@ -817,7 +855,7 @@ describe('PATCH /admin/customers/:id', () => {
       email: 'racing@example.com',
       emailVerifiedAt: new Date('2026-10-01T00:00:00.000Z'),
     });
-    const staff = await staffWith('customers:update');
+    const staff = await staffWith('customers:update', 'customers:password');
 
     // Another edit holds the row and moves the address; it commits only after the PATCH is waiting for the row.
     const other = await pool.connect();
@@ -856,13 +894,16 @@ describe('PATCH /admin/customers/:id', () => {
       guest: true,
       emailVerifiedAt: new Date('2026-10-01T00:00:00.000Z'),
     });
-    const staff = await staffWith('customers:update');
+    const staff = await staffWith('customers:update', 'customers:password');
 
     const changed = await send(staff, 'PATCH', `/admin/customers/${account.id}`, { email: ' New@Example.com ' });
     expect(changed.statusCode).toBe(200);
     expect(changed.json()).toMatchObject({ email: 'new@example.com', emailVerifiedAt: null });
     expect(customerLinks()).toMatchObject([{ kind: 'email_verification', customerId: account.id }]);
-    const [event] = await db.select().from(s.outboxEvents);
+    const [event] = await db
+      .select()
+      .from(s.outboxEvents)
+      .where(eq(s.outboxEvents.type, 'customer.email_verification'));
     expect(event).toMatchObject({ type: 'customer.email_verification', aggregateId: account.id });
     const [audit] = await auditOfCustomer(db, account.id);
     expect(audit).toMatchObject({
@@ -881,7 +922,7 @@ describe('PATCH /admin/customers/:id', () => {
   });
 
   it('voids every link sent to the old address (sign-in, reset, invitation), so none can verify the new one (b2c-16)', async () => {
-    const staff = await staffWith('customers:update', 'customers:create');
+    const staff = await staffWith('customers:update', 'customers:create', 'customers:password');
     const store = () => new StoreClient(t);
     const verifiedAt = new Date('2026-10-01T00:00:00.000Z');
     const account = await makeCustomer(t, { email: 'old@example.com', emailVerifiedAt: verifiedAt });
@@ -938,7 +979,7 @@ describe('PATCH /admin/customers/:id', () => {
       valueHash: t.app.get(TokenService).hash('blocked@example.com'),
       display: 'b***@example.com',
     });
-    const staff = await staffWith('customers:update');
+    const staff = await staffWith('customers:update', 'customers:password');
     const sameCase = await send(staff, 'PATCH', `/admin/customers/${customer.id}`, { email: 'SAME@example.com' });
     expect(sameCase.statusCode).toBe(200);
     expect((await customerRow(customer.id)).emailVerifiedAt).not.toBeNull();
@@ -950,6 +991,75 @@ describe('PATCH /admin/customers/:id', () => {
     const blocked = await send(staff, 'PATCH', `/admin/customers/${customer.id}`, { email: 'blocked@example.com' });
     expect(blocked.statusCode).toBe(422);
     expect(problem(blocked).errors).toMatchObject([{ field: 'email', message: 'This email is blocked.' }]);
+  });
+
+  it('needs customers:password to change the email of an account; a guest’s email needs only customers:update (decision 047)', async () => {
+    const { db } = await testDb();
+    const account = await makeCustomer(t, {
+      email: 'account@example.com',
+      emailVerifiedAt: new Date('2026-10-01T00:00:00.000Z'),
+    });
+    const guest = await makeCustomer(t, { email: 'guest@example.com', guest: true });
+    const staff = await staffWith('customers:update');
+    const auditsBefore = (await auditOfCustomer(db, account.id)).length;
+
+    const refused = await send(staff, 'PATCH', `/admin/customers/${account.id}`, { email: 'taken-over@example.com' });
+    expect(refused.statusCode).toBe(403);
+    expect(problem(refused)).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the customers:password permission to do this.',
+    });
+    expect(await customerRow(account.id)).toMatchObject({ email: 'account@example.com' });
+    expect((await customerRow(account.id)).emailVerifiedAt).not.toBeNull();
+    expect(await db.select().from(s.outboxEvents)).toHaveLength(0);
+    expect(await db.select().from(s.notifications)).toHaveLength(0);
+    expect(await auditOfCustomer(db, account.id)).toHaveLength(auditsBefore);
+    expect(customerLinks()).toEqual([]);
+
+    // Other details of an account, the same address in another case, and a guest's address need only customers:update.
+    expect((await send(staff, 'PATCH', `/admin/customers/${account.id}`, { name: 'New Name' })).statusCode).toBe(200);
+    expect(
+      (await send(staff, 'PATCH', `/admin/customers/${account.id}`, { email: 'ACCOUNT@example.com' })).statusCode,
+    ).toBe(200);
+    const guestChanged = await send(staff, 'PATCH', `/admin/customers/${guest.id}`, { email: 'guest2@example.com' });
+    expect(guestChanged.statusCode).toBe(200);
+    expect((await customerRow(guest.id)).email).toBe('guest2@example.com');
+    // A guest has no sessions to end and nobody to warn: no notice.
+    expect(await db.select().from(s.notifications)).toHaveLength(0);
+  });
+
+  it('ends the account’s sessions and tells the address before the change (decision 047)', async () => {
+    const { db } = await testDb();
+    await seedDefaultTemplates(db);
+    mailbox(t).reset();
+    const account = await makeCustomer(t, { email: 'old@example.com', name: 'Sara Haddad' });
+    const session = await openSession(t, { type: 'customer', id: account.id });
+    expect(await t.app.get(SessionService).lookup(session.token)).toBeTruthy();
+    const staff = await staffWith('customers:update', 'customers:password');
+
+    const changed = await send(staff, 'PATCH', `/admin/customers/${account.id}`, { email: 'new@example.com' });
+    expect(changed.statusCode).toBe(200);
+    expect(await t.app.get(SessionService).lookup(session.token)).toBeFalsy();
+    const notices = (await db.select().from(s.notifications)).filter((row) => row.event === 'customer.security_notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ recipientType: 'customer', recipientId: account.id, channel: 'email' });
+    expect(notices[0]!.payload).toMatchObject({ to: 'old@example.com' });
+    expect(JSON.stringify(notices[0]!.payload)).not.toContain('new@example.com');
+    const [audit] = await auditOfCustomer(db, account.id);
+    expect(audit).toMatchObject({
+      before: { email: 'old@example.com', sessions: 1 },
+      after: { email: 'new@example.com', sessions: 0 },
+    });
+
+    await sendAllQueued(t);
+    const sent = mailbox(t).sent;
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: 'old@example.com', subject: 'A security change on your account' });
+    expect(sent[0]!.text).toContain('Hi Sara Haddad,');
+    expect(sent[0]!.text).toContain('the email address of your account was changed');
+    expect(sent[0]!.text).not.toContain('new@example.com');
+    // The verification link of the new address is a separate mail (its job rotates the link), and it is not this one.
+    expect(customerLinks()).toMatchObject([{ kind: 'email_verification', customerId: account.id }]);
   });
 
   it('answers 404 for an unknown customer, 409 ANONYMIZED for an anonymized one, 422 on a bad field, and audits an empty edit', async () => {

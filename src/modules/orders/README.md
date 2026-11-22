@@ -214,6 +214,13 @@ hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog 
   Feature 33 (decision 042): a checkout opened while its service took an IMEI and paid after the supplier sync made it a `server` service keeps the buyer's value: `carriedImeiInputs` (`domain/main-input.ts`) puts the IMEI under the first field (form order) whose supplier key, or key when that is empty, is `IMEI` (`src/common/dhru/main-input-key.ts`, the dispatcher's rule) when that field has no value, so `orders.imei` holds it and the dispatch sends it as `IMEI`. The merchant paths (portal, Dhru, REST v1) place at once against the current type and refuse an IMEI for a non-IMEI service (`422`, `not_applicable` on the IMEI field), so nothing is lost there.
   `OrderReceiptService` serves `GET /store/v1/orders/:token/receipt`: the paid tax receipt invoice of the order as a PDF (`PdfRenderer`, decision 030), drawn once by the `receipt.render` job the capture queues, stored, and served as those stored bytes every time (the money module's `OrderReceipts`; a missing copy is made by the first download; `404` for an unknown token or an order with no receipt).
 
+### Staff reads and the export (decision 047)
+
+`GET /admin/orders` and `GET /admin/orders/:id` show a storefront customer's address masked (`ja•••@example.com`) unless the caller holds `customers:read`
+(`toStaffOrder(row, extras, contact)`; identity's `customerContactOf` decides it and the controller passes it down). `GET /admin/orders/export` also needs `reports:read`
+(`ORDER_EXPORT_PERMISSION`, checked first in `OrderExportService.forStaff(caller, query)`: a refused export counts nothing and writes no audit row): the file holds buyers,
+inputs and costs of up to 100,000 orders, and the reports permission already shows costs and profit.
+
 ## Public API (`index.ts`)
 
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure

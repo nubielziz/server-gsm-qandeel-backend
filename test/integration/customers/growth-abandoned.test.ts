@@ -165,6 +165,8 @@ describe('GET /admin/checkouts/abandoned', () => {
 
   it('searches the FULL email, ignoring case, while the rows carry it masked', async () => {
     const { db } = await testDb();
+    // Decision 047: only a caller who may read customers searches the address.
+    admin = await adminWith(t, ['growth:*', 'customers:read']);
     const target = await insertAbandoned(t, db, {
       serviceId: serviceId(),
       createdAt: ago(2 * 60 * MINUTE),
@@ -181,6 +183,27 @@ describe('GET /admin/checkouts/abandoned', () => {
     expect(res.body[0].email).toBe('To•••@inbox.example');
     // `%` and `_` in the text match themselves.
     expect((await listAll('&q=%25')).body).toEqual([]);
+  });
+
+  it('finds no checkout by q for a caller without customers:read, and the rows stay masked (decision 047)', async () => {
+    const { db } = await testDb();
+    const target = await insertAbandoned(t, db, {
+      serviceId: serviceId(),
+      createdAt: ago(2 * 60 * MINUTE),
+      email: 'Tom.Hidden37@inbox.example',
+    });
+    const withoutRead = await listAll('&q=hidden37');
+    expect(withoutRead.body).toEqual([]);
+    expect(withoutRead.total).toBe(0);
+    expect((await listAll('&q=inbox.example')).total).toBe(0);
+    // Without a search the list is the same for both callers, with the address masked as before.
+    const plain = await listAll();
+    expect(plain.body.map((row: { id: number }) => row.id)).toEqual([target.sessionId]);
+    expect(plain.body[0].email).toBe('To•••@inbox.example');
+    // With customers:read the search works.
+    const reader = await adminWith(t, ['growth:read', 'customers:read']);
+    const found = await reader.get('/admin/checkouts/abandoned?_start=0&_end=20&q=hidden37');
+    expect(found.body.map((row: { id: number }) => row.id)).toEqual([target.sessionId]);
   });
 
   it('takes the delay from the abandonedMinutes setting (default 60) and falls back when the value is not a whole number from 5 to 1440', async () => {

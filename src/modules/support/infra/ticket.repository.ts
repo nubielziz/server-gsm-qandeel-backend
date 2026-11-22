@@ -19,6 +19,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import type { ParsedListQuery, ParsedFilter } from '../../../common/contract';
+import { type CustomerContact, maskCustomerEmail } from '../../../common/customer-contact';
 import type { SealedCapabilityToken, UnsealedCapabilityToken } from '../../../infra/crypto';
 import { type DbExecutor, listOrderBy, listWhere, type ListColumns } from '../../../infra/db';
 import { fromWireStatus, type WireTicketStatus } from '../domain/ticket-status';
@@ -80,7 +81,16 @@ function requesterOf(row: {
   if (row.customerStatus === null || row.customerStatus === 'anonymized') {
     return { name: DELETED_CUSTOMER_NAME, email: null };
   }
-  return { name: displayName(row.customerName, row.customerEmail, 'Customer'), email: row.customerEmail };
+  // Decision 047, rule B: a customer without a name is labelled by the masked address, never the full one; the `email` stays raw and the
+  // view masks it for callers who may not read customers (rule A).
+  return {
+    name: displayName(
+      row.customerName,
+      row.customerEmail === null ? null : maskCustomerEmail(row.customerEmail),
+      'Customer',
+    ),
+    email: row.customerEmail,
+  };
 }
 
 /** What the list and detail queries select. */
@@ -134,6 +144,13 @@ const requesterNameSql = sql`case when ${supportTickets.requesterType} = 'custom
 const requesterEmailSql = sql`case when ${supportTickets.requesterType} = 'customer' then (case when ${f.customers.status} = 'anonymized' then null else ${f.customers.email} end) else ${f.clients.email} end`;
 
 /**
+ * The merchant requester's email address as SQL, for `q` of a caller who may not read customers.
+ *
+ * Why: decision 047: a merchant's address stays searchable (it is shown in full), a storefront customer's is not.
+ */
+const merchantEmailSql = sql`case when ${supportTickets.requesterType} = 'client' then ${f.clients.email} end`;
+
+/**
  * Translates the `status` filter's wire words to the stored ones before the list is built.
  *
  * Why: RESOLUTIONS b2c-2: `status=pending` means `status IN ('pending_customer')`; every other word is stored as it is.
@@ -159,12 +176,14 @@ function storedStatusFilters(filters: readonly ParsedFilter[]): ParsedFilter[] {
  * @param db the database or a transaction
  * @param query the parsed list request
  * @param now the injected clock's time
+ * @param contact what the caller may see of customers' addresses: for `masked` `q` matches a merchant's address but not a customer's (decision 047)
  * @returns the page of rows and the exact total
  */
 export async function listTicketRows(
   db: DbExecutor,
   query: ParsedListQuery<TicketSortField>,
   now: Date,
+  contact: CustomerContact,
 ): Promise<{ rows: TicketRow[]; total: number }> {
   const columns: ListColumns = {
     id: supportTickets.id,
@@ -178,7 +197,7 @@ export async function listTicketRows(
     updatedAt: supportTickets.updatedAt,
     late: lateSql(now),
     'requester.name': requesterNameSql,
-    'requester.email': requesterEmailSql,
+    'requester.email': contact === 'full' ? requesterEmailSql : merchantEmailSql,
   };
   const where = listWhere({ filters: storedStatusFilters(query.filters), search: query.search }, columns);
   const [rows, [total]] = await Promise.all([

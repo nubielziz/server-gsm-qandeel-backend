@@ -3,6 +3,7 @@
 // payments of the job and the lookups the wire needs. Only the money module touches this table.
 import { type SQL, and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
 import { type NewPayment, type Payment, invoices, payments } from '../db/schema';
@@ -41,11 +42,13 @@ const ROW = { payment: payments, clientId: invoices.clientId, customerId: invoic
  *
  * @param db the database or a transaction
  * @param query the parsed list request (`q` searches the gateway reference and the merchant name)
+ * @param contact what the caller may see of customers' addresses: for `masked` `q` matches a customer's name only (decision 047)
  * @returns the page of rows and the number matching the filters
  */
 export async function listPaymentRows(
   db: DbExecutor,
   query: ParsedListQuery<PaymentSortField>,
+  contact: CustomerContact,
 ): Promise<{ rows: PaymentRow[]; total: number }> {
   const alternatives: SQL[] = [];
   if (query.search) {
@@ -53,7 +56,7 @@ export async function listPaymentRows(
     alternatives.push(sql`${payments.gatewayTxnId} ilike ${pattern}`);
     const clientIds = await findMerchantIdsByName(db, pattern);
     if (clientIds.length > 0) alternatives.push(inArray(invoices.clientId, clientIds));
-    const customerIds = await findCustomerIdsByNameOrEmail(db, pattern);
+    const customerIds = await findCustomerIdsByNameOrEmail(db, pattern, contact === 'full');
     if (customerIds.length > 0) alternatives.push(inArray(invoices.customerId, customerIds));
   }
   const where = listWhere(

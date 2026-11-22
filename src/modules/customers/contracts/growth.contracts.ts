@@ -67,7 +67,7 @@ export const listAbandonedCheckouts = defineRoute({
   description:
     'Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session ' +
     'younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a ' +
-    'case-insensitive contains over the FULL email while rows carry it masked. `canRecover=true` is the "Needs a reminder" filter and ' +
+    'case-insensitive contains over the FULL email while rows carry it masked, for callers who hold `customers:read`; for others a `q` finds no row (decision 047). `canRecover=true` is the "Needs a reminder" filter and ' +
     'uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server).',
   tags: ['checkouts'],
   surface: 'admin',

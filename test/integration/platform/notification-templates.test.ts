@@ -9,6 +9,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, pgErrorOf, resetDb, testDb } from '../../support/db';
+import { seedIdentityTemplates } from '../../support/identity-mail';
 import { mailbox, seedDefaultTemplates, telegramOutbox } from '../../support/notifications';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -417,6 +418,179 @@ describe('DELETE /admin/notification-templates/:id', () => {
     expect(
       (await reader.delete(`/admin/notification-templates/${await idOf('invoice.paid', 'email')}`)).body.code,
     ).toBe('FORBIDDEN');
+  });
+});
+
+describe('the emails that carry a one-time link or protect accounts (decision 047)', () => {
+  const rowOf = async (id: number) => {
+    const { db } = await testDb();
+    return (await db.select().from(s.notificationTemplates).where(eq(s.notificationTemplates.id, id)))[0]!;
+  };
+
+  it('refuses a link template that puts the link anywhere but its own place, and changes nothing', async () => {
+    const id = await idOf('merchant.password_reset', 'email');
+    const before = await rowOf(id);
+    const codes = async (payload: Record<string, string>) => {
+      const res = await owner.patch(`/admin/notification-templates/${id}`, payload);
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+      return res.body.errors.map((error: { field: string; code: string }) => `${error.field}:${error.code}`);
+    };
+    expect(await codes({ body: '<img src="https://example.com/x?{{link}}">' })).toContain('body:link_tag');
+    expect(await codes({ body: 'Reset: example.com/{{link}}' })).toEqual(['body:link_placement']);
+    expect(await codes({ subject: 'Reset {{link}}' })).toEqual(['subject:link_in_subject']);
+    expect(await codes({ body: '<a href="https://example.com">Reset</a> {{link}}' })).toContain('body:link_href');
+    expect(await codes({ body: 'Visit https://example.com or {{link}}' })).toContain('body:link_url');
+    expect(await rowOf(id)).toEqual(before);
+    expect((await audit()).length).toBe(0);
+    // The usual shapes pass: its own line, or the whole href of one link with a text.
+    const ok = await owner.patch(`/admin/notification-templates/${id}`, {
+      body: '<p>Hi {{merchantName}}</p><p><a href="{{link}}" class="button">Choose a password</a></p><p>It stops working at {{expiresAt}}.</p>',
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it('checks a link template on create too, and leaves the ticket and other mails that carry no credential alone', async () => {
+    const { db } = await testDb();
+    // The only template of its event (no migration ships one): the first is created through the route, and it is checked.
+    const created = await owner.post('/admin/notification-templates', {
+      ...customerSupportReply,
+      event: 'support.ticket_received',
+      subject: 'We got {{ticketNumber}}',
+      body: 'Follow it here: x{{link}}',
+    });
+    expect(created.status).toBe(422);
+    expect(created.body.errors.map((error: { code: string }) => error.code)).toContain('link_placement');
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'invoice.paid'));
+    const plain = await owner.post('/admin/notification-templates', {
+      event: 'invoice.paid',
+      channel: 'email',
+      audience: 'merchant',
+      subject: 'Paid {{invoiceNumber}}',
+      body: 'See https://example.com for {{invoiceNumber}} {{amount}} {{currency}} {{merchantName}}',
+    });
+    expect(plain.status).toBe(201);
+  });
+
+  it('keeps {{link}} in a security mail and {{change}} in a security notice', async () => {
+    const { db } = await testDb();
+    await seedIdentityTemplates(db);
+    const reset = await idOf('merchant.password_reset', 'email');
+    const noLink = await owner.patch(`/admin/notification-templates/${reset}`, {
+      body: 'Hi {{merchantName}}, we will mail you again.',
+    });
+    expect(noLink.status).toBe(422);
+    expect(noLink.body.errors).toContainEqual({
+      field: 'body',
+      code: 'security_placeholder',
+      message: 'This email protects accounts: keep {{link}} in the message.',
+    });
+    const notice = await idOf('merchant.security_notice', 'email');
+    const before = await rowOf(notice);
+    const noChange = await owner.patch(`/admin/notification-templates/${notice}`, {
+      body: 'Hi {{merchantName}}, something changed.',
+    });
+    expect(noChange.status).toBe(422);
+    expect(noChange.body.errors).toContainEqual({
+      field: 'body',
+      code: 'security_placeholder',
+      message: 'This email protects accounts: keep {{change}} in the message, it says what changed.',
+    });
+    expect(await rowOf(notice)).toEqual(before);
+    expect(
+      (
+        await owner.patch(`/admin/notification-templates/${notice}`, {
+          body: 'Hi {{merchantName}}, our team changed this: {{change}}.',
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it('refuses a security notice whose text could hide what it says, and a security email with a style, and changes nothing', async () => {
+    const { db } = await testDb();
+    await seedIdentityTemplates(db);
+    const notice = await idOf('merchant.security_notice', 'email');
+    const reset = await idOf('merchant.password_reset', 'email');
+    const before = [await rowOf(notice), await rowOf(reset)];
+    const codes = async (id: number, body: string) => {
+      const res = await owner.patch(`/admin/notification-templates/${id}`, { body });
+      expect(res.status, body).toBe(422);
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+      return res.body.errors.map((error: { field: string; code: string }) => `${error.field}:${error.code}`);
+    };
+    expect(await codes(notice, '<p style="display:none">{{change}}</p>')).toEqual(['body:link_attribute']);
+    expect(await codes(notice, '<p hidden>{{change}}</p>')).toEqual(['body:link_attribute']);
+    expect(await codes(notice, 'Hi {{merchantName}}<!-- {{change}} -->')).toEqual(['body:link_markup']);
+    expect(await codes(notice, '<img src="x"><p>{{change}}</p>')).toEqual(['body:link_tag']);
+    // The notice is in the body, but only inside a tag: the reader would not see it.
+    const hiddenChange = await owner.patch(`/admin/notification-templates/${notice}`, {
+      body: '<p title="{{change}}">Hi {{merchantName}}, something changed.</p>',
+    });
+    expect(hiddenChange.status).toBe(422);
+    expect(hiddenChange.body.errors).toContainEqual({
+      field: 'body',
+      code: 'security_placeholder',
+      message:
+        'This email protects accounts: {{change}} must stand in the text of the message, not inside a comment or a tag.',
+    });
+    expect(await codes(reset, '<p style="color:#06c"><a href="{{link}}">Choose a password</a></p>')).toEqual([
+      'body:link_attribute',
+    ]);
+    expect([await rowOf(notice), await rowOf(reset)]).toEqual(before);
+    expect((await audit()).length).toBe(0);
+    // Text that shows the notice passes, with formatting.
+    const ok = await owner.patch(`/admin/notification-templates/${notice}`, {
+      body: '<p>Hi {{merchantName}}</p><p><strong>{{change}}</strong></p>',
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it('cannot switch off or delete an email that protects accounts, and still switches off and deletes an ordinary template', async () => {
+    const { db } = await testDb();
+    await seedIdentityTemplates(db);
+    const reset = await idOf('merchant.password_reset', 'email');
+    const before = await rowOf(reset);
+    const off = await owner.patch(`/admin/notification-templates/${reset}`, { isActive: false });
+    expect(off.status).toBe(409);
+    expect(off.body).toMatchObject({
+      code: 'LOCKED',
+      detail:
+        'This email protects accounts (a sign-in, password, invitation or verification link, or a security notice), so it cannot be switched off. You can change its words.',
+    });
+    const removed = await owner.delete(`/admin/notification-templates/${reset}`);
+    expect(removed.status).toBe(409);
+    expect(removed.body.code).toBe('LOCKED');
+    expect(removed.body.detail).toContain('cannot be deleted');
+    expect(await rowOf(reset)).toEqual(before);
+    expect((await audit()).length).toBe(0);
+    // A customer account mail and a staff link mail are locked the same way.
+    for (const [event, audience] of [
+      ['customer.magic_link', 'customer'],
+      ['staff.invited', 'staff'],
+      ['merchant.security_notice', 'merchant'],
+    ] as const) {
+      const id = await idOf(event, 'email', audience);
+      expect((await owner.patch(`/admin/notification-templates/${id}`, { isActive: false })).status, event).toBe(409);
+      expect((await owner.delete(`/admin/notification-templates/${id}`)).status, event).toBe(409);
+    }
+    // A row deleted in the database before: creating it switched off is refused too; creating it on works.
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'staff.invited'));
+    const staffInvited = {
+      event: 'staff.invited',
+      channel: 'email' as const,
+      audience: 'staff' as const,
+      subject: 'Welcome',
+      body: 'Choose your password:\n\n{{link}}',
+    };
+    expect((await owner.post('/admin/notification-templates', { ...staffInvited, isActive: false })).status).toBe(409);
+    expect((await owner.post('/admin/notification-templates', staffInvited)).status).toBe(201);
+    // An ordinary template switches off and is deleted as before.
+    const invoicePaid = await idOf('invoice.paid', 'telegram');
+    expect((await owner.patch(`/admin/notification-templates/${invoicePaid}`, { isActive: false })).status).toBe(200);
+    expect((await owner.delete(`/admin/notification-templates/${invoicePaid}`)).status).toBe(204);
+    // A security email that was switched off before this rule can only be switched on, with its words changed.
+    await db.update(s.notificationTemplates).set({ isActive: false }).where(eq(s.notificationTemplates.id, reset));
+    expect((await owner.patch(`/admin/notification-templates/${reset}`, { isActive: true })).body.isActive).toBe(true);
   });
 });
 

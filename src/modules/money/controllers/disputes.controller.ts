@@ -2,7 +2,7 @@
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal } from '../../identity';
+import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal, customerContactOf } from '../../identity';
 import { DisputeService } from '../application/dispute.service';
 import { DisputeWebhookService } from '../application/dispute-webhook.service';
 import {
@@ -36,12 +36,16 @@ export class DisputesController {
    * Lists the disputes.
    *
    * @param query sort, range, filters and search
+   * @param staff the signed-in staff member (decides whether `q` may match a customer's address, decision 047)
    * @returns the page of disputes
    * @route GET /admin/disputes
    */
   @Route(listDisputes)
-  list(@Query() query: QueryOf<typeof listDisputes>): Promise<ResultOf<typeof listDisputes>> {
-    return this.disputes.list(query);
+  list(
+    @Query() query: QueryOf<typeof listDisputes>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listDisputes>> {
+    return this.disputes.list(query, customerContactOf(staff));
   }
 
   /**

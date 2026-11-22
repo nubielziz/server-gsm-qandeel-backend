@@ -3,7 +3,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
-import type { NotificationChannel, NotificationRecipientType, NotificationStatus } from '../db/schema';
+import type {
+  NotificationChannel,
+  NotificationRecipientType,
+  NotificationStatus,
+  NotificationTemplate,
+} from '../db/schema';
 import { OutboxService } from '../outbox/outbox.service';
 import { type AttemptContext, NotificationDelivery } from './notification-delivery';
 import { NotificationInbox } from './inbox/notification-inbox';
@@ -11,6 +16,7 @@ import { type NotificationEventDefinition, NotificationEventRegistry } from './n
 import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { OPERATIONS_RECIPIENT_ID } from './notification-payload';
 import { type TemplateKey, findTemplateFor } from './notification-template.repository';
+import { linkTemplateProblems } from './template-rules';
 import {
   type NotificationPayload,
   findNotificationByKey,
@@ -33,6 +39,11 @@ export interface NotificationInput {
   readonly chatId?: string;
   /** Names the occurrence, so a repeat makes no second row (`outbox-<id>:email`, `telegram-update-<id>`). */
   readonly dedupeKey?: string;
+  /**
+   * The address to write to instead of the recipient's current one. Only an event registered with `namedAddress` takes it (decision 047:
+   * the notice of an email change goes to the address before the change); it is kept in the row's payload as `to` and masked in the log.
+   */
+  readonly to?: string;
 }
 
 /** What a caller asks for when the message goes to an address or chat that configuration names, not to a person's row (an alert, feature 12b). */
@@ -75,7 +86,8 @@ export type SendNowResult =
  * Why: brief 12a: one delivery path. A use case (or the planning job of an outbox event) calls `enqueue` inside its transaction: the
  * `notifications` row (`queued`) and the outbox event `notification.send` commit together, so the message exists if and only if the
  * change did, and the relay turns the event into a job (decision 020). A missing or switched-off template is logged and sends
- * nothing (RULES settings 10), and a recipient that is gone or (for a message that is not transactional) suspended gets nothing.
+ * nothing (RULES settings 10), except for the emails that protect accounts, which the shipped text sends (decision 047); a recipient
+ * that is gone or (for a message that is not transactional) suspended gets nothing.
  *
  * Side effects: `enqueue` inserts a `notifications` row (once per dedupe key) and an `outbox_events` row; `sendNow` also sends.
  *
@@ -100,7 +112,8 @@ export class NotificationService {
    * @param work the caller's transaction (`runInTransaction`; a use case that holds the transaction as a `DbExecutor` passes it as `{ tx }`)
    * @param input the event, recipient, channel and variables
    * @returns the row id (and whether this call made it), or why nothing was made
-   * @throws {RangeError} when the event is not registered for the recipient's audience, or the event has no such channel (a programming error)
+   * @throws {RangeError} when the event is not registered for the recipient's audience, the event has no such channel, or `to` is given for an
+   *   event without the `namedAddress` flag (programming errors)
    *
    * Side effects: also inserts the in-app item of the event (`notification_inbox`) when one has a registered text and the call has a dedupe key.
    */
@@ -117,10 +130,14 @@ export class NotificationService {
     }
     const checked = await this.check(work.tx, input);
     if ('skipped' in checked) return { status: 'skipped', reason: checked.skipped };
+    if (input.to !== undefined && checked.definition.namedAddress !== true) {
+      throw new RangeError(`The event "${input.event}" cannot name the address it goes to.`);
+    }
     const now = this.clock.now();
     const payload: NotificationPayload = {
       variables: { ...(input.variables ?? {}) },
       ...(input.chatId === undefined ? {} : { chatId: input.chatId }),
+      ...(input.to === undefined ? {} : { to: input.to }),
     };
     const { row, created } = await insertNotificationOnce(work.tx, {
       recipientType: input.recipient.type,
@@ -159,7 +176,7 @@ export class NotificationService {
    */
   async enqueueInline(
     work: { readonly tx: DbExecutor },
-    input: Omit<NotificationInput, 'chatId'>,
+    input: Omit<NotificationInput, 'chatId' | 'to'>,
   ): Promise<EnqueueResult> {
     const recipient = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
     if (!recipient) return { status: 'skipped', reason: 'recipient_gone' };
@@ -271,13 +288,17 @@ export class NotificationService {
    * @param context the job's attempt number and the queue's maximum
    * @returns what happened; a transient failure is thrown
    * @throws {DeliveryError} for a transient failure (the queue retries the job)
-   * @throws {RangeError} when the event is not registered for the recipient's audience, or the event has no such channel
+   * @throws {RangeError} when the event is not registered for the recipient's audience, the event has no such channel, or `to` is given (a mail
+   *   with a secret goes to the recipient's own address; only `enqueue` takes a named one, decision 047)
    */
   async sendNow(
     input: NotificationInput & { readonly dedupeKey: string },
     secrets: Readonly<Record<string, string>>,
     context: AttemptContext,
   ): Promise<SendNowResult> {
+    if (input.to !== undefined) {
+      throw new RangeError(`The event "${input.event}" cannot name the address it goes to.`);
+    }
     const checked = await this.check(this.db.db, input);
     if ('skipped' in checked) return { status: 'skipped', reason: checked.skipped };
     const now = this.clock.now();
@@ -326,10 +347,12 @@ export class NotificationService {
    *
    * @param db the database or a transaction
    * @param key the event, channel and audience
-   * @returns true when the template exists and is on
+   * @returns true when a message can be written: the template exists and is on (for a link email without a shipped text, also keeps the
+   *   link rules), or the event protects accounts and has a shipped text (decision 047)
    */
   async templateIsOn(db: DbExecutor, key: TemplateKey): Promise<boolean> {
-    return (await findTemplateFor(db, key))?.isActive === true;
+    const template = await findTemplateFor(db, key);
+    return this.verdictOf(template, key, this.registry.get(key.event, key.audience)) === 'ok';
   }
 
   /**
@@ -358,6 +381,9 @@ export class NotificationService {
   /**
    * Looks up what a notification needs before a row is made: the recipient, the event and an active template.
    *
+   * Why: decision 047: a security email does not need one (the shipped text is sent when the template is missing or switched off), and
+   * a link email without a shipped text needs a template that keeps the link rules.
+   *
    * @param db the database or a transaction
    * @param input the event, recipient and channel to check
    * @returns the recipient and the event, or the reason to skip
@@ -377,16 +403,51 @@ export class NotificationService {
       throw new RangeError(`The event "${input.event}" cannot be sent by ${input.channel}.`);
     }
     if (recipient.suspended && !definition.transactional) return { skipped: 'recipient_suspended' };
-    const template = await findTemplateFor(db, {
-      event: input.event,
-      channel: input.channel,
-      audience: recipient.audience,
-    });
-    if (!template) {
+    const key: TemplateKey = { event: input.event, channel: input.channel, audience: recipient.audience };
+    const template = await findTemplateFor(db, key);
+    const verdict = this.verdictOf(template, key, definition);
+    if (verdict === 'ok') return { recipient, definition };
+    if (definition.security === true) {
+      this.logger.error(
+        `The security email "${input.event}" (${recipient.audience}) has no usable template and no shipped text: nothing is sent.`,
+      );
+    } else if (verdict === 'no_template') {
       this.logger.warn(`No ${input.channel} template for "${input.event}" (${recipient.audience}): nothing is sent.`);
-      return { skipped: 'no_template' };
+    } else if (template?.isActive) {
+      this.logger.warn(
+        `The ${input.channel} template of "${input.event}" (${recipient.audience}) breaks the rules of a link email and has no shipped text: nothing is sent.`,
+      );
     }
-    if (!template.isActive) return { skipped: 'template_off' };
-    return { recipient, definition };
+    return { skipped: verdict };
+  }
+
+  /**
+   * Judges the stored template of an event: usable, missing or switched off.
+   *
+   * Why: decision 047: a security email is never stopped by its template (a missing or switched-off one is stood in for by the shipped
+   * text), and a reminder-like link email whose active template breaks the link rules and has no shipped text counts as switched off,
+   * so nothing queues a row the delivery could only fail.
+   *
+   * @param template the stored template of the event, channel and audience, if any
+   * @param key the event, channel and audience
+   * @param definition the registered event
+   * @returns `ok` when a message can be written, else the reason it cannot
+   */
+  private verdictOf(
+    template: NotificationTemplate | undefined,
+    key: TemplateKey,
+    definition: NotificationEventDefinition | undefined,
+  ): 'ok' | 'no_template' | 'template_off' {
+    const shipped = this.registry.builtInTemplate(key);
+    if (template?.isActive) {
+      const unusable =
+        definition?.secretLink === true &&
+        definition.security !== true &&
+        shipped === undefined &&
+        linkTemplateProblems(template).length > 0;
+      return unusable ? 'template_off' : 'ok';
+    }
+    if (definition?.security === true && shipped !== undefined) return 'ok';
+    return template ? 'template_off' : 'no_template';
   }
 }

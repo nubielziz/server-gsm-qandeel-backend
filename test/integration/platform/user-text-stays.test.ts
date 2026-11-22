@@ -103,7 +103,8 @@ describe('CSV exports carry text as typed (critic G5)', () => {
       imei: IMEIS[1],
       source: 'store',
     });
-    const staff = await adminWith(t, ['orders:read']);
+    // Decision 047: the export also needs reports:read.
+    const staff = await adminWith(t, ['orders:read', 'reports:read']);
     const res = await t.app.inject({
       method: 'GET',
       url: '/admin/orders/export',

@@ -3,6 +3,7 @@
 // and no merchant outbox row; reject voids the top-up, tells the customer why and names them in the audit; merchant rows are unchanged.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
+import { maskCustomerEmail } from '@src/common/customer-contact';
 import { schema as s } from '@src/infra/db';
 import { findBalanceDifferences } from '@src/modules/money/infra/ledger-read.repository';
 import { type AdminApi, adminWith } from '../../support/admin-api';
@@ -102,7 +103,13 @@ describe('the Deposits wire with customer top-ups', () => {
       feeAmount: '1.5000',
       netAmount: '48.5000',
       client: null,
-      customer: { id: customer.id, name: 'Daniel Rivera', email: customer.email, walletBalance: null },
+      // Decision 047: this caller does not hold customers:read, so the address comes masked.
+      customer: {
+        id: customer.id,
+        name: 'Daniel Rivera',
+        email: maskCustomerEmail(customer.email),
+        walletBalance: null,
+      },
       gateway: { id: cliq, name: 'CliQ transfer' },
       note: 'First top-up of this customer.',
     });
@@ -114,10 +121,54 @@ describe('the Deposits wire with customer top-ups', () => {
       paymentId,
     );
     expect((await staff.get(`/admin/payments?customerId=${customer.id}`)).total).toBe(1);
-    expect((await staff.get(`/admin/payments?q=${encodeURIComponent(customer.email.slice(0, 18))}`)).body[0].id).toBe(
+    // Searching the address needs customers:read as well (decision 047); the name is searched for everybody.
+    const reader = await adminWith(t, ['payments:read', 'customers:read']);
+    expect((await reader.get(`/admin/payments?q=${encodeURIComponent(customer.email.slice(0, 18))}`)).body[0].id).toBe(
       paymentId,
     );
+    expect((await staff.get('/admin/payments?q=Daniel+Riv')).body[0].id).toBe(paymentId);
     expect((await staff.get(`/admin/payments/${paymentId}`)).body.customer.id).toBe(customer.id);
+  });
+});
+
+describe('the customer address in the payment answers (decision 047)', () => {
+  it("masks the customer's address in the payment answers, and q does not match it, without customers:read", async () => {
+    const { customer, paymentId } = await inReview();
+    const masked = maskCustomerEmail(customer.email);
+    const emailOf = (res: { body: unknown }): string[] =>
+      (Array.isArray(res.body) ? res.body : [res.body]).map(
+        (row: { customer: { email: string } | null }) => row.customer?.email ?? '',
+      );
+    // List and single read.
+    expect(emailOf(await staff.get('/admin/payments'))).toEqual([masked]);
+    expect(emailOf(await staff.get(`/admin/payments/${paymentId}`))).toEqual([masked]);
+    // q with the full address finds nothing for payments:read + payments:approve, and finds the payment with customers:read added.
+    expect((await staff.get(`/admin/payments?q=${encodeURIComponent(customer.email)}`)).body).toEqual([]);
+    const withRead = await adminWith(t, ['payments:read', 'payments:approve', 'customers:read']);
+    expect(emailOf(await withRead.get(`/admin/payments?q=${encodeURIComponent(customer.email)}`))).toEqual([
+      customer.email,
+    ]);
+    expect(emailOf(await withRead.get(`/admin/payments/${paymentId}`))).toEqual([customer.email]);
+    // The approve answer follows the caller too.
+    const approved = await staff.post(`/admin/payments/${paymentId}/approve`);
+    expect(approved.status).toBe(200);
+    expect(emailOf(approved)).toEqual([masked]);
+  });
+
+  it('masks the address in the reject answer, and shows it in full to a caller with customers:read', async () => {
+    const first = await inReview();
+    const rejected = await staff.post(`/admin/payments/${first.paymentId}/reject`, {
+      reason: 'The slip is not readable.',
+    });
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.customer.email).toBe(maskCustomerEmail(first.customer.email));
+    const second = await inReview('Second Buyer');
+    const reader = await adminWith(t, ['payments:read', 'payments:approve', 'customers:read']);
+    const answer = await reader.post(`/admin/payments/${second.paymentId}/reject`, {
+      reason: 'The slip is not readable.',
+    });
+    expect(answer.status).toBe(200);
+    expect(answer.body.customer.email).toBe(second.customer.email);
   });
 });
 

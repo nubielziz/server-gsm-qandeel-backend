@@ -94,6 +94,8 @@ export class SupportTicketLiveController {
   /**
    * Redirects the staff member to an attachment of the ticket.
    *
+   * Side effects: an attachment that is also an identity document or a payment proof writes the audit row of the platform's file route (decision 047).
+   *
    * @param params the ticket id and the file id
    * @param reply the reply, to set `Location`
    * @route GET /admin/support-tickets/:id/files/:fileId

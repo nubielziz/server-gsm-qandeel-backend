@@ -2,6 +2,7 @@
 // holding, the 30-day figures and the latest decisions. Read only.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { deviceName, heldShare, queueMethodOf, signalsOf, tacOfInput } from '../domain/queue-view';
@@ -100,9 +101,10 @@ export class RiskQueueService {
   /**
    * Reads the queue, the figures and the latest decisions.
    *
+   * @param contact what the caller may see of a held order's customer address (decision 047, rule A)
    * @returns the three parts of the page
    */
-  async get(): Promise<RiskQueueView> {
+  async get(contact: CustomerContact): Promise<RiskQueueView> {
     const db = this.db.db;
     const since = new Date(this.clock.now().getTime() - STATS_WINDOW_DAYS * 86_400_000);
     const [held, figures, decided] = await Promise.all([
@@ -125,7 +127,7 @@ export class RiskQueueService {
       ),
     ]);
     return {
-      held: held.map((row) => this.heldView(row, suppliers, histories, devices)),
+      held: held.map((row) => this.heldView(row, suppliers, histories, devices, contact)),
       stats: {
         decided30d: figures.decided,
         approved30d: figures.approved,
@@ -141,6 +143,7 @@ export class RiskQueueService {
     suppliers: Awaited<ReturnType<typeof plannedSuppliers>>,
     histories: Awaited<ReturnType<typeof customerHistories>>,
     devices: Awaited<ReturnType<typeof tacEntries>>,
+    contact: CustomerContact,
   ): HeldOrderView {
     const tac = tacOfInput(row.imei);
     const supplier =
@@ -163,7 +166,7 @@ export class RiskQueueService {
       customer: {
         id: row.customerId,
         name: row.customerName,
-        email: row.customerEmail,
+        email: customerEmailIn(contact, row.customerEmail),
         country: row.customerCountry,
         riskLevel: row.customerRisk,
         history: histories.get(row.orderId) ?? { earlierOrders: 0, refunds: 0, disputes: 0 },

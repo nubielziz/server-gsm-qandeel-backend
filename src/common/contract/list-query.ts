@@ -595,3 +595,24 @@ export function listQueryParameters(schema: ListQueryBrand): ListQueryParameter[
   }
   return out;
 }
+
+/**
+ * Takes some search fields out of a parsed list request, keeping the search text.
+ *
+ * Why: decision 047: a caller who may not read customers' addresses searches the other fields only; the list then matches what is
+ * left, or nothing when no field is left.
+ *
+ * @param query the parsed list request
+ * @param fields the wire names of the search fields to leave out
+ * @returns `query` itself when it has no search, else a copy whose search fields leave out every entry of `fields` (the list may become empty)
+ */
+export function withoutSearchFields<T extends string, X>(
+  query: ParsedListQuery<T, X>,
+  fields: readonly string[],
+): ParsedListQuery<T, X> {
+  if (query.search === undefined) return query;
+  return {
+    ...query,
+    search: { text: query.search.text, fields: query.search.fields.filter((f) => !fields.includes(f)) },
+  };
+}

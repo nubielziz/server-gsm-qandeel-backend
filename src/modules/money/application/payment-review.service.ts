@@ -2,10 +2,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { type StaffPrincipal, requireOwner } from '../../identity';
+import { type StaffPrincipal, customerContactOf, requireOwner } from '../../identity';
 import { AuditService } from '../../platform';
 import { SELF_APPROVAL_DETAIL, isIssuedBy, paymentRef } from '../domain/invoice-rules';
 import { reviewRefusal } from '../domain/payment-rules';
@@ -58,30 +59,36 @@ export class PaymentReviewService {
    * Lists top-ups.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of a storefront customer's address (decision 047; it also decides whether `q` matches it)
    * @returns the page and the number matching the filters
    */
-  async list(query: ParsedListQuery<PaymentSortField>): Promise<{ rows: WirePayment[]; total: number }> {
-    const { rows, total } = await listPaymentRows(this.db.db, query);
-    return { rows: await this.views.build(this.db.db, rows), total };
+  async list(
+    query: ParsedListQuery<PaymentSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WirePayment[]; total: number }> {
+    const { rows, total } = await listPaymentRows(this.db.db, query, contact);
+    return { rows: await this.views.build(this.db.db, rows, contact), total };
   }
 
   /**
    * Reads one top-up.
    *
    * @param id the payment id
+   * @param contact what the caller may see of a storefront customer's address (decision 047)
    * @returns the payment
    * @throws {AppError} `NOT_FOUND` for an unknown id or an order payment
    */
-  async get(id: number): Promise<WirePayment> {
+  async get(id: number, contact: CustomerContact): Promise<WirePayment> {
     const row = await findTopupPayment(this.db.db, id);
     if (!row) throw notFound();
-    return (await this.views.build(this.db.db, [row]))[0]!;
+    return (await this.views.build(this.db.db, [row], contact))[0]!;
   }
 
   /**
    * Approves a top-up and credits the wallet.
    *
-   * @param caller the staff member who decides
+   * @param caller the staff member who decides; the answer shows a storefront customer's address in the form this caller may see
+   *   (decision 047: `customerContactOf(caller)`)
    * @param id the payment id
    * @returns the payment after the decision, with the wallet balance that already includes the credit
    * @throws {AppError} `NOT_FOUND`; `PAYMENT_ALREADY_REVIEWED` when it is not pending; `PAYMENT_AUTO_CREDIT_PENDING` when its
@@ -97,13 +104,14 @@ export class PaymentReviewService {
       if (invoice && isIssuedBy(invoice, caller.staffId)) requireOwner(caller, SELF_APPROVAL_DETAIL);
       await this.crediting.credit(work, payment, gateway, { kind: 'staff', staffId: caller.staffId });
     });
-    return this.get(id);
+    return this.get(id, customerContactOf(caller));
   }
 
   /**
    * Rejects a top-up with the reason the merchant sees.
    *
-   * @param caller the staff member who decides
+   * @param caller the staff member who decides; the answer shows a storefront customer's address in the form this caller may see
+   *   (decision 047: `customerContactOf(caller)`)
    * @param id the payment id
    * @param reason why, as the merchant reads it
    * @returns the payment after the decision (its note is the reason)
@@ -158,7 +166,7 @@ export class PaymentReviewService {
         await this.walletMails.topUpRejected(tx, { customerId, paymentId: id, amount: payment.amount, reason });
       }
     });
-    return this.get(id);
+    return this.get(id, customerContactOf(caller));
   }
 
   /** Locks a top-up and refuses a decision that is not allowed now (not pending; automatic and not sent to review). */

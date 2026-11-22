@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { QueryOf, ResultOf } from '../../../common/contract';
+import { customerNameForStaff } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
@@ -131,7 +132,8 @@ export class B2cReportsService {
           status: line.status as 'captured',
           currency: line.currency,
           fx: line.fx,
-          customer: customer ? { id: customer.id, name: customer.name || customer.email } : null,
+          // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
+          customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
         };
       }),
       total: report.total,

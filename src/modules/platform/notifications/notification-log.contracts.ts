@@ -60,8 +60,9 @@ export const listNotificationLog = defineRoute({
   description:
     'Every message the system sent or tried to send, newest first. `recipient` is masked by the server. `status` is `queued`, `sent` or `failed`; ' +
     '`error` says why a message failed. `recipientType` is `staff`, `client` (a merchant) or `customer`. The list leaves out `payload`. `q` is a ' +
-    'case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case). ' +
-    '`campaignId` shows the messages of one notification campaign.',
+    'case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case)' +
+    '; a customer’s address only for callers who hold `customers:read` (decision 047). ' +
+    '`campaignId` shows the messages of one notification campaign. A security notice about an email change shows the address it went to (the one before the change).',
   tags: ['notifications'],
   surface: 'admin',
   access: 'staff-permission',

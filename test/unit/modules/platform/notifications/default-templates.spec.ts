@@ -1,6 +1,6 @@
 // Unit tests of the default templates (features 12a, 14b, 12b, 16 and 31): they use only their event's placeholders, cover every merchant
 // event the platform wires, the four customer account mails, both alert events, the five storefront mails of feature 16 and the hourly
-// message about retail prices, migrations 0011, 0012, 0015, 0018 and 0044 together insert exactly these rows, and `defaultTemplatesSql()`
+// message about retail prices, migrations 0011, 0012, 0015, 0018, 0044 and 0054 together insert exactly these rows, and `defaultTemplatesSql()`
 // writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { insertedTemplates } from '../../../../support/applied-templates';
@@ -77,6 +77,7 @@ const MIGRATIONS = [
   '0015_alert_templates.sql',
   '0018_refund_declined_template.sql',
   '0044_retail_follow_templates.sql',
+  '0054_customer_security_notice.sql',
 ] as const;
 
 /** The customer events feature 16 sends through `StorefrontMails`, with the placeholder each one's text must use to say what it is about. */
@@ -120,6 +121,24 @@ describe('the refund declined mail', () => {
       variables: ['customerName', 'orderId', 'amount', 'reason'],
     });
     expect(registry.get('refund.declined', 'merchant')).toBeUndefined();
+  });
+});
+
+describe('the customer security notice (decision 047)', () => {
+  it('ships an English email with a subject, the customer name and what changed', () => {
+    const template = DEFAULT_TEMPLATES.find((t) => t.event === 'customer.security_notice' && t.audience === 'customer');
+    expect(template).toMatchObject({ channel: 'email' });
+    expect(template!.subject).toBe('A security change on your account');
+    for (const placeholder of ['{{customerName}}', '{{change}}']) expect(template!.body).toContain(placeholder);
+    // The notice carries no link and no address: the sentence of the change is fixed.
+    expect(template!.body).not.toContain('{{link}}');
+    expect(registry.get('customer.security_notice', 'customer')).toMatchObject({
+      channels: ['email'],
+      variables: ['customerName', 'change'],
+      transactional: true,
+      security: true,
+      namedAddress: true,
+    });
   });
 });
 

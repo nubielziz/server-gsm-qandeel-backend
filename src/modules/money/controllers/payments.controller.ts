@@ -1,7 +1,7 @@
 // HTTP controller of the wallet top-ups for staff (map domain E, stage 8, routes /admin/payments*).
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { PaymentReviewService } from '../application/payment-review.service';
 import { approvePayment, getPayment, listPayments, rejectPayment } from '../contracts/payments.contracts';
 
@@ -23,24 +23,32 @@ export class PaymentsController {
    * Lists the top-ups.
    *
    * @param query sort, range, filters and search
+   * @param staff the signed-in staff member (decides whether a customer's address is shown and searched, decision 047)
    * @returns the page of payments
    * @route GET /admin/payments
    */
   @Route(listPayments)
-  list(@Query() query: QueryOf<typeof listPayments>): Promise<ResultOf<typeof listPayments>> {
-    return this.payments.list(query);
+  list(
+    @Query() query: QueryOf<typeof listPayments>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listPayments>> {
+    return this.payments.list(query, customerContactOf(staff));
   }
 
   /**
    * Reads one top-up.
    *
    * @param params the payment id
+   * @param staff the signed-in staff member (decides whether a customer's address is shown, decision 047)
    * @returns the payment
    * @route GET /admin/payments/:id
    */
   @Route(getPayment)
-  show(@Param() params: ParamsOf<typeof getPayment>): Promise<ResultOf<typeof getPayment>> {
-    return this.payments.get(params.id);
+  show(
+    @Param() params: ParamsOf<typeof getPayment>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof getPayment>> {
+    return this.payments.get(params.id, customerContactOf(staff));
   }
 
   /**

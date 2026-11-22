@@ -164,7 +164,8 @@ describe('POST /admin/blocklist', () => {
   it('blocks the email for the customer routes too: an entry made here is refused by the customer edit of feature 14b', async () => {
     const customer = await makeCustomer(t);
     await staff.post('/admin/blocklist', { kind: 'email', value: 'Blocked@Example.com', reason: 'Chargeback lost' });
-    const editor = await adminWith(t, ['customers:update']);
+    // Decision 047: the email of an account also needs customers:password.
+    const editor = await adminWith(t, ['customers:update', 'customers:password']);
     const res = await editor.patch(`/admin/customers/${customer.id}`, { email: 'blocked@example.com' });
     expect(res.status).toBe(422);
     expect(res.body.errors[0]).toMatchObject({ field: 'email', message: 'This email is blocked.' });

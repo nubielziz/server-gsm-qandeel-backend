@@ -379,6 +379,13 @@
       "when": 1795367585979,
       "tag": "0053_risk_inputs",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1795372146222,
+      "tag": "0054_customer_security_notice",
+      "breakpoints": true
     }
   ]
 }

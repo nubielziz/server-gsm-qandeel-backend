@@ -364,7 +364,9 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
   private async staffUpdatedFrame(row: TicketRow): Promise<Frame | undefined> {
     const times = await lastPublicTimes(this.db.db, [row.ticket.id]);
     return this.frame(TICKET_UPDATED_EVENT, zStaffTicketUpdated, {
-      ticket: toTicketView(row, times.get(row.ticket.id), this.clock.now()),
+      // Decision 047: one frame for every staff stream, so a customer's address goes masked; the REST answers give it in full to holders of
+      // customers:read.
+      ticket: toTicketView(row, times.get(row.ticket.id), this.clock.now(), 'masked'),
     });
   }
 

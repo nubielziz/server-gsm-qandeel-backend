@@ -62,6 +62,7 @@ export {
   isListQuerySchema,
   listQuery,
   listQueryParameters,
+  withoutSearchFields,
 } from './list-query';
 export type {
   FilterOp,

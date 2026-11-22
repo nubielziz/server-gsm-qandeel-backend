@@ -2,6 +2,7 @@
 // from the payment, the order, the consents, the customer's history and their support contacts.
 import { Injectable } from '@nestjs/common';
 import type { ResultOf } from '../../../common/contract';
+import { type CustomerContact, customerEmailIn, customerNameForStaff } from '../../../common/customer-contact';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { Dispute } from '../db/schema';
@@ -31,9 +32,11 @@ export class DisputeViews {
    *
    * @param db the database or a transaction
    * @param dispute the dispute
+   * @param contact how the checkout's address is written into the delivery line (decision 047): `masked` is the pack staff read;
+   *   `full` is the text sent to the gateway, which must name the buyer
    * @returns the six lines and how strong the case is
    */
-  async pack(db: DbExecutor, dispute: Dispute): Promise<EvidencePack> {
+  async pack(db: DbExecutor, dispute: Dispute, contact: CustomerContact = 'masked'): Promise<EvidencePack> {
     const [payment] = [...(await loadOrderPayments(db, [dispute.paymentId])).values()];
     const orderId = dispute.orderId ?? payment?.orderId ?? null;
     const order = orderId === null ? undefined : (await loadOrderFacts(db, [orderId])).get(orderId);
@@ -58,7 +61,7 @@ export class DisputeViews {
       order: {
         deliveredAt: order?.status === 'completed' ? order.completedAt : null,
         resultCode: order?.resultCode ?? null,
-        email: session?.email ?? '',
+        email: customerEmailIn(contact, session?.email ?? ''),
       },
       consents: facts.consents.map((consent) => ({
         purpose: consent.purpose,
@@ -99,7 +102,8 @@ export class DisputeViews {
       const fx = session?.fxRate ?? '1';
       const whole = payment && session ? { amount: payment.amount, grossUsd: session.grossAmount } : undefined;
       const customer = dispute.customerId === null ? undefined : customers.get(dispute.customerId);
-      const pack = withPack ? await this.pack(db, dispute) : undefined;
+      // The pack staff read shows the address masked (rule B); the pack sent to the gateway keeps it in full (`submitEvidence`).
+      const pack = withPack ? await this.pack(db, dispute, 'masked') : undefined;
       rows.push({
         id: dispute.id,
         orderId: dispute.orderId ?? 0,
@@ -110,7 +114,8 @@ export class DisputeViews {
         status: dispute.status,
         currency: dispute.currency,
         fx,
-        customer: customer ? { id: customer.id, name: customer.name || customer.email } : null,
+        // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
+        customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
         evidenceDueAt: dispute.evidenceDueAt.toISOString(),
         submittedAt: dispute.submittedAt?.toISOString() ?? null,
         resolvedAt: dispute.resolvedAt?.toISOString() ?? null,

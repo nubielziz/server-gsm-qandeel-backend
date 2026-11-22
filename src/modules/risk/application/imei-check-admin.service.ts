@@ -5,6 +5,7 @@ import type { JsonObject, ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { type PermissionHolder, grants } from '../../identity';
 import { IMEI_CHECK_AAD, imeiHashInput } from '../domain/imei-check';
 import { maskedImei } from '../domain/imei-mask';
 import type { ImeiCheck, ImeiCheckSource, ImeiCheckStatus, ImeiCheckType } from '../db/schema';
@@ -15,6 +16,13 @@ import {
   imeiSearchCondition,
   listImeiCheckRows,
 } from '../infra/imei-check-admin.repository';
+
+/**
+ * The permission whose holders read the IMEI digits of the check log.
+ *
+ * Why: decision 047: the people who decide held orders read the digits; other risk readers read the stored mask (the TAC and bullets).
+ */
+export const IMEI_DIGITS_PERMISSION = 'risk:decide';
 
 /** A check as the console reads it. */
 export interface ImeiCheckView {
@@ -42,7 +50,8 @@ export interface ImeiCheckView {
  *
  * Why: the console's IMEI checks tab. `imei` is the decrypted 15 digits while `imei_enc` is set, and the mask (the TAC and bullets)
  * after the retention job or an anonymization erased it. The IMEI is personal data: it is decrypted only to answer a staff
- * request and never logged.
+ * request and never logged. Decision 047: only a caller who holds `risk:decide` gets the digits; for any other caller nothing is decrypted
+ * and `imei` is the mask. The filters and the IMEI search stay as they are.
  *
  * Side effects: none (reads only).
  */
@@ -61,34 +70,41 @@ export class ImeiCheckAdminService {
    *
    * @param query the parsed list request; `q` is understood as an IMEI (15 digits), a TAC (8 to 14 digits, or a prefix) or text
    *   matched against brand and model
+   * @param caller the signed-in staff member (the digits need `risk:decide`, decision 047)
    * @returns the page and its total
    */
-  async list(query: ParsedListQuery<ImeiCheckSortField>): Promise<{ rows: ImeiCheckView[]; total: number }> {
+  async list(
+    query: ParsedListQuery<ImeiCheckSortField>,
+    caller: PermissionHolder,
+  ): Promise<{ rows: ImeiCheckView[]; total: number }> {
     const condition = query.search
       ? imeiSearchCondition(query.search.text, (imei) => this.tokens.lookupHash(imeiHashInput(imei)))
       : undefined;
     const page = await listImeiCheckRows(this.db.db, query, { condition });
-    return { rows: page.rows.map((row) => this.viewOf(row)), total: page.total };
+    const reveal = grants(caller.permissions, IMEI_DIGITS_PERMISSION);
+    return { rows: page.rows.map((row) => this.viewOf(row, reveal)), total: page.total };
   }
 
   /**
    * Reads one check.
    *
    * @param id the check id
+   * @param caller the signed-in staff member (the digits need `risk:decide`, decision 047)
    * @returns the check
    * @throws {AppError} `NOT_FOUND` (404)
    */
-  async get(id: number): Promise<ImeiCheckView> {
+  async get(id: number, caller: PermissionHolder): Promise<ImeiCheckView> {
     const row = await findImeiCheckRow(this.db.db, id);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'No IMEI check with this id.' });
-    return this.viewOf(row);
+    return this.viewOf(row, grants(caller.permissions, IMEI_DIGITS_PERMISSION));
   }
 
-  private viewOf(row: ImeiCheckRow): ImeiCheckView {
+  /** Builds the view; without `reveal` the stored mask is used and nothing is decrypted (decision 047). */
+  private viewOf(row: ImeiCheckRow, reveal: boolean): ImeiCheckView {
     const { check } = row;
     return {
       id: check.id,
-      imei: this.imeiOf(check),
+      imei: reveal ? this.imeiOf(check) : maskedImei(check.tac),
       brand: check.brand,
       model: check.model,
       checkType: check.checkType,

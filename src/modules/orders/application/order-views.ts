@@ -1,6 +1,7 @@
 // Order views: the rows of the read model turned into what the routes send. The staff view is the console's `Order` (cost, supplier,
 // notes); the merchant view hides everything that is not the merchant's to see (cost, supplier, internal notes, risk).
 import type { JsonObject } from '../../../common/contract';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import { deriveQueue, orderStateOf, wireDispatchState } from '../domain/order-machine';
 import type { OrderQueue, WireDispatchState } from '../domain/order-machine';
 import type {
@@ -77,11 +78,13 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
  *
  * @param row the order with its joined names
  * @param extras the dispatch count and the review reason read for the page
+ * @param contact what the caller may see of the customer's address (decision 047, rule A: masked unless the caller may read customers)
  * @returns the view the console reads
  */
 export function toStaffOrder(
   row: OrderRow,
   extras: { readonly attempts: number; readonly reason: string | null },
+  contact: CustomerContact,
 ): StaffOrderView {
   const { order } = row;
   return {
@@ -114,7 +117,11 @@ export function toStaffOrder(
     customer:
       order.customerId === null
         ? null
-        : { id: order.customerId, name: row.customerName ?? '', email: row.customerEmail ?? '' },
+        : {
+            id: order.customerId,
+            name: row.customerName ?? '',
+            email: customerEmailIn(contact, row.customerEmail ?? ''),
+          },
     supplier: order.supplierId === null ? null : { id: order.supplierId, name: row.supplierName ?? '' },
     supplierRef: order.supplierRef,
     attempts: extras.attempts,

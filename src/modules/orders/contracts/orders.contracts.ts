@@ -105,7 +105,8 @@ export const exportOrders = defineRoute({
     'cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is ' +
     '`422` ("Too many rows (N); narrow the filters (max 100000)"). The file is streamed. Every export writes an audit row. It is ' +
     'answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the ' +
-    'console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.',
+    'console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row. Besides `orders:read` it needs `reports:read` ' +
+    '(`403 FORBIDDEN`, decision 047); a refused export writes no audit row.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

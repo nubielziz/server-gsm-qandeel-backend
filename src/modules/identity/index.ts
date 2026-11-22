@@ -17,8 +17,10 @@ export {
   uncoveredPermissions,
 } from './security/permission-grammar';
 export {
+  CUSTOMER_CONTACT_PERMISSION,
   assertOwnerTargetAllowed,
   assertWithinCeiling,
+  customerContactOf,
   isOwner,
   missingPermission,
   requireOwner,

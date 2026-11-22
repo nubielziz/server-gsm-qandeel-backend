@@ -12,7 +12,7 @@ export const MERCHANT_REACTIVATED_EVENT = 'merchant.reactivated';
 export const MERCHANT_KYC_APPROVED_EVENT = 'merchant.kyc_approved';
 /** Staff rejected the merchant's identity verification (KYC); the mail carries the staff note. */
 export const MERCHANT_KYC_REJECTED_EVENT = 'merchant.kyc_rejected';
-/** Staff changed something security-relevant on the merchant's account (temporary password, 2FA reset, API key). */
+/** Staff changed something security-relevant on the merchant's account (temporary password, 2FA reset, API key, email change). */
 export const MERCHANT_SECURITY_NOTICE_EVENT = 'merchant.security_notice';
 /** A staff member was invited to the console: the link where they choose a password. */
 export const STAFF_INVITED_EVENT = 'staff.invited';
@@ -34,7 +34,8 @@ const STAFF_SAMPLE = {
 
 const event = (
   audience: 'merchant' | 'staff',
-  spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'>,
+  spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'> &
+    Partial<Pick<NotificationEventDefinition, 'security' | 'secretLink' | 'namedAddress'>>,
 ): NotificationEventDefinition => {
   const source: Readonly<Record<string, string>> = audience === 'merchant' ? MERCHANT_SAMPLE : STAFF_SAMPLE;
   return {
@@ -92,19 +93,25 @@ export const IDENTITY_MAIL_EVENTS: readonly NotificationEventDefinition[] = [
     key: MERCHANT_SECURITY_NOTICE_EVENT,
     label: 'Security change by support',
     description:
-      'Staff set a temporary password, turned off two-factor sign-in or created an API key for the merchant.',
+      'Staff set a temporary password, turned off two-factor sign-in, created an API key or changed the email address of the merchant; for an email change it goes to the address before the change.',
     variables: ['merchantName', 'change'],
+    security: true,
+    namedAddress: true,
   }),
   event('staff', {
     key: STAFF_INVITED_EVENT,
     label: 'Staff invitation',
     description: 'A staff member was added to the console: the link where they choose a password.',
     variables: ['staffName', 'link', 'expiresAt'],
+    security: true,
+    secretLink: true,
   }),
   event('staff', {
     key: STAFF_PASSWORD_RESET_EVENT,
     label: 'Staff password link',
     description: 'An owner sent a staff member a link to choose a new password.',
     variables: ['staffName', 'link', 'expiresAt'],
+    security: true,
+    secretLink: true,
   }),
 ];

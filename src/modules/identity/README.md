@@ -21,7 +21,7 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `CsrfService`, `csrfTokenFor`, `CSRF_HEADER` | derive and check the CSRF token |
 | `SessionAuthenticator` | `authenticate` / `authenticateOptional(subject, request, { stages })`: for routes that serve two kinds of callers on one path (the password set by token or by forced-change session) |
 | `CurrentPrincipal`, `CurrentStaff`, `principalOf`, `Principal` types | the caller inside a handler |
-| `grants`, `isValidPermission`, `isOwner`, `assertOwnerTargetAllowed` | the permission grammar and the Owner rules |
+| `grants`, `isValidPermission`, `isOwner`, `assertOwnerTargetAllowed`, `customerContactOf` | the permission grammar and the Owner rules; `customerContactOf(caller)` is `'full'` for a role that grants `customers:read`, else `'masked'` (decision 047: the form of a customer's address in staff answers outside the Customers pages) |
 | `RolePermissions` | the permissions of a role, cached per role; `invalidate(roleId, work)` after a role change |
 | `PermissionsCatalog` | `list()`: every concrete permission the registered contracts require, without `area:*` wildcards such as the literal `risk:*` (for `GET /admin/permissions`) |
 | `SessionSubjects` | register the session resolver of a subject type (the customers module does, feature 14b) |
@@ -281,7 +281,7 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
 | `GET /admin/ip-rules`, `GET /admin/ip-rules/:id`, `POST /admin/ip-rules/check` | `access:read` | `IpRuleAdminService` |
 | `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id`, `PUT /admin/access/restriction` | `access:create`, `access:delete`, `access:update` | |
 | `GET /admin/clients`, `GET /admin/clients/:id` | `clients:read` (`wallet` and `stats` only with `wallet:read`) | `ClientAdminService` |
-| `POST /admin/clients`, `PATCH /admin/clients/:id` | `clients:create` (and `wallet:credit_limit` for a credit limit above zero, `groups:update` for a group other than the default one), `clients:update` (and `clients:security` to suspend, decline or reactivate, `groups:update` for a group move) | decision 046 |
+| `POST /admin/clients`, `PATCH /admin/clients/:id` | `clients:create` (and `wallet:credit_limit` for a credit limit above zero, `groups:update` for a group other than the default one), `clients:update` (and `clients:security` to suspend, decline or reactivate or to change the email, `groups:update` for a group move) | decisions 046 and 047 |
 
 **Rules worth knowing**
 
@@ -440,8 +440,8 @@ An email is outbox work (decision 020): the use case writes `merchant.email_veri
 merchant, never the token or the address. The events map to the `notifications` queue; `MerchantMailModule` (loaded by the API
 and by the worker) registers them and provides one named processor per type (`jobs/merchant-mail.processors.ts`) that runs
 `MerchantMailJobs.handle` (feature 12a made the mail real, decision 033): it re-reads the merchant and the link and skips what is no
-longer worth sending (a suspended or deleted merchant, a link that was used, replaced or has expired, a template that is missing or
-switched off, a mail that already went out). The request makes a placeholder token that nobody receives (the clear value is not kept
+longer worth sending (a suspended or deleted merchant, a link that was used, replaced or has expired, a mail that already went out); a missing
+or switched-off template does not stop the mail, the shipped text is sent (decision 047). The request makes a placeholder token that nobody receives (the clear value is not kept
 anywhere); **the job rotates it**: it puts a new random token's hash on the same `auth_tokens` row (same id, same expiry, only while the
 row is unused and unexpired) and sends the link `<PORTAL_BASE_URL>/set-password?token=<token>` (or `/verify-email`) through the platform's
 `NotificationService.sendNow`, with the clear link as a *secret* placeholder that is never stored or logged. The `notifications` row
@@ -477,8 +477,10 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   `verificationSentAt`) and `suspension` (`at`, `reason`, `by`). A merchant has no language (decision 039): every merchant mail
   is English.
 - **Edit details** (`PATCH /admin/clients/:id`, a third kind of change next to status and group; `domain/client-details.ts`,
-  `ClientDetailsEditor`). An email change clears `email_verified_at`, uses every open link up, sends a verification (or the invitation while there is no
-  password) to the new address, keeps the sessions, drops the session and API key cache keys, and counts on the `account-mail` limiter.
+  `ClientDetailsEditor`). An email change also needs `clients:security` (decision 047; checked before the limiter and again on the locked row), clears
+  `email_verified_at`, uses every open link up, ends every session of the merchant, sends a security notice (`merchant.security_notice`, kind `email_changed`)
+  to the address before the change, sends a verification (or the invitation while there is no password) to the new address, drops the session and API key cache
+  keys, and counts on the `account-mail` limiter. A name change keeps the sessions.
 - **Security tools** (`ClientSecurityAdminService`, permission `clients:security`): `POST /admin/clients/:id/password` (`reset_link` mails
   an invitation or reset link, `temporary_password` shows a 14-character password once and sets `must_change_password`),
   `POST /admin/clients/:id/reset-2fa`, `POST /admin/clients/:id/sessions/revoke`, `POST /admin/clients/:id/verify-email/resend`. Each locks the
@@ -495,12 +497,17 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 - **Lifecycle mails** (`MerchantLifecycleMails`): `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`,
   `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English
   default templates (`application/mail/identity-templates.ts` keeps the text; `drizzle/0025_merchant_management_templates.sql` shipped it, and a spec finds
-  every default row of the code in the applied file).
+  every default row of the code in the applied file). The module also registers those shipped texts with the event registry
+  (`registerBuiltInTemplates`), the fallback of the security emails (decision 047). The security notice has four kinds, each one fixed sentence
+  (`SECURITY_NOTICE_PHRASES`): `temporary_password`, `twofa_reset`, `api_key_created` and `email_changed`; the `email_changed` notice names the address
+  it goes to (`to`: the address before the change), because the merchant's current address is the new one. The event is flagged `security` and `namedAddress`
+  in the registry, and `staff.invited` and `staff.password_reset` are flagged `security` and `secretLink`.
   KYC decisions and the end of one merchant session are audited under `merchant`.
 - **Staff link mails** (`StaffMailModule`, loaded by the API through `AccessAdminModule` and by the worker): `POST /admin/staff` (onboarding `invite`) and
   `POST /admin/staff/:id/password` (`reset_link`) write `staff.invited` (while the member is `invited`) or `staff.password_reset` with `StaffMailOutbox.enqueue`
   (payload `{ tokenId }`, aggregate `staff_users`). `StaffMailJobs` does what `MerchantMailJobs` does for merchants: re-reads the member and the link,
-  skips a suspended or deleted member, a used, replaced or expired link and a missing or switched-off template, rotates the token on the same row and sends
+  skips a suspended or deleted member and a used, replaced or expired link (a missing or switched-off template does not stop the mail: the shipped text is sent,
+  decision 047), rotates the token on the same row and sends
   `<CONSOLE_BASE_URL>/set-password?token=<token>` as a secret that is never stored or logged. The link request counts on the `account-mail` limiter
   (five an hour per member, `429`); the temporary-password mode sends no mail.
 - **API keys by staff** (`ApiKeyAdminService`, `ApiKeyIssuer`): `POST /admin/clients/:id/api-keys` (`api_keys:create`; active merchants only, `409 NOT_ACTIVE`
@@ -516,7 +523,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 | Staff set a temporary password (`revokeSessions` on by default in the console) | ended when asked | all password links voided | session views dropped | `merchant.security_notice` |
 | Staff send a reset or invitation link | kept (or ended when asked) | the newer link voids the older | none | the link mail (rotated in the job) |
 | Staff reset 2FA | all ended | none | session views dropped | `merchant.security_notice` |
-| Staff change the email | kept | every open link voided | session and API key views dropped | verification (or invitation) to the new address |
+| Staff change the email (needs `clients:security`) | all ended | every open link voided | session and API key views dropped | `merchant.security_notice` to the address before the change; verification (or invitation) to the new address |
 | Suspension | all ended | every open link voided | session and API key views dropped | `merchant.suspended` (no reason) |
 | Reactivation | none (already ended) | none | API key views dropped | `merchant.reactivated` |
 | Approval | none | none | none | `merchant.approved` |
@@ -697,9 +704,13 @@ area:
 
 - money: `wallet:adjust`, `wallet:credit_limit`, `payments:approve`, `invoices:create`, `refunds:approve`, `commissions:approve`, `orders:reopen`;
 - other people's accounts: `clients:security`, `clients:update`, `customers:password`, `customers:update`, `staff:create`, `staff:update`,
-  `roles:create`, `roles:update` (the last four only up to the holder's own permissions);
+  `roles:create`, `roles:update` (the last four only up to the holder's own permissions); `clients:security` and `customers:password` also guard the change of
+  an account's email address (and `customers:password` the creation of an account with a temporary password), because the address is where the account's
+  sign-in and password links go (decision 047);
 - who reaches the console: `access:create`, `access:update`, `access:delete`, `sessions:revoke`;
-- personal data: `files:read`, `kyc:read`, `customers:privacy`;
+- personal data: `kyc:read` (identity documents), `payments:read` (payment receipts), `customers:read` (customers' addresses in every staff page),
+  `customers:privacy` (exports), `risk:decide` (IMEI digits), `reports:read` (the order export); `files:read` alone opens only files nothing uses yet and
+  public pictures (decision 047);
 - configuration that steers money or messages: `payments:gateways`, `suppliers:update`, `settings:update`, `currencies:update`,
   `notifications:update`, `system:manage`.
 
@@ -775,7 +786,7 @@ magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is 
 
 - `staff.invited`, `staff.password_reset` on the `notifications` queue (processors `StaffInvitedMailProcessor`, `StaffPasswordResetMailProcessor` in `StaffMailModule`,
   imported by the API and by `src/worker.module.ts`; feature 20). Same design and retry policy as the merchant mails (`StaffMailJobs`); a suspended or deleted member, a used or
-  expired link and a missing or switched-off template send nothing and leave no `queued` row. Listed in `docs/queues.md`.
+  expired link send nothing and leave no `queued` row; a missing or switched-off template does not stop the mail, the shipped text is sent (decision 047). Listed in `docs/queues.md`.
 
 - `client_group_promotion` on the `maintenance` queue, scheduler `client-group-promotion`, nightly at 03:30 UTC (`GroupPromotionModule`,
   imported by `src/worker.module.ts` only; processor `GroupPromotionProcessor`, use case `GroupPromotion`, pure decision

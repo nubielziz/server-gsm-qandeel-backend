@@ -20,6 +20,7 @@ import { AuditService, SettingsReader } from '../../platform';
 import type { Client, ClientStatus } from '../db/schema';
 import { type ClientChangeInput, kindOfClientChange } from '../domain/client-details';
 import {
+  MERCHANT_EMAIL_CHANGE_PERMISSION,
   canMoveClient,
   referralCode,
   statusChangePermission,
@@ -85,8 +86,8 @@ const MAX_CREATE_ATTEMPTS = 4;
  *
  * Second permissions (decision 046, checked here, not by the route's guard): a credit limit above zero at invitation needs
  * `wallet:credit_limit`; a group other than the default one at invitation, and a group move, need `groups:update`; suspending,
- * declining and reactivating need `clients:security`. A credit limit above the approval limit of adjustments at invitation needs an
- * Owner (decision 049).
+ * declining and reactivating need `clients:security`; changing the email address needs `clients:security` too (decision 047). A credit
+ * limit above the approval limit of adjustments at invitation needs an Owner (decision 049).
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/clients` sections)
  */
@@ -177,7 +178,8 @@ export class ClientAdminService {
    * @returns the updated merchant
    * @throws {AppError} `NOT_FOUND` (404), `INVALID_TRANSITION` (409), `EMAIL_TAKEN` (409), `RATE_LIMITED` (429, an email change),
    *   `VALIDATION_FAILED` (422 on `reason`, `status`, `groupId`, a detail key, or the first key of a second kind in the same call),
-   *   `FORBIDDEN` (403: a group move needs `groups:update`; a move into or out of `suspended` needs `clients:security`, decision 046)
+   *   `FORBIDDEN` (403: a group move needs `groups:update`; a move into or out of `suspended` needs `clients:security`, decision 046;
+   *   an email change needs `clients:security`, decision 047)
    */
   async update(caller: StaffPrincipal, id: number, input: UpdateClientInput): Promise<ClientView> {
     const kind = kindOfClientChange(input);
@@ -189,6 +191,8 @@ export class ClientAdminService {
       const existing = await findClientById(this.db.db, id);
       if (!existing) throw new AppError('NOT_FOUND', { detail: 'No merchant has this id.' });
       if (input.email.toLowerCase() !== existing.email.toLowerCase()) {
+        // Decision 047: checked before the limiter, so a refused call spends no point; `ClientDetailsEditor.apply` checks again on the locked row.
+        requirePermission(caller, MERCHANT_EMAIL_CHANGE_PERMISSION);
         await this.details.enforceEmailChangeLimit(id);
       }
     }

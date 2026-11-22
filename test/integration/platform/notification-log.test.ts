@@ -9,6 +9,7 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { createDraft } from '../../support/campaigns';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { maskEmail } from '@src/modules/platform';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -189,6 +190,52 @@ describe('GET /admin/notifications', () => {
     expect(ids((await list(`q=${encodeURIComponent('Daniel.Whitmore@Example.com')}`)).body)).toEqual([failed]);
     expect((await list('q=ops@zainmobilehub.example')).total).toBe(2);
     expect(ids((await list('q=low_bal')).body)).toEqual([lowTelegram, lowEmail]);
+  });
+
+  it("matches a customer's whole address only for callers with customers:read (decision 047)", async () => {
+    const { lowEmail, lowTelegram, failed } = await history();
+    const noCustomers = await adminWith(t, ['notifications:read']);
+    const withCustomers = await adminWith(t, ['notifications:read', 'customers:read']);
+    const idsFor = async (api: AdminApi, text: string) =>
+      ids((await api.get(`/admin/notifications?q=${encodeURIComponent(text)}`)).body);
+    // The customer's whole address finds nothing for a caller who may not read customers, and finds the row with customers:read.
+    expect(await idsFor(noCustomers, 'daniel.whitmore@example.com')).toEqual([]);
+    expect(await idsFor(withCustomers, 'Daniel.Whitmore@Example.com')).toEqual([failed]);
+    // A merchant's address (and the event) is searched for both.
+    expect(await idsFor(noCustomers, 'ops@zainmobilehub.example')).toEqual([lowTelegram, lowEmail]);
+    expect(await idsFor(noCustomers, 'order.completed')).toEqual([failed]);
+    expect((await noCustomers.get('/admin/notifications?q=daniel.whitmore%40example.com')).total).toBe(0);
+  });
+
+  it('shows the address a security notice went to, masked, not the current address of the account (decision 047)', async () => {
+    const { db } = await testDb();
+    const { merchant } = await history();
+    const [row] = await db
+      .insert(s.notifications)
+      .values({
+        recipientType: 'client',
+        recipientId: merchant,
+        channel: 'email',
+        event: 'merchant.security_notice',
+        status: 'sent',
+        sentAt: new Date(clock.nowMs()),
+        attempts: 1,
+        payload: {
+          variables: { change: 'the email address of your account was changed' },
+          to: 'old.address@example.com',
+        },
+        createdAt: new Date(clock.nowMs()),
+      })
+      .returning({ id: s.notifications.id });
+    const list = (await owner.get('/admin/notifications?event=merchant.security_notice')).body;
+    expect(list[0].recipient).toBe(maskEmail('old.address@example.com'));
+    expect(list[0].recipient).not.toContain('old.address');
+    const one = (await owner.get(`/admin/notifications/${row!.id}`)).body;
+    expect(one.recipient).toBe(maskEmail('old.address@example.com'));
+    expect(one.payload.to).toBe(maskEmail('old.address@example.com'));
+    // The rows without a named address still show the account's current address, masked.
+    const others = (await owner.get('/admin/notifications?event=wallet.low_balance&channel=email')).body;
+    expect(others[0].recipient).toBe(maskEmail('ops@zainmobilehub.example'));
   });
 
   it('filters by campaign and shows the campaign of each message (feature 23)', async () => {

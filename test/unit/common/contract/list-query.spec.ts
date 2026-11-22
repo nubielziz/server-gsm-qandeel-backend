@@ -1,7 +1,13 @@
 // Unit tests for listQuery (ALIGNMENT § 2): range, sort, search, filter operators, repeats, whitelists and extras.
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
-import { describeListQuery, isListQuerySchema, listQuery, listQueryParameters } from '@src/common/contract/list-query';
+import {
+  describeListQuery,
+  isListQuerySchema,
+  listQuery,
+  listQueryParameters,
+  withoutSearchFields,
+} from '@src/common/contract/list-query';
 
 const staff = listQuery({
   sorts: ['name', 'createdAt', 'id'],
@@ -275,5 +281,22 @@ describe('configuration checks', () => {
     expect(names).not.toContain('age');
     expect(listQueryParameters(staff).find((p) => p.name === 'status')?.repeatable).toBe(true);
     expect(listQueryParameters(staff).find((p) => p.name === 'createdAt_gte')?.repeatable).toBe(false);
+  });
+});
+
+describe('withoutSearchFields (decision 047)', () => {
+  it('drops the named fields and keeps the text, which may leave no field at all', () => {
+    const query = ok({ q: 'jane' });
+    expect(query.search).toEqual({ text: 'jane', fields: ['name', 'email'] });
+    expect(withoutSearchFields(query, ['email']).search).toEqual({ text: 'jane', fields: ['name'] });
+    expect(withoutSearchFields(query, ['email', 'name', 'other']).search).toEqual({ text: 'jane', fields: [] });
+    // The request itself is not changed, and everything else is carried over.
+    expect(query.search?.fields).toEqual(['name', 'email']);
+    expect(withoutSearchFields(query, ['email']).range).toBe(query.range);
+  });
+
+  it('returns a query without a search as it is', () => {
+    const query = ok({});
+    expect(withoutSearchFields(query, ['email'])).toBe(query);
   });
 });

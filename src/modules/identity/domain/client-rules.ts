@@ -41,6 +41,14 @@ export function statusChangePermission(from: ClientStatus, to: ClientStatus): 'c
   return from === 'suspended' || to === 'suspended' ? 'clients:security' : null;
 }
 
+/**
+ * The permission an email change of a merchant needs besides `clients:update`.
+ *
+ * Why: decision 047: the address is where the account's sign-in and password links go, so changing it is an account-security action,
+ * like a temporary password.
+ */
+export const MERCHANT_EMAIL_CHANGE_PERMISSION = 'clients:security' as const;
+
 /** The shortest and longest suspension reason (the console's dialog and the endpoint doc). */
 export const SUSPEND_REASON_LENGTH = { min: 3, max: 140 } as const;
 

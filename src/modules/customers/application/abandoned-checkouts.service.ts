@@ -1,7 +1,8 @@
 // AbandonedCheckoutsService: the use case of `GET /admin/checkouts/abandoned` (feature 19): the list with the consent and recovery verdicts.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import type { JsonObject, ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
+import { type JsonObject, type ParsedListQuery, withoutSearchFields } from '../../../common/contract';
 import { DbService } from '../../../infra/db';
 import { StorefrontServices } from '../../catalog';
 import { SettingsReader } from '../../platform';
@@ -55,17 +56,24 @@ export class AbandonedCheckoutsService {
   /**
    * Lists one page of abandoned checkouts.
    *
-   * @param query the parsed list request
+   * @param query the parsed list request; for a caller who may not read customers' addresses `q` finds no row (the address is the only
+   *   search field, decision 047)
+   * @param contact what the caller may see of a customer's address (`customerContactOf`)
    * @returns the rows and the exact total
    */
-  async list(query: ParsedListQuery<AbandonedSort>): Promise<{ rows: AbandonedCheckoutView[]; total: number }> {
+  async list(
+    query: ParsedListQuery<AbandonedSort>,
+    contact: CustomerContact,
+  ): Promise<{ rows: AbandonedCheckoutView[]; total: number }> {
     const delayMinutes = await this.settings.integer(
       ABANDONED_MINUTES_KEY,
       DEFAULT_ABANDONED_MINUTES,
       ABANDONED_MINUTES_BOUNDS,
     );
     const now = this.clock.now();
-    const { rows, total } = await listAbandoned(this.db.db, query, { now, delayMinutes });
+    // Decision 047: the rows carry the address masked, but `q` matches the full one; only a caller who may read customers searches it.
+    const searched = contact === 'full' ? query : withoutSearchFields(query, ['email']);
+    const { rows, total } = await listAbandoned(this.db.db, searched, { now, delayMinutes });
     const names = await this.services.names(this.db.db, [...new Set(rows.map((row) => row.session.serviceId))]);
     return {
       rows: rows.map((row) =>

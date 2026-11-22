@@ -7,7 +7,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { MetricsService } from '../../../infra/metrics';
-import type { Notification } from '../db/schema';
+import type { Notification, NotificationAudience } from '../db/schema';
 import { renderCampaign } from './campaigns/campaign-render';
 import { marketingUnsubscribeToken } from './campaigns/unsubscribe-token';
 import { findCampaign } from './campaigns/campaign.repository';
@@ -17,7 +17,7 @@ import { DeliveryError } from './delivery-error';
 import { describeChanges } from './digest-rules';
 import { MailTransport } from './mail-transport';
 import { choiceFor } from './merchant-preferences';
-import { NotificationEventRegistry } from './notification-events';
+import { type NotificationEventDefinition, NotificationEventRegistry } from './notification-events';
 import { OPERATIONS_RECIPIENT_ID, asString, itemsOf, operationsRecipientOf, variablesOf } from './notification-payload';
 import {
   type NotificationPayload,
@@ -30,7 +30,7 @@ import {
 import { findTemplateFor } from './notification-template.repository';
 import { type Recipient, recipientOf } from './notification-foreign-reads';
 import { TelegramClient } from './telegram-client';
-import { emailHtml, renderMessage } from './template-rules';
+import { type TemplateFields, emailHtml, protectedTemplateProblems, renderMessage } from './template-rules';
 
 /** Where a job stands in its retries: BullMQ's `attemptsMade + 1` and the queue's `attempts`. */
 export interface AttemptContext {
@@ -55,6 +55,11 @@ export type DeliveryOutcome =
  * rendered, sent, retried and logged the same way. A send is at least once (decision 033): the row is marked sent only after the
  * channel accepted the message, with a guarded update, so a job that runs twice cannot record two sends; a crash between the
  * channel's answer and that update sends once more, and the `Message-ID` (derived from the row id) lets a provider that dedupes drop it.
+ *
+ * Templates (decision 047): a stored template is used only when it is switched on and, for an event whose link is a credential, keeps the
+ * link rules (and, for a security email, still holds what the email protects); otherwise the shipped text of the event is used with a
+ * warning, and an event without a shipped text fails permanently. A security email is never stopped by a missing or switched-off template:
+ * the shipped text goes out. A row of an event that names its address (the notice of an email change) goes to that address.
  *
  * Failures: a permanent refusal (no template, no address, a recipient who is suspended or turned the message off since the row was
  * made, a mailbox that does not exist, a chat that blocked the bot) marks the row `failed` at once; a transient one records the attempt and throws, so the queue retries with its backoff (5 attempts, 30 s,
@@ -158,11 +163,11 @@ export class NotificationDelivery {
   private async send(row: Notification, secrets: Readonly<Record<string, string>>): Promise<void> {
     if (row.campaignId !== null) return this.sendCampaign(row, row.campaignId);
     const payload = row.payload as NotificationPayload;
+    const operations = row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID;
     // An alert's message has no person's row: it goes to the address or chat the configuration named when the row was made.
-    const recipient =
-      row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID
-        ? operationsRecipientOf(payload)
-        : await recipientOf(this.db.db, row.recipientType, row.recipientId);
+    const recipient = operations
+      ? operationsRecipientOf(payload)
+      : await recipientOf(this.db.db, row.recipientType, row.recipientId);
     if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
     const definition = this.registry.get(row.event, recipient.audience);
     if (!definition)
@@ -178,13 +183,7 @@ export class NotificationDelivery {
     }
     // Feature 23: an event without a template (a campaign's test) carries its text in the payload.
     if (definition.templated === false) return this.sendInline(row, recipient, payload);
-    const template = await findTemplateFor(this.db.db, {
-      event: row.event,
-      channel: row.channel,
-      audience: recipient.audience,
-    });
-    if (!template) throw new DeliveryError('There is no template for this message.', { permanent: true });
-    if (!template.isActive) throw new DeliveryError('The template is switched off.', { permanent: true });
+    const template = await this.templateFor(row, recipient.audience, definition);
 
     const variables: Record<string, string> = { ...variablesOf(payload), ...secrets };
     const items = itemsOf(payload);
@@ -195,13 +194,15 @@ export class NotificationDelivery {
     const message = renderMessage(template, variables);
 
     if (row.channel === 'email') {
+      // Decision 047: the notice of an email change goes to the address before the change, which the row names.
+      const named = !operations && definition.namedAddress === true && asString(payload.to) ? payload.to : undefined;
+      const address = named ?? recipient.email;
       // Only an operations message (alerts) may name several addresses, joined by commas; a person has one address.
-      const operations = row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID;
-      const addresses = operations ? recipient.email.split(',') : [recipient.email];
-      if (!addresses.every((address) => /^[^\s@,]+@[^\s@,]+$/.test(address)))
+      const addresses = operations ? address.split(',') : [address];
+      if (!addresses.every((one) => /^[^\s@,]+@[^\s@,]+$/.test(one)))
         throw new DeliveryError('The recipient has no email address.', { permanent: true });
       await this.mail.send({
-        to: recipient.email,
+        to: address,
         subject: message.subject,
         text: message.text,
         // An event mail is the template as rendered: plain text with no HTML part, or the markup of an HTML template.
@@ -213,6 +214,53 @@ export class NotificationDelivery {
     const chatId = asString(payload.chatId) ? payload.chatId : recipient.telegramChatId;
     if (!chatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
     await this.telegram.sendMessage(chatId, message.text);
+  }
+
+  /**
+   * Picks the text of a row: its stored template, or the shipped text of the event.
+   *
+   * Why: decision 047: a link email never uses a stored template that breaks the link rules, a security email (a notice included) never uses
+   * one that breaks its rules or hides what it protects, and never loses its text to a missing, switched-off or emptied template; the choice
+   * is made again at the moment of sending (the template may have changed since the row was made). The log never holds the template text or a
+   * rendered value.
+   *
+   * @param row the notification
+   * @param audience the recipient's audience
+   * @param definition the registered event
+   * @returns the stored template, or the shipped text standing in for it
+   * @throws {DeliveryError} permanent: no usable stored template and no shipped text
+   */
+  private async templateFor(
+    row: Notification,
+    audience: NotificationAudience,
+    definition: NotificationEventDefinition,
+  ): Promise<TemplateFields> {
+    const key = { event: row.event, channel: row.channel, audience };
+    const stored = await findTemplateFor(this.db.db, key);
+    let reason: string;
+    let broken = false;
+    if (stored?.isActive) {
+      const problems = protectedTemplateProblems(definition, stored);
+      if (problems.length === 0) return stored;
+      broken = true;
+      const rules = problems.filter((problem) => problem.code !== 'security_placeholder');
+      reason =
+        rules.length > 0
+          ? `template ${stored.id} breaks the ${definition.secretLink === true ? 'link' : 'notice'} rules (${rules.map((problem) => problem.code).join(', ')})`
+          : `template ${stored.id} lacks ${definition.secretLink === true ? '{{link}}' : '{{change}}'}`;
+    } else {
+      reason = stored ? 'the stored template is switched off' : 'no stored template';
+    }
+    const fallback = definition.security === true || broken ? this.registry.builtInTemplate(key) : undefined;
+    if (fallback) {
+      this.logger.warn(
+        `Notification ${row.id} (${row.event}, ${row.channel}, ${audience}): ${reason}; the shipped text is used (decision 047).`,
+      );
+      return fallback;
+    }
+    if (broken) throw new DeliveryError('The template breaks the rules of a link mail.', { permanent: true });
+    if (!stored) throw new DeliveryError('There is no template for this message.', { permanent: true });
+    throw new DeliveryError('The template is switched off.', { permanent: true });
   }
 
   /**

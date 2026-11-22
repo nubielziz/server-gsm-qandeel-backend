@@ -22,7 +22,8 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
-  staff = await adminWith(t, ['risk:read']);
+  // Decision 047: the digits need risk:decide; the tests of the decrypted IMEI use a role that holds it.
+  staff = await adminWith(t, ['risk:read', 'risk:decide']);
 });
 afterAll(async () => {
   await resetDb();
@@ -169,6 +170,34 @@ describe('GET /admin/imei-checks', () => {
     expect(await ids('APPLE')).toEqual([IMEI_A]);
     expect(await ids('353890113898499')).toEqual([]);
     expect(await ids('100%')).toEqual([]);
+  });
+
+  it('shows the digits only to holders of risk:decide; others read the TAC and bullets, and still find the row by the IMEI (decision 047)', async () => {
+    const { db } = world;
+    await db.insert(s.tacCatalog).values({ tac: '35389011', brand: 'Apple', model: 'A2633', source: 'test' });
+    const stored = await insertImeiCheck(t, db, IMEI_A, { tac: '35389011' });
+    const unknownTac = await insertImeiCheck(t, db, IMEI_B, { tac: null });
+    const readOnly = await adminWith(t, ['risk:read']);
+    const listed = async (api: AdminApi, query = '') =>
+      (await api.get(`/admin/imei-checks${query}`)).body.map((row: { imei: string }) => row.imei);
+
+    // A caller with risk:read only reads the stored mask on the list and on the single read.
+    expect(await listed(readOnly)).toEqual(['•'.repeat(15), '35389011•••••••']);
+    expect((await readOnly.get(`/admin/imei-checks/${stored.id}`)).body.imei).toBe('35389011•••••••');
+    expect((await readOnly.get(`/admin/imei-checks/${unknownTac.id}`)).body.imei).toBe('•'.repeat(15));
+    // The other fields, the filters and the search by IMEI stay: the row is found by the number it does not show.
+    expect((await readOnly.get(`/admin/imei-checks/${stored.id}`)).body).toMatchObject({
+      brand: 'Apple',
+      model: 'iPhone 13',
+    });
+    expect(await listed(readOnly, `?q=${IMEI_A}`)).toEqual(['35389011•••••••']);
+    expect(await listed(readOnly, '?source=pre_order')).toEqual([]);
+    // The digits are in no answer of that caller.
+    expect(JSON.stringify((await readOnly.get('/admin/imei-checks')).body)).not.toContain(IMEI_A);
+    // A holder of risk:decide (here through the staff of these tests) reads the digits, on both reads.
+    expect(await listed(staff)).toEqual([IMEI_B, IMEI_A]);
+    expect((await staff.get(`/admin/imei-checks/${stored.id}`)).body.imei).toBe(IMEI_A);
+    expect(await listed(await adminWith(t, ['risk:*']), `?q=${IMEI_A}`)).toEqual([IMEI_A]);
   });
 
   it('does not match an erased IMEI by its number any more', async () => {

@@ -2,6 +2,8 @@
 // notification can be about. Built-in events are data here; later features add their own with NotificationEventRegistry.register.
 import { Injectable } from '@nestjs/common';
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
+import { DEFAULT_TEMPLATES, type DefaultTemplate } from './default-templates';
+import type { TemplateKey } from './notification-template.repository';
 
 /**
  * One event a notification can be about, for one audience.
@@ -40,6 +42,27 @@ export interface NotificationEventDefinition {
    * a template for it, and the delivery renders it without one. Default true.
    */
   readonly templated?: boolean;
+  /**
+   * An email that protects an account: a sign-in, password, invitation or verification link, or a security notice. Its template
+   * cannot be switched off or deleted, and a missing or switched-off template does not stop it: the shipped text is sent.
+   *
+   * Why: decision 047: a security email must arrive, whatever staff did to its template; only its words may change.
+   */
+  readonly security?: boolean;
+  /**
+   * Its `link` placeholder carries a credential: a template of it must pass `linkTemplateProblems`, when it is saved and when a mail
+   * is written.
+   *
+   * Why: decision 047: the link is a one-time credential, so the template keeps it inside the message and away from any other address.
+   */
+  readonly secretLink?: boolean;
+  /**
+   * A row of it may name the address it goes to (`NotificationInput.to`), which the delivery uses instead of the recipient's current
+   * address.
+   *
+   * Why: decision 047: the notice of an email change goes to the address before the change, which is no longer the account's.
+   */
+  readonly namedAddress?: boolean;
 }
 
 /** Sample data of the merchant events: what a made-up merchant would see. */
@@ -70,6 +93,8 @@ const CUSTOMER_SAMPLE = {
   reason: 'The code was delivered and works.',
   link: 'https://shop.example.com/sign-in?token=example',
   expiresAt: '2026-11-01 11:00 UTC',
+  change:
+    'the email address of your account was changed, so this address no longer receives the emails of your account',
 } as const;
 
 /**
@@ -171,14 +196,18 @@ export const TELEGRAM_LINKED_EVENT = 'telegram.linked';
 /** The event of the bot's answer when a merchant sends `/stop`. */
 export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
 
+/** The customer event of the notice about a staff change of the account's email (decision 047): it goes to the address before the change. */
+export const CUSTOMER_SECURITY_NOTICE_EVENT = 'customer.security_notice';
+
 /** The staff event of the hourly message about following retail prices (feature 31, plan section 6.4). */
 export const RETAIL_PRICES_FOLLOWED_EVENT = 'retail.prices_followed';
 
 /**
  * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
  * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
- * (their producers are the storefront money flows of feature 16, support and recovery), the two staff events of the alerts (feature 12b)
- * and the staff event of the shop's following retail prices (feature 31).
+ * (their producers are the storefront money flows of feature 16, support and recovery), the two staff events of the alerts (feature 12b),
+ * the staff event of the shop's following retail prices (feature 31) and the customer's security notice (`customer.security_notice`, decision 047:
+ * it goes to the address an account had before a staff change of its email).
  *
  * Why: "a registry entry for each, with its default template seeded" (brief 12a); the customer events exist so the console's
  * Customer emails tab can be edited before the storefront sends them.
@@ -191,6 +220,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['merchantName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   merchantEvent({
     key: 'merchant.password_reset',
@@ -199,6 +230,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['merchantName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   merchantEvent({
     key: 'merchant.invited',
@@ -207,6 +240,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['merchantName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   merchantEvent({
     key: 'wallet.low_balance',
@@ -333,6 +368,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
       description: 'Support answered a ticket.',
       channels: ['email'],
       variables: ['customerName', 'ticketNumber', 'subject', 'message', 'link'],
+      secretLink: true,
     }),
     sample: {
       customerName: 'Daniel',
@@ -349,6 +385,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     description: 'A checkout was started and not paid.',
     channels: ['email'],
     variables: ['customerName', 'device', 'link'],
+    secretLink: true,
   }),
   customerEvent({
     key: 'payment.failed',
@@ -373,6 +410,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['customerName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   customerEvent({
     key: 'customer.password_reset',
@@ -381,6 +420,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['customerName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   customerEvent({
     key: 'customer.invited',
@@ -390,6 +431,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['customerName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
   }),
   customerEvent({
     key: 'customer.email_verification',
@@ -399,6 +442,19 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     channels: ['email'],
     variables: ['customerName', 'link', 'expiresAt'],
     transactional: true,
+    security: true,
+    secretLink: true,
+  }),
+  customerEvent({
+    key: CUSTOMER_SECURITY_NOTICE_EVENT,
+    label: 'Security change by support',
+    description:
+      'Staff changed something security-relevant on the customer’s account; for an email change it goes to the address before the change.',
+    channels: ['email'],
+    variables: ['customerName', 'change'],
+    transactional: true,
+    security: true,
+    namedAddress: true,
   }),
 ];
 
@@ -423,13 +479,19 @@ export function isEventKey(text: string): boolean {
  * Why: see {@link NotificationEventDefinition}. The API validates template writes and preferences against it and the worker
  * reads the variables of an event from it; both load the same class, so both see the same list. A feature that adds events
  * of its own calls `register` in `onModuleInit`.
+ *
+ * It also holds the shipped texts (`registerBuiltInTemplates`): decision 047: a security email falls back to its shipped text when no usable
+ * stored template exists, and a link email never uses a stored template that breaks the link rules. The platform registers its own
+ * list here; identity and support register theirs at boot, in the API and in the worker, next to their events.
  */
 @Injectable()
 export class NotificationEventRegistry {
   private readonly events = new Map<string, NotificationEventDefinition>();
+  private readonly builtInTemplates = new Map<string, DefaultTemplate>();
 
   constructor() {
     for (const definition of BUILT_IN_EVENTS) this.register(definition);
+    this.registerBuiltInTemplates(DEFAULT_TEMPLATES);
   }
 
   /**
@@ -445,11 +507,40 @@ export class NotificationEventRegistry {
     if (!isEventKey(definition.key))
       throw new Error(`"${definition.key}" is not an event key (lower-case words and dots).`);
     if (definition.channels.length === 0) throw new Error(`The event "${definition.key}" needs at least one channel.`);
+    // Decision 047: a security email is sent to suspended recipients too; an event that is not transactional could be skipped.
+    if (definition.security === true && !definition.transactional)
+      throw new Error(`The security event "${definition.key}" must be transactional.`);
     for (const name of definition.variables) {
       if (definition.sample[name] === undefined)
         throw new Error(`The variable "${name}" of "${definition.key}" has no sample.`);
     }
     this.events.set(id, definition);
+  }
+
+  /**
+   * Adds shipped texts: the fallback of the security emails and of the link emails whose stored template breaks the link rules.
+   *
+   * Why: decision 047: the shipped text of an event, channel and audience is the one text the system can always send.
+   *
+   * @param templates the shipped templates of a module
+   * @throws {Error} when a text of the same event, channel and audience was registered before (a boot-time mistake)
+   */
+  registerBuiltInTemplates(templates: readonly DefaultTemplate[]): void {
+    for (const template of templates) {
+      const id = `${template.audience}:${template.event}:${template.channel}`;
+      if (this.builtInTemplates.has(id)) throw new Error(`The shipped template "${id}" is already registered.`);
+      this.builtInTemplates.set(id, template);
+    }
+  }
+
+  /**
+   * Finds the shipped text of an event, channel and audience.
+   *
+   * @param key the event, channel and audience
+   * @returns the shipped template, or `undefined` when the event has none (`checkout.abandoned`)
+   */
+  builtInTemplate(key: TemplateKey): DefaultTemplate | undefined {
+    return this.builtInTemplates.get(`${key.audience}:${key.event}:${key.channel}`);
   }
 
   /**

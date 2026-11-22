@@ -2,6 +2,7 @@
 // funnel. Thin: the rules live in the services.
 import { Body, Controller, Query } from '@nestjs/common';
 import { type BodyOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { AbandonedCheckoutsService } from '../application/abandoned-checkouts.service';
 import { CheckoutRecoveryService } from '../application/checkout-recovery.service';
 import { FunnelReportService } from '../application/funnel-report.service';
@@ -28,12 +29,16 @@ export class GrowthController {
    * Lists abandoned checkouts.
    *
    * @param query the parsed list request
+   * @param staff the signed-in staff member (decides whether `q` may match the address, decision 047)
    * @returns the rows and the total
    * @route GET /admin/checkouts/abandoned
    */
   @Route(listAbandonedCheckouts)
-  list(@Query() query: QueryOf<typeof listAbandonedCheckouts>): Promise<ResultOf<typeof listAbandonedCheckouts>> {
-    return this.abandoned.list(query);
+  list(
+    @Query() query: QueryOf<typeof listAbandonedCheckouts>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listAbandonedCheckouts>> {
+    return this.abandoned.list(query, customerContactOf(staff));
   }
 
   /**

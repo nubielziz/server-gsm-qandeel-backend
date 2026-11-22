@@ -272,6 +272,19 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
     `method_type` is `bank` or `usdt` as `topupMethodOf` reads from the driver); a shop order is still paid by an automatic gateway with a driver or from the store
     balance. None of the eight driver names has code behind it (`driverFor` answers `undefined`), so a later feature adds each automatic driver and flips `available`.
 
+### A storefront customer's address in staff answers (decision 047)
+
+Outside the Customers pages the staff answers of this module show a storefront customer's address masked (`ja•••@example.com`, `customerEmailIn` of
+`src/common/customer-contact.ts`) unless the caller holds `customers:read`; identity's `customerContactOf(caller)` decides it and each controller passes the
+`contact` down. Rule A, the address fields: payments (list, single read and the answers of approve and reject; `PaymentViews.build(db, rows, contact)`), invoices
+(list, single read and issue), and the customer wallets list. Their searches follow it: `q` of payments and wallets matches a customer's name only
+(`findCustomerIdsByNameOrEmail(db, pattern, matchEmail)`), and refunds and disputes drop `customer.email` from the search fields (`withoutSearchFields`). Rule B, a
+name never falls back to the full address (for every caller): refunds, disputes and the storefront payments report label a customer without a name by the masked address
+(`customerNameForStaff`). The evidence pack that staff read (`DisputeViews.pack(db, dispute)`, masked by default) writes the masked address into its delivery line;
+`DisputeService.submitEvidence` builds the pack with `'full'`, so the text sent to the card gateway (and the stored evidence PDF) names the buyer in full, as before.
+`PaymentReviewService.approve` and `reject` and `InvoiceAdminService.issue` take the staff member first (decision 049) and work out the `contact` of their answer
+from it (`customerContactOf(caller)`); they take no `contact` parameter.
+
 ## Public API (`index.ts`)
 
 `MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`, `commissionReversal` (feature 11),

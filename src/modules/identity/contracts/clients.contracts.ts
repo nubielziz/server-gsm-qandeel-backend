@@ -225,9 +225,10 @@ export const updateClient = defineRoute({
     '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, ' +
     '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
     'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
-    'password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five ' +
-    'email changes of one merchant in an hour). ' +
-    'Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046).',
+    'password) to the new address; it ends every session of the merchant and emails a security notice to the address before the ' +
+    'change (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). ' +
+    'Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046); ' +
+    'an email change also needs `clients:security` (decision 047).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

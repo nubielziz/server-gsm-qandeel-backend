@@ -131,7 +131,7 @@ export class MerchantMailJobs {
     if (earlier === 'sent') return { sent: false, skipped: 'already_sent' };
     if (earlier === 'failed') return { sent: false, skipped: 'already_failed' };
 
-    // A mail with no template to send (missing or switched off) must not rotate a token nobody will receive.
+    // A mail that cannot be written must not rotate a token nobody will receive (a security email always has its shipped text, decision 047).
     const probe = await this.notifications.check(this.db.db, {
       event: MERCHANT_MAIL_EVENTS[kind],
       recipient: { type: 'client', id: client.id },

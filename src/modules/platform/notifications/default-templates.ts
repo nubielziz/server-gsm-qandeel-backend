@@ -1,7 +1,7 @@
 // The default templates of the merchant events, the customer account mails, the alert messages, the storefront order, payment and
 // refund mails and the hourly message about following retail prices (platform module, features 12a, 14b, 12b, 16 and 31): English
-// email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018 (storefront mails) and 0044 (retail
-// prices) insert the same rows into a fresh database (a spec finds every row of this file in them); the console edits them afterwards.
+// email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018 (storefront mails), 0044 (retail
+// prices) and 0054 (the customer's security notice, decision 047) insert the same rows into a fresh database (a spec finds every row of this file in them); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template: one per event, channel and audience (decision 039: templates have no language). */
@@ -212,6 +212,13 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     audience: 'customer',
     subject: 'Confirm your email address',
     body: `Hi {{customerName}},\n\nThe email address of your GSM account was changed to this one. Confirm it here:\n\n{{link}}\n\n${LINK_FOOTER} If this is not your account, you can ignore this email.`,
+  },
+  {
+    event: 'customer.security_notice',
+    channel: 'email',
+    audience: 'customer',
+    subject: 'A security change on your account',
+    body: 'Hi {{customerName}},\n\nOur support team made this change to your account: {{change}}.\n\nIf you did not ask for it, reply to this email or contact our support team at once.',
   },
   {
     event: 'order.received',

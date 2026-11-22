@@ -48,7 +48,8 @@ describe.skipIf(!frontendPresent)('the growth seed through the console routes', 
   beforeEach(async () => {
     await resetDb();
     await clearIdentityCaches(t);
-    admin = await adminWith(t, ['growth:*', 'reports:growth']);
+    // Decision 047: the console's search by address works for roles that also read customers.
+    admin = await adminWith(t, ['growth:*', 'reports:growth', 'customers:read']);
   });
 
   it('writes the 238 checkouts of the demo with its ids and one guest customer per address, and a second run adds nothing', async () => {

@@ -221,7 +221,7 @@ export const openSupportTicketFile = defineRoute({
   key: 'GET /admin/support-tickets/:id/files/:fileId',
   summary: 'Download an attachment of a ticket',
   description:
-    `${DOWNLOAD_RULES} Any attachment of a message of this ticket, internal notes included; anything else is \`404\`. A requester's ` +
+    `${DOWNLOAD_RULES} Any attachment of a message of this ticket, internal notes included; anything else is \`404\`. A file that is also a KYC document or a payment receipt writes the same audit row as \`GET /admin/files/:id\` (decision 047); the permission stays \`support:read\`. A requester's ` +
     'file is not virus-scanned (the console says so).',
   tags: ['support-tickets'],
   surface: 'admin',

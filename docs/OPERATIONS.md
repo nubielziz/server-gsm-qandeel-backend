@@ -392,6 +392,16 @@ ORDER BY receipt_file_id LIMIT 20;
 After step 4, open the Currencies page: a rate older than 48 hours is not offered in the shop until you confirm it (enter
 the rate; the same number restarts its age), or set `fx.max_rate_age_hours` (`PATCH /admin/settings`, 1 to 720 hours; only an Owner changes it).
 
+### Release with decision 047 (staff data access)
+
+The migration (`0054`) adds one template row (the customer's security notice) and changes no table. After the upgrade: security emails whose template was
+switched off or deleted are sent again with the shipped text; a link-email template that holds another web address, an image or another tag outside the
+short list is not used, and neither is the template of a security email (a notice included) that carries a `style` or `hidden` attribute or keeps its
+`{{link}}` or `{{change}}` only inside a tag or a comment (the shipped text goes out: check the Customer emails tab and the log warnings that say "the shipped text is used");
+roles that held `files:read` without the permission of a file's kind, or `orders:read` without `reports:read`, lose those downloads; roles that held `customers:create`
+without `customers:password` can no longer create an account with a temporary password; and staff without `customers:read` see masked
+customer addresses outside the Customers pages. Give the roles the second permissions they need (section 7, "Staff roles").
+
 ## 4. Backups and the restore drill
 
 What is saved, every night: a full dump of the database (`pg_dump`, custom format, as the owner role), encrypted with `age` for the public key
@@ -842,6 +852,9 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Only people trusted like an Owner hold `*`; other admins hold what they need (they can give, and act on, only what they hold).
 - [ ] The permissions in `src/modules/identity/README.md` ("Permissions that reach owner-level power") are given on purpose; an area
       wildcard such as `wallet:*` includes them.
+- [ ] Second permissions of decision 047: `clients:security` or `customers:password` for email changes, `reports:read` for the order export, `risk:decide` for IMEI
+      digits, the read permission of each file kind (`kyc:read`, `payments:read`, `disputes:read`, `orders:read`, `invoices:read`, `support:read`, `customers:privacy`);
+      `customers:read` shows customers' full addresses.
 - [ ] A second active Owner account on another role exists: it is what lets the last-Owner rule allow a change to the Owner role or to
       the other Owner's account, and it is the way back when one Owner is lost.
 - [ ] The "owners keep access" rule looks at the addresses of an Owner's live sessions and last sign-in. Each Owner keeps a lasting allow

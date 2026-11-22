@@ -110,6 +110,8 @@ the order, and blocks the checkout's email for guest checkouts only when that em
 account, or an email verified before the order); otherwise it blocks the email everywhere, as on a signed-in order, which adds no card. The
 limited entry's reason ends with " (guest checkouts only)" and the audit row says `emailScope: 'guest checkouts'`.
 
+The held order's `customer.email` is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047; `RiskQueueService.get(contact)`).
+
 ### The rules (feature 18)
 
 `GET`/`PUT /admin/risk/rules`: eight rules (`domain/risk-rules.ts`), stored in `settings`: seven under the key `riskRules`, and
@@ -140,7 +142,8 @@ block keeps `ON CONFLICT DO NOTHING`: it leaves a limited entry as it is, and th
 ### The IMEI log and its erasure (feature 18)
 
 `GET /admin/imei-checks` decrypts `imei_enc` for the answer, and shows `tac` plus bullets once it was erased (15 bullets when the TAC is
-unknown). `q` is a 15-digit IMEI (matched through the hash), a TAC (8 to 14 digits) or a prefix of it, or text for the brand and model.
+unknown). Decision 047: only a caller who holds `risk:decide` (`IMEI_DIGITS_PERMISSION`, the people who decide held orders) gets the digits; for a caller with `risk:read`
+only, on the list and on the single read, nothing is decrypted and `imei` is the stored mask (the TAC and bullets). The other columns, the filters and the search by IMEI stay. `q` is a 15-digit IMEI (matched through the hash), a TAC (8 to 14 digits) or a prefix of it, or text for the brand and model.
 Erasure sets `imei_enc`, `imei_hash` and `cached_until` to NULL together (the table's check keeps the first two together): the nightly
 `data_retention` job does it by age (`imeiRetentionDays`, default 180, `0` means do not keep), and `ImeiErasure.forCustomer` does it for a
 customer being anonymized (it also clears the stored address).

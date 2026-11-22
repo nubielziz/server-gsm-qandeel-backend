@@ -6,6 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
+import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService } from '../../platform';
 import { ADMIN_ORDER_CSV_COLUMNS, CLIENT_ORDER_CSV_COLUMNS, csvHeader, csvLine } from '../domain/order-csv';
 import {
@@ -20,6 +21,14 @@ import { ORDER_AUDIT_ACTIONS } from './order-actions.service';
 
 /** The most rows one export may hold (RESOLUTIONS orders-suppliers-19). */
 export const MAX_EXPORT_ROWS = 100_000;
+
+/**
+ * The permission the staff export needs besides `orders:read`.
+ *
+ * Why: decision 047: the file holds buyers, inputs and costs of up to 100,000 orders; the reports permission already shows revenue, cost and
+ * profit per service, supplier and merchant, so it is the existing permission for bulk order data.
+ */
+export const ORDER_EXPORT_PERMISSION = 'reports:read';
 
 /** How many rows one batch of the stream reads. */
 export const EXPORT_BATCH_SIZE = 1_000;
@@ -57,6 +66,8 @@ function cursorOf(row: OrderRow, query: ExportQuery): ExportCursor {
  * table and never repeats a row when orders arrive meanwhile). The merchant's file has its own columns and never carries cost or
  * supplier.
  *
+ * Decision 047: the staff export also needs `reports:read`, checked first, so a refused export counts nothing and writes no audit row.
+ *
  * Side effects: one `audit_logs` row for a staff export (in its own short transaction, before the first byte); reads only otherwise.
  */
 @Injectable()
@@ -70,11 +81,13 @@ export class OrderExportService {
   /**
    * Starts the staff export.
    *
+   * @param caller the signed-in staff member (the permissions of the role)
    * @param query the filters, search and sort of the list (the range is ignored: every matching row is exported)
    * @returns the stream and the row count
-   * @throws {AppError} `VALIDATION_FAILED` (422) when more than 100,000 orders match
+   * @throws {AppError} `VALIDATION_FAILED` (422) when more than 100,000 orders match; `FORBIDDEN` (403) without `reports:read`
    */
-  async forStaff(query: ExportQuery): Promise<OrderExport> {
+  async forStaff(caller: PermissionHolder, query: ExportQuery): Promise<OrderExport> {
+    requirePermission(caller, ORDER_EXPORT_PERMISSION);
     const now = this.clock.now();
     const scope: OrderScope = { kind: 'staff' };
     const rows = await this.checkedCount(scope, query, now);

@@ -3,6 +3,7 @@
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { NotificationEventRegistry } from '../platform';
 import { SUPPORT_EVENTS } from './application/support-events';
+import { SUPPORT_DEFAULT_TEMPLATES } from './application/support-templates';
 import { TicketMailRoutes } from './application/ticket-mail-outbox';
 
 /**
@@ -11,15 +12,17 @@ import { TicketMailRoutes } from './application/ticket-mail-outbox';
  * Why: `NotificationDelivery` looks the event of a row up in the registry of its own process, so the worker must know the support events
  * too: this module is imported by `SupportModule` (API) and by the worker's root module.
  *
- * Side effects: adds three events to the registry at boot.
+ * Side effects: adds three events to the registry at boot, and the shipped texts of the support mails (decision 047: the fallback of a link
+ * mail whose stored template breaks the link rules).
  */
 @Injectable()
 export class SupportEventRegistration implements OnModuleInit {
   constructor(private readonly registry: NotificationEventRegistry) {}
 
-  /** Adds the events. */
+  /** Adds the events and their shipped texts. */
   onModuleInit(): void {
     for (const definition of SUPPORT_EVENTS) this.registry.register(definition);
+    this.registry.registerBuiltInTemplates(SUPPORT_DEFAULT_TEMPLATES);
   }
 }
 

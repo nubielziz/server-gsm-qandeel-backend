@@ -1,5 +1,13 @@
 // Unit tests of the notification event registry (feature 12a): the built-in events are consistent and extendable.
 import { describe, expect, it } from 'bun:test';
+import { IDENTITY_MAIL_EVENTS } from '@src/modules/identity/application/mail/identity-mail-events';
+import { IDENTITY_DEFAULT_TEMPLATES } from '@src/modules/identity/application/mail/identity-templates';
+import { DEFAULT_TEMPLATES } from '@src/modules/platform/notifications/default-templates';
+import { protectedTemplateProblems } from '@src/modules/platform/notifications/template-rules';
+import { BROADCAST_EVENTS } from '@src/modules/platform/notifications/campaigns/broadcast-events';
+import { CUSTOMER_WALLET_EVENTS } from '@src/modules/money/application/customer-wallet-notifications';
+import { SUPPORT_EVENTS } from '@src/modules/support/application/support-events';
+import { SUPPORT_DEFAULT_TEMPLATES } from '@src/modules/support/application/support-templates';
 import {
   BUILT_IN_EVENTS,
   CUSTOMER_MAIL_EVENT_KEYS,
@@ -108,6 +116,8 @@ describe('the built-in events', () => {
       ['checkout.abandoned', false],
       ['payment.failed', true],
       ['refund.declined', true],
+      // Decision 047: the notice of a staff change of an account's email, which goes to the address before the change.
+      ['customer.security_notice', true],
     ]);
   });
 
@@ -150,5 +160,142 @@ describe('NotificationEventRegistry.register', () => {
     expect(() => registry.register({ ...extra, key: 'Alert' })).toThrow(/not an event key/);
     expect(() => registry.register({ ...extra, variables: ['title', 'more'] })).toThrow(/no sample/);
     expect(() => registry.register({ ...extra, channels: [] })).toThrow(/at least one channel/);
+  });
+});
+
+describe('the flags of decision 047', () => {
+  /** A registry the way both processes build it at boot: the platform's events and texts, then identity's and support's. */
+  const booted = (): NotificationEventRegistry => {
+    const registry = new NotificationEventRegistry();
+    for (const definition of [...IDENTITY_MAIL_EVENTS, ...SUPPORT_EVENTS]) registry.register(definition);
+    registry.registerBuiltInTemplates(IDENTITY_DEFAULT_TEMPLATES);
+    registry.registerBuiltInTemplates(SUPPORT_DEFAULT_TEMPLATES);
+    return registry;
+  };
+  const keysOf = (registry: NotificationEventRegistry, flag: 'security' | 'secretLink' | 'namedAddress'): string[] =>
+    registry
+      .list()
+      .filter((definition) => definition[flag] === true)
+      .map((definition) => `${definition.audience}:${definition.key}`)
+      .sort();
+
+  it('marks exactly the link mails of accounts, the ticket links and the reminder as secret links', () => {
+    expect(keysOf(booted(), 'secretLink')).toEqual(
+      [
+        'merchant:merchant.email_verification',
+        'merchant:merchant.password_reset',
+        'merchant:merchant.invited',
+        'customer:customer.magic_link',
+        'customer:customer.password_reset',
+        'customer:customer.invited',
+        'customer:customer.email_verification',
+        'staff:staff.invited',
+        'staff:staff.password_reset',
+        'customer:support.reply',
+        'customer:support.ticket_received',
+        'customer:support.csat_survey',
+        'customer:checkout.abandoned',
+      ].sort(),
+    );
+    // The merchant's reply link is a portal page by id, and the retail message links a console page.
+    const registry = booted();
+    expect(registry.get('support.reply', 'merchant')?.secretLink).toBeUndefined();
+    expect(registry.get('retail.prices_followed', 'staff')?.secretLink).toBeUndefined();
+  });
+
+  it('marks exactly the account link mails and the two notices as security mails, and the two notices as named-address events', () => {
+    const registry = booted();
+    expect(keysOf(registry, 'security')).toEqual(
+      [
+        'merchant:merchant.email_verification',
+        'merchant:merchant.password_reset',
+        'merchant:merchant.invited',
+        'customer:customer.magic_link',
+        'customer:customer.password_reset',
+        'customer:customer.invited',
+        'customer:customer.email_verification',
+        'staff:staff.invited',
+        'staff:staff.password_reset',
+        'merchant:merchant.security_notice',
+        'customer:customer.security_notice',
+      ].sort(),
+    );
+    expect(keysOf(registry, 'namedAddress')).toEqual([
+      'customer:customer.security_notice',
+      'merchant:merchant.security_notice',
+    ]);
+    // Ticket mails and the reminder stay switchable.
+    for (const [key, audience] of [
+      ['support.ticket_received', 'customer'],
+      ['support.csat_survey', 'customer'],
+      ['support.reply', 'customer'],
+      ['checkout.abandoned', 'customer'],
+    ] as const) {
+      expect(registry.get(key, audience)?.security, key).toBeUndefined();
+    }
+  });
+
+  it('has a shipped email text for every security event, and every shipped text of a security or secret-link event keeps the rules of its event', () => {
+    const registry = booted();
+    for (const definition of registry.list()) {
+      const shipped = registry.builtInTemplate({
+        event: definition.key,
+        channel: 'email',
+        audience: definition.audience,
+      });
+      const label = `${definition.audience}:${definition.key}`;
+      if (definition.security === true) expect(shipped, label).toBeDefined();
+      if ((definition.secretLink === true || definition.security === true) && shipped !== undefined)
+        expect(protectedTemplateProblems(definition, shipped), label).toEqual([]);
+    }
+    // The reminder is the one link event without a shipped text (no marketing words the owner never chose).
+    expect(
+      registry.builtInTemplate({ event: 'checkout.abandoned', channel: 'email', audience: 'customer' }),
+    ).toBeUndefined();
+  });
+
+  it('classifies every event whose variables include a link: a secret link, or one of two named exceptions', () => {
+    // Every registration site of the application: the platform's own events, identity's, support's, the customer wallet's and the campaigns'.
+    const registry = booted();
+    for (const definition of [...CUSTOMER_WALLET_EVENTS, ...BROADCAST_EVENTS]) registry.register(definition);
+    // A link that is a page by id, not a credential: the merchant's support reply (a portal page) and the staff notice about followed prices.
+    const NOT_SECRET = ['merchant:support.reply', 'staff:retail.prices_followed'];
+    const withLink = registry.list().filter((definition) => definition.variables.includes('link'));
+    const label = (definition: { audience: string; key: string }) => `${definition.audience}:${definition.key}`;
+    expect(
+      withLink
+        .filter((definition) => definition.secretLink !== true)
+        .map(label)
+        .sort(),
+    ).toEqual(NOT_SECRET);
+    // The other way round: a flag that names a link the event does not have would be a mistake.
+    for (const definition of registry.list().filter((event) => event.secretLink === true)) {
+      expect(definition.variables, label(definition)).toContain('link');
+    }
+    expect(withLink.length).toBeGreaterThan(NOT_SECRET.length);
+  });
+
+  it('refuses a shipped text registered twice', () => {
+    const registry = new NotificationEventRegistry();
+    expect(() => registry.registerBuiltInTemplates([DEFAULT_TEMPLATES[0]!])).toThrow(/already registered/);
+  });
+
+  it('refuses a security event that is not transactional', () => {
+    const registry = new NotificationEventRegistry();
+    expect(() =>
+      registry.register({
+        key: 'alert.opened',
+        audience: 'staff',
+        label: 'x',
+        description: 'x',
+        channels: ['email'],
+        variables: [],
+        sample: {},
+        transactional: false,
+        defaultEmail: true,
+        defaultTelegram: false,
+        security: true,
+      }),
+    ).toThrow(/must be transactional/);
   });
 });

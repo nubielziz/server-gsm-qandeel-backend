@@ -123,7 +123,8 @@ describe('GET /admin/support-tickets', () => {
         channel: 'web',
         requesterType: 'customer',
         requesterId: customer.id,
-        requester: { name: 'Victor Hale', email: 'victor@mail.example' },
+        // Decision 047: the support role of these tests does not hold customers:read, so the customer's address comes masked.
+        requester: { name: 'Victor Hale', email: 'vi•••@mail.example' },
         orderId: null,
         category: 'delay',
         priority: 'normal',
@@ -272,8 +273,10 @@ describe('GET /admin/support-tickets', () => {
       subject: 'Merchant',
       token: null,
     });
-    const subjects = async (query: string) =>
-      (await admin.get(`/admin/support-tickets?${query}&_sort=id&_order=asc`)).body.map(
+    // Decision 047: a customer's address is searched by a caller who may read customers.
+    const reader = await supportStaff(t, ['support:*', 'customers:read']);
+    const subjects = async (query: string, api = reader) =>
+      (await api.get(`/admin/support-tickets?${query}&_sort=id&_order=asc`)).body.map(
         (row: { subject: string }) => row.subject,
       );
     expect(await subjects('q=no.name.guest@mail')).toEqual(['Nameless']);
@@ -281,13 +284,78 @@ describe('GET /admin/support-tickets', () => {
     expect(await subjects('q=NO.NAME.GUEST')).toEqual(['Nameless']);
     expect(await subjects('q=%40other.example')).toEqual(['Named']);
     expect(await subjects('q=zain-hub.example')).toEqual(['Merchant']);
-    // The inbox shows the guest by their address, and that is what the search finds.
-    const shown = (await admin.get('/admin/support-tickets?q=no.name.guest')).body[0];
-    expect(shown.requester).toEqual({ name: 'no.name.guest@mail.example', email: 'no.name.guest@mail.example' });
+    // The inbox shows the guest by the masked address as the name; the address itself is in full for this caller.
+    const shown = (await reader.get('/admin/support-tickets?q=no.name.guest')).body[0];
+    expect(shown.requester).toEqual({ name: 'no•••@mail.example', email: 'no.name.guest@mail.example' });
     // An anonymized customer's address is never shown, so it is not searchable either.
     expect(await subjects('q=erased-1')).toEqual([]);
+    // The caller without customers:read finds a merchant by its address but no customer by theirs.
+    expect(await subjects('q=no.name.guest', admin)).toEqual([]);
+    expect(await subjects('q=%40other.example', admin)).toEqual([]);
+    expect(await subjects('q=zain-hub.example', admin)).toEqual(['Merchant']);
   });
 
+  it('masks a customer requester’s address without customers:read and keeps a merchant’s (list, one, update; decision 047)', async () => {
+    const { db } = await testDb();
+    const customer = await insertCustomer(db, { name: 'Victor Hale', email: 'victor@mail.example' });
+    const merchant = await insertClient(db, { name: 'Zain Mobile Hub', email: 'desk@zain-hub.example' });
+    const mine = await insertSupportTicket(db, { requesterId: customer.id, subject: 'Mine', status: 'open' });
+    const theirs = await insertSupportTicket(db, {
+      requesterType: 'client',
+      requesterId: merchant.id,
+      subject: 'Theirs',
+      status: 'open',
+      token: null,
+    });
+    const reader = await supportStaff(t, ['support:*', 'customers:read']);
+    const requesters = async (api: typeof admin) => {
+      const list = (await api.get('/admin/support-tickets?_sort=id&_order=asc')).body;
+      const one = (await api.get(`/admin/support-tickets/${mine.id}`)).body;
+      const updated = (await api.patch(`/admin/support-tickets/${mine.id}`, { priority: 'high' })).body;
+      return {
+        list: list.map((row: { requester: { email: string } }) => row.requester.email),
+        one: one.requester.email,
+        updated: updated.requester.email,
+        merchant: (await api.get(`/admin/support-tickets/${theirs.id}`)).body.requester.email,
+      };
+    };
+    expect(await requesters(admin)).toEqual({
+      list: ['vi•••@mail.example', 'desk@zain-hub.example'],
+      one: 'vi•••@mail.example',
+      updated: 'vi•••@mail.example',
+      merchant: 'desk@zain-hub.example',
+    });
+    expect(await requesters(reader)).toEqual({
+      list: ['victor@mail.example', 'desk@zain-hub.example'],
+      one: 'victor@mail.example',
+      updated: 'victor@mail.example',
+      merchant: 'desk@zain-hub.example',
+    });
+  });
+
+  it('labels a customer without a name by the masked address for every caller: the requester and the author of their message (decision 047)', async () => {
+    const { db } = await testDb();
+    const guest = await insertCustomer(db, { name: '', email: 'no.name.guest@mail.example' });
+    const ticket = await insertSupportTicket(db, { requesterId: guest.id, subject: 'Nameless', status: 'open' });
+    await insertSupportMessage(db, ticket.id, {
+      authorType: 'customer',
+      authorId: guest.id,
+      body: 'Where is my unlock?',
+      createdAt: ago(HOUR),
+    });
+    const reader = await supportStaff(t, ['support:*', 'customers:read']);
+    for (const api of [admin, reader]) {
+      const one = (await api.get(`/admin/support-tickets/${ticket.id}`)).body;
+      expect(one.requester.name).toBe('no•••@mail.example');
+      expect(one.messages.map((message: { authorName: string }) => message.authorName)).toEqual(['no•••@mail.example']);
+      const row = (await api.get('/admin/support-tickets')).body[0];
+      expect(row.requester.name).toBe('no•••@mail.example');
+    }
+    // No answer of a caller without customers:read holds the full address anywhere.
+    expect(JSON.stringify((await admin.get(`/admin/support-tickets/${ticket.id}`)).body)).not.toContain(
+      'no.name.guest',
+    );
+  });
   it('pages with the exact total (the console’s one-row count calls)', async () => {
     const { db, customer } = await waitingTicket();
     for (let n = 0; n < 4; n += 1) await insertSupportTicket(db, { requesterId: customer.id, subject: `More ${n}` });

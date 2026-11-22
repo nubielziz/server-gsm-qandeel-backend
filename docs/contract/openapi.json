@@ -12748,7 +12748,7 @@
     },
     "/admin/checkouts/abandoned": {
       "get": {
-        "description": "Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a case-insensitive contains over the FULL email while rows carry it masked. `canRecover=true` is the \"Needs a reminder\" filter and uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server).",
+        "description": "Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a case-insensitive contains over the FULL email while rows carry it masked, for callers who hold `customers:read`; for others a `q` finds no row (decision 047). `canRecover=true` is the \"Needs a reminder\" filter and uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server).",
         "operationId": "getAdminCheckoutsAbandoned",
         "parameters": [
           {
@@ -21203,7 +21203,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). `status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` (declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: `422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, `taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no password) to the new address; the merchant stays signed in (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046).",
+        "description": "One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). `status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` (declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: `422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, `taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no password) to the new address; it ends every session of the merchant and emails a security notice to the address before the change (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046); an email change also needs `clients:security` (decision 047).",
         "operationId": "patchAdminClientsById",
         "parameters": [
           {
@@ -41206,7 +41206,7 @@
     },
     "/admin/customer-wallets": {
       "get": {
-        "description": "Every customer wallet, most recently changed first. `state` filters positive, zero, negative or frozen wallets (repeat it for several); `q` searches the customer’s name and email.",
+        "description": "Every customer wallet, most recently changed first. `state` filters positive, zero, negative or frozen wallets (repeat it for several); `q` searches the customer’s name and email (the email only for callers who hold `customers:read`, decision 047).",
         "operationId": "getAdminCustomerWallets",
         "parameters": [
           {
@@ -41306,7 +41306,8 @@
                             "type": "string"
                           },
                           "email": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                           },
                           "status": {
                             "type": "string"
@@ -42471,7 +42472,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and the customer must change at the first sign-in. `409 EMAIL_TAKEN` when another customer, guest or account, has the email; `422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else `422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
+        "description": "Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and the customer must change at the first sign-in; that mode also needs `customers:password` (`403 FORBIDDEN` without it, nothing is created; decision 047). `409 EMAIL_TAKEN` when another customer, guest or account, has the email; `422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else `422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminCustomers",
         "parameters": [],
         "requestBody": {
@@ -44228,7 +44229,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent: `name`, `email`, `country`, `phone`, `internalNotes` (at most 300 characters). A different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email. A country change derives the currency again (storefront currency of the country, else USD); a new country with no current tax rate is `422` on `country`. `409 ANONYMIZED` for an anonymized customer, `409 EMAIL_TAKEN`, `422` on `email` for a blocklisted address. Audited with the old and new values.",
+        "description": "Changes the fields sent: `name`, `email`, `country`, `phone`, `internalNotes` (at most 300 characters). A different email clears `emailVerifiedAt` and voids every link already sent to the customer (they went to the old address); for an account it also sends a new verification email; for an account the change also needs `customers:password` (`403 FORBIDDEN`), ends every session of the customer and emails a security notice to the address before the change (decision 047). A country change derives the currency again (storefront currency of the country, else USD); a new country with no current tax rate is `422` on `country`. `409 ANONYMIZED` for an anonymized customer, `409 EMAIL_TAKEN`, `422` on `email` for a blocklisted address. Audited with the old and new values.",
         "operationId": "patchAdminCustomersById",
         "parameters": [
           {
@@ -45085,7 +45086,7 @@
     },
     "/admin/customers/{id}/account": {
       "post": {
-        "description": "Turns a customer who bought as a guest into an account; the earlier orders already belong to the customer. `mode` `reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once (`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
+        "description": "Turns a customer who bought as a guest into an account; the earlier orders already belong to the customer. `mode` `reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once (`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email. `temporary_password` also needs `customers:password` (`403 FORBIDDEN`, decision 047).",
         "operationId": "postAdminCustomersByIdAccount",
         "parameters": [
           {
@@ -56182,7 +56183,7 @@
     },
     "/admin/disputes": {
       "get": {
-        "description": "Disputes (chargebacks) with their evidence deadline, without the evidence pack. Sorted by `evidenceDueAt` ascending (the default) the disputes that still need an answer come first, soonest deadline first, then the others by deadline. `q` searches the id, the reason code and the customer name and email.",
+        "description": "Disputes (chargebacks) with their evidence deadline, without the evidence pack. Sorted by `evidenceDueAt` ascending (the default) the disputes that still need an answer come first, soonest deadline first, then the others by deadline. `q` searches the id, the reason code and the customer name and email (the email only for callers who hold `customers:read`, decision 047).",
         "operationId": "getAdminDisputes",
         "parameters": [
           {
@@ -56453,7 +56454,7 @@
                         ]
                       },
                       "evidence": {
-                        "description": "The pack the server built; the single read only.",
+                        "description": "The pack the server built; the single read only. The delivery line shows the customer’s address masked; the text sent to the gateway carries it in full (decision 047).",
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -57031,7 +57032,7 @@
                       ]
                     },
                     "evidence": {
-                      "description": "The pack the server built; the single read only.",
+                      "description": "The pack the server built; the single read only. The delivery line shows the customer’s address masked; the text sent to the gateway carries it in full (decision 047).",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -57714,7 +57715,7 @@
                       ]
                     },
                     "evidence": {
-                      "description": "The pack the server built; the single read only.",
+                      "description": "The pack the server built; the single read only. The delivery line shows the customer’s address masked; the text sent to the gateway carries it in full (decision 047).",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -58515,7 +58516,7 @@
                       ]
                     },
                     "evidence": {
-                      "description": "The pack the server built; the single read only.",
+                      "description": "The pack the server built; the single read only. The delivery line shows the customer’s address masked; the text sent to the gateway carries it in full (decision 047).",
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -59186,7 +59187,7 @@
     },
     "/admin/files/{id}": {
       "get": {
-        "description": "Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the stored file name, `Cache-Control: no-store`). `:id` is `orders.inputFileId`, `result.fileId` of an order or a KYC document. The console renders a plain link, so an error is shown raw in the new tab: the `detail` is readable.",
+        "description": "Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the stored file name, `Cache-Control: no-store`). `:id` is `orders.inputFileId`, `result.fileId` of an order, a KYC document, a payment receipt, an invoice PDF, dispute evidence or a ticket attachment. Besides `files:read` the caller needs the read permission of every record that uses the file: `kyc:read` (a KYC document), `payments:read` (a payment receipt), `disputes:read` (dispute evidence), `orders:read` (an order’s input or result), `invoices:read` (an invoice PDF), `support:read` (a ticket attachment), `customers:privacy` (a data export); `403 FORBIDDEN` names the first one missing. A file nothing uses yet, and a public picture, need only `files:read`. Every download of a KYC document or a payment receipt writes an audit row (decision 047). The console renders a plain link, so an error is shown raw in the new tab: the `detail` is readable.",
         "operationId": "getAdminFilesById",
         "parameters": [
           {
@@ -62179,7 +62180,7 @@
     },
     "/admin/imei-checks": {
       "get": {
-        "description": "Every IMEI check, free or before an order. Filters: `checkType`, `status`, `source`. `q` is an IMEI (15 digits: matched through the keyed hash), a TAC (8 to 14 digits, or a shorter prefix) or text matched against the brand and the model. Sort by `model`, `checkType`, `status` or `createdAt` (default, newest first). The IMEI is decrypted for the answer; after the retention period or an anonymization it is erased and shown as the TAC and bullets.",
+        "description": "Every IMEI check, free or before an order. Filters: `checkType`, `status`, `source`. `q` is an IMEI (15 digits: matched through the keyed hash), a TAC (8 to 14 digits, or a shorter prefix) or text matched against the brand and the model. Sort by `model`, `checkType`, `status` or `createdAt` (default, newest first). The IMEI is decrypted for callers who hold `risk:decide` (decision 047); after the retention period or an anonymization it is erased and shown as the TAC and bullets, and callers without `risk:decide` always read the mask.",
         "operationId": "getAdminImeiChecks",
         "parameters": [
           {
@@ -62370,7 +62371,7 @@
                       },
                       "imei": {
                         "type": "string",
-                        "description": "The 15 digits while they are stored; after an erasure the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown)."
+                        "description": "The 15 digits for callers who hold `risk:decide` while they are stored; otherwise, and after an erasure, the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown) (decision 047)."
                       },
                       "brand": {
                         "type": "string"
@@ -62944,7 +62945,7 @@
                     },
                     "imei": {
                       "type": "string",
-                      "description": "The 15 digits while they are stored; after an erasure the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown)."
+                      "description": "The 15 digits for callers who hold `risk:decide` while they are stored; otherwise, and after an erasure, the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown) (decision 047)."
                     },
                     "brand": {
                       "type": "string"
@@ -69169,7 +69170,8 @@
                                 "type": "string"
                               },
                               "email": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                               }
                             },
                             "required": [
@@ -69830,7 +69832,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             }
                           },
                           "required": [
@@ -70464,7 +70467,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             }
                           },
                           "required": [
@@ -91005,7 +91009,7 @@
                       },
                       "isActive": {
                         "type": "boolean",
-                        "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it."
+                        "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it, except for the emails that protect accounts (sign-in, password, invitation and verification links, security notices): they cannot be switched off (`409 LOCKED`), and a row of one that was switched off before is not used: the shipped text is sent (decision 047)."
                       },
                       "sentLast30Days": {
                         "type": "integer",
@@ -91367,7 +91371,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a template for an event, channel and audience. The event must be registered for the audience (`event` is 422 otherwise) and offer the channel; the placeholders of the subject and body come only from the event’s variables (422 on `subject` or `body`); an email needs a subject. One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`. Writes the audit entry `created notification template`.",
+        "description": "Adds a template for an event, channel and audience. The event must be registered for the audience (`event` is 422 otherwise) and offer the channel; the placeholders of the subject and body come only from the event’s variables (422 on `subject` or `body`); an email needs a subject. One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`. For an email whose `{{link}}` is a one-time credential (the sign-in, password, invitation and verification links, the ticket links, the checkout reminder) the subject cannot hold `{{link}}`, and the body uses it only on its own (at the start of a line or after a space) or as the whole `href` of one link with a text, holds no other web address, and uses only text formatting tags (422 on `subject` or `body`, codes `link_*`; decision 047). The markup must be read the same way by the text part of the email: an attribute value holds no character reference outside the short list the check decodes, no `<`, `>`, double quote or the word `href`, an end tag closes with `>` right after its name, and a lone `<` in an HTML message is written `&lt;`. An email that protects accounts keeps `{{link}}` (or, for a security notice, `{{change}}`) in the text of its body, outside every tag, attribute and comment (422 on `body`, code `security_placeholder`; decision 047); the body of every such email, a notice included, is also checked for comments, declarations and tags outside the list, refuses a `style` or `hidden` attribute (`link_*` codes), and the body of a notice holds no `href`. Writes the audit entry `created notification template`.",
         "operationId": "postAdminNotificationTemplates",
         "parameters": [],
         "requestBody": {
@@ -91476,7 +91480,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it."
+                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it, except for the emails that protect accounts (sign-in, password, invitation and verification links, security notices): they cannot be switched off (`409 LOCKED`), and a row of one that was switched off before is not used: the shipped text is sent (decision 047)."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -91731,6 +91735,96 @@
               }
             }
           },
+          "409": {
+            "description": "LOCKED: This item is locked and cannot be changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "LOCKED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "LOCKED": {
+                    "summary": "This item is locked and cannot be changed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/locked",
+                      "title": "This item is locked and cannot be changed.",
+                      "status": 409,
+                      "code": "LOCKED",
+                      "detail": "This item is locked and cannot be changed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "422": {
             "description": "VALIDATION_FAILED: Some fields are not valid.",
             "content": {
@@ -91905,7 +91999,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it."
+                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it, except for the emails that protect accounts (sign-in, password, invitation and verification links, security notices): they cannot be switched off (`409 LOCKED`), and a row of one that was switched off before is not used: the shipped text is sent (decision 047)."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -92257,7 +92351,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes `subject`, `body` and `isActive` (the Send switch sends only `{ isActive }`). `event`, `channel` and `audience` are fixed after create: sending one with another value is 422 on that field; the same value is accepted. The event must be registered for the audience (`event` is 422 otherwise) and offer the channel; the placeholders of the subject and body come only from the event’s variables (422 on `subject` or `body`); an email needs a subject. One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`. Writes the audit entry `edited notification template`, or `turned on notification` / `turned off notification` (the demo’s phrases) when the request carries only the switch. A request that changes nothing still writes its entry (every staff write is audited).",
+        "description": "Changes `subject`, `body` and `isActive` (the Send switch sends only `{ isActive }`). `event`, `channel` and `audience` are fixed after create: sending one with another value is 422 on that field; the same value is accepted. The event must be registered for the audience (`event` is 422 otherwise) and offer the channel; the placeholders of the subject and body come only from the event’s variables (422 on `subject` or `body`); an email needs a subject. One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`. For an email whose `{{link}}` is a one-time credential (the sign-in, password, invitation and verification links, the ticket links, the checkout reminder) the subject cannot hold `{{link}}`, and the body uses it only on its own (at the start of a line or after a space) or as the whole `href` of one link with a text, holds no other web address, and uses only text formatting tags (422 on `subject` or `body`, codes `link_*`; decision 047). The markup must be read the same way by the text part of the email: an attribute value holds no character reference outside the short list the check decodes, no `<`, `>`, double quote or the word `href`, an end tag closes with `>` right after its name, and a lone `<` in an HTML message is written `&lt;`. An email that protects accounts keeps `{{link}}` (or, for a security notice, `{{change}}`) in the text of its body, outside every tag, attribute and comment (422 on `body`, code `security_placeholder`; decision 047); the body of every such email, a notice included, is also checked for comments, declarations and tags outside the list, refuses a `style` or `hidden` attribute (`link_*` codes), and the body of a notice holds no `href`. Writes the audit entry `edited notification template`, or `turned on notification` / `turned off notification` (the demo’s phrases) when the request carries only the switch. A request that changes nothing still writes its entry (every staff write is audited).",
         "operationId": "patchAdminNotificationTemplatesById",
         "parameters": [
           {
@@ -92366,7 +92460,7 @@
                     },
                     "isActive": {
                       "type": "boolean",
-                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it."
+                      "description": "Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing stands in for it, except for the emails that protect accounts (sign-in, password, invitation and verification links, security notices): they cannot be switched off (`409 LOCKED`), and a row of one that was switched off before is not used: the shipped text is sent (decision 047)."
                     },
                     "sentLast30Days": {
                       "type": "integer",
@@ -92711,6 +92805,96 @@
               }
             }
           },
+          "409": {
+            "description": "LOCKED: This item is locked and cannot be changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "LOCKED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "LOCKED": {
+                    "summary": "This item is locked and cannot be changed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/locked",
+                      "title": "This item is locked and cannot be changed.",
+                      "status": 409,
+                      "code": "LOCKED",
+                      "detail": "This item is locked and cannot be changed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "422": {
             "description": "VALIDATION_FAILED: Some fields are not valid.",
             "content": {
@@ -92821,7 +93005,7 @@
         "x-gsm-surface": "admin"
       },
       "delete": {
-        "description": "Deletes the template: that event, channel and audience send nothing until a template is added again. Writes the audit entry `deleted notification template`.",
+        "description": "Deletes the template: that event, channel and audience send nothing until a template is added again. Writes the audit entry `deleted notification template`. An email that protects accounts cannot be deleted (`409 LOCKED`, decision 047).",
         "operationId": "deleteAdminNotificationTemplatesById",
         "parameters": [
           {
@@ -93116,6 +93300,96 @@
                       "status": 404,
                       "code": "NOT_FOUND",
                       "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "LOCKED: This item is locked and cannot be changed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "LOCKED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "LOCKED": {
+                    "summary": "This item is locked and cannot be changed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/locked",
+                      "title": "This item is locked and cannot be changed.",
+                      "status": 409,
+                      "code": "LOCKED",
+                      "detail": "This item is locked and cannot be changed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -93552,7 +93826,7 @@
     },
     "/admin/notifications": {
       "get": {
-        "description": "Every message the system sent or tried to send, newest first. `recipient` is masked by the server. `status` is `queued`, `sent` or `failed`; `error` says why a message failed. `recipientType` is `staff`, `client` (a merchant) or `customer`. The list leaves out `payload`. `q` is a case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case). `campaignId` shows the messages of one notification campaign.",
+        "description": "Every message the system sent or tried to send, newest first. `recipient` is masked by the server. `status` is `queued`, `sent` or `failed`; `error` says why a message failed. `recipientType` is `staff`, `client` (a merchant) or `customer`. The list leaves out `payload`. `q` is a case-insensitive contains over the event; it matches the recipient’s address only when it equals the whole address (any letter case); a customer’s address only for callers who hold `customers:read` (decision 047). `campaignId` shows the messages of one notification campaign. A security notice about an email change shows the address it went to (the one before the change).",
         "operationId": "getAdminNotifications",
         "parameters": [
           {
@@ -95117,7 +95391,8 @@
                                 "type": "string"
                               },
                               "email": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                               }
                             },
                             "required": [
@@ -96562,7 +96837,7 @@
     },
     "/admin/orders/export": {
       "get": {
-        "description": "Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with `Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is `422` (\"Too many rows (N); narrow the filters (max 100000)\"). The file is streamed. Every export writes an audit row. It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.",
+        "description": "Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with `Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is `422` (\"Too many rows (N); narrow the filters (max 100000)\"). The file is streamed. Every export writes an audit row. It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row. Besides `orders:read` it needs `reports:read` (`403 FORBIDDEN`, decision 047); a refused export writes no audit row.",
         "operationId": "getAdminOrdersExport",
         "parameters": [],
         "responses": {
@@ -97159,7 +97434,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             }
                           },
                           "required": [
@@ -108915,7 +109191,7 @@
     },
     "/admin/payments": {
       "get": {
-        "description": "The wallet top-ups only: the list always filters `purpose=topup`, so `purpose=order` answers an empty list. Newest first. `q` searches the gateway reference, the merchant name and the storefront customer’s name and email. `owner` keeps merchant deposits or customer store balance top-ups (feature 21); `customerId` one customer’s.",
+        "description": "The wallet top-ups only: the list always filters `purpose=topup`, so `purpose=order` answers an empty list. Newest first. `q` searches the gateway reference, the merchant name and the storefront customer’s name and email (the email only for callers who hold `customers:read`, decision 047). `owner` keeps merchant deposits or customer store balance top-ups (feature 21); `customerId` one customer’s.",
         "operationId": "getAdminPayments",
         "parameters": [
           {
@@ -109287,7 +109563,8 @@
                                 "type": "string"
                               },
                               "email": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                               },
                               "walletBalance": {
                                 "anyOf": [
@@ -110115,7 +110392,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             },
                             "walletBalance": {
                               "anyOf": [
@@ -111023,7 +111301,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             },
                             "walletBalance": {
                               "anyOf": [
@@ -112087,7 +112366,8 @@
                               "type": "string"
                             },
                             "email": {
-                              "type": "string"
+                              "type": "string",
+                              "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                             },
                             "walletBalance": {
                               "anyOf": [
@@ -125804,7 +126084,7 @@
     },
     "/admin/refunds": {
       "get": {
-        "description": "Refunds of storefront customers only (a merchant refund goes through its order). Newest first. The page counts of the console are this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the customer name and email (a guest has only an email). `amount` sorts numerically.",
+        "description": "Refunds of storefront customers only (a merchant refund goes through its order). Newest first. The page counts of the console are this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the customer name and email (a guest has only an email); the email only for callers who hold `customers:read` (decision 047). A customer without a name is shown by the masked address. `amount` sorts numerically.",
         "operationId": "getAdminRefunds",
         "parameters": [
           {
@@ -141831,7 +142111,8 @@
                                 "type": "string"
                               },
                               "email": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047)."
                               },
                               "country": {
                                 "type": "string"
@@ -184155,7 +184436,7 @@
     },
     "/admin/support-tickets": {
       "get": {
-        "description": "Tickets with their requester, assignee and reply timers. Filters: `status` (repeat the key for several; `pending` is the stored `pending_customer`), `late=true` (a reply is awaited and overdue), `assigneeId`, `requesterType` (`customer` or `client`) and `requesterId` (with a type: the tickets of one customer). `q` is a case-insensitive contains over the number, the subject, the requester's name and the requester's email address. Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the tab counts with `_start=0&_end=1`.",
+        "description": "Tickets with their requester, assignee and reply timers. Filters: `status` (repeat the key for several; `pending` is the stored `pending_customer`), `late=true` (a reply is awaited and overdue), `assigneeId`, `requesterType` (`customer` or `client`) and `requesterId` (with a type: the tickets of one customer). `q` is a case-insensitive contains over the number, the subject, the requester's name and the requester's email address (a customer's only for callers who hold `customers:read`, decision 047). Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the tab counts with `_start=0&_end=1`.",
         "operationId": "getAdminSupportTickets",
         "parameters": [
           {
@@ -184353,9 +184634,10 @@
                         "properties": {
                           "name": {
                             "type": "string",
-                            "description": "'Deleted customer' after an anonymize; the address when a guest gave no name."
+                            "description": "'Deleted customer' after an anonymize; the masked address when a customer gave no name (decision 047)."
                           },
                           "email": {
+                            "description": "A merchant's address in full; a storefront customer's is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
                             "type": [
                               "string",
                               "null"
@@ -185087,9 +185369,10 @@
                       "properties": {
                         "name": {
                           "type": "string",
-                          "description": "'Deleted customer' after an anonymize; the address when a guest gave no name."
+                          "description": "'Deleted customer' after an anonymize; the masked address when a customer gave no name (decision 047)."
                         },
                         "email": {
+                          "description": "A merchant's address in full; a storefront customer's is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
                           "type": [
                             "string",
                             "null"
@@ -186034,9 +186317,10 @@
                       "properties": {
                         "name": {
                           "type": "string",
-                          "description": "'Deleted customer' after an anonymize; the address when a guest gave no name."
+                          "description": "'Deleted customer' after an anonymize; the masked address when a customer gave no name (decision 047)."
                         },
                         "email": {
+                          "description": "A merchant's address in full; a storefront customer's is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
                           "type": [
                             "string",
                             "null"
@@ -187570,7 +187854,7 @@
     },
     "/admin/support-tickets/{id}/files/{fileId}": {
       "get": {
-        "description": "Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the stored file name, `Cache-Control: no-store`). Open it in a new tab; never show the file inline. Any attachment of a message of this ticket, internal notes included; anything else is `404`. A requester's file is not virus-scanned (the console says so).",
+        "description": "Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the stored file name, `Cache-Control: no-store`). Open it in a new tab; never show the file inline. Any attachment of a message of this ticket, internal notes included; anything else is `404`. A file that is also a KYC document or a payment receipt writes the same audit row as `GET /admin/files/:id` (decision 047); the permission stays `support:read`. A requester's file is not virus-scanned (the console says so).",
         "operationId": "getAdminSupportTicketsByIdFilesByFileId",
         "parameters": [
           {

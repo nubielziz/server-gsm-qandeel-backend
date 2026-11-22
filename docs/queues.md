@@ -174,10 +174,13 @@ Sends emails and Telegram messages.
     active (suspended, blocked, anonymized) or the link was used, voided or has expired, rotates the link's token on its `auth_tokens` row
     and sends the mail (`<STORE_BASE_URL>/sign-in`, `/set-password` or `/verify-email` with `?token=`) through `NotificationService.sendNow`
     with the clear link as a secret that is never stored or logged. One `notifications` row per mail (`outbox-<event id>:email`, with its
-    attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived.
+    attempts); a repeat after a delivered mail is skipped before it can spoil the link that arrived. A missing or switched-off template does not
+    stop these emails: the shipped text is sent, and so it is when the stored text breaks the link rules or the rules of a security email (decision 047). A staff change of an
+    account's email also writes a security notice (`merchant.security_notice`, or `customer.security_notice`): a `notification.send` row that names the address
+    it goes to (`payload.to`, the address before the change).
   - `staff.invited`, `staff.password_reset` (identity, `src/modules/identity/jobs/staff-mail.processors.ts`, feature 20, handled by `StaffMailJobs`): the invitation and the
     set-password link of a staff member. Built like the merchant mails: the job re-reads the member and the link, sends nothing when the member is gone or suspended, the link
-    was used, voided or has expired, or its template is missing or switched off (and abandons the `queued` row of an earlier attempt), rotates the link's token on its `auth_tokens`
+    was used, voided or has expired (a missing or switched-off template does not stop the mail: the shipped text is sent, decision 047), rotates the link's token on its `auth_tokens`
     row and sends the mail (`<CONSOLE_BASE_URL>/set-password?token=`) through `NotificationService.sendNow` with the clear link as a secret that is never stored or logged. One
     `notifications` row per mail (`outbox-<event id>:email`); a repeat after a delivered mail is skipped before it can spoil the link that arrived. Written by `POST /admin/staff`
     (onboarding `invite`) and `POST /admin/staff/:id/password` (`reset_link`, five an hour per member: limiter `account-mail`). Both processes load `StaffMailModule`.

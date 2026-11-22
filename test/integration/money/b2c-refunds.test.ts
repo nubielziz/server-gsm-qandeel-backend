@@ -118,7 +118,8 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
       note: null,
       requestedBy: { type: 'customer', name: null },
       approvedBy: null,
-      customer: { id: expect.any(Number), name: 'sam@mail.example' },
+      // Decision 047, rule B: a customer without a name is labelled by the masked address.
+      customer: { id: expect.any(Number), name: 'sa•••@mail.example' },
       order: { id: paid.orderId, deliveredAt: '2026-11-07T12:00:00.000Z', cost: '0.0800' },
       payment: { id: paid.paymentId, method: 'card', brand: 'Visa •••• 4242', amount: '4.7900', taxAmount: '0.8000' },
       netAmount: null,
@@ -129,6 +130,22 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
     const one = await staff.get(`/admin/refunds/${refund.id}`);
     expect(one.body).toEqual(res.body[0]);
     expect((await staff.get('/admin/refunds/999999')).status).toBe(404);
+  });
+
+  it('shows a customer without a name by the masked address, and searches the address only for callers with customers:read (decision 047)', async () => {
+    const paid = await order({ deliver: true });
+    const refund = await request(paid);
+    const reader = await adminWith(t, ['refunds:read', 'customers:read']);
+    for (const api of [staff, reader]) {
+      expect((await api.get('/admin/refunds')).body[0].customer.name).toBe('sa•••@mail.example');
+      expect((await api.get(`/admin/refunds/${refund.id}`)).body.customer.name).toBe('sa•••@mail.example');
+      expect(JSON.stringify((await api.get('/admin/refunds')).body)).not.toContain('sam@mail.example');
+    }
+    expect((await staff.get('/admin/refunds?q=sam@mail')).total).toBe(0);
+    expect((await staff.get('/admin/refunds?q=did+not+work')).total).toBe(1);
+    expect((await reader.get('/admin/refunds?q=sam@mail')).body.map((row: { id: number }) => row.id)).toEqual([
+      refund.id,
+    ]);
   });
 
   it('filters by status, sorts, searches and pages with the exact total; merchant refunds never show', async () => {
@@ -155,7 +172,10 @@ describe('GET /admin/refunds and /admin/refunds/:id', () => {
     expect(
       (await staff.get('/admin/refunds?_sort=amount&_order=asc')).body.map((row: { amount: string }) => row.amount),
     ).toEqual(['1.2471', '4.7900']);
-    expect((await staff.get('/admin/refunds?q=sam@')).total).toBe(2);
+    // Decision 047: the address is searched only by a caller who may read customers.
+    expect((await staff.get('/admin/refunds?q=sam@')).total).toBe(0);
+    const customersReader = await adminWith(t, ['refunds:read', 'customers:read']);
+    expect((await customersReader.get('/admin/refunds?q=sam@')).total).toBe(2);
     expect((await staff.get('/admin/refunds?q=did+not+work')).total).toBe(1);
     expect((await staff.get(`/admin/refunds?q=${open.id}`)).body[0].id).toBe(open.id);
     const page = await staff.get('/admin/refunds?_start=0&_end=1');

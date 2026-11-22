@@ -81,7 +81,16 @@ export const StoreStatementRowSchema = z.object({
 
 /** One wallet of the staff list. */
 export const WalletRowSchema = z.object({
-  customer: z.object({ id: zId, name: z.string(), email: z.string(), status: z.string() }),
+  customer: z.object({
+    id: zId,
+    name: z.string(),
+    email: z
+      .string()
+      .describe(
+        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+      ),
+    status: z.string(),
+  }),
   balance: zSignedMoney,
   frozen: z.object({ at: zIsoDateTime, reason: z.string() }).nullable(),
   updatedAt: zIsoDateTime,
@@ -325,7 +334,7 @@ export const listCustomerWallets = defineRoute({
   summary: 'Customer balances',
   description:
     'Every customer wallet, most recently changed first. `state` filters positive, zero, negative or frozen wallets (repeat it for ' +
-    'several); `q` searches the customer’s name and email.',
+    'several); `q` searches the customer’s name and email (the email only for callers who hold `customers:read`, decision 047).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',

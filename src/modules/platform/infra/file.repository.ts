@@ -6,6 +6,7 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { type NewStoredFile, type StoredFile, files } from '../db/schema';
+import type { FileReferences } from '../files/file-kinds';
 
 /**
  * Finds a file by id.
@@ -128,4 +129,62 @@ export async function deleteUnreferencedFiles(
     bucket: row.bucket,
     key: row.key,
   }));
+}
+
+/**
+ * Finds out which records use a file: the newest KYC submission and payment that name it, and whether a dispute, an order, an invoice, a
+ * ticket message or a data request does.
+ *
+ * Why: decision 047: a staff download needs the read permission of every kind of record that uses the file, and the newest KYC submission
+ * and payment name the audit rows. One statement, the same documented deviation of decision 016 as {@link deleteUnreferencedFiles}, which
+ * names these tables too (their owners have no public read of "which record uses this file").
+ *
+ * @param db the database or a transaction
+ * @param fileId the file id
+ * @returns what uses the file; the pictures of listings and payment methods are not part of it (they are public)
+ */
+export async function fileReferencesOf(db: DbExecutor, fileId: number): Promise<FileReferences> {
+  const result = await db.execute(sql`
+    select
+      k.id as kyc_submission_id, k.client_id as kyc_client_id, c.name as kyc_client_name,
+      (select p.id from payments p where p.receipt_file_id = ${fileId} order by p.id desc limit 1) as payment_id,
+      exists (select 1 from disputes where evidence_file_ids @> array[${fileId}]::bigint[]) as dispute_evidence,
+      exists (select 1 from orders where input_file_id = ${fileId} or result_file_id = ${fileId}) as order_file,
+      exists (select 1 from invoices where pdf_file_id = ${fileId}) as invoice_document,
+      exists (select 1 from ticket_messages where file_ids @> array[${fileId}]::bigint[]) as ticket_attachment,
+      exists (select 1 from data_requests where file_id = ${fileId}) as data_export
+    from (select 1) one
+    left join lateral (
+      select id, client_id from kyc_submissions where file_ids @> array[${fileId}]::bigint[] order by id desc limit 1
+    ) k on true
+    left join clients c on c.id = k.client_id
+  `);
+  const row = result.rows[0] as {
+    kyc_submission_id: string | number | null;
+    kyc_client_id: string | number | null;
+    kyc_client_name: string | null;
+    payment_id: string | number | null;
+    dispute_evidence: boolean;
+    order_file: boolean;
+    invoice_document: boolean;
+    ticket_attachment: boolean;
+    data_export: boolean;
+  };
+  return {
+    ...(row.kyc_submission_id === null || row.kyc_client_id === null
+      ? {}
+      : {
+          kyc: {
+            submissionId: Number(row.kyc_submission_id),
+            clientId: Number(row.kyc_client_id),
+            clientName: row.kyc_client_name ?? '',
+          },
+        }),
+    ...(row.payment_id === null ? {} : { paymentId: Number(row.payment_id) }),
+    disputeEvidence: row.dispute_evidence,
+    orderFile: row.order_file,
+    invoiceDocument: row.invoice_document,
+    ticketAttachment: row.ticket_attachment,
+    dataExport: row.data_export,
+  };
 }

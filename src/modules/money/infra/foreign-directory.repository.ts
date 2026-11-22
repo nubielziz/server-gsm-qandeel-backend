@@ -414,17 +414,29 @@ export async function loadWalletCustomers(
 }
 
 /**
- * The customers whose name or email matches a search text (the staff wallet list and the deposits search, feature 21).
+ * The customers whose name, and for a caller who may read customers also email, matches a search text (the staff wallet list and the
+ * deposits search, feature 21).
+ *
+ * Why: decision 047: the address is searched only for a caller who may read customers; the others find a customer by name.
  *
  * @param db the database or a transaction
  * @param pattern a `LIKE` pattern (already escaped, with the wildcards)
+ * @param matchEmail whether the address is searched too (`customerContactOf(caller) === 'full'`)
  * @returns up to 200 customer ids
  */
-export async function findCustomerIdsByNameOrEmail(db: DbExecutor, pattern: string): Promise<number[]> {
+export async function findCustomerIdsByNameOrEmail(
+  db: DbExecutor,
+  pattern: string,
+  matchEmail: boolean,
+): Promise<number[]> {
   const rows = await db
     .select({ id: s.customers.id })
     .from(s.customers)
-    .where(or(ilike(s.customers.name, pattern), ilike(s.customers.email, pattern)))
+    .where(
+      matchEmail
+        ? or(ilike(s.customers.name, pattern), ilike(s.customers.email, pattern))
+        : ilike(s.customers.name, pattern),
+    )
     .limit(MATCH_LIMIT);
   return rows.map((row) => row.id);
 }

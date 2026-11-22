@@ -2,9 +2,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
-import type { StaffPrincipal } from '../../identity';
+import { type StaffPrincipal, customerContactOf } from '../../identity';
 import { AuditService, SettingsReader } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
 import {
@@ -65,24 +66,29 @@ export class InvoiceAdminService {
    * Lists invoices.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of a storefront customer's address (decision 047, rule A)
    * @returns the page and the number matching the filters
    */
-  async list(query: ParsedListQuery<InvoiceSortField>): Promise<{ rows: WireInvoice[]; total: number }> {
+  async list(
+    query: ParsedListQuery<InvoiceSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WireInvoice[]; total: number }> {
     const { rows, total } = await listInvoiceRows(this.db.db, query, { searchNames: true });
-    return { rows: await this.wireOf(this.db.db, rows), total };
+    return { rows: await this.wireOf(this.db.db, rows, contact), total };
   }
 
   /**
    * Reads one invoice.
    *
    * @param id the invoice id
+   * @param contact what the caller may see of a storefront customer's address (decision 047)
    * @returns the invoice
    * @throws {AppError} `NOT_FOUND`
    */
-  async get(id: number): Promise<WireInvoice> {
+  async get(id: number, contact: CustomerContact): Promise<WireInvoice> {
     const row = await findInvoice(this.db.db, id);
     if (!row) throw notFound();
-    return (await this.wireOf(this.db.db, [row]))[0]!;
+    return (await this.wireOf(this.db.db, [row], contact))[0]!;
   }
 
   /**
@@ -93,7 +99,8 @@ export class InvoiceAdminService {
    *
    * Side effects: inserts an `invoices` row (with `issued_by`) and an audit row; renders the PDF after the commit.
    *
-   * @param caller the staff member who issues it
+   * @param caller the staff member who issues it; the answer shows a storefront customer's address in the form this caller may see
+   *   (decision 047: `customerContactOf(caller)`)
    * @param input the merchant, the amount and what it is for
    * @returns the new invoice
    * @throws {AppError} `VALIDATION_FAILED` on `clientId` (unknown merchant, or no billing country), `amount` or `description`
@@ -150,11 +157,11 @@ export class InvoiceAdminService {
       work.afterCommit(() => this.documents.render(created.id));
       return created;
     });
-    return (await this.wireOf(this.db.db, [row]))[0]!;
+    return (await this.wireOf(this.db.db, [row], customerContactOf(caller)))[0]!;
   }
 
-  /** The wire of invoices with their merchants and customers (one read each for the whole page). */
-  private async wireOf(db: DbExecutor, rows: readonly Invoice[]): Promise<WireInvoice[]> {
+  /** The wire of invoices with their merchants and customers (one read each for the whole page); a customer's address follows `contact`. */
+  private async wireOf(db: DbExecutor, rows: readonly Invoice[], contact: CustomerContact): Promise<WireInvoice[]> {
     const [merchants, customers] = await Promise.all([
       loadBillingMerchants(
         db,
@@ -165,12 +172,13 @@ export class InvoiceAdminService {
         rows.flatMap((row) => (row.customerId === null ? [] : [row.customerId])),
       ),
     ]);
-    return rows.map((row) =>
-      invoiceToWire(
+    return rows.map((row) => {
+      const customer = row.customerId === null ? undefined : customers.get(row.customerId);
+      return invoiceToWire(
         row,
         row.clientId === null ? undefined : merchants.get(row.clientId),
-        row.customerId === null ? undefined : customers.get(row.customerId),
-      ),
-    );
+        customer === undefined ? undefined : { ...customer, email: customerEmailIn(contact, customer.email) },
+      );
+    });
   }
 }

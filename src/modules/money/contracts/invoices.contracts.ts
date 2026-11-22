@@ -24,7 +24,17 @@ export const InvoiceSchema = z.object({
   total: zMoney.describe('What is billed.'),
   currency: z.string().describe('ISO code, not the currencies id.'),
   client: z.object({ id: zId, name: z.string() }).nullable(),
-  customer: z.object({ id: zId, name: z.string(), email: z.string() }).nullable(),
+  customer: z
+    .object({
+      id: zId,
+      name: z.string(),
+      email: z
+        .string()
+        .describe(
+          "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+        ),
+    })
+    .nullable(),
   orderId: zId.nullable(),
   pdfFileId: zId.nullable().describe('The PDF copy; download it with `GET /admin/files/:id`.'),
   description: z.string().nullable().describe('What a manual invoice bills for; null when none.'),

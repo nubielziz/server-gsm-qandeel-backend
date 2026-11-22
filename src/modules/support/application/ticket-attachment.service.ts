@@ -12,6 +12,7 @@ import {
   SettingsReader,
   StoredFiles,
   type UploadInput,
+  auditStaffFileOpening,
   cleanMediaType,
   cleanUploadName,
 } from '../../platform';
@@ -232,11 +233,16 @@ export class TicketAttachmentService {
    * @param fileId the file
    * @returns the presigned link (5 minutes, attachment disposition)
    * @throws {AppError} `NOT_FOUND` for a file that is in no message of that ticket the viewer may see, or that is gone
+   *
+   * Side effects: for `staff`, a file that is also an identity document or a payment proof writes the same `audit_logs` row as opening it from
+   * its own page (decision 047); an ordinary attachment writes none.
    */
   async linkFor(ticketId: number, viewer: 'requester' | 'staff', fileId: number): Promise<string> {
     if (!(await ticketMessageHoldsFile(this.db.db, ticketId, fileId, viewer === 'requester'))) throw notFound();
     const link = await this.files.linkTo(this.db.db, fileId);
     if (link === undefined) throw notFound();
+    // Decision 047: the rule of GET /admin/files/:id (the audited kinds), written before the link is handed out: no row, no link.
+    if (viewer === 'staff') await auditStaffFileOpening(this.db, this.audit, fileId);
     return link;
   }
 

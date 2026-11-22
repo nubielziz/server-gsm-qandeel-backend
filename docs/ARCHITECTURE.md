@@ -168,7 +168,9 @@ keeps a budget of five attempts per 15 minutes); temporary passwords expire afte
 recipient (decision 052). The production stack keeps its tiers apart (decision 055): the database, both Redis instances, the object store
 and the search engine are on internal networks that only the API, the worker and the tools reach; both Redis instances need a password;
 the API trusts the client address from Caddy's and the site's two fixed addresses only; and the application connects with its own
-database role, which cannot rewrite the ledger, the order events or the audit log, change the schema or empty a table.
+database role, which cannot rewrite the ledger, the order events or the audit log, change the schema or empty a table. Staff see storefront
+customers' addresses masked outside the Customers pages unless they may read customers, open a stored file only with the read permission
+of every record that uses it, and cannot switch off the emails that protect accounts (decision 047).
 
 ## 10. Observability and testing
 

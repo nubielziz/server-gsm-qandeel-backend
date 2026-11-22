@@ -2,7 +2,7 @@
 // the rules live in RiskQueueService, RiskDecisionsService and RiskRules.
 import { Body, Controller, Header, Param } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { RiskDecisionsService } from '../application/risk-decisions.service';
 import { RiskQueueService } from '../application/risk-queue.service';
 import { RiskRules } from '../application/risk-rules.service';
@@ -32,13 +32,14 @@ export class RiskController {
   /**
    * Reads the review queue.
    *
+   * @param staff the signed-in staff member (decides whether a held order's customer address is shown in full, decision 047)
    * @returns the held orders, the 30-day figures and the latest decisions
    * @route GET /admin/risk/queue
    */
   @Route(getRiskQueue)
   @Header('Cache-Control', 'no-store')
-  readQueue(): Promise<ResultOf<typeof getRiskQueue>> {
-    return this.queue.get();
+  readQueue(@CurrentStaff() staff: StaffPrincipal): Promise<ResultOf<typeof getRiskQueue>> {
+    return this.queue.get(customerContactOf(staff));
   }
 
   /**

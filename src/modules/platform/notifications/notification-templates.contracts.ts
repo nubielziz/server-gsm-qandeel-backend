@@ -16,7 +16,9 @@ const TemplateRow = z.object({
     .boolean()
     .describe(
       'Off means the message is not sent (`template_off`): this is the one template of its event, channel and audience, and nothing ' +
-        'stands in for it.',
+        'stands in for it, except for the emails that protect accounts (sign-in, password, invitation and verification links, security ' +
+        'notices): they cannot be switched off (`409 LOCKED`), and a row of one that was switched off before is not used: the shipped ' +
+        'text is sent (decision 047).',
     ),
   sentLast30Days: z
     .number()
@@ -43,7 +45,16 @@ const TEMPLATE_EXAMPLE = {
 const RULES =
   'The event must be registered for the audience (`event` is 422 otherwise) and offer the channel; the placeholders of the subject and body ' +
   'come only from the event’s variables (422 on `subject` or `body`); an email needs a subject. ' +
-  'One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`.';
+  'One template per event, channel and audience (templates have no language, B226): a second one is 422 on `event`. ' +
+  'For an email whose `{{link}}` is a one-time credential (the sign-in, password, invitation and verification links, the ticket links, the ' +
+  'checkout reminder) the subject cannot hold `{{link}}`, and the body uses it only on its own (at the start of a line or after a space) or as ' +
+  'the whole `href` of one link with a text, holds no other web address, and uses only text formatting tags (422 on `subject` or `body`, ' +
+  'codes `link_*`; decision 047). The markup must be read the same way by the text part of the email: an attribute value holds no character ' +
+  'reference outside the short list the check decodes, no `<`, `>`, double quote or the word `href`, an end tag closes with `>` right after its name, ' +
+  'and a lone `<` in an HTML message is written `&lt;`. An email that protects accounts keeps `{{link}}` (or, for a security notice, `{{change}}`) in ' +
+  'the text of its body, outside every tag, attribute and comment (422 on `body`, code `security_placeholder`; decision 047); the body of every such ' +
+  'email, a notice included, is also checked for comments, declarations and tags outside the list, refuses a `style` or `hidden` attribute (`link_*` ' +
+  'codes), and the body of a notice holds no `href`.';
 
 /** `GET /admin/notification-templates`. */
 export const listNotificationTemplates = defineRoute({
@@ -105,7 +116,7 @@ export const createNotificationTemplate = defineRoute({
     isActive: z.boolean().default(true),
   }),
   success: { status: 201, schema: TemplateRow },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED', 'LOCKED'],
   examples: {
     request: {
       event: 'wallet.low_balance',
@@ -141,7 +152,7 @@ export const updateNotificationTemplate = defineRoute({
     isActive: z.boolean().optional(),
   }),
   success: { status: 200, schema: TemplateRow },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED', 'LOCKED'],
   examples: { request: { isActive: false }, response: { ...TEMPLATE_EXAMPLE, isActive: false } },
 });
 
@@ -150,14 +161,15 @@ export const deleteNotificationTemplate = defineRoute({
   key: 'DELETE /admin/notification-templates/:id',
   summary: 'Delete a notification template',
   description:
-    'Deletes the template: that event, channel and audience send nothing until a template is added again. Writes the audit entry `deleted notification template`.',
+    'Deletes the template: that event, channel and audience send nothing until a template is added again. Writes the audit entry `deleted notification template`. ' +
+    'An email that protects accounts cannot be deleted (`409 LOCKED`, decision 047).',
   tags: ['notifications'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'notifications:delete',
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'LOCKED'],
 });
 
 /** `POST /admin/notification-templates/:id/preview`. */

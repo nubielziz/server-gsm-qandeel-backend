@@ -3,8 +3,10 @@
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
 import {
+  CUSTOMER_CONTACT_PERMISSION,
   assertOwnerTargetAllowed,
   assertWithinCeiling,
+  customerContactOf,
   isOwner,
   missingPermission,
   requireOwner,
@@ -139,5 +141,23 @@ describe('assertWithinCeiling', () => {
     expect(refusal(() => assertWithinCeiling(holder('staff:read'), missing, 'account')).detail).toBe(
       'This account has permissions you do not hold yourself.',
     );
+  });
+});
+
+describe('customerContactOf (decision 047)', () => {
+  it('is full for customers:read, customers:* and *, masked otherwise', () => {
+    expect(CUSTOMER_CONTACT_PERMISSION).toBe('customers:read');
+    for (const permissions of [['customers:read'], ['customers:*'], ['*'], ['orders:read', 'customers:read']]) {
+      expect(customerContactOf(holder(...permissions)), permissions.join()).toBe('full');
+    }
+    for (const permissions of [
+      [],
+      ['orders:read'],
+      ['customers:update'],
+      ['customers:privacy', 'support:*'],
+      ['orders:*'],
+    ]) {
+      expect(customerContactOf(holder(...permissions)), permissions.join()).toBe('masked');
+    }
   });
 });

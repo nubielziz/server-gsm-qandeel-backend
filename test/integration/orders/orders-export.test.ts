@@ -21,7 +21,8 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
   world = await ordersWorld((await testDb()).db);
-  staff = await adminWith(t, ['orders:read']);
+  // Decision 047: the export also needs reports:read.
+  staff = await adminWith(t, ['orders:read', 'reports:read']);
 });
 afterAll(async () => {
   await resetDb();
@@ -189,6 +190,36 @@ describe('GET /admin/orders/export', () => {
     const narrow = await csv('/admin/orders/export?q=n5000000');
     expect(narrow.status).toBe(200);
   }, 120_000);
+
+  it('needs reports:read as well, and a refused export writes no audit row (decision 047)', async () => {
+    const { db, merchant, auto } = world;
+    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    const readerOnly = await adminWith(t, ['orders:read']);
+    const refused = await t.app.inject({
+      method: 'GET',
+      url: '/admin/orders/export?status=pending',
+      headers: { ...readerOnly.session.headers, 'sec-fetch-site': 'same-origin' },
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the reports:read permission to do this.',
+    });
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
+    // The same role reads the list as before, and a role with both permissions exports.
+    expect((await readerOnly.get('/admin/orders')).status).toBe(200);
+    expect((await csv('/admin/orders/export?status=pending')).status).toBe(200);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(1);
+    // A role with reports:read alone cannot export either: the route's own permission stays.
+    const reportsOnly = await adminWith(t, ['reports:read']);
+    const alone = await t.app.inject({
+      method: 'GET',
+      url: '/admin/orders/export?status=pending',
+      headers: { ...reportsOnly.session.headers, 'sec-fetch-site': 'same-origin' },
+    });
+    expect(alone.statusCode).toBe(403);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(1);
+  });
 
   it('refuses a bad filter with 422 and needs orders:read', async () => {
     expect((await csv('/admin/orders/export?queue=bogus')).status).toBe(422);

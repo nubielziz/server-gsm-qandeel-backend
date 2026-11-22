@@ -105,7 +105,8 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
     expect(detail.body).toMatchObject({
       number: 'T-4202',
       status: 'open',
-      requester: { name: 'Victor Hale', email: 'victor@mail.example' },
+      // Decision 047: the support role of this test does not hold customers:read, so the address comes masked.
+      requester: { name: 'Victor Hale', email: 'vi•••@mail.example' },
       assignee: { id: 2, name: 'Lina S.' },
       replyChannels: ['email'],
     });

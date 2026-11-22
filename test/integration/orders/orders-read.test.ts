@@ -420,6 +420,28 @@ describe('GET /admin/orders/:id and /events', () => {
   });
 });
 
+describe('the customer’s address (decision 047)', () => {
+  it("shows a storefront customer's address masked without customers:read and in full with it", async () => {
+    const o = await seedStates();
+    const customerEmails = async (api: AdminApi) => {
+      const list = await api.get(`/admin/orders?customerId=${o.customerId}&_sort=id&_order=asc`);
+      const one = await api.get(`/admin/orders/${o.completed.id}`);
+      expect(list.status).toBe(200);
+      expect(one.status).toBe(200);
+      return [...list.body, one.body].map((row: { customer: { email: string } | null }) => row.customer?.email);
+    };
+    expect(await customerEmails(staff)).toEqual(Array(3).fill('Ha•••@example.com'));
+    const reader = await adminWith(t, ['orders:read', 'customers:read']);
+    expect(await customerEmails(reader)).toEqual(Array(3).fill('Hannah.Weber@example.com'));
+    // A wildcard of the area, and the owner, read it in full too; the name is not changed for anybody.
+    expect((await customerEmails(await adminWith(t, ['orders:*', 'customers:*'])))[0]).toBe('Hannah.Weber@example.com');
+    expect((await customerEmails(await adminWith(t, ['*'])))[0]).toBe('Hannah.Weber@example.com');
+    expect((await staff.get(`/admin/orders/${o.completed.id}`)).body.customer.name).toBe('Hannah Weber');
+    // A merchant's order has no customer.
+    expect((await staff.get(`/admin/orders/${o.pending.id}`)).body.customer).toBeNull();
+  });
+});
+
 describe('access', () => {
   it('needs orders:read and a session on every read', async () => {
     const { db, merchant, auto } = world;

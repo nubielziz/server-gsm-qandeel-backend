@@ -17,6 +17,9 @@ import {
 import { type TestApp, createTestApp } from '../../support/app';
 import { insertMerchant } from '../../support/auth';
 import { insertRecoveryTemplate } from '../../support/growth';
+import { seedIdentityTemplates } from '../../support/identity-mail';
+import { logSink } from '../../support/log-sink';
+import { insertCustomer } from '../../support/support';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import {
@@ -829,5 +832,214 @@ describe('the daily digest of price changes (user rule 9)', () => {
       skipped: 'merchant_gone',
     });
     expect(await digests()).toEqual([]);
+  });
+});
+
+describe('link emails and security emails (decision 047)', () => {
+  const passwordReset = (clientId: number) => ({
+    event: 'merchant.password_reset',
+    recipient: { type: 'client' as const, id: clientId },
+    channel: 'email' as const,
+    variables: { merchantName: 'Zain Mobile Hub', expiresAt: '2026-11-01 11:00 UTC' },
+  });
+  const LINK = 'https://shop.example.com/set-password?token=abc123';
+  const sendWithLink = (input: NotificationInput) =>
+    service().sendNow(
+      { ...input, dedupeKey: `outbox-${Math.random()}:email` },
+      { link: LINK },
+      { attempt: 1, maxAttempts: 5 },
+    );
+  const warnings = () => logSink.lines.filter((line) => String(line.msg).includes('the shipped text is used'));
+
+  it('does not use a stored link template that breaks the rules: the shipped text goes out, with a warning', async () => {
+    logSink.clear();
+    const clientId = await merchant();
+    const [stored] = await db
+      .update(s.notificationTemplates)
+      .set({ body: '<p><img src="https://example.com/a.png">{{link}}</p>' })
+      .where(eq(s.notificationTemplates.event, 'merchant.password_reset'))
+      .returning();
+    expect(await sendWithLink(passwordReset(clientId))).toMatchObject({ status: 'sent' });
+    expect(mailbox(t).sent).toHaveLength(1);
+    const [mail] = mailbox(t).sent;
+    // The shipped plain text: it holds the link, and has no HTML part (the stored body would have been sent as HTML).
+    expect(mail).toMatchObject({ to: 'ops@zainmobilehub.example', subject: 'Reset your password' });
+    expect(mail!.text).toContain(LINK);
+    expect(mail!.html).toBeUndefined();
+    expect(mail!.text).not.toContain('example.com/a.png');
+    // The warning names the template and the rule, never the template text or the link.
+    expect(warnings()).toHaveLength(1);
+    const line = String(warnings()[0]!.msg);
+    expect(line).toContain(`template ${stored!.id} breaks the link rules (link_tag)`);
+    expect(line).not.toContain('example.com');
+    expect(line).not.toContain('abc123');
+  });
+
+  it('sends the shipped text for a stored security email that lost its link or its {{change}}', async () => {
+    logSink.clear();
+    await seedIdentityTemplates(db);
+    const clientId = await merchant();
+    await db
+      .update(s.notificationTemplates)
+      .set({ body: 'Hi {{merchantName}}, we will mail you again.' })
+      .where(eq(s.notificationTemplates.event, 'merchant.password_reset'));
+    await db
+      .update(s.notificationTemplates)
+      .set({ body: 'Hi {{merchantName}}, something changed.' })
+      .where(eq(s.notificationTemplates.event, 'merchant.security_notice'));
+    expect(await sendWithLink(passwordReset(clientId))).toMatchObject({ status: 'sent' });
+    expect(mailbox(t).sent.at(-1)!.text).toContain(LINK);
+    await enqueue({
+      event: 'merchant.security_notice',
+      recipient: { type: 'client', id: clientId },
+      channel: 'email',
+      variables: { merchantName: 'Zain Mobile Hub', change: 'a temporary password was set for your account' },
+    });
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }]);
+    expect(mailbox(t).sent.at(-1)!.subject).toBe('A security change on your merchant account');
+    expect(mailbox(t).sent.at(-1)!.text).toContain('a temporary password was set for your account');
+    expect(warnings().map((line) => String(line.msg))).toEqual([
+      expect.stringContaining('lacks {{link}}'),
+      expect.stringContaining('lacks {{change}}'),
+    ]);
+  });
+
+  it('sends the shipped text for a stored security notice whose notice is hidden, and for a stored link mail that hides its style', async () => {
+    logSink.clear();
+    await seedIdentityTemplates(db);
+    const clientId = await merchant();
+    const setNotice = (body: string) =>
+      db
+        .update(s.notificationTemplates)
+        .set({ body })
+        .where(eq(s.notificationTemplates.event, 'merchant.security_notice'));
+    const sendNotice = async () => {
+      await enqueue({
+        event: 'merchant.security_notice',
+        recipient: { type: 'client', id: clientId },
+        channel: 'email',
+        variables: { merchantName: 'Zain Mobile Hub', change: 'a temporary password was set for your account' },
+      });
+      // The helper runs every job there is: the rows of the earlier rounds are skipped as sent.
+      expect((await sendAllQueued(t)).filter((outcome) => outcome.outcome !== 'skipped')).toEqual([
+        { outcome: 'sent' },
+      ]);
+      return mailbox(t).sent.at(-1)!;
+    };
+    // Each stored text hides the sentence that says what changed, or is not scanned clean; every one is sent as the shipped text.
+    const hidden: [string, string][] = [
+      ['<p>Hi {{merchantName}}</p><!-- {{change}} -->', 'link_markup'],
+      ['<p style="display:none">{{change}}</p><p>Hi {{merchantName}}</p>', 'link_attribute'],
+      ['<p hidden>{{change}}</p><p>Hi {{merchantName}}</p>', 'link_attribute'],
+      ['<p>Hi {{merchantName}}</p><img src="https://example.com/a.png"><p>{{change}}</p>', 'link_tag'],
+    ];
+    for (const [body, code] of hidden) {
+      await setNotice(body);
+      const mail = await sendNotice();
+      expect(mail.subject, body).toBe('A security change on your merchant account');
+      expect(mail.text, body).toContain('a temporary password was set for your account');
+      expect(mail.html, body).toBeUndefined();
+      expect(String(warnings().at(-1)!.msg), body).toContain(`breaks the notice rules (${code})`);
+    }
+    await setNotice('<p title="{{change}}">Hi {{merchantName}}, something changed.</p>');
+    expect((await sendNotice()).text).toContain('a temporary password was set for your account');
+    expect(String(warnings().at(-1)!.msg)).toContain('lacks {{change}}');
+    // A notice that shows what changed is sent as its own HTML.
+    await setNotice('<p>Hi {{merchantName}}</p><p><strong>{{change}}</strong></p>');
+    const own = await sendNotice();
+    expect(own.html).toContain('<strong>a temporary password was set for your account</strong>');
+    expect(warnings()).toHaveLength(hidden.length + 1);
+
+    // The same for a security link mail whose stored text carries a style.
+    await db
+      .update(s.notificationTemplates)
+      .set({ body: '<p style="color:#06c"><a href="{{link}}">Choose a password</a></p>' })
+      .where(eq(s.notificationTemplates.event, 'merchant.password_reset'));
+    expect(await sendWithLink(passwordReset(clientId))).toMatchObject({ status: 'sent' });
+    expect(mailbox(t).sent.at(-1)!.html).toBeUndefined();
+    expect(mailbox(t).sent.at(-1)!.text).toContain(LINK);
+    expect(String(warnings().at(-1)!.msg)).toContain('breaks the link rules (link_attribute)');
+  });
+
+  it('sends nothing for a broken reminder template, which has no shipped text, and treats it as switched off', async () => {
+    await insertRecoveryTemplate(db);
+    const customer = await insertCustomer(db, { name: 'Sam Buyer' });
+    const reminder = {
+      event: 'checkout.abandoned',
+      recipient: { type: 'customer' as const, id: customer.id },
+      channel: 'email' as const,
+      variables: { customerName: 'Sam', device: 'iPhone 13' },
+    };
+    const key = { event: 'checkout.abandoned', channel: 'email' as const, audience: 'customer' as const };
+    // A row queued while the template was fine; the template is broken before it is sent.
+    expect(await enqueue(reminder)).toMatchObject({ status: 'queued' });
+    expect(await service().templateIsOn(db, key)).toBe(true);
+    await db
+      .update(s.notificationTemplates)
+      .set({ body: 'Pick up where you left off: https://example.com/{{link}}' })
+      .where(eq(s.notificationTemplates.event, 'checkout.abandoned'));
+    const outcomes = await sendAllQueued(t);
+    expect(outcomes).toEqual([{ outcome: 'failed', reason: 'The template breaks the rules of a link mail.' }]);
+    expect((await notificationRows(db))[0]).toMatchObject({
+      status: 'failed',
+      error: 'The template breaks the rules of a link mail.',
+    });
+    expect(mailbox(t).sent).toEqual([]);
+    // From now on the broken template counts as switched off: nothing is queued and the sweep would pick nobody.
+    expect(await enqueue(reminder)).toEqual({ status: 'skipped', reason: 'template_off' });
+    expect(await service().templateIsOn(db, key)).toBe(false);
+    expect(await notificationRows(db)).toHaveLength(1);
+    // A template that keeps the rules works again.
+    await db
+      .update(s.notificationTemplates)
+      .set({ body: 'Pick up where you left off:\n{{link}}' })
+      .where(eq(s.notificationTemplates.event, 'checkout.abandoned'));
+    expect(await service().templateIsOn(db, key)).toBe(true);
+  });
+
+  it('stands in for a missing or switched-off template of a security email, and for nothing else', async () => {
+    await seedIdentityTemplates(db);
+    const clientId = await merchant();
+    const off = eq(s.notificationTemplates.event, 'merchant.password_reset');
+    await db.update(s.notificationTemplates).set({ isActive: false }).where(off);
+    expect(await enqueue(passwordReset(clientId))).toMatchObject({ status: 'queued' });
+    expect(
+      await service().templateIsOn(db, { event: 'merchant.password_reset', channel: 'email', audience: 'merchant' }),
+    ).toBe(true);
+    await db.delete(s.notificationTemplates).where(off);
+    expect(
+      await enqueue({ ...passwordReset(clientId), variables: { merchantName: 'Z', expiresAt: 'x' } }),
+    ).toMatchObject({
+      status: 'queued',
+    });
+    // An ordinary event with no template makes nothing, as before.
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'wallet.low_balance'));
+    expect(await enqueue(lowBalance(clientId))).toEqual({ status: 'skipped', reason: 'no_template' });
+  });
+
+  it('writes to the address a row names, only for an event that may name one, and never through sendNow', async () => {
+    await seedIdentityTemplates(db);
+    const clientId = await merchant();
+    const notice = {
+      event: 'merchant.security_notice',
+      recipient: { type: 'client' as const, id: clientId },
+      channel: 'email' as const,
+      variables: { merchantName: 'Zain Mobile Hub', change: 'the email address of your account was changed' },
+    };
+    expect(await enqueue({ ...notice, to: 'before@zainmobilehub.example' })).toMatchObject({ status: 'queued' });
+    expect((await notificationRows(db))[0]!.payload).toMatchObject({ to: 'before@zainmobilehub.example' });
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }]);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mailbox(t).sent[0]!.to).toBe('before@zainmobilehub.example');
+    // An event that may not name an address refuses one, and so does the send-now path.
+    await expectRejection(enqueue({ ...lowBalance(clientId), to: 'x@example.com' }), 'cannot name the address');
+    await expectRejection(sendWithLink({ ...passwordReset(clientId), to: 'x@example.com' }), 'cannot name the address');
+    expect(await notificationRows(db)).toHaveLength(1);
+    // A named address that is not an address fails the row for good.
+    await enqueue({ ...notice, to: 'not-an-address' });
+    expect(await sendAllQueued(t)).toEqual([
+      { outcome: 'skipped', reason: 'already_sent' },
+      { outcome: 'failed', reason: 'The recipient has no email address.' },
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 // Who is calling: the principals the session and machine guards produce, plus the Owner helpers of decision 018.
+import { type CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import type { SessionStage } from '../db/schema';
 import type { CapabilityAccessKind } from './machine/capability-tokens';
@@ -195,6 +196,26 @@ export function requirePermission(caller: PermissionHolder, permission: string):
  */
 export function requireOwner(caller: PermissionHolder, detail: string): void {
   if (!isOwner(caller)) throw new AppError('FORBIDDEN', { detail });
+}
+
+/**
+ * The permission of the Customers pages, which also decides whether other staff answers show a customer's address in full.
+ *
+ * Why: decision 047: the address is personal data; outside the Customers pages only a role that may read customers sees it unmasked.
+ */
+export const CUSTOMER_CONTACT_PERMISSION = 'customers:read';
+
+/**
+ * What a staff caller may see of a storefront customer's contact details outside the Customers pages.
+ *
+ * Why: decision 047, rule A: every staff answer that carries a customer's address passes it through `customerEmailIn(contact, …)`;
+ * this is the one place that decides the form from the caller's role.
+ *
+ * @param caller the signed-in staff member (or the permissions of a role)
+ * @returns `'full'` when the role grants `customers:read` (also through `customers:*` or `*`), else `'masked'`
+ */
+export function customerContactOf(caller: PermissionHolder): CustomerContact {
+  return grants(caller.permissions, CUSTOMER_CONTACT_PERMISSION) ? 'full' : 'masked';
 }
 
 /** What a ceiling refusal is about: a permission list the caller sent, a stored role, or another staff account. */

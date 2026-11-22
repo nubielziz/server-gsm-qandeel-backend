@@ -1,13 +1,14 @@
 // Integration tests of the customer mails (feature 14b, decision 033): the four outbox event types are registered with the notifications
 // queue and each has one named processor; for each kind the job rotates the link's token, sends one email through the notification
 // delivery whose link works, never holds the clear token in the database or the log, sends once when it runs twice, and sends nothing for
-// a customer that is not active, a link that was used, voided or has expired, or a template that is missing or switched off.
+// a customer that is not active, a link that was used, voided or has expired; a missing or switched-off template does not stop the mail: the
+// shipped text of the event is sent (decision 047).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
 import { DiscoveryService, ModulesContainer } from '@nestjs/core';
 import { and, asc, eq } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
-import { DbService, schema as s } from '@src/infra/db';
+import { DbService, type Database, schema as s } from '@src/infra/db';
 import { UnrecoverableError } from '@src/infra/queues';
 import { buildProcessorTable, findQueueProcessors } from '@src/infra/queues/queue-processor';
 import { CUSTOMER_MAIL_EVENTS, type CustomerMailKind } from '@src/modules/customers';
@@ -261,6 +262,8 @@ for (const flow of FLOWS) {
   describe(`customer.${flow.kind}`, () => {
     const event = CUSTOMER_MAIL_EVENTS[flow.kind];
     const processor = () => t.app.get(flow.processor);
+    // A staff change of an account's email also queues the security notice (decision 047): these tests are about the link mail of the event.
+    const rowsOfEvent = (db: Database) => db.select().from(s.notifications).where(eq(s.notifications.event, event));
 
     /** Starts the flow and returns the customer, the job and the row of the link before the job rotates it. */
     async function begin() {
@@ -291,7 +294,7 @@ for (const flow of FLOWS) {
       expect(after!.tokenHash).toBe(t.app.get(TokenService).hash(delivered));
 
       // One `notifications` row logs the mail: customer, attempts and the event's dedupe key, no link.
-      expect(await db.select().from(s.notifications)).toMatchObject([
+      expect(await rowsOfEvent(db)).toMatchObject([
         {
           recipientType: 'customer',
           recipientId: who.customerId,
@@ -318,7 +321,7 @@ for (const flow of FLOWS) {
       expect(await processJob(processor(), job, 1)).toEqual({ sent: false, skipped: 'already_sent' });
       expect(mailbox(t).sent).toHaveLength(1);
       const { db } = await testDb();
-      expect(await db.select().from(s.notifications)).toHaveLength(1);
+      expect(await rowsOfEvent(db)).toHaveLength(1);
       await flow.use(delivered, who);
     });
 
@@ -327,11 +330,11 @@ for (const flow of FLOWS) {
       mailbox(t).failNext(new DeliveryError('The mail server is busy.'));
       await expectRejection(processJob(processor(), job, 0), 'The mail server is busy.');
       const { db } = await testDb();
-      expect(await db.select().from(s.notifications)).toMatchObject([{ status: 'queued', attempts: 1 }]);
+      expect(await rowsOfEvent(db)).toMatchObject([{ status: 'queued', attempts: 1 }]);
 
       expect(await processJob(processor(), job, 1)).toEqual({ sent: true });
       expect(mailbox(t).sent).toHaveLength(1);
-      expect(await db.select().from(s.notifications)).toMatchObject([{ status: 'sent', attempts: 2 }]);
+      expect(await rowsOfEvent(db)).toMatchObject([{ status: 'sent', attempts: 2 }]);
       await flow.use(tokenIn(mailbox(t).sent[0]!.text), who);
     });
 
@@ -345,7 +348,7 @@ for (const flow of FLOWS) {
         await db.update(s.customers).set({ status }).where(eq(s.customers.id, who.customerId));
         expect(await processJob(processor(), job)).toEqual({ sent: false, skipped });
         expect(mailbox(t).sent).toEqual([]);
-        expect(await db.select().from(s.notifications)).toEqual([]);
+        expect(await rowsOfEvent(db)).toEqual([]);
         const [after] = await db.select().from(s.authTokens).where(eq(s.authTokens.id, link.id));
         expect(after!.tokenHash).toBe(link.tokenHash);
       });
@@ -387,21 +390,25 @@ for (const flow of FLOWS) {
       expect(after!.tokenHash).toBe(link.tokenHash);
     });
 
-    it('sends nothing, and keeps the link as it is, when the template is switched off or missing', async () => {
-      const { who, job, link, db } = await begin();
-      const ofEvent = eq(s.notificationTemplates.event, event);
-      await db.update(s.notificationTemplates).set({ isActive: false }).where(ofEvent);
-      expect(await processJob(processor(), job)).toEqual({ sent: false, skipped: 'template_off' });
-      await db.delete(s.notificationTemplates).where(ofEvent);
-      expect(await processJob(processor(), job)).toEqual({ sent: false, skipped: 'no_template' });
+    for (const how of ['switched off', 'missing'] as const) {
+      it(`sends the shipped text, with a link that works, when the template is ${how} (decision 047)`, async () => {
+        const { who, job, db } = await begin();
+        const ofEvent = eq(s.notificationTemplates.event, event);
+        if (how === 'switched off') await db.update(s.notificationTemplates).set({ isActive: false }).where(ofEvent);
+        else await db.delete(s.notificationTemplates).where(ofEvent);
+        expect(await processJob(processor(), job)).toEqual({ sent: true });
 
-      expect(mailbox(t).sent).toEqual([]);
-      expect(await db.select().from(s.notifications)).toEqual([]);
-      const [after] = await db.select().from(s.authTokens).where(eq(s.authTokens.id, link.id));
-      expect(after!.tokenHash).toBe(link.tokenHash);
-      // The link of the request still works: nothing took it away.
-      await flow.use(placeholderOf(who), who);
-    });
+        expect(mailbox(t).sent).toHaveLength(1);
+        expect(mailbox(t).sent[0]).toMatchObject({ to: who.email, subject: flow.subject });
+        expect(await rowsOfEvent(db)).toMatchObject([{ status: 'sent', event }]);
+        const delivered = tokenIn(mailbox(t).sent[0]!.text);
+        // The warning names the reason and holds neither the text nor the link.
+        const warning = logSink.lines.filter((line) => String(line.msg).includes('the shipped text is used')).at(-1);
+        expect(String(warning?.msg)).toContain(how === 'missing' ? 'no stored template' : 'switched off');
+        expect(JSON.stringify(logSink.lines)).not.toContain(delivered);
+        await flow.use(delivered, who);
+      });
+    }
 
     it('finishes the row of an earlier attempt as failed when a retry finds the customer suspended', async () => {
       const { who, job, db } = await begin();
@@ -409,9 +416,7 @@ for (const flow of FLOWS) {
       await expectRejection(processJob(processor(), job, 0), 'The mail server is busy.');
       await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, who.customerId));
       expect(await processJob(processor(), job, 1)).toEqual({ sent: false, skipped: 'customer_not_active' });
-      expect(await db.select().from(s.notifications)).toMatchObject([
-        { status: 'failed', error: 'customer_not_active' },
-      ]);
+      expect(await rowsOfEvent(db)).toMatchObject([{ status: 'failed', error: 'customer_not_active' }]);
       expect(mailbox(t).sent).toEqual([]);
     });
   });

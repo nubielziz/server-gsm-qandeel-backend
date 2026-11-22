@@ -2,6 +2,7 @@
 // storefront's smaller view. Pure mapping: the one place the status codec and the `late` rule are applied to a row. Feature 28 adds the
 // attachments of a message and the seen marks (with `hasUnread`, never stored).
 import type { z } from 'zod';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import type { FileMeta } from '../../platform';
 import type { TicketDetailSchema, TicketRowSchema } from '../contracts/tickets.contracts';
 import type { StoreMessageSchema, StoreTicketSchema } from '../contracts/store-tickets.contracts';
@@ -58,9 +59,16 @@ export function toAttachments(fileIds: readonly number[], files: AttachmentFiles
  * @param row the ticket with its joined names
  * @param lastPublicAt the time of its latest public message
  * @param now the injected clock's time, for `late`
+ * @param contact what the caller may see of a customer's address (decision 047, rule A: a customer requester's address is masked unless
+ *   the caller may read customers; a merchant's address stays in full)
  * @returns the row as the console reads it
  */
-export function toTicketView(row: TicketRow, lastPublicAt: Date | undefined, now: Date): TicketRowView {
+export function toTicketView(
+  row: TicketRow,
+  lastPublicAt: Date | undefined,
+  now: Date,
+  contact: CustomerContact,
+): TicketRowView {
   const { ticket } = row;
   return {
     id: ticket.id,
@@ -69,7 +77,13 @@ export function toTicketView(row: TicketRow, lastPublicAt: Date | undefined, now
     channel: ticket.channel,
     requesterType: ticket.requesterType,
     requesterId: ticket.requesterId,
-    requester: { name: row.requesterName, email: row.requesterEmail },
+    requester: {
+      name: row.requesterName,
+      email:
+        ticket.requesterType === 'customer' && row.requesterEmail !== null
+          ? customerEmailIn(contact, row.requesterEmail)
+          : row.requesterEmail,
+    },
     orderId: ticket.orderId,
     category: ticket.category,
     priority: ticket.priority,
@@ -125,6 +139,7 @@ export function toMessageView(row: MessageRow, files: AttachmentFiles): TicketMe
  * @param files the stored files of the thread, by id
  * @param replyChannels the channels a reply may use
  * @param now the injected clock's time
+ * @param contact what the caller may see of a customer's address (decision 047)
  * @returns the detail as the console reads it
  */
 export function toDetailView(
@@ -134,9 +149,10 @@ export function toDetailView(
   files: AttachmentFiles,
   replyChannels: readonly ReplyChannel[],
   now: Date,
+  contact: CustomerContact,
 ): TicketDetailView {
   return {
-    ...toTicketView(row, lastPublicAt, now),
+    ...toTicketView(row, lastPublicAt, now, contact),
     messages: messages.map((message) => toMessageView(message, files)),
     replyChannels: [...replyChannels],
   };

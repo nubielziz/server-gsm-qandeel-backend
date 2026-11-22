@@ -28,7 +28,7 @@ import {
   templateExists,
   updateTemplate,
 } from './notification-template.repository';
-import { checkTemplateFields, placeholdersOf, renderMessage } from './template-rules';
+import { checkTemplateFields, placeholdersOf, protectedTemplateProblems, renderMessage } from './template-rules';
 
 /** A template on the wire. */
 export interface WireTemplate {
@@ -71,6 +71,29 @@ const refuse = (...errors: FieldError[]) => new AppError('VALIDATION_FAILED', { 
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No notification template with this id.' });
 const FIXED_FIELDS = ['event', 'channel', 'audience'] as const;
 
+/**
+ * The refusal of a switch-off or a delete of an email that protects accounts.
+ *
+ * Why: decision 047: such an email is always sent (the shipped text stands in for a missing or switched-off template), so the switch and
+ * the delete are refused with the existing `LOCKED` code, and the words can still change.
+ */
+function locked(what: 'switched off' | 'deleted'): AppError {
+  return new AppError('LOCKED', {
+    detail: `This email protects accounts (a sign-in, password, invitation or verification link, or a security notice), so it cannot be ${what}. You can change its words.`,
+  });
+}
+
+/**
+ * The checks of decision 047 on the texts of a template of a security or link email: the link rules, the notice rules and what the email
+ * protects (see {@link protectedTemplateProblems}).
+ */
+function protectedTextProblems(
+  definition: NotificationEventDefinition | undefined,
+  fields: { readonly channel: NotificationChannel; readonly subject: string; readonly body: string },
+): FieldError[] {
+  return definition === undefined ? [] : protectedTemplateProblems(definition, fields);
+}
+
 /** The recipient type a template audience matches (identity-platform-11). */
 function recipientTypeOf(audience: NotificationAudience): NotificationRecipientType {
   return audience === 'merchant' ? 'client' : audience;
@@ -96,7 +119,9 @@ const labelOf = (row: NotificationTemplate) => `${row.event} (${row.channel}, ${
  *
  * Why: RULES settings 10: staff write the texts the system sends. A template exists only for an event of the registry, uses only that
  * event's placeholders, is unique per event, channel and audience (no language: decision 039, B226), and fixes those three fields at
- * create. Turning one off means "send nothing" (the delivery honours it). Every write is audited with before and after (RULES settings 12).
+ * create. Turning one off means "send nothing" (the delivery honours it), except for the emails that protect accounts: they cannot be switched
+ * off or deleted (`LOCKED`), and the texts of a link email keep the link rules (decision 047). Every write is audited with before and after
+ * (RULES settings 12).
  *
  * Side effects: writes `notification_templates` and one `audit_logs` row per write.
  */
@@ -145,17 +170,21 @@ export class NotificationTemplateAdminService {
    * @returns the stored template
    * @throws {AppError} `VALIDATION_FAILED` for an unknown event (on `event`), an event not sent to the audience (on `audience`) or by the channel
    *   (on `channel`), an email without a subject, an empty body, a placeholder the event does not offer, or a second template for the same
-   *   event, channel and audience (on `event`, code `duplicate`)
+   *   event, channel and audience (on `event`, code `duplicate`); for an email whose link is a credential, a body or subject that breaks the
+   *   link rules (`link_*`) or a security email whose body lost its `{{link}}` or `{{change}}` (`security_placeholder`); `LOCKED` (409) for an
+   *   email that protects accounts created switched off
    */
   async create(input: CreateTemplateInput): Promise<WireTemplate> {
     const resolved = this.definitionFor(input.event, input.audience, input.channel);
     // A bad event hides which placeholders are fine, so the texts are checked only against a real event.
     if ('errors' in resolved) throw refuse(...resolved.errors);
+    if (resolved.definition.security === true && input.isActive === false) throw locked('switched off');
     const subject = input.channel === 'email' ? input.subject : '';
     const errors = checkTemplateFields(
       { channel: input.channel, subject, body: input.body },
       resolved.definition.variables,
     );
+    errors.push(...protectedTextProblems(resolved.definition, { channel: input.channel, subject, body: input.body }));
     if (errors.length > 0) throw refuse(...errors);
 
     const duplicate = refuse({
@@ -199,12 +228,17 @@ export class NotificationTemplateAdminService {
    * @param input the fields to change
    * @returns the stored template
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` for a change of event, channel or audience (on that field), an email without a
-   *   subject, an empty body, or a placeholder the event does not offer
+   *   subject, an empty body, or a placeholder the event does not offer; for an email whose link is a credential, a body or subject that
+   *   breaks the link rules (`link_*`) or a security email whose body lost its `{{link}}` or `{{change}}` (`security_placeholder`);
+   *   `LOCKED` (409) for switching off an email that protects accounts
    */
   async update(id: number, input: UpdateTemplateInput): Promise<WireTemplate> {
     return this.db.runInTransaction(async ({ tx }) => {
       const current = await findTemplate(tx, id, true);
       if (!current) throw notFound();
+      const definition = this.registry.get(current.event, current.audience);
+      // Decision 047: also refused when the stored row is off already (a row left from before this rule can only be switched on).
+      if (definition?.security === true && input.isActive === false) throw locked('switched off');
       const errors: FieldError[] = [];
       for (const field of FIXED_FIELDS) {
         const sent = input[field];
@@ -220,12 +254,12 @@ export class NotificationTemplateAdminService {
       const body = input.body ?? current.body;
       // The texts are checked when they are part of the change: switching a template off must not fail on an old placeholder.
       if (input.subject !== undefined || input.body !== undefined) {
-        const definition = this.registry.get(current.event, current.audience);
         errors.push(
           ...checkTemplateFields(
             { channel: current.channel, subject, body },
             definition?.variables ?? placeholdersOf(`${subject}\n${body}`),
           ),
+          ...protectedTextProblems(definition, { channel: current.channel, subject, body }),
         );
       }
       if (errors.length > 0) throw refuse(...errors);
@@ -258,12 +292,13 @@ export class NotificationTemplateAdminService {
    * Deletes a template.
    *
    * @param id the template id
-   * @throws {AppError} `NOT_FOUND`
+   * @throws {AppError} `NOT_FOUND`; `LOCKED` (409) for an email that protects accounts (decision 047)
    */
   async remove(id: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {
       const current = await findTemplate(tx, id, true);
       if (!current) throw notFound();
+      if (this.registry.get(current.event, current.audience)?.security === true) throw locked('deleted');
       await deleteTemplate(tx, id);
       await this.audit.record(tx, {
         action: 'deleted notification template',

@@ -4,6 +4,7 @@ import { Controller, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import type { Readable } from 'node:stream';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { OrderExportService } from '../application/order-export.service';
 import { OrderReadService } from '../application/order-read.service';
 import { exportOrders, listOrderEvents, listOrders, showOrder } from '../contracts/orders.contracts';
@@ -30,18 +31,23 @@ export class OrdersController {
    * Lists a page of orders.
    *
    * @param query the parsed list request
+   * @param staff the signed-in staff member (decides whether the customer's address is shown in full, decision 047)
    * @returns the rows and the exact total
    * @route GET /admin/orders
    */
   @Route(listOrders)
-  list(@Query() query: QueryOf<typeof listOrders>): Promise<ResultOf<typeof listOrders>> {
-    return this.orders.listForStaff(query);
+  list(
+    @Query() query: QueryOf<typeof listOrders>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listOrders>> {
+    return this.orders.listForStaff(query, customerContactOf(staff));
   }
 
   /**
    * Exports the matching orders as a CSV file.
    *
    * @param query the parsed list request (the range is ignored)
+   * @param staff the signed-in staff member (the export also needs `reports:read`, decision 047)
    * @param reply the reply, for the file headers
    * @returns the CSV as a stream
    * @route GET /admin/orders/export
@@ -49,9 +55,10 @@ export class OrdersController {
   @Route(exportOrders)
   async export(
     @Query() query: QueryOf<typeof exportOrders>,
+    @CurrentStaff() staff: StaffPrincipal,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<Readable> {
-    const file = await this.exports.forStaff(query);
+    const file = await this.exports.forStaff(staff, query);
     reply
       .header('content-type', 'text/csv; charset=utf-8')
       .header('content-disposition', 'attachment; filename="orders-export.csv"')
@@ -63,12 +70,16 @@ export class OrdersController {
    * Shows one order.
    *
    * @param params the order id
+   * @param staff the signed-in staff member (decides whether the customer's address is shown in full, decision 047)
    * @returns the order
    * @route GET /admin/orders/:id
    */
   @Route(showOrder)
-  show(@Param() params: ParamsOf<typeof showOrder>): Promise<ResultOf<typeof showOrder>> {
-    return this.orders.showForStaff(params.id);
+  show(
+    @Param() params: ParamsOf<typeof showOrder>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof showOrder>> {
+    return this.orders.showForStaff(params.id, customerContactOf(staff));
   }
 
   /**

@@ -29,7 +29,8 @@ const staff = (event: string, subject: string, body: string): DefaultTemplate =>
 /**
  * The templates the identity events start with.
  *
- * Why: a missing template sends nothing (RULES settings 10), so the mails come with the migration. They live here and not in the
+ * Why: a missing template sends nothing (RULES settings 10; the account link mails and the security notices are then written from their
+ * shipped text, decision 047), so the mails come with the migration. They live here and not in the
  * platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration (LEAD-DECISIONS L2).
  */
 export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [

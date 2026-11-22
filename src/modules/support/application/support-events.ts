@@ -18,7 +18,7 @@ const CUSTOMER_SAMPLE = {
 
 const customerEvent = (
   spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'> &
-    Partial<Pick<NotificationEventDefinition, 'transactional'>>,
+    Partial<Pick<NotificationEventDefinition, 'transactional' | 'secretLink'>>,
 ): NotificationEventDefinition => ({
   ...spec,
   audience: 'customer',
@@ -48,12 +48,15 @@ export const SUPPORT_EVENTS: readonly NotificationEventDefinition[] = [
     variables: ['customerName', 'ticketNumber', 'subject', 'link'],
     // Feature 23, S6: the receipt holds the only link to the ticket, so a suspended or blocked customer still gets it.
     transactional: true,
+    // Decision 047: the link is the ticket's capability token, a credential: its template keeps the link rules.
+    secretLink: true,
   }),
   customerEvent({
     key: SUPPORT_CSAT_SURVEY_EVENT,
     label: 'Satisfaction survey',
     description: 'Staff resolved a ticket: the link where the customer rates the help they got.',
     variables: ['customerName', 'ticketNumber', 'subject', 'link'],
+    secretLink: true,
   }),
   {
     key: SUPPORT_REPLY_EVENT,

@@ -10,7 +10,8 @@ import { listNotificationLog, showNotificationLog } from './notification-log.con
  * Routes of the notification log.
  *
  * Why: thin layer over {@link NotificationLogAdminService}; the log is read only. The single read tells the service whether the caller
- * holds `notifications:*` (decision 054), read through identity's helpers loaded late (decision 032 amendment).
+ * holds `notifications:*` (decision 054) and the list what the caller may see of customers' addresses (decision 047), both read through
+ * identity's helpers loaded late (decision 032 amendment); a request without a staff principal gets the least view of each.
  */
 @Controller()
 export class NotificationsController {
@@ -20,12 +21,20 @@ export class NotificationsController {
    * Lists the log.
    *
    * @param query range, sort, filters and search
+   * @param request the request, which carries the caller (decision 047: a customer's address is searched only for callers who hold `customers:read`)
    * @returns the page of rows
    * @route GET /admin/notifications
    */
   @Route(listNotificationLog)
-  list(@Query() query: QueryOf<typeof listNotificationLog>): Promise<ResultOf<typeof listNotificationLog>> {
-    return this.log.list(query);
+  async list(
+    @Query() query: QueryOf<typeof listNotificationLog>,
+    @Req() request: FastifyRequest,
+  ): Promise<ResultOf<typeof listNotificationLog>> {
+    // The platform module imports no other module (decision 032): identity's helpers are loaded late (the module-level cycle).
+    const identity = await identityApi();
+    const principal = identity.principalOf(request);
+    // A request without a staff principal gets the least view (the route's guard keeps such a request out).
+    return this.log.list(query, principal?.kind === 'staff' ? identity.customerContactOf(principal) : 'masked');
   }
 
   /**

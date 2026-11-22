@@ -82,7 +82,8 @@ describe('POST /admin/customers/:id/account', () => {
 
   it('answers a temporary password once for the temporary mode, and the customer must change it at the first sign-in', async () => {
     const guest = await makeCustomer(t, { guest: true });
-    const staff = await staffWith('customers:update');
+    // Decision 047: a temporary password also needs customers:password.
+    const staff = await staffWith('customers:update', 'customers:password');
     const res = await post(staff, `/admin/customers/${guest.id}/account`, { mode: 'temporary_password' });
     const { temporaryPassword } = res.json<{ temporaryPassword: string }>();
     expect(temporaryPassword).toHaveLength(14);
@@ -94,6 +95,28 @@ describe('POST /admin/customers/:id/account', () => {
     expect((await store().login(guest.email, temporaryPassword)).json()).toEqual({ next: 'password' });
     const [audit] = await auditOfCustomer(db, guest.id);
     expect(JSON.stringify(audit)).not.toContain(temporaryPassword);
+  });
+
+  it('needs customers:password to create an account with a temporary password; the link mode needs only customers:update (decision 047)', async () => {
+    const guest = await makeCustomer(t, { guest: true, name: 'Sofia Alvarez' });
+    const { db } = await testDb();
+    const staff = await staffWith('customers:update');
+    const refused = await post(staff, `/admin/customers/${guest.id}/account`, { mode: 'temporary_password' });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the customers:password permission to do this.',
+    });
+    // Nothing was read or written: still a guest, no credentials, no audit row, no link.
+    expect(await customerRow(guest.id)).toMatchObject({ hasAccount: false });
+    expect(await db.select().from(s.customerCredentials)).toHaveLength(0);
+    expect(await auditOfCustomer(db, guest.id)).toHaveLength(0);
+    expect(customerLinks()).toEqual([]);
+
+    const link = await post(staff, `/admin/customers/${guest.id}/account`, { mode: 'reset_link' });
+    expect(link.statusCode).toBe(200);
+    expect(await customerRow(guest.id)).toMatchObject({ hasAccount: true });
+    expect(customerLinks()).toMatchObject([{ kind: 'invited', customerId: guest.id }]);
   });
 
   it('refuses a customer who has an account (409), an anonymized or unknown one, and a missing or unknown mode (422)', async () => {

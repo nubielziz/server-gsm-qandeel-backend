@@ -28,7 +28,11 @@ export const HeldOrderSchema = z.object({
   customer: z.object({
     id: zId,
     name: z.string(),
-    email: z.string(),
+    email: z
+      .string()
+      .describe(
+        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+      ),
     country: z.string(),
     riskLevel: z.enum(['low', 'medium', 'high']),
     history: z.object({

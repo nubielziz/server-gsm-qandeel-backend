@@ -103,15 +103,19 @@ describe('the life of a merchant account', () => {
     });
   });
 
-  it('6. staff change the email: the verification goes to the new address, the session survives, the old link is gone', async () => {
+  it('6. staff change the email: the old address is told, the verification goes to the new address, every session ends (decision 047)', async () => {
+    const previous = email;
     email = 'new.ops@story-shop.example';
     mailbox(t).reset();
     const res = await api.patch(`/admin/clients/${merchantId}`, { email });
     expect(res.status).toBe(200);
     expect(res.body.emailVerifiedAt).toBeNull();
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(lastMail()).toMatchObject({ to: previous, subject: 'A security change on your merchant account' });
     await runMerchantMailJob(t, 'email_verification');
     expect(lastMail()).toMatchObject({ to: email });
-    expect((await device('laptop').me()).statusCode).toBe(200);
+    expect((await device('laptop').me()).statusCode).toBe(401);
   });
 
   it('7. the merchant verifies the new address with the mailed link', async () => {

@@ -5,6 +5,7 @@ import { CustomerTokensModule } from '../identity';
 import { NotificationDeliveryModule } from '../platform';
 import { CustomerMailJobs } from './application/mail/customer-mail-jobs';
 import { CustomerMailOutbox } from './application/mail/customer-mail-outbox';
+import { CustomerSecurityNotices } from './application/mail/customer-security-notices';
 import {
   CustomerEmailVerificationMailProcessor,
   CustomerInvitedMailProcessor,
@@ -18,17 +19,19 @@ import {
  * Why: feature 14b and decision 033. The API and the worker must both register the event types (the worker's relay only knows the routes
  * registered in its own process), so both load this module; only the worker turns the processors into BullMQ workers. The mail is sent
  * by the platform's notification delivery (`NotificationService.sendNow`): templates, the mail transport, retries and the log row.
+ * `CustomerSecurityNotices` (decision 047) writes the notice a staff change of an account's email sends.
  */
 @Module({
   imports: [CustomerTokensModule, NotificationDeliveryModule],
   providers: [
     CustomerMailOutbox,
     CustomerMailJobs,
+    CustomerSecurityNotices,
     MagicLinkMailProcessor,
     CustomerPasswordResetMailProcessor,
     CustomerInvitedMailProcessor,
     CustomerEmailVerificationMailProcessor,
   ],
-  exports: [CustomerMailOutbox],
+  exports: [CustomerMailOutbox, CustomerSecurityNotices],
 })
 export class CustomerMailModule {}

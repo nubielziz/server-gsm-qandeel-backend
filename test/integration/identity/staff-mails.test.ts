@@ -185,7 +185,7 @@ describe('the invitation mail', () => {
     expect(await tokensOf(id)).toHaveLength(1);
   });
 
-  it('sends nothing, and leaves no queued row, for a suspended or deleted member, a used or expired link and a template that is off', async () => {
+  it('sends nothing, and leaves no queued row, for a suspended or deleted member and a used or expired link', async () => {
     const api = await owner();
     const { db } = await testDb();
     const id = await invite(api);
@@ -206,16 +206,6 @@ describe('the invitation mail', () => {
     expect(await runStaffMailJob(t, 'invited', data)).toEqual({ sent: false, skipped: 'link_not_usable' });
     await db.update(s.authTokens).set({ usedAt: null });
 
-    // Template off: the token is not rotated for a mail nobody will get.
-    const [before] = await tokensOf(id);
-    await db
-      .update(s.notificationTemplates)
-      .set({ isActive: false })
-      .where(eq(s.notificationTemplates.event, 'staff.invited'));
-    expect(await runStaffMailJob(t, 'invited', data)).toEqual({ sent: false, skipped: 'template_off' });
-    expect((await tokensOf(id))[0]!.tokenHash).toBe(before!.tokenHash);
-    await db.update(s.notificationTemplates).set({ isActive: true });
-
     // Gone.
     await db.update(s.authTokens).set({ usedAt: null });
     await db.update(s.staffUsers).set({ createdBy: null });
@@ -225,6 +215,36 @@ describe('the invitation mail', () => {
 
     expect(mailbox(t).sent).toEqual([]);
     expect((await notificationsOf()).filter((row) => row.status === 'queued')).toEqual([]);
+  });
+
+  it('sends the shipped invitation when the template is switched off (decision 047)', async () => {
+    const api = await owner();
+    const { db } = await testDb();
+    const id = await invite(api);
+    const data = (await staffMailJobData('invited'))!;
+    const [placeholder] = await tokensOf(id);
+    await db
+      .update(s.notificationTemplates)
+      .set({ isActive: false })
+      .where(eq(s.notificationTemplates.event, 'staff.invited'));
+    expect(await runStaffMailJob(t, 'invited', data)).toEqual({ sent: true });
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mailbox(t).sent[0]).toMatchObject({
+      to: 'nadia@gsm-supply.example',
+      subject: 'You were invited to the GSM admin console',
+    });
+    const delivered = tokenIn(mailbox(t).sent[0]!.text);
+    // The shipped text carries the real link: it rotated the placeholder token and works once.
+    expect((await tokensOf(id))[0]!.tokenHash).not.toBe(placeholder!.tokenHash);
+    const ok = await new StaffConsole(t).setPassword({ token: delivered, password: PASSWORD }, { csrf: false });
+    expect(ok.statusCode).toBe(204);
+    // A missing template is stood in for too.
+    const second = await invite(api, 'second@gsm-supply.example');
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'staff.invited'));
+    const secondData = (await staffMailJobData('invited'))!;
+    expect(await runStaffMailJob(t, 'invited', secondData)).toEqual({ sent: true });
+    expect(mailbox(t).sent).toHaveLength(2);
+    expect(second).toBeGreaterThan(id);
   });
 
   it('a job whose event lost its token id fails for good (no retry)', async () => {

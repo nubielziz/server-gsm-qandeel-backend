@@ -1,7 +1,8 @@
 // DisputeService: the use cases of the dispute routes (map stage 16): list, read with the evidence pack, submit evidence, accept the loss.
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import type { ParsedListQuery } from '../../../common/contract';
+import { type ParsedListQuery, withoutSearchFields } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
@@ -63,10 +64,17 @@ export class DisputeService {
    * Lists disputes.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of customers' addresses: for `masked` `q` leaves the address out (decision 047)
    * @returns the page and the number matching the filters
    */
-  async list(query: ParsedListQuery<DisputeSortField>): Promise<{ rows: WireDispute[]; total: number }> {
-    const { rows, total } = await listDisputeRows(this.db.db, query);
+  async list(
+    query: ParsedListQuery<DisputeSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WireDispute[]; total: number }> {
+    const { rows, total } = await listDisputeRows(
+      this.db.db,
+      contact === 'full' ? query : withoutSearchFields(query, ['customer.email']),
+    );
     return { rows: await this.views.build(this.db.db, rows, false), total };
   }
 
@@ -113,7 +121,9 @@ export class DisputeService {
     const dispute = await findDispute(this.db.db, id);
     if (!dispute) throw notFound();
     this.assertOpen(dispute);
-    const pack = await this.views.pack(this.db.db, dispute);
+    // Decision 047: the pack staff read shows the buyer's address masked, but the text sent to the gateway (and kept in the evidence PDF) names
+    // the buyer in full, as before.
+    const pack = await this.views.pack(this.db.db, dispute, 'full');
     const unknown = keys.filter((key) => !(EVIDENCE_KEYS as readonly string[]).includes(key));
     if (unknown.length > 0) {
       problems.push({

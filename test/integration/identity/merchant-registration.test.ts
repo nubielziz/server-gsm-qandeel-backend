@@ -538,28 +538,30 @@ describe('the merchant mail events', () => {
     await expectRejection(processJob(processor, broken), UnrecoverableError);
   });
 
-  it('send nothing, and keep the link as it is, when the template is missing or switched off', async () => {
-    await portal().register(form());
-    const [link] = emailedLinks();
-    const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
-    const processor = t.app.get(EmailVerificationMailProcessor);
-    const { db } = await testDb();
-    const [before] = await db.select().from(s.authTokens);
+  for (const how of ['switched off', 'missing'] as const) {
+    it(`sends the shipped verification text when the template is ${how}, with a link that works (decision 047)`, async () => {
+      const { db } = await testDb();
+      await portal().register(form());
+      const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
+      const processor = t.app.get(EmailVerificationMailProcessor);
+      const event = eq(s.notificationTemplates.event, 'merchant.email_verification');
+      if (how === 'switched off') await db.update(s.notificationTemplates).set({ isActive: false }).where(event);
+      else await db.delete(s.notificationTemplates).where(event);
 
-    await db
-      .update(s.notificationTemplates)
-      .set({ isActive: false })
-      .where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
-    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'template_off' });
-    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
-    expect(await processJob(processor, job)).toEqual({ sent: false, skipped: 'no_template' });
-
-    expect(mailbox(t).sent).toEqual([]);
-    expect(await db.select().from(s.notifications)).toEqual([]);
-    const [after] = await db.select().from(s.authTokens);
-    expect(after!.tokenHash).toBe(before!.tokenHash);
-    expect((await portal().verifyEmail(link!.token)).statusCode).toBe(204);
-  });
+      expect(await processJob(processor, job)).toEqual({ sent: true });
+      expect(mailbox(t).sent).toHaveLength(1);
+      expect(mailbox(t).sent[0]).toMatchObject({ to: 'ali.hassan@example.com', subject: 'Confirm your email address' });
+      const delivered = tokenIn(mailbox(t).sent[0]!.text);
+      expect((await portal().verifyEmail(delivered)).statusCode).toBe(204);
+      expect(await db.select().from(s.notifications)).toMatchObject([
+        { status: 'sent', event: 'merchant.email_verification' },
+      ]);
+      // The warning says why the shipped text was used, and holds no text and no link.
+      const warning = logSink.lines.filter((line) => String(line.msg).includes('the shipped text is used')).at(-1);
+      expect(String(warning?.msg)).toContain(how === 'missing' ? 'no stored template' : 'switched off');
+      expect(String(warning?.msg)).not.toContain(delivered);
+    });
+  }
 
   it('finish the row an earlier attempt made as failed, with the skip reason, when a retry ends skipped', async () => {
     await portal().register(form());
@@ -585,7 +587,7 @@ describe('the merchant mail events', () => {
     expect(await rows()).toMatchObject([{ status: 'failed', error: 'link_not_usable' }]);
   });
 
-  it('finish the queued row of an earlier attempt as failed when the template was switched off before the retry', async () => {
+  it('a retry after the template was switched off still sends the shipped text, and the row ends sent (decision 047)', async () => {
     await portal().register(form());
     const job = await jobOf(MERCHANT_MAIL_EVENTS.email_verification);
     const processor = t.app.get(EmailVerificationMailProcessor);
@@ -597,8 +599,9 @@ describe('the merchant mail events', () => {
       .update(s.notificationTemplates)
       .set({ isActive: false })
       .where(eq(s.notificationTemplates.event, 'merchant.email_verification'));
-    expect(await processJob(processor, job, 1)).toEqual({ sent: false, skipped: 'template_off' });
-    expect(await db.select().from(s.notifications)).toMatchObject([{ status: 'failed', error: 'template_off' }]);
+    expect(await processJob(processor, job, 1)).toEqual({ sent: true });
+    expect(await db.select().from(s.notifications)).toMatchObject([{ status: 'sent', attempts: 2, error: null }]);
+    expect(mailbox(t).sent).toHaveLength(1);
   });
 
   it('retry when the mail server fails, mark the row failed on the last attempt, and send a reset and an invitation through their own processors', async () => {

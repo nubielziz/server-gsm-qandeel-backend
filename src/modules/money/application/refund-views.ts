@@ -2,6 +2,7 @@
 // joined summaries, the amounts in USD, and the revenue and VAT parts of the posted journal.
 import { Injectable } from '@nestjs/common';
 import type { ResultOf } from '../../../common/contract';
+import { customerNameForStaff } from '../../../common/customer-contact';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { Refund } from '../db/schema';
@@ -105,7 +106,8 @@ export class RefundViews {
           refund.approvedBy === null
             ? null
             : { id: refund.approvedBy, name: names.get(ownerKey('staff', refund.approvedBy)) ?? '' },
-        customer: customer ? { id: customer.id, name: customer.name || customer.email } : null,
+        // Decision 047, rule B: a customer without a name is labelled by the masked address, for every caller.
+        customer: customer ? { id: customer.id, name: customerNameForStaff(customer.name, customer.email) } : null,
         order: {
           id: refund.orderId ?? 0,
           deliveredAt: order?.status === 'completed' && order.completedAt ? order.completedAt.toISOString() : null,

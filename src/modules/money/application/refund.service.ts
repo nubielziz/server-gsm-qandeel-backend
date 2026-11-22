@@ -1,7 +1,8 @@
 // RefundService: the use cases of the storefront refund routes (map stage 16): list, read, approve, decline and retry.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import type { ParsedListQuery } from '../../../common/contract';
+import { type ParsedListQuery, withoutSearchFields } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
@@ -75,10 +76,17 @@ export class RefundService {
    * Lists storefront refunds.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of customers' addresses: for `masked` `q` leaves the address out (decision 047)
    * @returns the page and the number matching the filters
    */
-  async list(query: ParsedListQuery<RefundSortField>): Promise<{ rows: WireRefund[]; total: number }> {
-    const { rows, total } = await listRefundRows(this.db.db, query);
+  async list(
+    query: ParsedListQuery<RefundSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WireRefund[]; total: number }> {
+    const { rows, total } = await listRefundRows(
+      this.db.db,
+      contact === 'full' ? query : withoutSearchFields(query, ['customer.email']),
+    );
     return { rows: await this.views.build(this.db.db, rows), total };
   }
 

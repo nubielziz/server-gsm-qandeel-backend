@@ -16,7 +16,8 @@ export const createCustomerAccount = defineRoute({
     'Turns a customer who bought as a guest into an account; the earlier orders already belong to the customer. `mode` ' +
     '`reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once ' +
     '(`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password.' +
-    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
+    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.' +
+    ' `temporary_password` also needs `customers:password` (`403 FORBIDDEN`, decision 047).',
   tags: ['customers'],
   surface: 'admin',
   access: 'staff-permission',

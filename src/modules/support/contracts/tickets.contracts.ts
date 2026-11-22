@@ -27,8 +27,17 @@ export const TicketRowSchema = z.object({
   requesterType: RequesterTypeSchema.describe('`client` is a merchant.'),
   requesterId: zId,
   requester: z.object({
-    name: z.string().describe("'Deleted customer' after an anonymize; the address when a guest gave no name."),
-    email: z.string().nullable(),
+    name: z
+      .string()
+      .describe(
+        "'Deleted customer' after an anonymize; the masked address when a customer gave no name (decision 047).",
+      ),
+    email: z
+      .string()
+      .nullable()
+      .describe(
+        "A merchant's address in full; a storefront customer's is masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+      ),
   }),
   orderId: zId.nullable(),
   category: TicketCategorySchema,
@@ -109,7 +118,7 @@ export const listSupportTickets = defineRoute({
     'Tickets with their requester, assignee and reply timers. Filters: `status` (repeat the key for several; `pending` is the stored ' +
     '`pending_customer`), `late=true` (a reply is awaited and overdue), `assigneeId`, `requesterType` (`customer` or `client`) and ' +
     '`requesterId` (with a type: the tickets of one customer). `q` is a case-insensitive contains over the number, the subject, the ' +
-    "requester's name and the requester's email address. Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the " +
+    "requester's name and the requester's email address (a customer's only for callers who hold `customers:read`, decision 047). Default order: late tickets first, then the latest activity. The console asks again every 30 seconds, and for the " +
     'tab counts with `_start=0&_end=1`.',
   tags: ['support-tickets'],
   surface: 'admin',

@@ -2,7 +2,7 @@
 // TicketConversationService.
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { TicketAdminService } from '../application/ticket-admin.service';
 import { TicketConversationService } from '../application/ticket-conversation.service';
 import {
@@ -36,24 +36,32 @@ export class SupportTicketsController {
    * Lists tickets.
    *
    * @param query the parsed list request
+   * @param staff the signed-in staff member (decides whether a customer's address is shown and searched, decision 047)
    * @returns the rows and the total
    * @route GET /admin/support-tickets
    */
   @Route(listSupportTickets)
-  list(@Query() query: QueryOf<typeof listSupportTickets>): Promise<ResultOf<typeof listSupportTickets>> {
-    return this.tickets.list(query);
+  list(
+    @Query() query: QueryOf<typeof listSupportTickets>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listSupportTickets>> {
+    return this.tickets.list(query, customerContactOf(staff));
   }
 
   /**
    * Shows a ticket with its thread.
    *
    * @param params the ticket id
+   * @param staff the signed-in staff member (decides whether a customer's address is shown, decision 047)
    * @returns the ticket
    * @route GET /admin/support-tickets/:id
    */
   @Route(showSupportTicket)
-  show(@Param() params: ParamsOf<typeof showSupportTicket>): Promise<ResultOf<typeof showSupportTicket>> {
-    return this.tickets.show(params.id);
+  show(
+    @Param() params: ParamsOf<typeof showSupportTicket>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof showSupportTicket>> {
+    return this.tickets.show(params.id, customerContactOf(staff));
   }
 
   /**
@@ -71,7 +79,7 @@ export class SupportTicketsController {
     @Body() body: BodyOf<typeof updateSupportTicket>,
     @CurrentStaff() staff: StaffPrincipal,
   ): Promise<ResultOf<typeof updateSupportTicket>> {
-    return this.tickets.update(params.id, body, staff.staffId);
+    return this.tickets.update(params.id, body, staff.staffId, customerContactOf(staff));
   }
 
   /**

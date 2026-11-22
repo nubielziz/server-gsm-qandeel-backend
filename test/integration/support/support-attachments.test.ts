@@ -13,13 +13,14 @@ import { TicketThreadService } from '@src/modules/support/application/ticket-thr
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
-import { insertGateway } from '../../support/billing';
+import { insertGateway, insertInvoiceRow, insertPendingPayment } from '../../support/billing';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
 import { multipartRequest } from '../../support/machine-orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { rejectionOf } from '../../support/rejection';
+import { insertUsd } from '../../support/webhooks';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
 import { makeCustomer } from '../../support/store';
 import {
@@ -354,6 +355,66 @@ describe('the downloads', () => {
     expect(
       thread.messages.flatMap((message: { attachments: { id: number }[] }) => message.attachments.map((a) => a.id)),
     ).toEqual([publicFile, noteFile]);
+  });
+});
+
+describe('opening a file that is also an identity document or a payment proof (decision 047)', () => {
+  const opened = async (action: string) => {
+    const { db } = await testDb();
+    return db.select().from(s.auditLogs).where(eq(s.auditLogs.action, action)).orderBy(s.auditLogs.id);
+  };
+
+  it('leaves the audit row of the file route for staff, and none for an ordinary attachment', async () => {
+    const { db, customer, ticket } = await customerTicket();
+    const merchantId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const passport = await fileRow('client', merchantId, { filename: 'passport.pdf' });
+    const [submission] = await db
+      .insert(s.kycSubmissions)
+      .values({ clientId: merchantId, fileIds: [passport.id] })
+      .returning();
+    await insertUsd(db);
+    const gatewayId = await insertGateway(t, db);
+    const invoice = await insertInvoiceRow(db, merchantId);
+    const receipt = await fileRow('client', merchantId, { filename: 'receipt.pdf' });
+    const payment = await insertPendingPayment(db, invoice, gatewayId, { receiptFileId: receipt.id });
+    const ordinary = await fileRow('customer', customer.id, { filename: 'screenshot.png', mime: 'image/png' });
+    // The requester attached all three to messages of the ticket (the files are rows of the table, whatever they are used for elsewhere).
+    for (const file of [passport, receipt, ordinary]) {
+      await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [file.id] });
+    }
+    const open = (fileId: number) => staff.get(`/admin/support-tickets/${ticket.id}/files/${fileId}`);
+
+    expect((await open(ordinary.id)).status).toBe(302);
+    expect(await opened('opened an identity document of')).toHaveLength(0);
+    expect(await opened('opened the payment proof of')).toHaveLength(0);
+
+    expect((await open(passport.id)).status).toBe(302);
+    const [identity] = await opened('opened an identity document of');
+    expect(identity).toMatchObject({
+      entityType: 'merchant',
+      entityId: merchantId,
+      entityLabel: 'Zain Mobile Hub',
+      actorId: staff.staffId,
+      after: { fileId: passport.id, kycSubmissionId: submission!.id },
+    });
+    expect((await open(receipt.id)).status).toBe(302);
+    const [proof] = await opened('opened the payment proof of');
+    expect(proof).toMatchObject({
+      entityType: 'payment',
+      entityId: payment.id,
+      entityLabel: `PAY-${payment.id}`,
+      actorId: staff.staffId,
+      after: { fileId: receipt.id },
+    });
+    // Every opening writes its row, the same rows as the file route's.
+    expect((await open(passport.id)).status).toBe(302);
+    expect(await opened('opened an identity document of')).toHaveLength(2);
+    // An unknown file of the ticket answers 404 and writes nothing; a requester opening its own file writes nothing.
+    expect((await open(999_999)).status).toBe(404);
+    expect(await opened('opened an identity document of')).toHaveLength(2);
+    expect((await onTicket('GET', ticket.token, `/files/${passport.id}`)).statusCode).toBe(302);
+    expect(await opened('opened an identity document of')).toHaveLength(2);
+    expect(await opened('opened the payment proof of')).toHaveLength(1);
   });
 });
 

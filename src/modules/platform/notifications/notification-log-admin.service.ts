@@ -1,6 +1,7 @@
 // NotificationLogAdminService: the read-only log behind `/admin/notifications*` (feature 12a): rows with the recipient masked by the server.
 import { Injectable } from '@nestjs/common';
 import type { JsonObject, JsonValue, ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import type { NotificationChannel, NotificationRecipientType, NotificationStatus } from '../db/schema';
@@ -45,7 +46,9 @@ type PayloadView = 'none' | 'full' | 'hidden';
  *
  * Why: RULES settings 11 and M172: staff see what the system sent and why a message failed, never a whole address: the server masks
  * the recipient (`r***@example.com`, `@1***`) from the recipient's current row before the answer leaves the API. The list omits the
- * payload; the single read has it, with its values shown only to holders of `notifications:*` (decision 054).
+ * payload; the single read has it, with its values shown only to holders of `notifications:*` (decision 054). A row that names the
+ * address it went to shows that address masked (decision 047), and a customer's address is searched only for callers who may read
+ * customers.
  *
  * Side effects: none (read only).
  */
@@ -56,11 +59,15 @@ export class NotificationLogAdminService {
   /**
    * Lists the log.
    *
-   * @param query the parsed list request
+   * @param query the parsed list request; `q` matches a customer recipient's whole address only when `contact` is `full` (decision 047)
+   * @param contact what the caller may see of customers' addresses (identity's `customerContactOf`)
    * @returns the page (without payloads) and the exact total for the filter
    */
-  async list(query: ParsedListQuery<NotificationSortField>): Promise<{ rows: WireNotification[]; total: number }> {
-    const { rows, total } = await listLogRows(this.db.db, query);
+  async list(
+    query: ParsedListQuery<NotificationSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: WireNotification[]; total: number }> {
+    const { rows, total } = await listLogRows(this.db.db, query, contact);
     return { rows: rows.map((row) => toWire(row, 'none')), total };
   }
 
@@ -90,9 +97,10 @@ const maskAddresses = (addresses: string): string =>
 /** The masked recipient of a row: the address of an email, the chat of a Telegram message. */
 function recipientOf(row: LogRow): string {
   if (row.notification.channel === 'email') {
-    // An alert's message has no recipient row: its addresses are in the payload.
+    // An alert's message has no recipient row: its addresses are in the payload. Decision 047: so does a row that names the address it
+    // went to (the notice of an email change), which is not the recipient's current address.
     const payloadTo = (row.notification.payload as { to?: unknown }).to;
-    return row.email === null && asString(payloadTo) ? maskAddresses(payloadTo) : maskEmail(row.email ?? '');
+    return asString(payloadTo) ? maskAddresses(payloadTo) : maskEmail(row.email ?? '');
   }
   const payloadChat = (row.notification.payload as { chatId?: unknown }).chatId;
   return maskTelegram(row.telegramChatId ?? (asString(payloadChat) ? payloadChat : null));

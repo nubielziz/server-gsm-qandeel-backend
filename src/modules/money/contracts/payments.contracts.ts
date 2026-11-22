@@ -33,7 +33,11 @@ export const PaymentSchema = z.object({
     .object({
       id: zId,
       name: z.string(),
-      email: z.string(),
+      email: z
+        .string()
+        .describe(
+          "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+        ),
       walletBalance: zSignedMoney
         .nullable()
         .describe('The customer store balance now; null while the customer has no wallet.'),
@@ -109,7 +113,7 @@ export const listPayments = defineRoute({
   summary: 'Payments and the manual review queue',
   description:
     'The wallet top-ups only: the list always filters `purpose=topup`, so `purpose=order` answers an empty list. Newest first. ' +
-    '`q` searches the gateway reference, the merchant name and the storefront customer’s name and email. `owner` keeps merchant ' +
+    '`q` searches the gateway reference, the merchant name and the storefront customer’s name and email (the email only for callers who hold `customers:read`, decision 047). `owner` keeps merchant ' +
     'deposits or customer store balance top-ups (feature 21); `customerId` one customer’s.',
   tags: ['finance'],
   surface: 'admin',

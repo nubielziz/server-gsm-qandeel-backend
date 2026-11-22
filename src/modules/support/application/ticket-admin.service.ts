@@ -3,6 +3,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError, type FieldError } from '../../../common/errors';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
 import { AuditService } from '../../platform';
@@ -81,26 +82,31 @@ export class TicketAdminService {
    * Lists tickets.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of a customer requester's address (decision 047; it also decides whether `q` matches it)
    * @returns the page of inbox rows and the exact total
    */
-  async list(query: ParsedListQuery<TicketSortField>): Promise<{ rows: TicketRowView[]; total: number }> {
+  async list(
+    query: ParsedListQuery<TicketSortField>,
+    contact: CustomerContact,
+  ): Promise<{ rows: TicketRowView[]; total: number }> {
     const now = this.clock.now();
-    const { rows, total } = await listTicketRows(this.db.db, query, now);
+    const { rows, total } = await listTicketRows(this.db.db, query, now, contact);
     const times = await lastPublicTimes(
       this.db.db,
       rows.map((row) => row.ticket.id),
     );
-    return { rows: rows.map((row) => toTicketView(row, times.get(row.ticket.id), now)), total };
+    return { rows: rows.map((row) => toTicketView(row, times.get(row.ticket.id), now, contact)), total };
   }
 
   /**
    * Reads one ticket with its thread.
    *
    * @param id the ticket id
+   * @param contact what the caller may see of a customer requester's address (decision 047)
    * @returns the ticket, every message (internal notes included, each with its attachments) and the channels a reply may use
    * @throws {AppError} `NOT_FOUND`
    */
-  async show(id: number): Promise<TicketDetailView> {
+  async show(id: number, contact: CustomerContact): Promise<TicketDetailView> {
     const row = await findTicketRow(this.db.db, id);
     if (!row) throw notFound();
     const [times, messages, requester] = await Promise.all([
@@ -117,7 +123,7 @@ export class TicketAdminService {
       reachable: requester?.reachable ?? false,
       telegramChatId: requester?.telegramChatId ?? null,
     });
-    return toDetailView(row, times.get(id), messages, files, channels, this.clock.now());
+    return toDetailView(row, times.get(id), messages, files, channels, this.clock.now(), contact);
   }
 
   /**
@@ -126,11 +132,17 @@ export class TicketAdminService {
    * @param id the ticket id
    * @param input the keys to change
    * @param staffId the staff member making the change
+   * @param contact what the caller may see of a customer requester's address in the answer (decision 047)
    * @returns the updated inbox row
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `assigneeId` for anyone who is not an active staff member, on `status`
    *   for a move the ticket cannot make)
    */
-  async update(id: number, input: UpdateTicketInput, staffId: number): Promise<TicketRowView> {
+  async update(
+    id: number,
+    input: UpdateTicketInput,
+    staffId: number,
+    contact: CustomerContact,
+  ): Promise<TicketRowView> {
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const before = await lockTicket(tx, id);
@@ -169,7 +181,7 @@ export class TicketAdminService {
           before: unchangedFields(before, input),
           after: unchangedFields(before, input),
         });
-        return this.row(tx, id, now);
+        return this.row(tx, id, now, contact);
       }
 
       const status = newStatus ?? before.status;
@@ -223,7 +235,7 @@ export class TicketAdminService {
         if (newStatus === 'resolved') await this.afterResolve(work, after, staffId, now);
       }
       this.events.updated(id);
-      return this.row(tx, id, now);
+      return this.row(tx, id, now, contact);
     });
   }
 
@@ -268,10 +280,10 @@ export class TicketAdminService {
   }
 
   /** Reads the inbox row of a ticket after a write (inside the transaction, so the new state is what it sees). */
-  private async row(db: DbExecutor, id: number, now: Date): Promise<TicketRowView> {
+  private async row(db: DbExecutor, id: number, now: Date, contact: CustomerContact): Promise<TicketRowView> {
     const row = await findTicketRow(db, id);
     if (!row) throw notFound();
     const times = await lastPublicTimes(db, [id]);
-    return toTicketView(row, times.get(id), now);
+    return toTicketView(row, times.get(id), now, contact);
   }
 }

@@ -12,7 +12,7 @@ export const AdminImeiCheckSchema = z.object({
   imei: z
     .string()
     .describe(
-      'The 15 digits while they are stored; after an erasure the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown).',
+      'The 15 digits for callers who hold `risk:decide` while they are stored; otherwise, and after an erasure, the TAC followed by bullets up to 15 characters (15 bullets when the TAC is unknown) (decision 047).',
     ),
   brand: z.string(),
   model: z.string(),
@@ -58,8 +58,8 @@ export const listImeiChecks = defineRoute({
   description:
     'Every IMEI check, free or before an order. Filters: `checkType`, `status`, `source`. `q` is an IMEI (15 digits: matched through ' +
     'the keyed hash), a TAC (8 to 14 digits, or a shorter prefix) or text matched against the brand and the model. Sort by `model`, ' +
-    '`checkType`, `status` or `createdAt` (default, newest first). The IMEI is decrypted for the answer; after the retention period ' +
-    'or an anonymization it is erased and shown as the TAC and bullets.',
+    '`checkType`, `status` or `createdAt` (default, newest first). The IMEI is decrypted for callers who hold `risk:decide` (decision 047); ' +
+    'after the retention period or an anonymization it is erased and shown as the TAC and bullets, and callers without `risk:decide` always read the mask.',
   tags: ['imei-checks'],
   surface: 'admin',
   access: 'staff-permission',

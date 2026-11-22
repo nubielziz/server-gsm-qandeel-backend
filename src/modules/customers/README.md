@@ -117,10 +117,14 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
   request address) and `GET /store/v1/me/orders` (the session's own
   orders only; foreign read of `orders` in `infra/foreign-reads.repository.ts`).
 - **Admin customers** (`CustomerAdminService`, `CustomerAccountAdminService`, scenario b2c-account): list with the order figures
-  (scalar subqueries on `orders`), detail (account side, latest consent evidence, risk summary, counts), create (reset link or a
-  14-character temporary password shown once), edit (an email change clears `email_verified_at`, voids every unused link of the customer (sign-in, invitation, reset,
-  verification: they went to the old address) and, for an account, sends a verification link; a blocklisted email is `422` on `email`; a country without a current `tax_rates` row is `422` on `country`; the currency is the country's storefront currency, else USD), account for a guest, password link
-  or temporary password, end sessions, suspend and reactivate. Every write is audited with the demo's verb phrases and never writes a
+  (scalar subqueries on `orders`), detail (account side, latest consent evidence, risk summary, counts), create (reset link, or a
+  14-character temporary password shown once, which also needs `customers:password`: `403 FORBIDDEN`, nothing created, decision 047), edit (an email change clears `email_verified_at`, voids every unused link of the customer (sign-in, invitation, reset,
+  verification: they went to the old address) and, for an account, sends a verification link; for an account it also needs `customers:password`
+  (`403 FORBIDDEN`, checked on the locked row before anything is written), ends every session of the customer (`SessionService.revokeAllOf`, the ended count goes
+  into the audit row as `sessions`) and writes the security notice `customer.security_notice` through `CustomerSecurityNotices` (`application/mail/customer-security-notices.ts`,
+  provided and exported by `CustomerMailModule`) to the address before the change (decision 047; a guest's address needs only `customers:update` and sends no notice); a blocklisted email is `422` on `email`; a country without a current `tax_rates` row is `422` on `country`; the currency is the country's storefront currency, else USD), account for a guest, password link
+  or temporary password (creating the account with a temporary password also needs `customers:password`, decision 047; the link mode needs only `customers:update`),
+  end sessions, suspend and reactivate. Every write is audited with the demo's verb phrases and never writes a
   password (the audit key is `credential`, because the audit log redacts keys ending in `password`).
 - **Foreign reads** (decision 016 deviation, one file `infra/foreign-reads.repository.ts`): `currencies`, `tax_rates`, `orders`, `sessions`,
   `legal_documents`, `risk_assessments`, `refunds`, `disputes`, `support_tickets` and `blocklist_entries` are read with plain selects;
@@ -164,6 +168,9 @@ the reminder and its schedule: loaded by the API and the worker), `controllers/g
 `jobs/checkout-recovery.processors.ts`, `infra/recovery.repository.ts`, `domain/recovery.ts`. Rules: RULES checkouts 1 to 8, ANSWERS checkouts 1 to 8,
 resolutions `b2c-10` and `b2c-14`.
 
+- **The list's search** (decision 047): `q` is a case-insensitive contains over the FULL email while the rows carry it masked, for a caller who holds
+  `customers:read`; for any other caller the address is not a search field, so a `q` finds no row (`withoutSearchFields` leaves no field, and `listWhere` answers
+  "no row" for a search with no field).
 - **One rule** (`domain/recovery.ts`, `recoveryVerdict`): a checkout may get its recovery email when it exists, no recovery email went out
   (`recovery_emailed_at` is null), it is not paid (no `order_id` and status not `paid`), its customer agreed to marketing email and is `active`, it is at
   least `abandonedMinutes` old (the storefront policy, 5 to 1440, default 60) and not older than 30 days. The first failing check is the skip reason, in
@@ -352,7 +359,7 @@ the automatic reminder; route: queue `notifications`, job `checkout.recovery`, r
 One processor per mail event (`jobs/customer-mail.processors.ts`, queue `notifications`, loaded in the worker by `CustomerMailModule`), all running
 `CustomerMailJobs.handle` (`application/mail/customer-mail-jobs.ts`, built like the merchant mail job: see identity's "Merchant mail"). The job re-reads
 the customer and the link and sends **nothing** for a customer that is not active (`suspended`, `blocked`, `anonymized`: `customer_not_active`
-or `customer_gone`), for a link that was used, voided or has expired (`link_not_usable`), or when the template is missing or switched off. The
+or `customer_gone`), or for a link that was used, voided or has expired (`link_not_usable`); a missing or switched-off template does not stop the mail, the shipped text is sent (decision 047). The
 request makes a placeholder token that nobody receives (the clear value is not kept anywhere and is not logged); **the job rotates it**
 (`CustomerAuthTokens.rotate`: a new random token's hash on the same `auth_tokens` row, same id and expiry, only while the row is unused and
 unexpired) and sends the link `<STORE_BASE_URL>/sign-in?token=<token>` (`/set-password` for an invitation and a reset, `/verify-email` for a

@@ -45,7 +45,12 @@ export const DisputeSchema = z.object({
     .nullable()
     .optional()
     .describe('How strong the case looks; the single read only.'),
-  evidence: z.array(EvidenceItem).optional().describe('The pack the server built; the single read only.'),
+  evidence: z
+    .array(EvidenceItem)
+    .optional()
+    .describe(
+      'The pack the server built; the single read only. The delivery line shows the customer’s address masked; the text sent to the gateway carries it in full (decision 047).',
+    ),
 });
 
 const DISPUTE_EXAMPLE = {
@@ -72,7 +77,7 @@ export const listDisputes = defineRoute({
   description:
     'Disputes (chargebacks) with their evidence deadline, without the evidence pack. Sorted by `evidenceDueAt` ascending (the default) ' +
     'the disputes that still need an answer come first, soonest deadline first, then the others by deadline. `q` searches the id, the ' +
-    'reason code and the customer name and email.',
+    'reason code and the customer name and email (the email only for callers who hold `customers:read`, decision 047).',
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',

@@ -50,8 +50,13 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     // Four of the demo's six (order received, completed, failed and payment failed) are migration defaults since feature 16: only the other two are new.
     expect(reportOf(first.platform, 'notification_templates')).toMatchObject({ inserted: 2, existing: 4 });
     const { db } = await testDb();
-    // The four account mails (14b) and the refund-declined mail (16) are default templates of the migrations, not the demo's six.
-    const accountMails: readonly string[] = [...CUSTOMER_MAIL_EVENT_KEYS, 'refund.declined'];
+    // The four account mails (14b), the refund-declined mail (16) and the security notice (decision 047) are default templates of the
+    // migrations, not the demo's six.
+    const accountMails: readonly string[] = [
+      ...CUSTOMER_MAIL_EVENT_KEYS,
+      'refund.declined',
+      'customer.security_notice',
+    ];
     // The migrations' rows come first (they were there before the seed ran), then the two the seed added.
     const customer = (await db.select().from(s.notificationTemplates).orderBy(s.notificationTemplates.id)).filter(
       (row) => row.audience === 'customer' && !accountMails.includes(row.event),
@@ -88,8 +93,13 @@ describe.skipIf(!frontendPresent)('the 12a seed', () => {
     const { platform } = await seed();
     expect(reportOf(platform, 'notifications')).toMatchObject({ inserted: 112 + 86 + 6 + 41 + 17 + 48, existing: 0 });
     const owner = await adminWith(t, ['*']);
-    // The four account mails (14b) and the refund-declined mail (16) are default templates of the migrations, not the demo's six.
-    const accountMails: readonly string[] = [...CUSTOMER_MAIL_EVENT_KEYS, 'refund.declined'];
+    // The four account mails (14b), the refund-declined mail (16) and the security notice (decision 047) are default templates of the
+    // migrations, not the demo's six.
+    const accountMails: readonly string[] = [
+      ...CUSTOMER_MAIL_EVENT_KEYS,
+      'refund.declined',
+      'customer.security_notice',
+    ];
     const templates = (
       (await owner.get('/admin/notification-templates?audience=customer&_sort=id&_order=asc')).body as Array<{
         event: string;

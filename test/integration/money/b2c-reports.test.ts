@@ -243,7 +243,8 @@ describe('GET /admin/reports/payments', () => {
       status: 'captured',
       currency: 'USD',
       fx: '1.00000000',
-      customer: { id: expect.any(Number), name: 'd@mail.example' },
+      // Decision 047, rule B: a customer without a name is labelled by the masked address (a one-character local part is hidden too).
+      customer: { id: expect.any(Number), name: '•••@mail.example' },
     });
     expect(res.body.payments[1]).toMatchObject({
       method: 'wallet',
@@ -277,6 +278,20 @@ describe('GET /admin/reports/payments', () => {
     ).rows[0]!.loss;
     expect(res.body.totals.chargebackLoss).toBe(loss);
     expect(res.body.totals.chargebackLoss).toBe('19.7554');
+  });
+
+  it('shows a customer without a name by the masked address in the payments report, for every caller (decision 047)', async () => {
+    const { card, refunded } = await books();
+    const reader = await adminWith(t, ['reports:finance', 'customers:read']);
+    for (const api of [staff, reader]) {
+      const lines = (await api.get('/admin/reports/payments?_sort=createdAt&_order=asc')).body.payments;
+      const names = new Map(
+        lines.map((line: { id: number; customer: { name: string } }) => [line.id, line.customer.name]),
+      );
+      expect(names.get(card.paymentId)).toBe('•••@mail.example');
+      expect(names.get(refunded.paymentId)).toBe('•••@mail.example');
+      expect(JSON.stringify(lines)).not.toMatch(/[a-z]@mail\.example/);
+    }
   });
 
   it('filters by method, pages and sorts; the method comparison ignores the filter and the page', async () => {

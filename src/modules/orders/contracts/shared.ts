@@ -61,7 +61,13 @@ export const StaffOrderSchema = z.object({
     category: z.string().nullable().optional(),
   }),
   client: NamedRef.nullable(),
-  customer: NamedRef.extend({ email: z.string() }).nullable(),
+  customer: NamedRef.extend({
+    email: z
+      .string()
+      .describe(
+        "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
+      ),
+  }).nullable(),
   supplier: NamedRef.nullable(),
   supplierRef: z.string().nullable(),
   attempts: z

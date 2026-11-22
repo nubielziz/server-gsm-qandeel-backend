@@ -1,6 +1,7 @@
 // HTTP controller of the staff IMEI log (map domain K, stage 18). Thin: the rules live in ImeiCheckAdminService.
 import { Controller, Header, Param, Query } from '@nestjs/common';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { ImeiCheckAdminService } from '../application/imei-check-admin.service';
 import { getImeiCheck, listImeiChecks } from '../contracts/admin-imei-checks.contracts';
 
@@ -8,7 +9,7 @@ import { getImeiCheck, listImeiChecks } from '../contracts/admin-imei-checks.con
  * The console's IMEI checks tab.
  *
  * Why: staff read the log of checks and their results (RESOLUTIONS b2c-3, b2c-4); the IMEI is decrypted for the answer, which is
- * never cached.
+ * never cached. Decision 047: the digits are for holders of `risk:decide`; other readers get the stored mask.
  *
  * @route GET /admin/imei-checks
  * @route GET /admin/imei-checks/:id
@@ -21,25 +22,33 @@ export class ImeiChecksAdminController {
    * Lists the checks.
    *
    * @param query the parsed list request
+   * @param staff the signed-in staff member (the digits need `risk:decide`, decision 047)
    * @returns the page and its total
    * @route GET /admin/imei-checks
    */
   @Route(listImeiChecks)
   @Header('Cache-Control', 'no-store')
-  list(@Query() query: QueryOf<typeof listImeiChecks>): Promise<ResultOf<typeof listImeiChecks>> {
-    return this.checks.list(query);
+  list(
+    @Query() query: QueryOf<typeof listImeiChecks>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listImeiChecks>> {
+    return this.checks.list(query, staff);
   }
 
   /**
    * Reads one check.
    *
    * @param params the check id
+   * @param staff the signed-in staff member (the digits need `risk:decide`, decision 047)
    * @returns the check
    * @route GET /admin/imei-checks/:id
    */
   @Route(getImeiCheck)
   @Header('Cache-Control', 'no-store')
-  show(@Param() params: ParamsOf<typeof getImeiCheck>): Promise<ResultOf<typeof getImeiCheck>> {
-    return this.checks.get(params.id);
+  show(
+    @Param() params: ParamsOf<typeof getImeiCheck>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof getImeiCheck>> {
+    return this.checks.get(params.id, staff);
   }
 }

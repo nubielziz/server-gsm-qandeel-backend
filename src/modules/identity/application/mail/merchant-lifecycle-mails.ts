@@ -15,7 +15,7 @@ import {
 } from './identity-mail-events';
 
 /** The staff actions a security notice names. */
-export type SecurityNoticeKind = 'temporary_password' | 'twofa_reset' | 'api_key_created';
+export type SecurityNoticeKind = 'temporary_password' | 'twofa_reset' | 'api_key_created' | 'email_changed';
 
 /**
  * The fixed sentence of each security notice (`{{change}}` of `merchant.security_notice`).
@@ -27,6 +27,8 @@ export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, string
   temporary_password: 'a temporary password was set for your account; you will choose a new one when you sign in',
   twofa_reset: 'two-factor sign-in was turned off for your account',
   api_key_created: 'a new API key was created for your account',
+  email_changed:
+    'the email address of your account was changed, so this address no longer receives the emails of your account',
 };
 
 /** A merchant as these mails need it. */
@@ -36,12 +38,12 @@ type Recipient = Pick<Client, 'id' | 'name'>;
  * Writes the lifecycle emails of a merchant.
  *
  * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
- * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key). All are transactional: always sent, whatever the
+ * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key, a new email address). All are transactional: always sent, whatever the
  * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
  * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
  *
  * Side effects: each call inserts a `notifications` row and an `outbox_events` row in the caller's transaction. A missing or switched-off template
- * sends nothing and is not an error (RULES settings 10). No dedupe key: the guarded change a mail rides on happens once.
+ * sends nothing and is not an error (RULES settings 10); the security notice is the exception: it is written from its shipped text (decision 047). No dedupe key: the guarded change a mail rides on happens once.
  */
 @Injectable()
 export class MerchantLifecycleMails {
@@ -115,13 +117,23 @@ export class MerchantLifecycleMails {
    * @param work the caller's transaction
    * @param client the merchant
    * @param kind what staff did; it decides the sentence
+   * @param options `to`: the address to write to instead of the merchant's current one (decision 047: the notice of an email change goes
+   *   to the address before the change)
    * @returns once the notification and its outbox event are written
    */
-  securityNotice(work: Pick<TransactionContext, 'tx'>, client: Recipient, kind: SecurityNoticeKind): Promise<void> {
-    return this.send(work, MERCHANT_SECURITY_NOTICE_EVENT, client, {
-      merchantName: client.name,
-      change: SECURITY_NOTICE_PHRASES[kind],
-    });
+  securityNotice(
+    work: Pick<TransactionContext, 'tx'>,
+    client: Recipient,
+    kind: SecurityNoticeKind,
+    options: { readonly to?: string } = {},
+  ): Promise<void> {
+    return this.send(
+      work,
+      MERCHANT_SECURITY_NOTICE_EVENT,
+      client,
+      { merchantName: client.name, change: SECURITY_NOTICE_PHRASES[kind] },
+      options.to,
+    );
   }
 
   private async send(
@@ -129,12 +141,14 @@ export class MerchantLifecycleMails {
     event: string,
     client: Recipient,
     variables: Record<string, string>,
+    to?: string,
   ): Promise<void> {
     await this.notifications.enqueue(work, {
       event,
       recipient: { type: 'client', id: client.id },
       channel: 'email',
       variables,
+      ...(to === undefined ? {} : { to }),
     });
   }
 }

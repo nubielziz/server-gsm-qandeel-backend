@@ -215,11 +215,24 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 presigned object-storage link that lives 5 minutes (`StorageService.presignGet` with the stored file name as the download name),
 with `Cache-Control: no-store` on the redirect (`FileAccessService`, `controllers/files.controller.ts`, `contracts/files.contracts.ts`).
 `defineRoute` takes `success: { status: 302 }` for them (a bodiless GET: the handler sets `Location` and the response interceptor
-refuses a 302 without it; OpenAPI documents the `Location` header). Staff may open any file; a merchant only its own upload
+refuses a 302 without it; OpenAPI documents the `Location` header). A merchant opens only its own upload
 (`owner_type client`, `owner_id` the merchant) or the input or result file of one of its own orders (`ownsOrderFile`, a documented
 foreign read of `orders` in `infra/file.repository.ts`); anything else, an unknown id included, is `404`, never `403`. The access is
-logged at info without the file name and writes no audit row. The routes read the caller from the request context
+logged at info without the file name. The merchant and API key routes read the caller from the request context
 (`getRequestContext().actor`), not from identity's decorators, because identity imports this module (decision 032).
+
+**Staff downloads by kind** (decision 047). `GET /admin/files/:id` needs `files:read` (the route) and the read permission of every kind of record that
+uses the file, found by `fileReferencesOf` (`infra/file.repository.ts`, one statement over the tables that name a file: a documented deviation of decision 016,
+like `deleteUnreferencedFiles`) and judged by the pure `files/file-kinds.ts`: `kyc:read` (a KYC submission lists the file: an identity document), `payments:read` (a
+payment's receipt), `disputes:read` (dispute evidence), `orders:read` (an order's input or result), `invoices:read` (an invoice PDF), `support:read` (a ticket message's
+attachment) and `customers:privacy` (a data request's export). A file used by several kinds needs all their permissions (the first missing one, in that order, is named in the
+`403 FORBIDDEN`). A file nothing uses yet needs `kyc:read` when a merchant owns it and `customers:read` when a customer owns it; the public pictures of listings and payment methods
+need only `files:read`. Every download of an identity document writes an audit row under the merchant (`opened an identity document of`, with the file and the submission) and
+every download of a payment receipt one under the payment (`opened the payment proof of`, `PAY-<id>`), in one short transaction before the link is made: no row, no link. The rows are
+written by `auditStaffFileOpening` (`files/file-opening-audit.ts`, exported by the module's index), which takes the audited kinds from `auditedKindsOf` (the list `AUDITED_FILE_KINDS`); the support module's staff download of a
+ticket attachment calls it too, so a file that is also an identity document or a payment proof leaves the same row from either route. The
+staff route reads the caller's permissions through `notifications/identity-api.ts` (`identityApi()`, a late `import()` of identity's index: identity imports this module, so a static
+import would close a cycle, decision 032 amendment); a staff caller is `StaffFileCaller` (id and permissions).
 
 ## File uploads (feature 7a, MISMATCHES B157)
 
@@ -505,11 +518,11 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 |---|---|---|
 | `GET /admin/notification-templates` | `notifications:read` | templates, `event` A to Z; filters `audience`, `channel`, `isActive`, `event`; `q` over event and subject; each row has `sentLast30Days` (identity-platform-11: `sent` rows with the same event, channel and recipient type, `audience` merchant is `client`) |
 | `GET /admin/notification-templates/:id` | `notifications:read` | one template |
-| `POST /admin/notification-templates` | `notifications:create` | `{ event, channel, audience, subject, body, isActive = true }`: `422` on `event` for an unregistered event or a second template of the same event, channel and audience (templates have no language), on `audience` / `channel` when the event is not sent to it, on `subject` (an email needs one), `body` (not blank) and on a `{{placeholder}}` the event does not offer; audited `created notification template` |
-| `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off; audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
-| `DELETE /admin/notification-templates/:id` | `notifications:delete` | `204`; audited `deleted notification template` |
+| `POST /admin/notification-templates` | `notifications:create` | `{ event, channel, audience, subject, body, isActive = true }` (`409 LOCKED` for `isActive: false` on an email that protects accounts; `422` `link_*` and `security_placeholder` on `subject` / `body` of a link or security email, decision 047): `422` on `event` for an unregistered event or a second template of the same event, channel and audience (templates have no language), on `audience` / `channel` when the event is not sent to it, on `subject` (an email needs one), `body` (not blank) and on a `{{placeholder}}` the event does not offer; audited `created notification template` |
+| `PATCH /admin/notification-templates/:id` | `notifications:update` | `subject`, `body`, `isActive`; `event`, `channel`, `audience` are fixed (`422 immutable` on a different value); the texts are checked only when sent, so an old template can still be switched off (except an email that protects accounts: `409 LOCKED`, decision 047; the `link_*` and `security_placeholder` rules run on the texts that are sent); audited with before and after: `edited notification template`, or `turned on notification` / `turned off notification` (the demo's phrases, ANSWERS audit Q3) when the request carries only the switch |
+| `DELETE /admin/notification-templates/:id` | `notifications:delete` | `204`; audited `deleted notification template`; `409 LOCKED` for an email that protects accounts (decision 047) |
 | `POST /admin/notification-templates/:id/preview` | `notifications:read` | `{ subject?, body? }` (unsaved text) → `{ subject, body, format ('text' \| 'html'), from, note }`; sample data of the event, an unknown placeholder stays visible; sends nothing, no audit row |
-| `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address; `recipient` is masked by the server (`r***@example.com`, `@1***`), `error` only for a failed message, no `payload` |
+| `GET /admin/notifications` | `notifications:read` | the log, newest first; filters `status` (`queued`, `sent`, `failed`; `status_ne`), `channel`, `event`, `recipientType`; `q` a case-insensitive contains search over the event, and over the recipient's address only when `q` is the whole address (a customer's address only for a caller who holds `customers:read`, decision 047); `recipient` is masked by the server (`r***@example.com`, `@1***`; a row that names the address it went to, such as the notice of an email change, shows that address), `error` only for a failed message, no `payload` |
 | `GET /admin/notifications/:id` | `notifications:read` | the same row with its `payload` (placeholder values, never a secret) |
 
 **The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
@@ -522,8 +535,26 @@ always sent), for the messages of alerts. They go to no person's row but to the 
 (`ALERTS_EMAIL_TO`, `ALERTS_TELEGRAM_CHAT_ID`): `NotificationService.enqueueToAddress({ tx }, ...)` writes the row for the
 pseudo-recipient (`staff`, `OPERATIONS_RECIPIENT_ID` = 0) with the address or chat in the payload (`to`, `chatId`; the log masks
 both), or a `failed` row with the caller's reason when none is configured. The default English templates are `DEFAULT_TEMPLATES`; migration `0011_notifications_delivery.sql` inserts the
-merchant rows, `0012_customer_mail_templates.sql` the customer mails' rows and `0015_alert_templates.sql` the alert rows (a test reads both files and keeps code and migrations equal; a later migration that adds
-templates must be listed in that test).
+merchant rows, `0012_customer_mail_templates.sql` the customer mails' rows, `0015_alert_templates.sql` the alert rows and `0054_customer_security_notice.sql` the customer's security notice
+(a test reads the files and keeps code and migrations equal; a later migration that adds templates must be listed in that test).
+
+**Link emails and security emails** (decision 047). Three flags of the registry's event definitions: `secretLink` (the `link` placeholder is a one-time credential: the 3 merchant
+link mails, the 4 customer account mails, the 2 staff link mails, the customer `support.reply`, `support.ticket_received`, `support.csat_survey` and `checkout.abandoned`),
+`security` (the account link mails and the two security notices, `merchant.security_notice` and the new `customer.security_notice`; a security event must be transactional) and
+`namedAddress` (a row of the two notices names the address it goes to, `NotificationInput.to`, kept in the payload as `to`: the notice of an email change goes to the address before
+the change; `enqueue` refuses `to` for any other event and `sendNow` refuses it always). The pure `linkTemplateProblems` (`template-rules.ts`) keeps a link template's `{{link}}` inside the message:
+on its own in the text (at the start, or after a space, a tab or a line break) or as the whole double-quoted `href` of one link with a text, never in the subject, no other web address
+(character references decoded first; inside a tag, a named reference outside the short list the scan decodes is refused like a risky value), only the tags and attributes of two short lists, no comment or declaration, no character that shows nothing; the
+markup is also refused where the text part (`htmlToText`) would read it differently from the scan (an end tag with a space before `>`, a `<`, `>`, double quote or the word `href` in an attribute value, a lone `<` in an HTML body), so
+every link the scan accepts is a link the text part holds exactly once; codes `link_in_subject`, `link_markup`, `link_tag`, `link_attribute`, `link_href`, `link_anchors`, `link_label`, `link_placement`, `link_url` (`422` on `subject` or `body`, on create
+and on a change of the texts). `securityPlaceholderProblem` keeps `{{link}}` in a security link mail and `{{change}}` in a security notice, in the text the reader sees (outside every tag, attribute and comment; a link mail may also carry it as its
+link's `href`): `security_placeholder`. `protectedTemplateProblems(event, fields)` is the one check of the template routes and of `templateFor`: the link rules for a link email, and for every security email the same scan for comments, declarations and tags
+outside the list, a refused `style` or `hidden` attribute, no `href` in a notice, and the placeholder rule. A security email's template cannot be switched off or deleted (`409 LOCKED`). The
+registry also holds the shipped texts: the platform registers `DEFAULT_TEMPLATES` in its constructor, identity and support register theirs at boot in both processes
+(`registerBuiltInTemplates`; `builtInTemplate(key)`). `NotificationService.check` does not skip a security event whose template is missing or off (the shipped text exists), and the
+delivery's `templateFor` uses a stored template only when it is on and keeps the rules (and, for a security email, its placeholder), else the shipped text with a warning that names the
+template and the rule and never its text; an event with no shipped text (`checkout.abandoned`) whose stored template breaks the rules counts as switched off in `check` and `templateIsOn`
+(`template_off`), and a row queued earlier fails for good (`The template breaks the rules of a link mail.`).
 
 **One delivery path** (decision 020, `docs/queues.md` "notifications"). A use case calls `NotificationService.enqueue({ tx }, ...)`: a `notifications` row (`queued`) and the
 outbox event `notification.send` commit with the caller's change. Producers that already write an outbox event (`order.status_changed`, `wallet.low_balance`,
@@ -531,7 +562,7 @@ outbox event `notification.send` commit with the caller's change. Producers that
 `EventNotifier` (job `notification.plan`) decides who is told by the merchant's preferences and needs an active template. The send job (`NotificationDelivery.deliver`)
 re-reads the row, the recipient and the template, renders (an HTML body gets escaped values and a text part), sends and marks the row `sent` with a guarded update.
 A transient failure records the attempt and rethrows (the queue retries: 5 attempts, 30 s backoff); the last attempt, or a refusal that cannot change, marks the row
-`failed` with the reason. The template is the one of the event, channel and audience (`findTemplateFor`); a message with no usable template is logged and sends nothing (`no_template` when none exists, `template_off` when one exists and is off); a suspended merchant gets only transactional messages.
+`failed` with the reason. The template is the one of the event, channel and audience (`findTemplateFor`); a message with no usable template is logged and sends nothing (`no_template` when none exists, `template_off` when one exists and is off), except for the emails that protect accounts, which the shipped text sends (decision 047); a suspended merchant gets only transactional messages.
 
 **Price change digest** (user rule 9): `service.price_changed` events do not send at once; they join the merchant's digest row of the period (06:00 UTC to 06:00 UTC, one row
 per merchant, channel and period, key `digest:service.price_changed:<channel>:<client>:<day>`), sent by a delayed job `notification-<id>` at the end of the period. The send job

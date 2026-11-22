@@ -13,10 +13,12 @@ import {
   SessionService,
   SignInLock,
   type StaffPrincipal,
+  requirePermission,
   temporaryPasswordFor,
 } from '../../identity';
 import { AuditService } from '../../platform';
 import type { Customer } from '../db/schema';
+import { CUSTOMER_ACCOUNT_SECURITY_PERMISSION } from '../domain/account-security';
 import { type SuspendReason, suspendedReasonText } from '../domain/customer-status';
 import { upsertCredentials } from '../infra/customer-credentials.repository';
 import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
@@ -65,9 +67,13 @@ export class CustomerAccountAdminService {
    * @param mode how the customer gets a password
    * @param ip the request address, for the link record
    * @returns the temporary password in that mode, else nothing
-   * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409), `ACCOUNT_EXISTS` (409)
+   * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409), `ACCOUNT_EXISTS` (409), `FORBIDDEN` (403: a temporary password needs
+   *   `customers:password`, decision 047)
    */
   async createAccount(staff: StaffPrincipal, id: number, mode: PasswordMode, ip: string): Promise<PasswordResult> {
+    // Decision 047: a temporary password is a working credential for an existing identity; the link mode hands staff nothing (the
+    // invitation goes to the guest's own address). Checked before any read, so a refused call reads nothing.
+    if (mode === 'temporary_password') requirePermission(staff, CUSTOMER_ACCOUNT_SECURITY_PERMISSION);
     const customer = await this.assertExists(this.db.db, id);
     const temporary = this.temporaryFor(mode, customer);
     const passwordHash = temporary === undefined ? null : await this.hasher.hash(temporary);

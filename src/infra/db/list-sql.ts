@@ -63,7 +63,7 @@ function condition(column: ListColumn, filter: ParsedFilter): SQL {
  * Why: every list endpoint translates the same dialect; one function keeps the rules (IN for repeated keys, NOT IN for
  * repeated `_ne`, case-insensitive escaped contains for `q`) in one place and testable.
  *
- * @param query the parsed list request (filters and search)
+ * @param query the parsed list request (filters and search; a search with no field left matches no row, decision 047)
  * @param columns the wire field to column map of this endpoint
  * @param extra more conditions (visibility rules, date windows); `undefined` entries are skipped
  * @returns the condition, or `undefined` when nothing restricts the list
@@ -74,7 +74,10 @@ export function listWhere(
   ...extra: ReadonlyArray<SQL | undefined>
 ): SQL | undefined {
   const conditions: SQL[] = query.filters.map((filter) => condition(columnOf(columns, filter.field), filter));
-  if (query.search) {
+  if (query.search && query.search.fields.length === 0) {
+    // No field left to search (decision 047): nothing matches.
+    conditions.push(sql`false`);
+  } else if (query.search) {
     const pattern = `%${escapeLike(query.search.text)}%`;
     const any = sql.join(
       query.search.fields.map((field) => sql`${columnOf(columns, field)} ilike ${pattern}`),

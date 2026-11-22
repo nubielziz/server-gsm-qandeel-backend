@@ -3,6 +3,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { CapabilityTokenVault } from '../../../infra/crypto';
 import { type DbExecutor, DbService } from '../../../infra/db';
@@ -79,24 +80,29 @@ export class OrderReadService {
    * Lists a page of orders for staff.
    *
    * @param query the parsed list request
+   * @param contact what the caller may see of the customer's address (decision 047)
    * @returns the page of orders and the exact total
    */
-  async listForStaff(query: ParsedListQuery<OrderSort>): Promise<{ rows: StaffOrderView[]; total: number }> {
+  async listForStaff(
+    query: ParsedListQuery<OrderSort>,
+    contact: CustomerContact,
+  ): Promise<{ rows: StaffOrderView[]; total: number }> {
     const { rows, total } = await listOrderRows(this.db.db, { kind: 'staff' }, query, this.clock.now());
-    return { rows: await this.staffViews(rows), total };
+    return { rows: await this.staffViews(rows, contact), total };
   }
 
   /**
    * Shows one order to staff.
    *
    * @param id the order id
+   * @param contact what the caller may see of the customer's address (decision 047)
    * @returns the order
    * @throws {AppError} `NOT_FOUND` (404) for an unknown id
    */
-  async showForStaff(id: number): Promise<StaffOrderView> {
+  async showForStaff(id: number, contact: CustomerContact): Promise<StaffOrderView> {
     const row = await findOrderRow(this.db.db, { kind: 'staff' }, id);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
-    return (await this.staffViews([row]))[0]!;
+    return (await this.staffViews([row], contact))[0]!;
   }
 
   /**
@@ -182,7 +188,7 @@ export class OrderReadService {
   }
 
   /** Adds the dispatch counts and the review reasons of a page to its rows, in two queries. */
-  private async staffViews(rows: readonly OrderRow[]): Promise<StaffOrderView[]> {
+  private async staffViews(rows: readonly OrderRow[], contact: CustomerContact): Promise<StaffOrderView[]> {
     const ids = rows.map((row) => row.order.id);
     const [attempts, reasons] = await Promise.all([
       attemptsOf(this.db.db, ids),
@@ -192,7 +198,11 @@ export class OrderReadService {
       ),
     ]);
     return rows.map((row) =>
-      toStaffOrder(row, { attempts: attempts.get(row.order.id) ?? 0, reason: reasons.get(row.order.id) ?? null }),
+      toStaffOrder(
+        row,
+        { attempts: attempts.get(row.order.id) ?? 0, reason: reasons.get(row.order.id) ?? null },
+        contact,
+      ),
     );
   }
 }

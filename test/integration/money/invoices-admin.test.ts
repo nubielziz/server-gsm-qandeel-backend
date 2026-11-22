@@ -190,11 +190,37 @@ describe('GET /admin/invoices', () => {
     expect(byCustomer.body[0]).toMatchObject({
       kind: 'receipt',
       client: null,
-      customer: { id: customer!.id, name: 'Dana Customer', email: 'dana@example.com' },
+      // Decision 047: this caller does not hold customers:read, so the address comes masked.
+      customer: { id: customer!.id, name: 'Dana Customer', email: 'da•••@example.com' },
     });
     expect((await admin.get('/admin/invoices?_sort=status')).status).toBe(200);
     expect((await admin.get('/admin/invoices?status=bogus')).status).toBe(422);
     expect((await admin.get('/admin/invoices?_sort=number')).status).toBe(422);
+  });
+
+  it("masks a storefront receipt's customer address without customers:read (decision 047)", async () => {
+    const { db } = await testDb();
+    const zain = await insertWalletMerchant(db, { name: 'Zain' });
+    const [customer] = await db
+      .insert(s.customers)
+      .values({ email: 'dana@example.com', name: 'Dana Customer' })
+      .returning({ id: s.customers.id });
+    const receipt = await insertInvoiceRow(db, zain.id, {
+      kind: 'receipt',
+      clientId: null,
+      customerId: customer!.id,
+      amount: '20.0000',
+      status: 'paid',
+    });
+    const plain = await adminWith(t, ['invoices:read']);
+    const reader = await adminWith(t, ['invoices:read', 'customers:read']);
+    expect((await plain.get('/admin/invoices')).body[0].customer.email).toBe('da•••@example.com');
+    expect((await plain.get(`/admin/invoices/${receipt.id}`)).body.customer.email).toBe('da•••@example.com');
+    expect((await reader.get('/admin/invoices')).body[0].customer.email).toBe('dana@example.com');
+    expect((await reader.get(`/admin/invoices/${receipt.id}`)).body.customer.email).toBe('dana@example.com');
+    // The names are searched for everybody, and the address is not part of the search.
+    expect((await plain.get('/admin/invoices?q=dana')).total).toBe(1);
+    expect((await plain.get('/admin/invoices?q=example.com')).total).toBe(0);
   });
 
   it('reads one invoice, answers 404 for an unknown id and 403 without invoices:read', async () => {

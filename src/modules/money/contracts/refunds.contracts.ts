@@ -83,8 +83,8 @@ export const listRefunds = defineRoute({
   summary: 'Storefront refund requests',
   description:
     'Refunds of storefront customers only (a merchant refund goes through its order). Newest first. The page counts of the console are ' +
-    'this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the customer name and email (a guest has only an email). `amount` sorts ' +
-    'numerically.',
+    'this call with `_start=0&_end=1` and a `status` filter. `q` searches the id, the reason and the customer name and email (a guest has only an email); the email only for callers who ' +
+    'hold `customers:read` (decision 047). A customer without a name is shown by the masked address. `amount` sorts numerically.',
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',

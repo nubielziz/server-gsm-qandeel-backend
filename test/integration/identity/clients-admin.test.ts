@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { ApiKeyDirectory, MERCHANT_INVITED_EVENT, SessionService } from '@src/modules/identity';
 import { MERCHANT_INVITE_TTL_MS } from '@src/modules/identity/application/merchant-invites';
+import { SECURITY_NOTICE_PHRASES } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
 import { MerchantAccounts } from '@src/modules/money';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -13,8 +14,9 @@ import { HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
 import { insertApiKey } from '../../support/machine-auth';
-import { clearAccountMailLimits } from '../../support/identity-mail';
+import { clearAccountMailLimits, runMerchantMailJob, seedIdentityTemplates } from '../../support/identity-mail';
 import { makeMerchant } from '../../support/merchant-portal';
+import { mailbox, notificationRows, sendAllQueued } from '../../support/notifications';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -735,7 +737,9 @@ describe('PATCH /admin/clients/:id', () => {
 });
 
 describe('PATCH /admin/clients/:id, details (feature 20)', () => {
-  const editor = () => adminWith(t, ['clients:read', 'clients:update'], { name: 'Rami K.', ip: CALLER_IP });
+  // Decision 047: an email change also needs clients:security, so the editor of these tests holds it.
+  const editor = () =>
+    adminWith(t, ['clients:read', 'clients:update', 'clients:security'], { name: 'Rami K.', ip: CALLER_IP });
 
   it('edits several keys in one call, answers the updated row, and audits only the keys that changed', async () => {
     const merchant = await makeMerchant(t, { company: 'Zain', phone: '+962 6', country: 'JO' });
@@ -831,7 +835,7 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
     );
   });
 
-  it('an email change clears the verification, uses every open link up, mails the new address once (ids only), keeps the sessions and drops the cached views', async () => {
+  it('an email change clears the verification, uses every open link up, mails the new address once (ids only), ends the sessions and drops the cached views', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: clock.now() });
     const { db } = await testDb();
     const key = await insertApiKey(t, db, merchant.id);
@@ -872,11 +876,89 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
     expect(Object.keys(events[0]!.payload).filter((k) => k !== 'meta')).toEqual(['tokenId']);
     expect(events[0]!.payload).toMatchObject({ tokenId: open[0]!.id });
 
-    // The session still works (the merchant stays signed in).
-    expect((await t.app.get(SessionService).lookup(session.token))!.id).toBe(session.sessionId);
+    // Decision 047: nobody stays signed in across the change of the address.
+    expect(await t.app.get(SessionService).lookup(session.token)).toBeFalsy();
     const audit = (await auditRows()).at(-1)!;
-    expect(audit.after).toMatchObject({ email: 'new.address@example.com', emailVerified: false });
+    expect(audit.after).toMatchObject({ email: 'new.address@example.com', emailVerified: false, sessionsEnded: 1 });
     expect(audit.before).toMatchObject({ email: merchant.email });
+  });
+
+  it('needs clients:security to change a merchant’s email, and a refused change writes and spends nothing (decision 047)', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: clock.now() });
+    const { db } = await testDb();
+    const plain = await adminWith(t, ['clients:read', 'clients:update'], { ip: CALLER_IP });
+    const before = {
+      client: await clientRow(merchant.id),
+      tokens: await tokensOf(merchant.id),
+      outbox: await outboxRows(),
+      audit: await auditRows(),
+      notifications: await notificationRows(db),
+    };
+    const refused = await plain.patch(`/admin/clients/${merchant.id}`, { email: 'taken-over@example.com' });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the clients:security permission to do this.',
+    });
+    expect(await clientRow(merchant.id)).toEqual(before.client);
+    expect(await tokensOf(merchant.id)).toEqual(before.tokens);
+    expect(await outboxRows()).toEqual(before.outbox);
+    expect(await auditRows()).toEqual(before.audit);
+    expect(await notificationRows(db)).toEqual(before.notifications);
+    // The other details still need only clients:update, and the same address again is no change.
+    expect((await plain.patch(`/admin/clients/${merchant.id}`, { phone: '+962 79' })).status).toBe(200);
+    expect((await plain.patch(`/admin/clients/${merchant.id}`, { email: merchant.email.toUpperCase() })).status).toBe(
+      200,
+    );
+
+    // The refused call spent no point of the limiter: five changes still fit in the hour.
+    const api = await editor();
+    for (let i = 0; i < 5; i++) {
+      expect((await api.patch(`/admin/clients/${merchant.id}`, { email: `mine-${i}@example.com` })).status).toBe(200);
+    }
+    expect((await api.patch(`/admin/clients/${merchant.id}`, { email: 'mine-6@example.com' })).status).toBe(429);
+  });
+
+  it('ends every session of the merchant and tells the address before the change (decision 047)', async () => {
+    const { db } = await testDb();
+    await seedIdentityTemplates(db);
+    mailbox(t).reset();
+    const merchant = await makeMerchant(t, { emailVerifiedAt: clock.now(), name: 'Zain Mobile Hub' });
+    const one = await openSession(t, { type: 'client', id: merchant.id });
+    const two = await openSession(t, { type: 'client', id: merchant.id });
+    const api = await editor();
+    expect((await api.patch(`/admin/clients/${merchant.id}`, { email: 'new-owner@example.com' })).status).toBe(200);
+
+    for (const session of [one, two]) expect(await t.app.get(SessionService).lookup(session.token)).toBeFalsy();
+    expect((await auditRows()).at(-1)!.after).toMatchObject({ sessionsEnded: 2 });
+    const notices = (await notificationRows(db)).filter((row) => row.event === 'merchant.security_notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ recipientType: 'client', recipientId: merchant.id, channel: 'email' });
+    expect(notices[0]!.payload).toMatchObject({ to: merchant.email });
+    // Nothing in the stored row names the new address.
+    expect(JSON.stringify(notices[0]!.payload)).not.toContain('new-owner@example.com');
+
+    await sendAllQueued(t);
+    const toOld = mailbox(t).sent.filter((mail) => mail.to === merchant.email);
+    expect(toOld).toHaveLength(1);
+    expect(toOld[0]!.subject).toBe('A security change on your merchant account');
+    expect(toOld[0]!.text).toContain(SECURITY_NOTICE_PHRASES.email_changed);
+    expect(toOld[0]!.text).not.toContain('new-owner@example.com');
+    // The verification still goes to the new address (the job rotates the link and mails it).
+    await runMerchantMailJob(t, 'email_verification');
+    expect(mailbox(t).sent.filter((mail) => mail.to === 'new-owner@example.com')).toHaveLength(1);
+    expect(mailbox(t).sent.filter((mail) => mail.to === merchant.email)).toHaveLength(1);
+  });
+
+  it('keeps the sessions on a name change, and sends no notice (decision 047)', async () => {
+    const { db } = await testDb();
+    const merchant = await makeMerchant(t);
+    const session = await openSession(t, { type: 'client', id: merchant.id });
+    const api = await editor();
+    expect((await api.patch(`/admin/clients/${merchant.id}`, { name: 'Renamed Hub' })).status).toBe(200);
+    expect((await t.app.get(SessionService).lookup(session.token))!.id).toBe(session.sessionId);
+    expect(await notificationRows(db)).toHaveLength(0);
+    expect((await auditRows()).at(-1)!.after).not.toHaveProperty('sessionsEnded');
   });
 
   it('a name change drops the cached session and API key views', async () => {
@@ -896,12 +978,15 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
     const invited = await makeMerchant(t, { noPassword: true, status: 'pending' });
     const api = await editor();
     await api.patch(`/admin/clients/${invited.id}`, { email: 'other@example.com' });
-    expect((await outboxRows()).map((row) => row.type)).toEqual(['merchant.invited']);
+    // The security notice to the address before the change is a `notification.send` event (decision 047), not a merchant mail event.
+    const mailEvents = async () =>
+      (await outboxRows()).map((row) => row.type).filter((type) => type.startsWith('merchant.'));
+    expect(await mailEvents()).toEqual(['merchant.invited']);
     expect((await tokensOf(invited.id)).filter((row) => row.usedAt === null)[0]).toMatchObject({ purpose: 'invite' });
 
     const suspended = await makeMerchant(t, { status: 'suspended' });
     await api.patch(`/admin/clients/${suspended.id}`, { email: 'third@example.com' });
-    expect((await outboxRows()).map((row) => row.type)).toEqual(['merchant.invited']);
+    expect(await mailEvents()).toEqual(['merchant.invited']);
     expect((await tokensOf(suspended.id)).filter((row) => row.usedAt === null)).toHaveLength(0);
   });
 

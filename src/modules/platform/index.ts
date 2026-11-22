@@ -150,6 +150,7 @@ export { PdfModule } from './pdf/pdf.module';
 export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
 export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
+export { auditStaffFileOpening } from './files/file-opening-audit';
 export type { FileMeta, StoreFileInput, StoredFileRecord } from './files/stored-files';
 export { PUBLIC_IMAGE_NAME, PUBLIC_IMAGE_PREFIX, PUBLIC_MEDIA_PATH, PublicImages } from './files/public-images';
 export type { PublicImageBytes, StorePublicImageInput, StoredPublicImage } from './files/public-images';
@@ -169,6 +170,7 @@ export { NotificationAdminModule } from './notifications/notification-admin.modu
 export {
   BUILT_IN_EVENTS,
   CUSTOMER_MAIL_EVENT_KEYS,
+  CUSTOMER_SECURITY_NOTICE_EVENT,
   MERCHANT_MAIL_EVENT_KEYS,
   NotificationEventRegistry,
   RETAIL_PRICES_FOLLOWED_EVENT,

@@ -11,7 +11,7 @@ import {
   Route,
 } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal } from '../../identity';
+import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal, customerContactOf } from '../../identity';
 import { CustomerWallets } from '../application/customer-wallets';
 import {
   adjustCustomerWallet,
@@ -176,11 +176,15 @@ export class CustomerWalletController {
    * Lists customer wallets.
    *
    * @param query the parsed list request
+   * @param staff the signed-in staff member (decides whether a customer's address is shown and searched, decision 047)
    * @returns the page and the total
    * @route GET /admin/customer-wallets
    */
   @Route(listCustomerWallets)
-  list(@Query() query: QueryOf<typeof listCustomerWallets>): Promise<ResultOf<typeof listCustomerWallets>> {
-    return this.wallets.list(query);
+  list(
+    @Query() query: QueryOf<typeof listCustomerWallets>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listCustomerWallets>> {
+    return this.wallets.list(query, customerContactOf(staff));
   }
 }

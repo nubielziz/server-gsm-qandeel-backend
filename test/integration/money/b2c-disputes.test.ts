@@ -267,7 +267,8 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
       status: 'needs_response',
       currency: 'GBP',
       fx,
-      customer: { id: expect.any(Number), name: 'sam@mail.example' },
+      // Decision 047, rule B: a customer without a name is labelled by the masked address.
+      customer: { id: expect.any(Number), name: 'sa•••@mail.example' },
       evidenceDueAt: '2026-11-14T12:00:00.000Z',
       submittedAt: null,
       resolvedAt: null,
@@ -290,7 +291,7 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
     expect(lines.payment.body).toBe(`Visa •••• 4242, $4.79 captured 2026-11-07. Gateway ref ${paid.intent}.`);
     expect(lines.three_ds.ok).toBe(true);
     expect(lines.delivery).toMatchObject({ ok: true });
-    expect(lines.delivery.body).toContain('Result delivered 2026-11-07 to sam@mail.example');
+    expect(lines.delivery.body).toContain('Result delivered 2026-11-07 to sa•••@mail.example');
     expect(lines.consents.ok).toBe(true);
     expect(lines.consents.body).toContain('Terms of service');
     expect(lines.history).toMatchObject({ ok: false, body: 'First order from this customer.' });
@@ -343,7 +344,12 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
     expect(await ids('/admin/disputes?status=won')).toEqual([done.row.id]);
     expect(await ids('/admin/disputes?_sort=id&_order=desc')).toEqual([done.row.id, second.row.id, first.row.id]);
     expect(await ids('/admin/disputes?q=product_not')).toEqual([second.row.id]);
-    expect(await ids('/admin/disputes?q=b@mail')).toEqual([second.row.id]);
+    // Decision 047: the address is searched only by a caller who may read customers.
+    expect(await ids('/admin/disputes?q=b@mail')).toEqual([]);
+    const customersReader = await adminWith(t, ['disputes:read', 'customers:read']);
+    expect((await customersReader.get('/admin/disputes?q=b@mail')).body.map((row: { id: number }) => row.id)).toEqual([
+      second.row.id,
+    ]);
     expect(await ids(`/admin/disputes?q=${first.row.id}`)).toContain(first.row.id);
     const page = await staff.get('/admin/disputes?_start=0&_end=2');
     expect(page.body).toHaveLength(2);
@@ -411,6 +417,29 @@ describe('POST /admin/disputes/:id/evidence', () => {
     // Evidence moves no money.
     expect(await chargebacks()).toHaveLength(0);
     expect((await paymentRow(paid.paymentId)).status).toBe('disputed');
+  });
+
+  it('masks the address in the name and in the evidence line staff read, sends it in full to the gateway, and searches it only for callers with customers:read (decision 047)', async () => {
+    const paid = await order({ deliver: true, email: 'ann.buyer@mail.example' });
+    const { row, gatewayId } = await open(paid);
+    const reader = await adminWith(t, ['disputes:read', 'customers:read']);
+    for (const api of [staff, reader]) {
+      const one = (await api.get(`/admin/disputes/${row.id}`)).body;
+      // The name and the delivery line of the pack staff read show the masked address, for every caller.
+      expect(one.customer.name).toBe('an•••@mail.example');
+      const delivery = one.evidence.find((line: { key: string }) => line.key === 'delivery');
+      expect(delivery.body).toContain('to an•••@mail.example');
+      expect(JSON.stringify(one)).not.toContain('ann.buyer@mail.example');
+      const listed = (await api.get('/admin/disputes')).body[0];
+      expect(listed.customer.name).toBe('an•••@mail.example');
+    }
+    expect((await staff.get('/admin/disputes?q=ann.buyer')).body).toEqual([]);
+    expect((await reader.get('/admin/disputes?q=ann.buyer')).body.map((r: { id: number }) => r.id)).toEqual([row.id]);
+
+    // The text sent to the gateway names the buyer in full, as before.
+    expect((await staff.post(`/admin/disputes/${row.id}/evidence`, { items: ['delivery'] })).status).toBe(200);
+    const form = new URLSearchParams(fake.calls(`/v1/disputes/${gatewayId}`)[0]!.body);
+    expect(form.get('evidence[uncategorized_text]')).toContain('to ann.buyer@mail.example');
   });
 
   it('draws an Arabic note in the evidence PDF with the embedded Arabic font (feature 24E)', async () => {

@@ -1,7 +1,7 @@
 // HTTP controller of the storefront refunds for staff (map domain E, stage 16, routes /admin/refunds*).
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
-import { CurrentStaff, type StaffPrincipal } from '../../identity';
+import { CurrentStaff, type StaffPrincipal, customerContactOf } from '../../identity';
 import { RefundService } from '../application/refund.service';
 import { approveRefund, declineRefund, getRefund, listRefunds, retryRefund } from '../contracts/refunds.contracts';
 
@@ -24,12 +24,16 @@ export class RefundsController {
    * Lists the refunds.
    *
    * @param query sort, range, filters and search
+   * @param staff the signed-in staff member (decides whether `q` may match a customer's address, decision 047)
    * @returns the page of refunds
    * @route GET /admin/refunds
    */
   @Route(listRefunds)
-  list(@Query() query: QueryOf<typeof listRefunds>): Promise<ResultOf<typeof listRefunds>> {
-    return this.refunds.list(query);
+  list(
+    @Query() query: QueryOf<typeof listRefunds>,
+    @CurrentStaff() staff: StaffPrincipal,
+  ): Promise<ResultOf<typeof listRefunds>> {
+    return this.refunds.list(query, customerContactOf(staff));
   }
 
   /**

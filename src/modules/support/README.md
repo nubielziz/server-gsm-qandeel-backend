@@ -105,6 +105,14 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   translated back. PATCH accepts `new|open|pending|resolved` (anything else is 422 on `status`) with these moves: from `new` to `open`,
   `pending` or `resolved`; from `open` and `pending` to each other and to `resolved`; from `resolved` only to `open` (a reopen, which clears
   `resolved_at`); nothing goes back to `new`. A value equal to the current one is ignored.
+- **A storefront customer's address (decision 047).** Outside the Customers pages a staff answer shows the address masked unless the caller holds `customers:read`
+  (identity's `customerContactOf`; the controller passes the `contact` down to `toTicketView` and `toDetailView`): the list rows, the single read and the answer of
+  `PATCH /admin/support-tickets/:id` mask a *customer* requester's `requester.email` (`customerEmailIn`); a merchant's address stays in full. A customer without a name is labelled by
+  the masked address for every caller (`requesterOf` and `authorNameOf` in `infra/ticket.repository.ts`: the requester name and the author of their messages, never the full address).
+  The inbox's `q` searches `requester.email` as the merchant's address only for a caller without `customers:read` (`merchantEmailSql`), so a merchant is still found by its address and a
+  customer is not. The live staff frame (`ticket.updated`, one broadcast to every staff stream) is built with `'masked'`, whatever the stream holds.
+  `support.ticket_received` and `support.csat_survey` are flagged `secretLink` (their `{{link}}` is the ticket's token link: a template keeps the link rules of decision 047), and
+  `SupportEventRegistration` registers `SUPPORT_DEFAULT_TEMPLATES` with the event registry as the shipped texts (the fallback of a link mail whose stored template breaks the rules).
 - **Reply target.** `sla_due_at` is the last public requester message plus the priority's target (high 2 h, normal 8 h, low 24 h) while the
   ticket is `new` or `open`, else null; it is recomputed when the ticket is created, when the customer writes, when the priority or status
   changes and when a ticket is reopened (`domain/ticket-sla.ts`). `late` is `sla_due_at < now` on a ticket that is not resolved; the list's
@@ -192,7 +200,8 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   uploads with the existing `POST /client/files` and `POST /store/v1/files`, and the type and size are checked again when the file is
   attached (`422 fileIds`: `unknown_file`, `not_yours`, `type`, `too_large`). Nothing is scanned for viruses: files are never shown inline and
   every download is a 5-minute presigned link with `Content-Disposition: attachment`. A requester downloads the files of the public messages of
-  their own ticket, staff with `support:read` every file of the ticket; anything else is `404`.
+  their own ticket, staff with `support:read` every file of the ticket (a file that is also an identity document or a payment proof leaves the same audit row as the platform's file route,
+  `auditStaffFileOpening`, decision 047; an ordinary attachment leaves none); anything else is `404`.
 - **Email fallback (rule 9).** A staff reply on channel `email` writes no outbox event at once: it sets `reply_mail_due_at` to the reply time
   plus `support.replyEmailDelayMinutes` (default 5; `0` mails at once, as before feature 28). The job `support_reply_mail_sweep` then queues
   one `support.ticket_mail` event that carries every reply the requester has not seen (`fromMessageId` to `messageId`). A reply on channel

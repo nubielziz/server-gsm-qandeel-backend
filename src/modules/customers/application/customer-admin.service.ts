@@ -10,13 +10,16 @@ import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db
 import {
   CUSTOMER_TOKEN_PURPOSES,
   CustomerAuthTokens,
+  SessionService,
   SignInLock,
   type StaffPrincipal,
+  requirePermission,
   temporaryPasswordFor,
 } from '../../identity';
 import { AuditService } from '../../platform';
 import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
+import { CUSTOMER_ACCOUNT_SECURITY_PERMISSION } from '../domain/account-security';
 import { profileChanges } from '../domain/profile-edit';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
 import {
@@ -38,6 +41,7 @@ import {
 import { customerNotFound, emailBlocked } from './customer-errors';
 import { CustomerLinks } from './customer-links';
 import { CustomerProfileRules } from './customer-profile-rules';
+import { CustomerSecurityNotices } from './mail/customer-security-notices';
 import { type WireCustomer, type WireCustomerDetail, toWireCustomer, toWireDetail } from './customer-views';
 
 /** The fields of a new customer, as the request carries them (cleaned by the contract). */
@@ -73,10 +77,13 @@ const EMAIL_UNIQUE_INDEX = 'customers_email_uq';
  * details and read the whole picture. The unique email index is the last word on `EMAIL_TAKEN`; a blocklisted email is `422`
  * on `email` (B46, b2c-16); an anonymized customer cannot be edited; a changed email clears the verification and, for an
  * account, sends a new verification link (b2c-16). Every write is audited with the demo's verb phrase and never records a
- * password.
+ * password. Decision 047: the email of an account is where its sign-in links go, so changing it also needs `customers:password`, ends
+ * every session of the customer and sends a security notice to the address before the change (a guest's address needs only the route's
+ * permission); creating an account with a temporary password needs `customers:password` as well (the invitation link needs only the route's
+ * permission).
  *
  * Side effects: `create` and `update` write `customers`, `customer_credentials`, `auth_tokens`, `outbox_events` and
- * `audit_logs`.
+ * `audit_logs`; an email change of an account also writes `sessions` and a `notifications` row (`customer.security_notice`).
  *
  * @see docs/contract/endpoints/customers.md
  */
@@ -91,6 +98,8 @@ export class CustomerAdminService {
     private readonly links: CustomerLinks,
     private readonly lock: SignInLock,
     private readonly rules: CustomerProfileRules,
+    private readonly sessions: SessionService,
+    private readonly notices: CustomerSecurityNotices,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -133,9 +142,12 @@ export class CustomerAdminService {
    * @param input the cleaned fields and how the customer gets a password
    * @param ip the request address, for the link record
    * @returns the new customer and, for the temporary mode, the password (shown once)
-   * @throws {AppError} `EMAIL_TAKEN` (409), `VALIDATION_FAILED` (422 on `email`: blocklisted; on `country`: the storefront does not sell there)
+   * @throws {AppError} `EMAIL_TAKEN` (409), `VALIDATION_FAILED` (422 on `email`: blocklisted; on `country`: the storefront does not sell there),
+   *   `FORBIDDEN` (403: a temporary password needs `customers:password`, decision 047; the link mode needs only the route's permission)
    */
   async create(staff: StaffPrincipal, input: CreateCustomerInput, ip: string): Promise<CreatedCustomer> {
+    // Decision 047: a temporary password is a working credential, so handing one out needs the permission that guards temporary passwords.
+    if (input.mode === 'temporary_password') requirePermission(staff, CUSTOMER_ACCOUNT_SECURITY_PERMISSION);
     const now = this.clock.now();
     await this.assertEmailFree(this.db.db, input.email);
     if (await this.blocklist.isEmailBlocked(this.db.db, input.email)) throw emailBlocked();
@@ -207,7 +219,8 @@ export class CustomerAdminService {
    * @param ip the request address, for the verification link record
    * @returns the customer after the edit
    * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409), `EMAIL_TAKEN` (409), `VALIDATION_FAILED` (422 on `email`:
-   *   blocklisted; on `country`: a new country the storefront does not sell to)
+   *   blocklisted; on `country`: a new country the storefront does not sell to), `FORBIDDEN` (403: a new email of an account needs
+   *   `customers:password`, decision 047)
    */
   async update(staff: StaffPrincipal, id: number, input: UpdateCustomerInput, ip: string): Promise<WireCustomer> {
     const now = this.clock.now();
@@ -225,6 +238,10 @@ export class CustomerAdminService {
         // read, so an address that looked unchanged can be a change now (and an address that looked new can be the stored one again).
         const newEmail =
           input.email !== undefined && input.email !== customer.email.toLowerCase() ? input.email : undefined;
+        // Decision 047: the address of an account receives its sign-in links. A guest holds no balance and no password, and its address signs
+        // in only by a link that the address itself receives, so a guest's address needs only the route's permission.
+        if (newEmail !== undefined && customer.hasAccount)
+          requirePermission(staff, CUSTOMER_ACCOUNT_SECURITY_PERMISSION);
         if (newEmail !== undefined) {
           // The blocklist (risk) only matters for a new email, so it is asked here, once the new email is known.
           if (await this.blocklist.isEmailBlocked(work.tx, newEmail)) throw emailBlocked();
@@ -245,6 +262,14 @@ export class CustomerAdminService {
           // A new address has to be confirmed again; guests have nobody to send a link to.
           if (customer.hasAccount) {
             await this.links.send(work, { kind: 'email_verification', customerId: id, createdBy: staff.staffId, ip });
+            // Decision 047: nobody stays signed in across the change, and the address before it is told (`customer.email` is the locked
+            // row, before the update). The ended sessions show in the audit row beside the edit.
+            const ended = await this.sessions.revokeAllOf('customer', id, {}, work);
+            if (ended > 0) {
+              changes.before.sessions = ended;
+              changes.after.sessions = 0;
+            }
+            await this.notices.emailChanged(work, { id, name: changes.columns.name ?? customer.name }, customer.email);
           }
         }
         await this.audit.record(work.tx, {

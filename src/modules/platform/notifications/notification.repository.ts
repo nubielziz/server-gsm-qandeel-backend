@@ -6,6 +6,7 @@
 // module imports no module (decision 032). Replace the joins with the owners' public reads when they exist.
 import { type SQL, and, eq, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
+import type { CustomerContact } from '../../../common/customer-contact';
 import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere, schema as s } from '../../../infra/db';
 import {
   type NewNotification,
@@ -216,12 +217,18 @@ const LOG_COLUMNS: ListColumns = {
  *
  * Why: the answer shows only a masked address, so a contains-search over the real address would let repeated searches rebuild it one
  * letter at a time. The address matches only when `q` is the whole address (any letter case), which proves nothing staff did not know.
+ * Decision 047: a caller who may not read customers does not match the address of a customer recipient at all.
  */
-function logWhere(query: ParsedListQuery<NotificationSortField>): SQL | undefined {
+function logWhere(query: ParsedListQuery<NotificationSortField>, contact: CustomerContact): SQL | undefined {
   const { search } = query;
   const base = listWhere({ filters: query.filters, search: undefined }, LOG_COLUMNS);
   if (!search) return base;
-  const matchesSearch = sql`(${notifications.event} ilike ${`%${escapeLike(search.text)}%`} or lower(${RECIPIENT_ADDRESS}) = lower(${search.text}))`;
+  const addressMatch =
+    contact === 'full'
+      ? sql`lower(${RECIPIENT_ADDRESS}) = lower(${search.text})`
+      : // Decision 047: a customer's address is not searched for a caller who may not read customers.
+        sql`(${notifications.recipientType} <> 'customer' and lower(${RECIPIENT_ADDRESS}) = lower(${search.text}))`;
+  const matchesSearch = sql`(${notifications.event} ilike ${`%${escapeLike(search.text)}%`} or ${addressMatch})`;
   return base ? sql`${base} and ${matchesSearch}` : matchesSearch;
 }
 
@@ -259,13 +266,15 @@ function logSelect(db: DbExecutor) {
  *
  * @param db the database or a transaction
  * @param query the parsed list request (filters `status`, `channel`, `event`, `recipientType`; `q` contains-search over the event, equals-search over the address)
+ * @param contact what the caller may see of customers' addresses: for `masked` the address search leaves customer recipients out (decision 047)
  * @returns the page of rows with their recipients, and the exact total for the filter
  */
 export async function listLogRows(
   db: DbExecutor,
   query: ParsedListQuery<NotificationSortField>,
+  contact: CustomerContact,
 ): Promise<{ rows: LogRow[]; total: number }> {
-  const where = logWhere(query);
+  const where = logWhere(query, contact);
   const [rows, total] = await Promise.all([
     logSelect(db)
       .where(where)

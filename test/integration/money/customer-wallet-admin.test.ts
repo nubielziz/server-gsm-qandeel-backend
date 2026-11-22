@@ -323,6 +323,24 @@ describe('GET /admin/customers/:id/wallet/statement', () => {
   });
 });
 
+describe('GET /admin/customer-wallets and the customer’s address (decision 047)', () => {
+  it('masks the wallet list’s address and searches names only without customers:read', async () => {
+    const { db } = await testDb();
+    const alice = await customer({ name: 'Alice Rich', email: 'alice@mail.example' });
+    await fundCustomer(db, alice.id, '80');
+    const emails = async (api: AdminApi, query = '') =>
+      (await api.get(`/admin/customer-wallets${query}`)).body.map(
+        (row: { customer: { email: string } }) => row.customer.email,
+      );
+    expect(await emails(staff)).toEqual(['al•••@mail.example']);
+    const withRead = await adminWith(t, ['wallet:read', 'customers:read']);
+    expect(await emails(withRead)).toEqual(['alice@mail.example']);
+    expect(await emails(staff, '?q=alice%40mail')).toEqual([]);
+    expect(await emails(staff, '?q=alice+r')).toEqual(['al•••@mail.example']);
+    expect(await emails(withRead, '?q=alice%40mail')).toEqual(['alice@mail.example']);
+  });
+});
+
 describe('GET /admin/customer-wallets', () => {
   it('lists every wallet with state filters, sorts, search and x-total-count', async () => {
     const { db } = await testDb();
@@ -342,7 +360,8 @@ describe('GET /admin/customer-wallets', () => {
     expect(all.total).toBe(3);
     expect(all.body.map((row: { customer: { id: number } }) => row.customer.id)).toEqual([rich.id, zero.id, owing.id]);
     expect(all.body[0]).toMatchObject({
-      customer: { name: 'Alice Rich', email: 'alice@mail.example', status: 'active' },
+      // Decision 047: this caller does not hold customers:read, so the address comes masked.
+      customer: { name: 'Alice Rich', email: 'al•••@mail.example', status: 'active' },
       balance: '80.0000',
       frozen: null,
     });
@@ -351,8 +370,16 @@ describe('GET /admin/customer-wallets', () => {
     expect(negative.body[0].frozen).toMatchObject({ reason: 'Chargeback' });
     expect((await staff.get('/admin/customer-wallets?state=frozen')).total).toBe(1);
     expect((await staff.get('/admin/customer-wallets?state=zero&state=positive')).total).toBe(2);
+    const withRead = await adminWith(t, ['wallet:read', 'customers:read']);
     expect(
-      (await staff.get('/admin/customer-wallets?q=zed%40mail')).body.map(
+      (await withRead.get('/admin/customer-wallets?q=zed%40mail')).body.map(
+        (row: { customer: { id: number } }) => row.customer.id,
+      ),
+    ).toEqual([zero.id]);
+    // The name is searched for everybody; the address only for a caller who holds customers:read (decision 047).
+    expect((await staff.get('/admin/customer-wallets?q=zed%40mail')).total).toBe(0);
+    expect(
+      (await staff.get('/admin/customer-wallets?q=Zed+Z')).body.map(
         (row: { customer: { id: number } }) => row.customer.id,
       ),
     ).toEqual([zero.id]);

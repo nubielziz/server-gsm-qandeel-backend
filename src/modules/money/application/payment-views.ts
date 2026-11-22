@@ -1,6 +1,7 @@
 // PaymentViews: builds the wire of a page of top-up payments: one query per kind of thing around them (merchants, groups, wallets,
 // gateways, reviewers), never one per row.
 import { Injectable } from '@nestjs/common';
+import { type CustomerContact, customerEmailIn } from '../../../common/customer-contact';
 import type { DbExecutor } from '../../../infra/db';
 import { ClientGroupDirectory } from '../../catalog';
 import { readCustomerBalances } from '../infra/customer-wallet.repository';
@@ -39,9 +40,10 @@ export class PaymentViews {
    *
    * @param db the database or a transaction
    * @param rows the payments with their merchants
+   * @param contact what the caller may see of a storefront customer's address (decision 047, rule A)
    * @returns the console's payments, in the order of `rows`
    */
-  async build(db: DbExecutor, rows: readonly PaymentRow[]): Promise<WirePayment[]> {
+  async build(db: DbExecutor, rows: readonly PaymentRow[], contact: CustomerContact): Promise<WirePayment[]> {
     if (rows.length === 0) return [];
     const clientIds = rows.flatMap((row) => (row.clientId === null ? [] : [row.clientId]));
     const pendingClientIds = rows.flatMap((row) =>
@@ -97,7 +99,7 @@ export class PaymentViews {
             : {
                 id: customerId,
                 name: customer?.name ?? '',
-                email: customer?.email ?? '',
+                email: customerEmailIn(contact, customer?.email ?? ''),
                 walletBalance: balances.get(customerId) ?? null,
               },
       });

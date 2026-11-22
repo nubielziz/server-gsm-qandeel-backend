@@ -1,11 +1,12 @@
 // HTTP controller of the file downloads (map domain G, stage 5): both routes answer 302 with the presigned link in `Location`.
-import { Body, Controller, Header, Param, Res } from '@nestjs/common';
-import type { FastifyReply } from 'fastify';
+import { Body, Controller, Header, Param, Req, Res } from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { getRequestContext } from '../../../common/request-context';
 import { FileAccessService } from '../application/file-access.service';
 import { FileUploadService } from '../application/file-upload.service';
+import { identityApi } from '../notifications/identity-api';
 import {
   openAdminFile,
   openClientFile,
@@ -17,10 +18,11 @@ import {
 } from '../contracts/files.contracts';
 
 /**
- * The id of the signed-in caller of a session route, from the request context the session guards fill in.
+ * The id of the signed-in caller of a merchant, API key or storefront route, from the request context the session guards fill in.
  *
  * Why: the platform module may not import the identity module's decorators (identity imports platform: decision 032), and the
- * context carries exactly the actor type and id the guards authenticated.
+ * context carries exactly the actor type and id the guards authenticated. The staff download needs the caller's permissions too, which the
+ * context does not hold: it reads the principal through `identityApi()` (decision 047).
  *
  * @param type the kind of caller the route is for
  * @returns the caller's id
@@ -58,15 +60,24 @@ export class FilesController {
    * Redirects a staff member to a file.
    *
    * @param params the file id
+   * @param request the request, which carries the staff principal (decision 047: the kinds of record that use the file decide the permissions)
    * @param reply the reply, to set `Location`
    * @route GET /admin/files/:id
    */
   @Route(openAdminFile)
   async openForStaff(
     @Param() params: ParamsOf<typeof openAdminFile>,
+    @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const url = await this.files.linkForStaff(callerOf('staff'), params.id);
+    // The platform module imports no other module (decision 032): identity's helpers are loaded late (the module-level cycle).
+    const identity = await identityApi();
+    const principal = identity.principalOf(request);
+    if (principal?.kind !== 'staff') throw new AppError('UNAUTHORIZED');
+    const url = await this.files.linkForStaff(
+      { staffId: principal.staffId, permissions: principal.permissions },
+      params.id,
+    );
     reply.header('location', url).header('cache-control', 'no-store');
   }
 
