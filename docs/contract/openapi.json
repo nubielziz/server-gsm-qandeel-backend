@@ -98199,7 +98199,7 @@
     },
     "/admin/orders/{id}/accept": {
       "post": {
-        "description": "Moves an order of the manual queue (`pending` with `dispatch_state` `manual`) to `processing` (dispatch state `operator`, no queue). No money moves: the hold stays. Writes an `accepted` event, the `order.status_changed` outbox row and an audit row.",
+        "description": "Moves an order of the manual queue (`pending` with `dispatch_state` `manual`) to `processing` (dispatch state `operator`, no queue). No money moves: the hold stays. Writes an `accepted` event, the `order.status_changed` outbox row and an audit row. A storefront order whose payment is disputed, charged back or refunded in full is not accepted: `409 INVALID_TRANSITION` with a sentence that names the reason (a reject stays allowed).",
         "operationId": "postAdminOrdersByIdAccept",
         "parameters": [
           {
@@ -102101,7 +102101,7 @@
     },
     "/admin/orders/{id}/reject": {
       "post": {
-        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046). The payment of a storefront order goes back to the buyer at once, except a payment the buyer disputed with the card network (`disputed` or `chargeback`): then nothing is sent, a refund request waits on the Refunds page and the order’s timeline says why (decision 048).",
+        "description": "Rejects an open order with a buyer-visible reason: `result_code` is the reason, `completed_at` is set and the hold returns to the wallet (B2B `reject`). Writes `rejected` and `release` events, `order.status_changed` and an audit row. A storefront order delivered before and then reopened is refunded from the Refunds page (`USE_REFUNDS`). While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046). The payment of a storefront order goes back to the buyer at once, except a payment the buyer disputed with the card network (decision 048): while it is `disputed` nothing is sent, a refund request waits on the Refunds page and the order’s timeline says why; once it is `chargeback` the card network has returned the money, so no refund or request is made, what the sale booked as customer funds and VAT goes back against the chargeback loss once (a `chargeback` journal on the order) and the timeline says so.",
         "operationId": "postAdminOrdersByIdReject",
         "parameters": [
           {
@@ -103247,7 +103247,7 @@
     },
     "/admin/orders/{id}/reply": {
       "post": {
-        "description": "Completes an open order: `result_code` and `result_comment` are stored, `completed_at` is set, `dispatch_state` becomes `done`. The hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`. While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.",
+        "description": "Completes an open order: `result_code` and `result_comment` are stored, `completed_at` is set, `dispatch_state` becomes `done`. The hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`. While the order is being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. A storefront order whose payment is disputed, charged back or refunded in full is not completed by staff: `409 INVALID_TRANSITION` with a sentence that names the reason (a reject stays allowed). One that was delivered before and reopened is delivered again.",
         "operationId": "postAdminOrdersByIdReply",
         "parameters": [
           {
@@ -141526,7 +141526,7 @@
     },
     "/admin/risk/orders/{id}/refund": {
       "post": {
-        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request waits on the Refunds page instead (decision 048). For a guest checkout (opened without a signed-in session) `blockEmail` also blocks the card that paid the order, and blocks the checkout’s email for guest checkouts only when that email belonged to an account before the order: the account keeps signing in and ordering signed in, and its status is never changed here (decision 050).",
+        "description": "`:id` is the order id. Rejects the order without contacting a supplier and returns the whole payment (the storefront refund ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back (decision 048): while the dispute is open a refund request waits on the Refunds page instead; once the payment was charged back no refund or request is made and what the sale booked goes back against the chargeback loss. For a guest checkout (opened without a signed-in session) `blockEmail` also blocks the card that paid the order, and blocks the checkout’s email for guest checkouts only when that email belonged to an account before the order: the account keeps signing in and ordering signed in, and its status is never changed here (decision 050).",
         "operationId": "postAdminRiskOrdersByIdRefund",
         "parameters": [
           {

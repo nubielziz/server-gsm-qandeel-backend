@@ -65,7 +65,8 @@ export class OrderActionsService {
    *
    * @param staff the acting staff member
    * @param orderId the order
-   * @throws {AppError} `NOT_FOUND`, `NOT_MANUAL`, `ORDER_NOT_OPEN`, `ORDER_HELD`
+   * @throws {AppError} `NOT_FOUND`, `NOT_MANUAL`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `INVALID_TRANSITION` (a storefront order whose payment
+   *   is disputed, charged back or refunded in full)
    */
   async accept(staff: StaffActor, orderId: number): Promise<void> {
     await this.run(staff, orderId, { kind: 'accept' }, ORDER_AUDIT_ACTIONS.accept, {});
@@ -78,7 +79,8 @@ export class OrderActionsService {
    * @param orderId the order
    * @param reply the result text and the optional comment
    * @throws {AppError} `NOT_FOUND`, `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (the order is being sent to its supplier: wait for the
-   *   answer, decision 044), `INVALID_TRANSITION` (a lost race)
+   *   answer, decision 044), `INVALID_TRANSITION` (a lost race, or a storefront order never delivered before whose payment is disputed,
+   *   charged back or refunded in full)
    */
   async reply(
     staff: StaffActor,

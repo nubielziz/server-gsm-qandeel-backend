@@ -16,7 +16,9 @@ export const acceptOrder = defineRoute({
   summary: 'Accept a manual order',
   description:
     'Moves an order of the manual queue (`pending` with `dispatch_state` `manual`) to `processing` (dispatch state `operator`, no queue). ' +
-    'No money moves: the hold stays. Writes an `accepted` event, the `order.status_changed` outbox row and an audit row.',
+    'No money moves: the hold stays. Writes an `accepted` event, the `order.status_changed` outbox row and an audit row. A storefront ' +
+    'order whose payment is disputed, charged back or refunded in full is not accepted: `409 INVALID_TRANSITION` with a sentence that ' +
+    'names the reason (a reject stays allowed).',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -47,7 +49,9 @@ export const replyOrder = defineRoute({
     'hold is settled to revenue (B2B `complete`: hold to revenue, plus supplier prepaid to cost of goods only when a supplier executed ' +
     'the order and no earlier settlement booked the cost). Writes `completed` and `settle` events, `order.status_changed` and an audit ' +
     'row. Two parallel replies, or a reply and a reject, change the order and the ledger once: the other answers `409`. While the order is ' +
-    'being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`.',
+    'being sent to its supplier the action waits for the answer: `409 ALREADY_SENT`. A storefront order whose payment is disputed, ' +
+    'charged back or refunded in full is not completed by staff: `409 INVALID_TRANSITION` with a sentence that names the reason (a ' +
+    'reject stays allowed). One that was delivered before and reopened is delivered again.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -83,8 +87,9 @@ export const rejectOrder = defineRoute({
     'the action waits for the answer: `409 ALREADY_SENT`. ' +
     'Rejecting an open storefront order that has a captured payment gives the payment back, so it also needs `refunds:approve` (`403 FORBIDDEN`, decision 046). ' +
     'The payment of a storefront order goes back to the buyer at once, except a payment the buyer disputed with the card network ' +
-    '(`disputed` or `chargeback`): then nothing is sent, a refund request waits on the Refunds page and the order’s timeline says why ' +
-    '(decision 048).',
+    '(decision 048): while it is `disputed` nothing is sent, a refund request waits on the Refunds page and the order’s timeline says ' +
+    'why; once it is `chargeback` the card network has returned the money, so no refund or request is made, what the sale booked as ' +
+    'customer funds and VAT goes back against the chargeback loss once (a `chargeback` journal on the order) and the timeline says so.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

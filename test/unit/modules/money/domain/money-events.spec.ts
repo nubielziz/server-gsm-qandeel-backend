@@ -223,3 +223,23 @@ describe('b2cChargeback of an order that was never delivered', () => {
     );
   });
 });
+
+describe('b2cChargebackReturn: an order rejected after its payment was charged back', () => {
+  it('takes the net and the VAT the sale booked back from the loss, under the chargeback event', () => {
+    const posting = events.b2cChargebackReturn({ net: m('12.49'), vat: m('2.50') });
+    expect(posting).toMatchObject({ event: 'b2c_chargeback', kind: 'chargeback', refType: 'order' });
+    expect(triples(posting)).toEqual([
+      ['customer_funds', 12.49, 0],
+      ['vat_payable', 2.5, 0],
+      ['chargeback_loss', 0, 14.99],
+    ]);
+    expect(() => assertBalanced(posting.lines, 'USD')).not.toThrow();
+  });
+
+  it('drops a zero VAT line', () => {
+    expect(triples(events.b2cChargebackReturn({ net: m('3'), vat: m('0') }))).toEqual([
+      ['customer_funds', 3, 0],
+      ['chargeback_loss', 0, 3],
+    ]);
+  });
+});

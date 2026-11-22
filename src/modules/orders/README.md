@@ -30,12 +30,17 @@ the one `POST /api/index.php` transport route.
   (`OrderRow.everDispatched`, one `EXISTS` in the same select) feeds `canCancel`, so the button and the route agree; such an order is
   cancelled by staff. `orderStateOf` is the one conversion of a stored order to the machine's state (a `pending`
   order with `sent_at` set, claimed by an earlier release, counts as `dispatching`); `wireDispatchState` shows `dispatching` as
-  `pending`, so no response, queue or contract enum changes. A storefront order is released from a risk hold or sent to a supplier only
-  while its payment stands: the machine's state carries `paymentStop` (`disputed` while a dispute is open, `returned` once the payment
-  was charged back or refunded in full, `paymentStopOf`), read through the money module's `orderPaymentStatus` only for the risk
-  release, a staff send and a change of supplier that sends (`paymentCanStop`), never for a merchant's order; those are `409
-  INVALID_TRANSITION` with `PAYMENT_STOP_REASONS` as the detail, and the dispatch job stops such an order in `needs_attention` with the
-  same sentence before it claims it (`OrderSupplierMoves.paymentStop`). Refunding or rejecting the order stays open.
+  `pending`, so no response, queue or contract enum changes. A storefront order is released from a risk hold, sent to a supplier, accepted or
+  completed by staff only while its payment stands: the machine's state carries `paymentStop` (`disputed` while a dispute is open,
+  `returned` once the payment was charged back or refunded in full, `paymentStopOf`), read through the money module's `orderPaymentStatus`
+  only for the risk release, a staff send, a change of supplier that sends, an accept and a staff reply (also each line of the bulk reply)
+  (`paymentCanStop`), never for a merchant's order; those are `409 INVALID_TRANSITION` with `PAYMENT_STOP_REASONS` as the detail, and the
+  dispatch job stops such an order in `needs_attention` with the same sentence before it claims it (`OrderSupplierMoves.paymentStop`).
+  Refunding or rejecting the order stays open; a supplier that already has the order still completes or rejects it. An order delivered
+  before and reopened is still delivered again by a staff reply (`completedBefore`): its reject is `USE_REFUNDS`, and a second delivery
+  books no new supplier cost. A rejection of a
+  charged-back payment refunds nothing (`MoveOutcome.chargedBack`): the timeline's refund line says so (`CHARGED_BACK_REFUND_LINE`) and
+  no `order.failed` mail is written.
 - **Completion listeners** (feature 11, `application/order-completion-listeners.ts`, module `OrderCompletionModule`): a leaf list that
   `OrderTransitions.apply` and the stock delivery in `OrderPlacement.deliverFromStock` call inside their transaction: `completed` after a
   settlement (`complete`; a stock delivery), `reversed` after a `reopen` or a B2B `refund`; any other money move (hold release, B2C

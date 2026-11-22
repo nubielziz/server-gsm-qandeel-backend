@@ -18,24 +18,25 @@ export interface OrderState {
    */
   readonly everDispatched: boolean;
   /**
-   * Set when the payment of a storefront order stops its release or its send ({@link paymentStopOf}); left out, nothing stops it. The use
-   * cases read it only for the actions it can refuse ({@link paymentCanStop}) and never for a merchant's order.
+   * Set when the payment of a storefront order stops its release, its send, or its accept and reply by staff ({@link paymentStopOf}); left
+   * out, nothing stops it. The use cases read it only for the actions it can refuse ({@link paymentCanStop}) and never for a merchant's
+   * order.
    */
   readonly paymentStop?: PaymentStop;
 }
 
 /**
- * What the payment of a storefront order says about releasing it from a risk hold or sending it to a supplier: `disputed` while a dispute
- * of the payment is open (the send waits until it is decided), `returned` once the money went back (charged back, or refunded in full: the
- * order is never sent).
+ * What the payment of a storefront order says about releasing it from a risk hold, sending it to a supplier, or accepting and completing it
+ * by staff: `disputed` while a dispute of the payment is open (the action waits until it is decided), `returned` once the money went back
+ * (charged back, or refunded in full: the order is never sent, or delivered by staff for the first time).
  */
 export type PaymentStop = 'disputed' | 'returned';
 
 /**
  * The stop a payment status means.
  *
- * Why: the customer's bank or the shop took the money back, or may still do so: the supplier cost of a send would be spent on a sale that
- * is not paid. A partial refund or a won dispute does not stop the order.
+ * Why: the customer's bank or the shop took the money back, or may still do so: the supplier cost of a send, or a result delivered by staff,
+ * would be spent on a sale that is not paid. A partial refund or a won dispute does not stop the order.
  *
  * @param status the status of the payment that paid the order (`payments.status`), or `undefined` when it has none
  * @returns `disputed`, `returned`, or `undefined` when the payment stands
@@ -57,8 +58,9 @@ export const PAYMENT_STOP_REASONS: Readonly<Record<PaymentStop, string>> = {
 };
 
 /**
- * True for the actions the payment of a storefront order can refuse: the release from a risk hold, a staff send and a change of supplier
- * that sends. The dispatch job checks the payment itself before it claims the order.
+ * True for the actions the payment of a storefront order can refuse: the release from a risk hold, a staff send, a change of supplier
+ * that sends, a staff accept and a staff reply (also each line of the bulk reply). The dispatch job checks the payment itself before it
+ * claims the order; a supplier that already has the order still completes it.
  *
  * @param action the action asked
  * @returns whether the use case must read the payment before it decides
@@ -67,7 +69,9 @@ export function paymentCanStop(action: OrderAction): boolean {
   return (
     action.kind === 'riskApprove' ||
     action.kind === 'staffDispatch' ||
-    (action.kind === 'changeSupplier' && action.dispatch)
+    (action.kind === 'changeSupplier' && action.dispatch) ||
+    action.kind === 'accept' ||
+    action.kind === 'reply'
   );
 }
 
@@ -353,8 +357,10 @@ function openAndNotHeld(order: OrderState): OrderRefused | undefined {
  * INVALID_TRANSITION`). Decision 044: while the order is `dispatching` the actions that would change it wait for the
  * supplier's answer (`ALREADY_SENT` with the `sending` flag), and the merchant's cancel is refused (`ALREADY_SENT`) once the order
  * was ever claimed for a supplier call (`everDispatched`), whatever state it reads now. A storefront order whose payment is disputed,
- * charged back or refunded in full (`paymentStop`) is not released from its risk hold, sent by staff or sent with a change of supplier
- * (`INVALID_TRANSITION` with the `payment` flag): staff can still refund or reject it.
+ * charged back or refunded in full (`paymentStop`) is not released from its risk hold, sent by staff, sent with a change of supplier,
+ * accepted or completed by a staff reply (`INVALID_TRANSITION` with the `payment` flag): staff can still refund or reject it, and a
+ * supplier's own answer still completes or rejects an order it already has. A storefront order delivered before and reopened
+ * (`completedBefore`) is still delivered again by a staff reply, since its reject is `USE_REFUNDS`.
  *
  * @param order the order as read at the start of the use case
  * @param action what is asked
@@ -368,12 +374,16 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
       if (blocked) return blocked;
       // The endpoint doc names this refusal: only an order in the manual queue can be accepted.
       if (order.dispatchState !== 'manual') return refuse('NOT_MANUAL');
+      if (order.paymentStop !== undefined) return paymentStopped(order.paymentStop);
       return to(order, { status: 'processing', dispatchState: 'operator' }, 'accepted', null);
     }
     case 'reply': {
       const blocked = openAndNotHeld(order);
       if (blocked) return blocked;
       if (order.dispatchState === 'dispatching') return sending();
+      // An order delivered before and reopened is delivered again whatever its payment says: the result already reached the buyer, a
+      // second delivery books no new supplier cost, and its reject is USE_REFUNDS, so the reply is its way out.
+      if (order.paymentStop !== undefined && !order.completedBefore) return paymentStopped(order.paymentStop);
       return to(order, { status: 'completed', dispatchState: 'done' }, 'completed', moneyComplete);
     }
     case 'reject': {

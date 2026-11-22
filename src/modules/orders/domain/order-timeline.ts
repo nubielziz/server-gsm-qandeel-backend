@@ -15,6 +15,14 @@ export const MERCHANT_CANCEL_REASON = 'Cancelled by the merchant';
 /** The default result text of a verification refund when staff write no note. */
 export const VERIFICATION_REFUND_REASON = 'Verification refund';
 
+/**
+ * The refund line of a storefront order that ends rejected after its payment was charged back.
+ *
+ * Why: nothing is refunded on a charged-back payment (the card network already returned the money); staff read why no refund follows.
+ */
+export const CHARGED_BACK_REFUND_LINE =
+  'No refund sent: the payment was charged back, so the card network already returned the money to the buyer';
+
 /** Who caused an event. */
 export interface TimelineActor {
   readonly type: OrderEventActorType;
@@ -131,7 +139,8 @@ export interface TransitionContext {
   readonly note?: string | undefined;
   /**
    * The money that moved (4-decimal texts); `posted` is false for a free order. `requested` marks a refund that waits for staff to approve,
-   * `disputed` one that waits because the buyer disputed the payment with the card network (decision 048).
+   * `disputed` one that waits because the buyer disputed the payment with the card network (decision 048), `chargedBack` a rejection of a
+   * charged-back payment that refunds nothing.
    */
   readonly money: {
     readonly posted: boolean;
@@ -139,6 +148,7 @@ export interface TransitionContext {
     readonly cost: string;
     readonly requested?: boolean;
     readonly disputed?: boolean;
+    readonly chargedBack?: boolean;
   };
   /** The dispatch state after the transition: a risk approval says whether the order went to a supplier or to the manual queue. */
   readonly dispatchState?: OrderDispatchState | undefined;
@@ -158,6 +168,15 @@ function waitingRefundLine(context: TransitionContext, amount: string): Timeline
         amount: context.money.amount,
         requested: true,
       });
+}
+
+/** The line of a storefront rejection of a charged-back payment: no refund follows. */
+function chargedBackLine(context: TransitionContext): TimelineLine {
+  return line('refund', SYSTEM_ACTOR, {
+    message: CHARGED_BACK_REFUND_LINE,
+    amount: context.money.amount,
+    chargedBack: true,
+  });
 }
 
 function line(
@@ -215,10 +234,12 @@ export function transitionLines(
         money === 'b2c_refund'
           ? context.money.requested
             ? waitingRefundLine(context, amount)
-            : line('refund', SYSTEM_ACTOR, {
-                message: `Refund of ${amount} sent to the original payment method`,
-                amount: context.money.amount,
-              })
+            : context.money.chargedBack === true
+              ? chargedBackLine(context)
+              : line('refund', SYSTEM_ACTOR, {
+                  message: `Refund of ${amount} sent to the original payment method`,
+                  amount: context.money.amount,
+                })
           : line('release', SYSTEM_ACTOR, {
               message: `${amount} released back to wallet`,
               amount: context.money.amount,
@@ -269,6 +290,17 @@ export function transitionLines(
             status,
           ),
           waitingRefundLine(context, amount),
+        ];
+      }
+      if (money === 'b2c_refund' && context.money.chargedBack === true) {
+        return [
+          line(
+            'risk',
+            context.actor,
+            { message: `Risk review: closed without a refund${reason ? `. ${reason}` : ''}`, reason: reason ?? null },
+            status,
+          ),
+          chargedBackLine(context),
         ];
       }
       return money === 'b2c_refund'

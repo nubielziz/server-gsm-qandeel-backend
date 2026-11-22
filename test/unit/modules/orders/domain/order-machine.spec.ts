@@ -647,16 +647,17 @@ describe('the payment of a storefront order', () => {
     expect(paymentStopOf(undefined)).toBeUndefined();
   });
 
-  it('paymentCanStop: only the release from a hold, a staff send and a change of supplier that sends', () => {
+  it('paymentCanStop: the release from a hold, a staff send, a change of supplier that sends, a staff accept and a staff reply', () => {
     expect(paymentCanStop({ kind: 'riskApprove', manual: false })).toBe(true);
     expect(paymentCanStop({ kind: 'staffDispatch', requestLive: false })).toBe(true);
+    expect(paymentCanStop({ kind: 'accept' })).toBe(true);
+    expect(paymentCanStop({ kind: 'reply' })).toBe(true);
     const change = { kind: 'changeSupplier', resetReference: true, supplierChanges: false } as const;
     expect(paymentCanStop({ ...change, dispatch: true })).toBe(true);
     expect(paymentCanStop({ ...change, dispatch: false })).toBe(false);
     for (const action of [
-      { kind: 'accept' },
-      { kind: 'reply' },
       { kind: 'reject' },
+      { kind: 'supplierResult', result: 'completed' },
       { kind: 'riskRefund' },
       { kind: 'refundApproved' },
       { kind: 'requeueDispatch' },
@@ -693,6 +694,51 @@ describe('the payment of a storefront order', () => {
       // A change that sends nothing, and the way out (a reject), stay allowed.
       expect(allowed(decideOrderAction(waiting, { ...change, dispatch: false })).enqueueDispatch).toBe(false);
       expect(allowed(decideOrderAction(waiting, { kind: 'reject' }))).toMatchObject({ money: 'b2c_refund' });
+    }
+  });
+
+  it('refuses a staff accept and a staff reply, keeps the reject, and lets a supplier that has the order complete it', () => {
+    for (const paymentStop of stops) {
+      const refused = { ok: false, refusal: 'INVALID_TRANSITION', payment: paymentStop } as const;
+      const manual = b2c({ dispatchState: 'manual', paymentStop });
+      expect(decideOrderAction(manual, { kind: 'accept' })).toEqual(refused);
+      expect(decideOrderAction(manual, { kind: 'reply' })).toEqual(refused);
+      const worked = b2c({ status: 'processing', dispatchState: 'operator', paymentStop });
+      expect(decideOrderAction(worked, { kind: 'reply' })).toEqual(refused);
+      expect(allowed(decideOrderAction(worked, { kind: 'reject' }))).toMatchObject({ money: 'b2c_refund' });
+      const sent = b2c({ status: 'processing', dispatchState: 'sent', paymentStop });
+      expect(decideOrderAction(sent, { kind: 'reply' })).toEqual(refused);
+      expect(allowed(decideOrderAction(sent, { kind: 'supplierResult', result: 'completed' }))).toMatchObject({
+        money: 'b2c_deliver',
+      });
+    }
+    // The earlier refusals come first, and an order of the automatic queue is still NOT_MANUAL.
+    expect(decideOrderAction(b2c({ dispatchState: 'pending', paymentStop: 'disputed' }), { kind: 'accept' })).toEqual({
+      ok: false,
+      refusal: 'NOT_MANUAL',
+    });
+    expect(
+      decideOrderAction(b2c({ status: 'processing', dispatchState: 'dispatching', paymentStop: 'returned' }), {
+        kind: 'reply',
+      }),
+    ).toEqual({ ok: false, refusal: 'ALREADY_SENT', sending: true });
+  });
+
+  it('lets a staff reply deliver again a storefront order that was delivered before and reopened; its reject stays on the refunds page', () => {
+    for (const paymentStop of stops) {
+      const reopened = b2c({ status: 'processing', dispatchState: 'operator', completedBefore: true, paymentStop });
+      expect(allowed(decideOrderAction(reopened, { kind: 'reply' }))).toMatchObject({
+        next: { status: 'completed', dispatchState: 'done' },
+        event: 'completed',
+        money: 'b2c_deliver',
+      });
+      expect(decideOrderAction(reopened, { kind: 'reject' })).toEqual({ ok: false, refusal: 'USE_REFUNDS' });
+      // An order sent again after its reopen waits for its supplier like any other.
+      expect(decideOrderAction({ ...reopened, dispatchState: 'dispatching' }, { kind: 'reply' })).toEqual({
+        ok: false,
+        refusal: 'ALREADY_SENT',
+        sending: true,
+      });
     }
   });
 

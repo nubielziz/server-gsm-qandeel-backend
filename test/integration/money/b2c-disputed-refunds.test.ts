@@ -1,5 +1,6 @@
 // Integration tests of order-engine refunds of a payment the buyer disputed with the card network (decision 048): a staff reject, a supplier
-// rejection and a risk refund open a refund request instead of paying out; the request waits until the dispute is won; a refund opened
+// rejection and a risk refund open a refund request instead of paying out while the dispute is open, and refund nothing once the payment
+// was charged back (what the sale booked goes back against the loss); the request waits until the dispute is won; a refund opened
 // before the dispute is not sent to the gateway while the dispute is open; and a chargeback closes the refunds the gateway has not paid,
 // locking only those, while the VAT report counts the reversed refund and its reversal each in the month it was booked.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
@@ -9,6 +10,7 @@ import { B2cRefunds, RefundProcessModule, RefundSender } from '@src/modules/mone
 import { CHARGEBACK_NOT_SENT_NOTE } from '@src/modules/money/domain/refund-rules';
 import { DISPUTED_REFUND_NOTE } from '@src/modules/money/jobs/refund-sender';
 import { OrderSupplierMoves } from '@src/modules/orders';
+import { CHARGED_BACK_REFUND_LINE } from '@src/modules/orders/domain/order-timeline';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -140,7 +142,7 @@ describe('order-engine refunds of a disputed payment (decision 048)', () => {
     await expectRequestOnly(paid);
   });
 
-  it('a risk refund of a held order whose payment was charged back opens a request', async () => {
+  it('a risk refund of a held order whose payment was charged back refunds nothing and gives back what the sale booked', async () => {
     // Rules that hold any first order above 1 USD.
     const rules = (await staff.get('/admin/risk/rules')).body.rules as Array<{
       id: string;
@@ -156,11 +158,18 @@ describe('order-engine refunds of a disputed payment (decision 048)', () => {
     await dispute(paid, 'dp_risk', 'lost');
     expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
     expect((await staff.post(`/admin/risk/orders/${paid.orderId}/refund`, {})).status).toBe(204);
-    await expectRequestOnly(paid);
+    expect(await refundRows()).toEqual([]);
+    expect(await refundEvents()).toHaveLength(0);
+    expect((await notificationRows(db)).map((row) => row.event)).not.toContain('order.failed');
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
     const lines = (await eventsOf(db, paid.orderId)).slice(-2);
     expect(lines[0]).toMatchObject({ type: 'risk' });
-    expect(String(lines[0]!.data.message)).toStartWith('Risk review: refund waits for staff');
-    expect(lines[1]).toMatchObject({ type: 'refund', data: expect.objectContaining({ message: DISPUTED_LINE }) });
+    expect(String(lines[0]!.data.message)).toStartWith('Risk review: closed without a refund');
+    expect(lines[1]).toMatchObject({
+      type: 'refund',
+      data: expect.objectContaining({ message: CHARGED_BACK_REFUND_LINE, chargedBack: true }),
+    });
   });
 
   it('the request is refused while the dispute is open and approved once it is won', async () => {

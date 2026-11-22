@@ -19,7 +19,8 @@ export interface VatRowRecord {
  * Why: RESOLUTIONS money-4 and the endpoint doc: the report is worked out from the posted lines of the storefront's payment, refund and
  * chargeback journals, never from invoices, so it matches the books. Each month shows the signed movements booked in it: `vat` is what
  * the month's journals moved on `vat_payable` (a payment adds, a refund takes off, and so does the chargeback of an order that was never
- * delivered, which gives back the VAT of the disputed share), `taxable` what they moved on `customer_funds` and `revenue` (the net part,
+ * delivered, which gives back the VAT of the disputed share in its own journal or, for an order rejected after the loss, in that order's
+ * give-back journal), `taxable` what they moved on `customer_funds` and `revenue` (the net part,
  * whatever paid it: the gateway or the store balance; that chargeback's `customer_funds` line takes its net off). A delivered order's
  * chargeback moves neither and is not read. A month that was reported never changes afterwards: a refund journal that is reversed later
  * (decision 048: a refund closed unsent when its payment was charged back; key `reverse:<journal id>`, the same kind) stays in the month
@@ -166,6 +167,16 @@ const DISPUTE_LOSS_USD = sql`case when d.ledger_tx_id is null then round((d.amou
     where le.transaction_id = d.ledger_tx_id), 0) end`;
 
 /**
+ * What the rejections of storefront orders whose payment was charged back gave back from `chargeback_loss` in USD: the credit line of each
+ * order's give-back journal (key `order:<id>:chargeback-return`), so the strip's loss ties to the books.
+ */
+const CHARGEBACK_RETURNS_USD = sql`(
+  select coalesce(sum(-le.amount), 0) from ledger_transactions lt
+  join ledger_entries le on le.transaction_id = lt.id
+  join ledger_accounts la on la.id = le.account_id and la.kind = 'chargeback_loss'
+  where lt.kind = 'chargeback' and lt.ref_type = 'order' and lt.idempotency_key like 'order:%:chargeback-return')`;
+
+/**
  * The method comparison, a page of payments and the strip's totals.
  *
  * Why: RESOLUTIONS money-5: only payments with money received are listed or counted (pending and failed never are); every amount is
@@ -228,7 +239,7 @@ export async function paymentsReport(
         (select coalesce(sum(${REFUND_USD}), 0)::numeric(20,4)::text
            from refunds r join payments p on p.id = r.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
            where r.status in ('requested', 'failed') and r.customer_id is not null) as awaiting,
-        (select coalesce(sum(${DISPUTE_LOSS_USD}), 0)::numeric(20,4)::text
+        (select (coalesce(sum(${DISPUTE_LOSS_USD}), 0) - ${CHARGEBACK_RETURNS_USD})::numeric(20,4)::text
            from disputes d join payments p on p.id = d.payment_id left join checkout_sessions cs on cs.id = p.checkout_session_id
            where d.status = 'lost' and p.purpose = 'order') as loss`),
   ]);

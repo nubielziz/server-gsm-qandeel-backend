@@ -119,10 +119,12 @@ export function refusalError(refused: OrderRefusal | OrderRefused): AppError {
 }
 
 /**
- * Reads what the payment of a storefront order says about releasing it from a risk hold or sending it to a supplier.
+ * Reads what the payment of a storefront order says about releasing it from a risk hold, sending it to a supplier, or accepting and
+ * completing it by staff.
  *
- * Why: a storefront order whose payment is disputed, charged back or refunded in full is not released or sent (the machine's
- * `paymentStop`); the payment belongs to the money module, which answers its status. A merchant's order is never read.
+ * Why: a storefront order whose payment is disputed, charged back or refunded in full is not released, sent, accepted or completed by
+ * staff (the machine's `paymentStop`); the payment belongs to the money module, which answers its status. A merchant's order is never
+ * read.
  *
  * @param db the database or the caller's transaction
  * @param order the order
@@ -176,9 +178,10 @@ export class OrderTransitions {
    * @returns the order after the change, whether anything was written, and the machine's decision
    * @throws {AppError} `NOT_FOUND` (an unknown order, or another merchant's); the machine's `409` refusals (`ALREADY_SENT` also while
    *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event;
-   *   `INVALID_TRANSITION` for the release of a held storefront order whose payment is disputed, charged back or refunded in full); whatever
-   *   the request's `authorize` throws (`FORBIDDEN`, decision 046); `INVALID_TRANSITION` when the guarded update found the order already
-   *   changed, or when `asked` names a supplier or reference the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
+   *   `INVALID_TRANSITION` for the release, a staff send, a change of supplier that sends, an accept or a staff reply (of an order never
+   *   delivered before) of a storefront order whose payment is disputed, charged back or refunded in full); whatever the request's `authorize` throws (`FORBIDDEN`, decision
+   *   046); `INVALID_TRANSITION` when the guarded update found the order already changed, or when `asked` names a supplier or reference
+   *   the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
    */
   async apply(tx: DbExecutor, request: TransitionRequest): Promise<TransitionOutcome> {
     const order = await findOrder(tx, request.orderId);
@@ -195,7 +198,7 @@ export class OrderTransitions {
     const completedBefore = order.clientId === null && (await countEventsOfType(tx, order.id, 'completed')) > 0;
     // Only the merchant's cancel asks whether the order was ever claimed for a supplier call (decision 044): no extra read otherwise.
     const everDispatched = request.action.kind === 'cancel' && (await countEventsOfType(tx, order.id, 'dispatch')) > 0;
-    // Only a release or a send asks for the payment of a storefront order.
+    // Only a release, a send, an accept or a staff reply asks for the payment of a storefront order.
     const paymentStop = paymentCanStop(request.action) ? await paymentStopOfOrder(tx, order) : undefined;
     const decision = decideOrderAction(
       orderStateOf(order, completedBefore, everDispatched, paymentStop),
@@ -276,11 +279,12 @@ export class OrderTransitions {
     if (decision.enqueueDispatch) await this.outbox.dispatchRequested(tx, order.id);
 
     // A storefront customer hears about the end of their order: delivered, or rejected with the money sent back (a refund request that waits
-    // for staff is told when it is approved). The mail is written in this transaction, so it exists only if the transition does.
+    // for staff is told when it is approved; a charged-back payment sends nothing back). The mail is written in this transaction, so it exists
+    // only if the transition does.
     if (updated.clientId === null && updated.customerId !== null && order.status !== updated.status) {
       if (updated.status === 'completed') {
         await this.mails.orderCompleted(tx, { orderId: order.id, completions: completions + 1 });
-      } else if (updated.status === 'rejected' && moved.posted) {
+      } else if (updated.status === 'rejected' && moved.posted && moved.chargedBack !== true) {
         await this.mails.orderFailed(tx, order.id);
       }
     }

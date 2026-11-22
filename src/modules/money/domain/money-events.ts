@@ -340,6 +340,28 @@ export function b2cChargeback(input: {
 }
 
 /**
+ * Event `b2c_chargeback`, its give-back part: an order whose payment was already charged back as a loss is rejected, so the share of what its
+ * sale booked as customer funds and VAT that the card network took goes back against that loss.
+ *
+ * Why: a dispute lost while the order was still open books the plain loss ({@link b2cChargeback} without `returned`); an order that then
+ * ends rejected was never delivered, and nothing can be refunded on a charged-back payment, so the books must end as if the order had been
+ * rejected before the loss: the same lines `returned` would have taken from the loss are taken back from it now. The map's chargeback event
+ * has no such line; it is posted under the same event and kind.
+ *
+ * @param input the net and the VAT given back (see `chargebackReturn`)
+ * @returns Dr customer_funds net / Dr vat_payable vat / Cr chargeback_loss net + vat; reference type `order`
+ */
+export function b2cChargebackReturn(input: { net: Money; vat: Money }): MoneyEventPosting {
+  return posting(
+    'b2c_chargeback',
+    'order',
+    debitLine(SYSTEM('customer_funds'), input.net),
+    debitLine(SYSTEM('vat_payable'), input.vat),
+    creditLine(SYSTEM('chargeback_loss'), input.net.add(input.vat)),
+  );
+}
+
+/**
  * Event `payout`: the gateway pays what it owes into the bank.
  *
  * Why: the map's "gateway payout to the bank 14.26$" money event: "the payment after the fee". It has no record behind it, so it posts

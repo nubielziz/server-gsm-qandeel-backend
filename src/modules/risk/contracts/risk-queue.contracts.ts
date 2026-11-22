@@ -173,8 +173,9 @@ export const refundHeldOrder = defineRoute({
     'ledger move), in one transaction with the assessment outcome, the order timeline, the audit row and the chosen blocklist ' +
     'entries (manual entries of the caller; an entry that already exists is skipped, and none is linked to a customer). The ' +
     'customer’s status is not changed: block the customer with `POST /admin/customers/:id/block`. `409 NOT_HELD` when the order ' +
-    'is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back: a refund request ' +
-    'waits on the Refunds page instead (decision 048). For a guest checkout (opened without a signed-in session) `blockEmail` ' +
+    'is not waiting for a decision any more. A payment the buyer disputed with the card network is not sent back (decision 048): while ' +
+    'the dispute is open a refund request waits on the Refunds page instead; once the payment was charged back no refund or request ' +
+    'is made and what the sale booked goes back against the chargeback loss. For a guest checkout (opened without a signed-in session) `blockEmail` ' +
     'also blocks the card that paid the order, and blocks the checkout’s email for guest checkouts only when that email belonged to ' +
     'an account before the order: the account keeps signing in and ordering signed in, and its status is never changed here ' +
     '(decision 050).',

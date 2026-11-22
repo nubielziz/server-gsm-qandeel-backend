@@ -13,7 +13,13 @@ import { type ChargebackReturn, chargebackReturn, paymentStatusAfterDispute } fr
 import { paymentRef } from '../domain/invoice-rules';
 import { b2cChargeback } from '../domain/money-events';
 import { CHARGEBACK_NOT_SENT_NOTE } from '../domain/refund-rules';
-import { type RefundOrderRow, ledgerPartsOf, loadSessionMoney, orderForRefund } from '../infra/b2c-reads.repository';
+import {
+  type RefundOrderRow,
+  ledgerPartsOf,
+  ledgerTxIdsByKeys,
+  loadSessionMoney,
+  orderForRefund,
+} from '../infra/b2c-reads.repository';
 import { disputesOfPayment, updateDispute, updateDisputeIn } from '../infra/dispute.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
 import { updatePayment } from '../infra/payment.repository';
@@ -21,6 +27,7 @@ import { updateOrderPayment } from '../infra/order-payment.repository';
 import { takenRefundsOfPayment } from '../infra/refund.repository';
 import { LedgerPoster } from './post-transaction';
 import { B2cRefunds, type RefundActor } from './b2c-refunds';
+import { chargebackReturnKey } from './chargeback-return';
 import { CustomerWallets } from './customer-wallets';
 import { StorefrontOrderPorts } from './storefront-ports';
 
@@ -57,8 +64,10 @@ export function topUpDisputeHold(disputeId: number, paymentId: number): string {
  * keeps its id in `disputes.ledger_tx_id`, so whichever comes second posts nothing. The chargeback of an order that was never delivered
  * (`rejected`) gives back what its sale booked as owed to the buyer and as VAT, for the disputed share of what the refunds that went out
  * left ({@link chargebackReturn}: Dr customer_funds, Dr vat_payable), and only the rest and the dispute fee are a loss; a delivered order's
- * stays a loss. A dispute won sets the payment back to `captured`, or to `partial_refund` or `refunded` when completed refunds exist,
- * unless another dispute of the payment is lost (`chargeback`) or still open (`disputed`). Decision 048: when a loss books the
+ * stays a loss. An order still open at the loss keeps the plain loss; when it ends rejected, its rejection gives the same share back
+ * against the loss (`returnAfterChargeback`), and a later loss counts what that gave back. A dispute won sets the payment back to
+ * `captured`, or to `partial_refund` or `refunded` when completed refunds exist, unless another dispute of the payment is lost
+ * (`chargeback`) or still open (`disputed`). Decision 048: when a loss books the
  * chargeback, the payment's refunds that have not completed at the gateway are closed unsent and their journals reversed
  * ({@link B2cRefunds.closeNotSent}), each with a timeline line, so the books show the money leaving once.
  *
@@ -105,7 +114,8 @@ export class DisputeLedger {
         fx,
       );
       // Read without a lock: an order's lock comes before its payment's (the lock order of every writer of an order's money) and the
-      // payment is held here; a rejected order is final, so what this rule reads cannot change under it.
+      // payment is held here; a rejected order is final, so what this rule reads cannot change under it. An order read as open that is
+      // rejected after this commits takes the payment's lock afterwards and books the give-back then (`returnAfterChargeback`).
       const order = dispute.orderId === null ? undefined : await orderForRefund(tx, dispute.orderId);
       const returned =
         order?.status === 'rejected' ? await this.returnedOf(tx, dispute, order, payment, amount) : undefined;
@@ -178,7 +188,8 @@ export class DisputeLedger {
 
   /**
    * What the chargeback of an order that was never delivered gives back from its sale's lines (see {@link chargebackReturn}): what the
-   * refunds that went out left, less what earlier lost disputes of the payment already gave back.
+   * refunds that went out left, less what earlier lost disputes of the payment already gave back, and less what the order's rejection gave
+   * back after an earlier loss ({@link chargebackReturnKey}).
    *
    * @param tx the loss's transaction (after the refunds that were not sent are closed; the payment is locked)
    * @param dispute the dispute being lost
@@ -198,7 +209,9 @@ export class DisputeLedger {
     const earlier = (await disputesOfPayment(tx, payment.id)).flatMap((other) =>
       other.id !== dispute.id && other.ledgerTxId !== null ? [other.ledgerTxId] : [],
     );
-    const given = [...(await ledgerPartsOf(tx, earlier)).values()];
+    const key = chargebackReturnKey(order.id);
+    const back = (await ledgerTxIdsByKeys(tx, [key])).get(key);
+    const given = [...(await ledgerPartsOf(tx, back === undefined ? earlier : [...earlier, back])).values()];
     const givenNet = Money.sum(given.map((part) => Money.of(part.net)));
     const givenVat = Money.sum(given.map((part) => Money.of(part.vat)));
     return chargebackReturn({

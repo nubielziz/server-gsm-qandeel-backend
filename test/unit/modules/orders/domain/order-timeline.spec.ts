@@ -1,6 +1,7 @@
 // Unit tests of the timeline lines of each transition (RESOLUTIONS orders-suppliers-15): which events, in which order, with which words.
 import { describe, expect, it } from 'bun:test';
 import {
+  CHARGED_BACK_REFUND_LINE,
   MANUAL_REASON,
   SYSTEM_ACTOR,
   VERIFICATION_REASON,
@@ -239,5 +240,40 @@ describe('transitionLines: refunds of a disputed payment (decision 048)', () => 
       amount: '3.3100',
       requested: true,
     });
+  });
+});
+
+describe('transitionLines: a rejection of a charged-back payment', () => {
+  const chargedBack = { posted: true, amount: '4.7900', cost: '0.0000', chargedBack: true };
+
+  it('a reject says no refund was sent and why', () => {
+    const lines = transitionLines('rejected', 'b2c_refund', {
+      actor: staff,
+      from: 'pending',
+      to: 'rejected',
+      reason: 'No stock',
+      money: chargedBack,
+    });
+    expect(kinds(lines)).toEqual(['rejected', 'refund']);
+    expect(lines[1]).toMatchObject({
+      actor: SYSTEM_ACTOR,
+      data: { message: CHARGED_BACK_REFUND_LINE, amount: '4.7900', chargedBack: true },
+    });
+  });
+
+  it('a risk refund closes the review without a refund', () => {
+    const lines = transitionLines('risk', 'b2c_refund', {
+      actor: staff,
+      from: 'pending',
+      to: 'rejected',
+      reason: 'Refunded after risk review: Prepaid card BIN',
+      money: chargedBack,
+      dispatchState: 'done',
+    });
+    expect(kinds(lines)).toEqual(['risk', 'refund']);
+    expect(lines[0]!.data.message).toBe(
+      'Risk review: closed without a refund. Refunded after risk review: Prepaid card BIN',
+    );
+    expect(lines[1]!.data).toEqual({ message: CHARGED_BACK_REFUND_LINE, amount: '4.7900', chargedBack: true });
   });
 });

@@ -1,11 +1,14 @@
 // Integration tests of what a card dispute does to the books and to the payment (feature 16, scenario b2c-chargeback, decision 048): a
 // lost dispute of an order that was never delivered gives back what the sale booked as owed to the buyer and as VAT, and only the dispute
 // fee is a loss; a delivered order's dispute stays a loss of the amount and the fee; a card network inquiry records nothing until the
-// gateway reports it as a dispute; and a payment's status after one of its disputes ends is worked out from all of its disputes.
+// gateway reports it as a dispute; a payment's status after one of its disputes ends is worked out from all of its disputes; and an order
+// rejected after its payment was charged back gives back what its sale booked against the loss, once, with no refund request.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { Decimal } from 'decimal.js';
 import { eq, sql } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
+import { OrderSupplierMoves } from '@src/modules/orders';
+import { CHARGED_BACK_REFUND_LINE } from '@src/modules/orders/domain/order-timeline';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -14,8 +17,9 @@ import { GatewayTestModule } from '../../support/billing';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
-import { seedDefaultTemplates } from '../../support/notifications';
+import { notificationRows, seedDefaultTemplates } from '../../support/notifications';
 import { eventsOf, ledgerOf, orderRow, systemBalance } from '../../support/orders';
+import { insertBareSupplier } from '../../support/suppliers';
 
 const clock = new TestClock('2026-11-21T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -275,7 +279,7 @@ describe('card network inquiries', () => {
 });
 
 describe('more than one dispute of a payment', () => {
-  it('a second dispute won after the first was lost leaves the payment charged back, and a rejection then only opens a request', async () => {
+  it('a second dispute won after the first was lost leaves the payment charged back, and a rejection then refunds nothing', async () => {
     const paid = await paidOrder(t, clock, world);
     await report(paid, 'dp_first');
     await lose(paid, 'dp_first');
@@ -286,8 +290,12 @@ describe('more than one dispute of a payment', () => {
     expect(await disputeOf('dp_second')).toMatchObject({ status: 'won' });
     expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
     await reject(paid);
-    expect(await refundRows()).toEqual([expect.objectContaining({ status: 'requested', ledgerTxId: null })]);
+    // Nothing can be refunded on a charged-back payment: what the sale booked goes back against the loss of the first dispute.
+    expect(await refundRows()).toEqual([]);
     expect(fake.calls('/v1/refunds')).toHaveLength(0);
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 
   it('a dispute won while another is still open leaves the payment disputed; it is captured again once both are won', async () => {
@@ -300,5 +308,142 @@ describe('more than one dispute of a payment', () => {
     expect(await refundRows()).toEqual([expect.objectContaining({ status: 'requested', ledgerTxId: null })]);
     await win(paid, 'dp_open');
     expect((await paymentRow(paid.paymentId)).status).toBe('captured');
+  });
+});
+
+describe('an order rejected after its payment was charged back', () => {
+  /** The journal that gives back what the sale of the order booked (one per order). */
+  const returnOf = async (orderId: number) =>
+    db
+      .select()
+      .from(s.ledgerTransactions)
+      .where(eq(s.ledgerTransactions.idempotencyKey, `order:${orderId}:chargeback-return`));
+
+  /** Nothing was refunded, sent or mailed: the card network already returned the money. */
+  async function expectNoRefund(paid: PaidOrder) {
+    expect(await refundRows()).toEqual([]);
+    expect(fake.calls('/v1/refunds')).toHaveLength(0);
+    expect(await db.select().from(s.outboxEvents).where(eq(s.outboxEvents.type, 'refund.process'))).toHaveLength(0);
+    expect((await notificationRows(db)).map((row) => row.event)).not.toContain('order.failed');
+    expect((await eventsOf(db, paid.orderId)).at(-1)).toMatchObject({
+      type: 'refund',
+      data: expect.objectContaining({ message: CHARGED_BACK_REFUND_LINE, chargedBack: true }),
+    });
+  }
+
+  it('a staff reject gives back customer funds and VAT against the loss and opens no refund request', async () => {
+    const paid = await paidOrder(t, clock, world);
+    await report(paid, 'dp_open_order');
+    await lose(paid, 'dp_open_order');
+    expect((await orderRow(db, paid.orderId)).status).toBe('pending');
+    const fee = usd('12', await fxOf(paid.orderId));
+    // The loss of an order that is still open is the plain loss of the amount and the fee.
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.add('4.79').toFixed(4));
+    await reject(paid);
+    const [back] = await returnOf(paid.orderId);
+    expect(back).toMatchObject({ kind: 'chargeback', refType: 'order', refId: paid.orderId });
+    expect(await linesOf(back!.id)).toEqual({
+      chargeback_loss: '-4.7900',
+      customer_funds: '3.9900',
+      vat_payable: '0.8000',
+    });
+    expect((await ledgerOf(db, paid.orderId)).map((entry) => entry.kind)).toEqual([
+      'b2c_payment',
+      'gateway_fee',
+      'chargeback',
+      'chargeback',
+    ]);
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.toFixed(4));
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    // The reports follow the lines: no VAT is asked for the sale and the loss is the dispute fee.
+    expect(await vatTotals()).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
+    expect((await staff.get('/admin/reports/payments')).body.totals.chargebackLoss).toBe(fee.toFixed(4));
+    await expectNoRefund(paid);
+  });
+
+  it("a supplier's rejection after the loss books the same give-back", async () => {
+    const paid = await paidOrder(t, clock, world);
+    await report(paid, 'dp_at_supplier', { fee: 0 });
+    await lose(paid, 'dp_at_supplier');
+    const supplierId = await insertBareSupplier(db);
+    await db
+      .update(s.orders)
+      .set({ status: 'processing', dispatchState: 'sent', supplierId, supplierRef: 'REF-1' })
+      .where(eq(s.orders.id, paid.orderId));
+    const moves = t.app.get(OrderSupplierMoves, { strict: false });
+    await db.transaction((tx) =>
+      moves.settle(tx, {
+        orderId: paid.orderId,
+        result: 'rejected',
+        supplierId,
+        supplierRef: 'REF-1',
+        text: 'Blacklisted',
+      }),
+    );
+    expect((await orderRow(db, paid.orderId)).status).toBe('rejected');
+    expect(await returnOf(paid.orderId)).toHaveLength(1);
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe('0.0000');
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    await expectNoRefund(paid);
+  });
+
+  it('a dispute of part of the payment gives back that part, split into net and VAT like a refund', async () => {
+    const paid = await paidOrder(t, clock, world);
+    await report(paid, 'dp_open_part', { amount: 192, fee: 0 });
+    await lose(paid, 'dp_open_part');
+    await reject(paid);
+    const part = usd('1.92', await fxOf(paid.orderId));
+    const vat = new Decimal('0.80').times(part).div('4.79').toDecimalPlaces(2);
+    const net = part.sub(vat);
+    const [back] = await returnOf(paid.orderId);
+    expect(await linesOf(back!.id)).toEqual({
+      chargeback_loss: part.neg().toFixed(4),
+      customer_funds: net.toFixed(4),
+      vat_payable: vat.toFixed(4),
+    });
+    expect(await systemBalance(db, 'customer_funds')).toBe(new Decimal('3.99').sub(net).toFixed(4));
+    expect(await systemBalance(db, 'vat_payable')).toBe(new Decimal('0.80').sub(vat).toFixed(4));
+    expect(await systemBalance(db, 'chargeback_loss')).toBe('0.0000');
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    expect(await refundRows()).toEqual([]);
+  });
+
+  it('a dispute lost after the give-back gives back only what is left, never the same money twice', async () => {
+    const paid = await paidOrder(t, clock, world);
+    await report(paid, 'dp_before', { amount: 192, fee: 0 });
+    await lose(paid, 'dp_before');
+    await reject(paid);
+    await report(paid, 'dp_after', { fee: 0 });
+    await lose(paid, 'dp_after');
+    const part = usd('1.92', await fxOf(paid.orderId));
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    // The second dispute took the whole payment again: what the first one already took is a loss.
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(part.toFixed(4));
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    expect(await vatTotals()).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
+  });
+
+  it('a loss and a reject at the same moment leave the books right whichever commits first', async () => {
+    const paid = await paidOrder(t, clock, world);
+    await report(paid, 'dp_race');
+    const [lost, rejected] = await Promise.all([
+      lose(paid, 'dp_race'),
+      staff.post(`/admin/orders/${paid.orderId}/reject`, { reason: 'Cannot be unlocked' }),
+    ]);
+    expect(lost).toEqual({ received: true });
+    expect(rejected.status).toBe(204);
+    expect((await orderRow(db, paid.orderId)).status).toBe('rejected');
+    expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(usd('12', await fxOf(paid.orderId)).toFixed(4));
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    // No refund request is left waiting: a request opened first was closed by the loss.
+    expect((await refundRows()).filter((row) => row.status !== 'rejected')).toEqual([]);
   });
 });

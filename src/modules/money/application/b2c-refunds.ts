@@ -40,6 +40,7 @@ import {
   updateRefund,
   updateRefundIn,
 } from '../infra/refund.repository';
+import { returnAfterChargeback } from './chargeback-return';
 import { LedgerPoster } from './post-transaction';
 import { RefundOutbox } from './refund-outbox';
 import type { RefundedOrder } from './storefront-ports';
@@ -67,6 +68,11 @@ export interface RefundPosting {
    * (decision 048).
    */
   readonly disputed: boolean;
+  /**
+   * True when the payment was charged back: nothing was refunded and no request opened; what the sale booked went back against the
+   * chargeback loss instead (`amount` and `ledgerTxId` are that journal's, see `returnAfterChargeback`).
+   */
+  readonly chargedBack?: boolean;
 }
 
 /** What the system does with a rejected paid order: refund it now, or open a request for staff to approve. */
@@ -118,7 +124,10 @@ export class B2cRefunds {
    * refund request for everything that is left (`requested`, requested by the system) waits for staff and no journal is posted; approving it
    * later posts the journal from customer funds, as an automatic refund would have. Without a payment row the journal-only path stays (there
    * is no payment a request could name). Decision 048: a payment the buyer disputed with the card network (`disputed` or `chargeback`) is
-   * never paid out by a rejection or a risk refund: the request mode runs whatever the caller asked, and the posting says `disputed`.
+   * never paid out by a rejection or a risk refund. While it is `disputed` the request mode runs whatever the caller asked, and the posting
+   * says `disputed`. Once it is `chargeback` the card network has returned the money: no request is opened (none could ever be approved)
+   * and what the sale booked goes back against the chargeback loss once per order ({@link returnAfterChargeback}); the posting says
+   * `chargedBack`.
    *
    * @param tx the transition's transaction
    * @param input the order after the guarded update, who acts, the refund being paid out when an approval drives the move, and what the
@@ -142,6 +151,14 @@ export class B2cRefunds {
     if (!locked) throw new Error(`Payment ${payment.id} does not exist.`);
     // Money the buyer disputed with the card network never goes back by itself; staff decide once the dispute is closed (decision 048).
     const disputed = locked.status === 'disputed' || locked.status === 'chargeback';
+    if (input.refundId === undefined && locked.status === 'chargeback') {
+      return returnAfterChargeback(tx, this.poster, {
+        order,
+        payment: locked,
+        left: await this.leftOn(tx, order, locked),
+        actor,
+      });
+    }
     if (input.refundId === undefined && (input.mode === 'request' || disputed)) {
       return this.openRequest(tx, order, locked, disputed);
     }

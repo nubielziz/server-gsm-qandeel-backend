@@ -39,6 +39,11 @@ export interface MoveOutcome {
   readonly requested?: boolean;
   /** True when the request waits because the buyer disputed the payment with the card network (decision 048). */
   readonly disputed?: boolean;
+  /**
+   * True when the payment was charged back: nothing was refunded; `amount` is what the sale had booked that went back against the
+   * chargeback loss (USD).
+   */
+  readonly chargedBack?: boolean;
 }
 
 /** What the use case knows when it asks for a move. */
@@ -177,6 +182,7 @@ export class OrderLedger {
           cost: Money.zero().toWire(),
           ...(refunded.requested ? { requested: true } : {}),
           ...(refunded.disputed ? { disputed: true } : {}),
+          ...(refunded.chargedBack === true ? { chargedBack: true } : {}),
         };
       }
       case 'reopen':
