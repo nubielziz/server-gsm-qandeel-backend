@@ -363,12 +363,17 @@ describe('POST /admin/currencies/refresh-fx and a rate that moved too far (decis
     await refresh(configured, staff);
     const eur = (await rows()).EUR!;
     expect(eur.rateHeldAt).not.toBeNull();
-    const typed = await configured.app.inject({
-      method: 'PATCH',
-      url: `/admin/currencies/${eur.id}`,
-      headers: staff.session.mutationHeaders,
-      payload: { rateToBase: '0.92' },
-    });
+    // The provider's 1.20 is more than the bound from the stored 0.92: confirming the stored rate is an Owner's decision.
+    const confirm = (who: typeof staff) =>
+      configured.app.inject({
+        method: 'PATCH',
+        url: `/admin/currencies/${eur.id}`,
+        headers: who.session.mutationHeaders,
+        payload: { rateToBase: '0.92' },
+      });
+    expect((await confirm(staff)).statusCode).toBe(403);
+    expect((await rows()).EUR!.rateHeldAt).toEqual(eur.rateHeldAt);
+    const typed = await confirm(await signInStaff(configured, ['*']));
     expect(typed.statusCode).toBe(200);
     expect(typed.json().isStale).toBe(false);
     expect((await rows()).EUR).toMatchObject({ rateHeldAt: null, rateUpdatedAt: clock.now() });

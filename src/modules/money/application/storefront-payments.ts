@@ -437,7 +437,18 @@ export class StorefrontPayments {
     const invoice =
       input.receipt === false
         ? undefined
-        : await this.issueReceipt(tx, { gatewayId: gateway.id, order, session }, grossUsd, vat, now);
+        : await this.issueReceipt(
+            tx,
+            {
+              gatewayId: gateway.id,
+              order,
+              session,
+              // The receipt states what the card was charged, never a new conversion at the decimals of this moment.
+              charged: { amount: Money.of(payment.amount), currency: payment.currency },
+            },
+            vat,
+            now,
+          );
 
     await updateOrderPayment(tx, payment.id, {
       status: 'captured',
@@ -461,28 +472,32 @@ export class StorefrontPayments {
   /**
    * Issues the paid tax receipt invoice of an order and queues its PDF.
    *
-   * Why: the receipt is in the buyer's currency: the gross and the tax are converted and the net is what is left, as the checkout shows. The PDF
+   * Why: the receipt is in the buyer's currency: its gross and total are what the payment charged (the payment's own amount and currency,
+   * fixed when its page opened), the tax is converted at the locked rate and the net is what is left, as the checkout shows. The PDF
    * is not drawn here: the `receipt.render` event written with the invoice makes the worker do it after the commit. A payment from the store
    * balance has no gateway (`gatewayId: null`, feature 21): its receipt is the same tax document, VAT being due at spend (plan 21 O9).
    *
    * Side effects: inserts one `invoices` row and one `receipt.render` outbox row on the caller's transaction.
    *
    * @param tx the payment's transaction
-   * @param input the gateway (`null` for the store balance), the order and what the session locked
-   * @param grossUsd the gross paid, in USD
+   * @param input the gateway (`null` for the store balance), the order, what the session locked and what the payment charged
    * @param vat the VAT of the order, in USD
    * @param now the clock's time
    * @returns the paid receipt invoice
    */
   async issueReceipt(
     tx: DbExecutor,
-    input: { gatewayId: number | null; order: CapturedOrder; session: CapturedSession },
-    grossUsd: Money,
+    input: {
+      gatewayId: number | null;
+      order: CapturedOrder;
+      session: CapturedSession;
+      charged: { readonly amount: Money; readonly currency: string };
+    },
     vat: Money,
     now: Date,
   ): Promise<Invoice> {
-    const { gatewayId, order, session } = input;
-    const grossShown = fromUsd(grossUsd, session.fxRate, session.decimals);
+    const { gatewayId, order, session, charged } = input;
+    const grossShown = charged.amount;
     const taxShown = fromUsd(vat, session.fxRate, session.decimals);
     const id = await reserveInvoiceId(tx);
     const invoice = await insertInvoice(tx, {
@@ -499,7 +514,7 @@ export class StorefrontPayments {
       taxCountry: session.taxCountry ?? '',
       customerVatId: '',
       total: grossShown.toWire(),
-      currency: session.currency,
+      currency: charged.currency,
       status: 'paid',
       gatewayId,
       paidAt: now,

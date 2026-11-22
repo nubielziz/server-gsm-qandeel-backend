@@ -182,7 +182,12 @@ export class CustomerWalletPayments {
       throw new AppError('WALLET_FROZEN', { detail: 'Paying from your store balance is on hold. Contact support.' });
     }
 
-    const invoice = await this.payments.issueReceipt(tx, { gatewayId: null, order, session }, grossUsd, vat, now);
+    const invoice = await this.payments.issueReceipt(
+      tx,
+      { gatewayId: null, order, session, charged: { amount: shown, currency: session.currency } },
+      vat,
+      now,
+    );
     await updateOrderPayment(tx, id, { invoiceId: invoice.id, updatedAt: now });
     return {
       id,

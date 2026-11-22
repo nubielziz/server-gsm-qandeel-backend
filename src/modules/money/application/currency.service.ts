@@ -7,8 +7,8 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
-import { type PermissionHolder, requirePermission } from '../../identity';
-import { AuditService } from '../../platform';
+import { type PermissionHolder, isOwner, requireOwner, requirePermission } from '../../identity';
+import { AuditService, FX_GUARD_SETTINGS, SettingsReader } from '../../platform';
 import type { CurrencySchema } from '../contracts/currencies.contracts';
 import type { Currency } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
@@ -20,7 +20,9 @@ import {
   formatRate,
   isRateStale,
   normalizeDecimal,
+  rateMovedTooFar,
 } from '../domain/currency-rules';
+import { FX_PROVIDER, type FxProvider, FxProviderUnavailableError } from '../domain/fx-provider';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findStorefrontGateways } from '../infra/storefront-money.repository';
 import {
@@ -59,6 +61,15 @@ const refuse = (...errors: FieldError[]) => new AppError('VALIDATION_FAILED', { 
 const notChargeable = (problem: FieldError) =>
   new AppError('VALIDATION_FAILED', { detail: problem.message, errors: [problem] });
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No currency with this id.' });
+/** The refusal of a typed rate beyond the refresh bound from the stored one, for anyone but an Owner (decision 049). */
+const typedRateDetail = (code: string, maxMove: number, stored: string) =>
+  `Only an owner can set a rate of ${code} more than ${maxMove} % away from the stored ${formatRate(stored)}.`;
+/** The refusal of a first rate beyond the refresh bound from the provider's, for anyone but an Owner (decision 049). */
+const firstRateDetail = (code: string, maxMove: number, offered: string) =>
+  `Only an owner can add ${code} at a rate more than ${maxMove} % away from the provider's ${formatRate(offered)}.`;
+/** The refusal of a typed rate beyond the refresh bound from the provider's, for anyone but an Owner (decision 049). */
+const providerRateDetail = (code: string, maxMove: number, offered: string) =>
+  `Only an owner can set a rate of ${code} more than ${maxMove} % away from the provider's ${formatRate(offered)}.`;
 
 /** The audit snapshot of a currency: what an admin changes. */
 function snapshotOf(row: Currency): Record<string, unknown> {
@@ -83,13 +94,20 @@ function snapshotOf(row: Currency): Record<string, unknown> {
  *
  * Decision 048: while an active storefront card method exists, a currency's decimals may not exceed what it charges exactly.
  *
- * Side effects: `create` and `update` write `currencies` and one audit row each.
+ * Decision 049: a typed rate is judged like a refreshed one: a rate that differs from the stored one, or from the provider's rate when
+ * the provider offers one, by more than `fx.max_refresh_move_percent` is an Owner's decision. The decimals set what the shop charges, so
+ * changing them needs `currencies:update` like the rate and the markup.
+ *
+ * Side effects: `create` and `update` write `currencies` and one audit row each; `create`, and `update` with a `rateToBase`, by anyone
+ * but an Owner ask the configured exchange-rate provider for the currency's rate (one outbound call, before the transaction).
  */
 @Injectable()
 export class CurrencyService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsReader,
+    @Inject(FX_PROVIDER) private readonly provider: FxProvider,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -121,10 +139,15 @@ export class CurrencyService {
   /**
    * Adds a currency.
    *
+   * Why: decision 049: the first rate of a currency is judged against the provider's rate with the bound of the refresh, so a rate typed
+   * far off (a slip of a decimal point) is not offered at checkout unless an Owner sets it. When the provider is not configured, cannot
+   * answer or does not offer the currency, the rate is judged by its format alone.
+   *
    * @param caller the signed-in staff member (a currency always sets a rate, so `currencies:update` too, decision 046)
    * @param input the request body
    * @returns the new currency
-   * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `currencies:update`; `VALIDATION_FAILED` for a bad code (format or already listed), a blank name, a rate that is not above
+   * @throws {AppError} `FORBIDDEN` (403) when the caller lacks `currencies:update`, or (after the validation) when the caller is not an
+   *   Owner and the rate is more than `fx.max_refresh_move_percent` away from the provider's (decision 049); `VALIDATION_FAILED` for a bad code (format or already listed), a blank name, a rate that is not above
    *   zero, a markup outside 0 to 10 or decimals outside 0 to 4, and on `decimals` (`not_chargeable`) for more decimals than an active
    *   storefront card method charges exactly (decision 048)
    */
@@ -145,6 +168,9 @@ export class CurrencyService {
       if (problem) errors.push(problem);
     }
     if (errors.length > 0) throw refuse(...errors);
+    // Decision 049: asked before the transaction, so no lock is held across the network; an Owner is never refused, so not asked.
+    const offered = isOwner(caller) ? undefined : await this.providerRateOf(code);
+    const maxMove = offered === undefined ? undefined : await this.maxRateMove();
 
     return this.db.runInTransaction(async ({ tx }) => {
       if ((await findCurrenciesByCode(tx, [code])).length > 0) {
@@ -153,6 +179,9 @@ export class CurrencyService {
       // Checked whatever `isStorefront` says: a currency switched on for the shop later keeps its decimals (decision 048).
       const chargeable = chargeDecimalsProblem(code, input.decimals, await this.chargeDecimalsOf(tx, code));
       if (chargeable) throw notChargeable(chargeable);
+      if (offered !== undefined && maxMove !== undefined && rateMovedTooFar(offered, input.rateToBase, maxMove)) {
+        requireOwner(caller, firstRateDetail(code, maxMove, offered));
+      }
       const now = this.clock.now();
       const row = await insertCurrency(tx, {
         code,
@@ -187,20 +216,36 @@ export class CurrencyService {
    * Changes a currency.
    *
    * Why: a sent `rateToBase` (even the same number) is staff's confirmation: it restarts the rate's age and ends a hold of the
-   * refresh, so the shop offers the currency again (decision 049).
+   * refresh, so the shop offers the currency again (decision 049). A typed rate is judged like a refreshed one: one that differs from the
+   * stored rate by more than `fx.max_refresh_move_percent` (the larger over the smaller, so a fall is judged like a rise) is an Owner's
+   * decision, so a rate typed far off is not charged at checkout. It is also judged against the provider's rate when the provider
+   * offers one, so rates typed one after another cannot carry the currency beyond the bound, and the stored rate typed again cannot
+   * end a hold the refresh set because the provider's rate is far from it. When the provider is not configured, cannot answer or does
+   * not offer the currency, the stored rate alone is the reference. The decimals set what the shop charges, like the rate.
    *
-   * @param caller the signed-in staff member (`rateToBase` and `markupPercent` also need `currencies:update`, decision 046)
+   * @param caller the signed-in staff member (`rateToBase`, `markupPercent` and `decimals` also need `currencies:update`, decision 046)
    * @param id the currency id
    * @param input the fields to change
    * @returns the changed currency
-   * @throws {AppError} `FORBIDDEN` (403) when a rate or markup is sent without `currencies:update`; `NOT_FOUND`; `VALIDATION_FAILED` for a bad rate, markup, decimals or name, a code change, or a change
+   * @throws {AppError} `FORBIDDEN` (403) when a rate, markup or decimals is sent without `currencies:update`, or (after the validation,
+   *   nothing stored) when the caller is not an Owner and the rate is more than `fx.max_refresh_move_percent` away from the stored one
+   *   or from the provider's (decision 049); `NOT_FOUND`; `VALIDATION_FAILED` for a bad rate, markup, decimals or name, a code change, or a change
    *   of rate, markup or activity on the base currency; on `decimals` (`not_chargeable`) when `decimals` is sent or `isStorefront` or
    *   `isActive` is switched on and the decimals exceed what an active storefront card method charges exactly (decision 048)
    */
   async update(caller: PermissionHolder, id: number, input: UpdateCurrencyInput): Promise<WireCurrency> {
-    // An exchange rate and its markup move money: they need the permission of the rate refresh (decision 046).
-    if (input.rateToBase !== undefined || input.markupPercent !== undefined) {
+    // An exchange rate, its markup and the decimals the shop charges move money: they need the permission of the rate refresh
+    // (decision 046).
+    if (input.rateToBase !== undefined || input.markupPercent !== undefined || input.decimals !== undefined) {
       requirePermission(caller, 'currencies:update');
+    }
+    const maxMove = input.rateToBase === undefined ? undefined : await this.maxRateMove();
+    // Decision 049: the provider is asked before the transaction, so no lock is held across the network; the code of a currency never
+    // changes, so it is read without the lock. An Owner is never refused, so not asked.
+    let offered: string | undefined;
+    if (input.rateToBase !== undefined && !isOwner(caller) && checkRate(input.rateToBase) === undefined) {
+      const known = await findCurrency(this.db.db, id);
+      if (known) offered = await this.providerRateOf(known.code);
     }
     return this.db.runInTransaction(async ({ tx }) => {
       const current = await findCurrency(tx, id, true);
@@ -209,6 +254,7 @@ export class CurrencyService {
       const changes: Partial<Currency> = {};
       const errors: FieldError[] = [];
       const isBase = current.code === BASE_CURRENCY;
+      let ownerDetail: string | undefined;
 
       if (input.code !== undefined && input.code.toUpperCase() !== current.code) {
         errors.push({ field: 'code', code: 'immutable', message: 'The currency code cannot be changed.' });
@@ -223,6 +269,17 @@ export class CurrencyService {
         else if (isBase && normalizeDecimal(input.rateToBase) !== normalizeDecimal(current.rateToBase)) {
           errors.push({ field: 'rateToBase', code: 'base', message: 'The base currency rate cannot be changed.' });
         } else {
+          // Decision 049: judged with the bound and the comparison of the refresh; a larger move is an Owner's decision.
+          if (maxMove !== undefined && rateMovedTooFar(current.rateToBase, input.rateToBase, maxMove)) {
+            ownerDetail = typedRateDetail(current.code, maxMove, current.rateToBase);
+          } else if (
+            offered !== undefined &&
+            maxMove !== undefined &&
+            rateMovedTooFar(offered, input.rateToBase, maxMove)
+          ) {
+            // The provider's rate bounds every typed rate, so a move made in steps each within the bound stays within it too.
+            ownerDetail = providerRateDetail(current.code, maxMove, offered);
+          }
           changes.rateToBase = input.rateToBase;
           // Sending a rate sets it: the stale clock restarts even when staff confirm the same number.
           changes.rateUpdatedAt = now;
@@ -265,6 +322,7 @@ export class CurrencyService {
         }
       }
       if (errors.length > 0) throw refuse(...errors);
+      if (ownerDetail !== undefined) requireOwner(caller, ownerDetail);
 
       const row =
         Object.keys(changes).length > 0 ? await updateCurrency(tx, id, { ...changes, updatedAt: now }) : current;
@@ -278,6 +336,27 @@ export class CurrencyService {
       });
       return this.toWire(row, now.getTime());
     });
+  }
+
+  /** The setting `fx.max_refresh_move_percent`, read as the refresh reads it (decision 049). */
+  private maxRateMove(): Promise<number> {
+    const bound = FX_GUARD_SETTINGS.maxRefreshMovePercent;
+    return this.settings.integer(bound.key, bound.fallback, bound);
+  }
+
+  /**
+   * The provider's rate of a currency, `undefined` when it is not known: the base currency, no provider configured, a provider that
+   * cannot answer, a currency it does not offer or a rate that cannot be used (decision 049).
+   */
+  private async providerRateOf(code: string): Promise<string | undefined> {
+    if (code === BASE_CURRENCY || !this.provider.configured) return undefined;
+    try {
+      const offered = (await this.provider.fetchRates([code])).rates.get(code);
+      return offered === undefined || checkRate(offered) !== undefined ? undefined : offered;
+    } catch (error) {
+      if (error instanceof FxProviderUnavailableError) return undefined;
+      throw error;
+    }
   }
 
   /**
