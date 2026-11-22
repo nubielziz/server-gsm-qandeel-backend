@@ -246,7 +246,7 @@ export async function insertGateway(t: TestApp, db: Database, overrides: Gateway
 }
 
 /**
- * Inserts a file row owned by a merchant (the upload route is feature 7a's; no object is stored).
+ * Inserts a file row owned by a merchant, as the upload routes store it (area `files`; the upload route is feature 7a's; no object is stored).
  *
  * @param db the test database
  * @param clientId the owner
@@ -263,7 +263,7 @@ export async function insertProofFile(
     .insert(s.files)
     .values({
       bucket: 'gsm-files-test',
-      key: `test/${id}`,
+      key: `files/test/${id}`,
       filename: 'receipt.pdf',
       mime: 'application/pdf',
       size: 1234,

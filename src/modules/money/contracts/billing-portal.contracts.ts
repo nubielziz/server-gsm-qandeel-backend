@@ -111,7 +111,7 @@ const payment = {
   currency: 'USD',
   status: 'pending' as const,
   methodType: 'bank' as const,
-  reference: 'TRX-5521',
+  reference: 'TRX5521',
   receiptFileId: 9101,
   capturedAt: null,
   createdAt: '2026-11-01T10:20:00.000Z',
@@ -215,8 +215,10 @@ export const uploadMyReceipt = defineRoute({
   key: 'POST /client/invoices/:id/receipt',
   summary: 'Upload a bank transfer receipt',
   description:
-    'Attaches the receipt of a transfer (a file the merchant uploaded: PDF, JPEG or PNG) to an open invoice and queues the payment ' +
-    'for staff review. `reference` is the bank reference (up to 64 characters, unique per gateway). A staff-issued invoice has no ' +
+    'Attaches the receipt of a transfer (a file the merchant uploaded through `POST /client/files`: PDF, JPEG or PNG; a document ' +
+    'the shop stored for the merchant, such as an invoice PDF, is `422` on `fileId`) to an open invoice and queues the payment for ' +
+    'staff review. `reference` is the bank reference (up to 64 characters), kept in upper case without white space or dashes; a ' +
+    'pending or approved payment of the gateway holds it (`422` on `reference`, `taken`), a rejected one releases it. A staff-issued invoice has no ' +
     'gateway yet: send the manual `gatewayId` the merchant paid through. 409 for an invoice that is not open, is paid online, or ' +
     'already has a receipt waiting, and for a sixth receipt on top-up invoices waiting for review; 422 on `fileId`, `reference` and ' +
     '`gatewayId`. A receipt whose file, or a file with the same content, already backs a pending or approved payment is `422` on ' +

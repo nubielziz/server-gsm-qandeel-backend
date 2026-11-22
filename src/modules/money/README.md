@@ -134,6 +134,15 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
     card top-ups ask for 3-D Secure under `require3ds` (`asks3ds`, also used by shop card payments); an amount an automatic method
     cannot charge exactly (a card page takes two decimals at most) is `422` on `amount` (`not_chargeable`, `checkChargeableAmount`)
     before an invoice or a customer top-up is reserved or a page is asked for, while a manual method keeps the amount as typed.
+  - **Receipts and bank references.** A transfer receipt (merchant and storefront routes) is a file its owner uploaded itself (area
+    `files`, `UPLOAD_AREA`); a document the platform stored for that owner (an invoice PDF, a tax receipt) is `422` on `fileId`
+    (`invalid`). A bank reference of a manual method is compared and stored in one form (`normalizeBankReference`: NFKC, digits of
+    any script as ASCII digits, upper case, no white space, dashes and invisible (control, format and default-ignorable) characters; a row
+    stored before is compared with its white space and `-` removed and in upper case, `findLiveBankReference`; staff search finds a
+    reference typed in either form); a reference that still holds a character other than a printable ASCII one (U+0021 to U+007E) in that form is `422` on
+    `reference` (`invalid`, `bankReferenceProblem`: as the bank printed it, in Latin letters and digits); a pending or approved payment
+    of the gateway holds it and a rejected one releases it (the partial unique index `payments_gateway_txn_uq`, which keeps a
+    gateway's own reference, on a payment without a receipt, unique whatever its status).
   - **Money rules.** A deposit posts the map event `deposit` (Dr `bank` for a manual gateway or `gateway_clearing` for an automatic one, Cr `client_wallet` net, Cr `fee_income` fee) with ref `payment`, key `deposit:payment:<id>`, memo
     `Deposit PAY-<id> (<method>)`. Lock order everywhere: the payment row, then its invoice, then the ledger accounts. Approve and reject re-check under the lock: not pending → `409 PAYMENT_ALREADY_REVIEWED`; an automatic gateway
     whose payment was not sent to review → `409 PAYMENT_AUTO_CREDIT_PENDING` (user rule 6). Reject voids a top-up invoice and leaves a staff-issued manual invoice open.

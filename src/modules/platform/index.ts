@@ -150,7 +150,7 @@ export type { WebhookTargetPolicy } from './webhooks/webhook-target-policy';
 export { PdfModule } from './pdf/pdf.module';
 export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
-export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
+export { PROOF_MIME_TYPES, StoredFiles, UPLOAD_AREA } from './files/stored-files';
 export { auditStaffFileOpening } from './files/file-opening-audit';
 export {
   CUSTOMER_DAILY_QUOTA,

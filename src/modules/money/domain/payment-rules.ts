@@ -212,3 +212,52 @@ export function topUpRecordProblem(
   ].filter((problem): problem is string => problem !== undefined);
   return problems.length === 0 ? undefined : problems.join(' ');
 }
+
+/** One decimal digit of any script (Unicode encodes each script's digits as a run of ten, zero first). */
+const DECIMAL_DIGIT = /\p{Nd}/u;
+
+/** The ASCII digit of a decimal digit of any script: its distance from the zero of its run of ten. */
+function asciiDigit(digit: string): string {
+  const code = digit.codePointAt(0)!;
+  let first = code;
+  while (DECIMAL_DIGIT.test(String.fromCodePoint(first - 1))) first -= 1;
+  return String((code - first) % 10);
+}
+
+/**
+ * The one form a bank reference of a manual method is compared and stored in: compatibility forms folded (NFKC, so full-width letters
+ * and digits are the plain ones), digits of any script read as their ASCII digits, upper case, without white space, dashes (the minus
+ * sign included) and invisible (control, format and default-ignorable) characters, the blank braille pattern included.
+ *
+ * Why: a bank reference names one transfer however it was typed (`ft-2611 0177 88`, `FT2611017788`, the same text with an
+ * invisible character, in full-width letters or with Arabic-Indic digits are the same transfer and read the same to staff), so both
+ * receipt routes judge and keep it in this form, and a pending or approved payment of the gateway holds it (`findLiveBankReference`).
+ * A reference that still holds a character other than a printable ASCII one in this form is refused (`bankReferenceProblem`).
+ *
+ * @param reference the reference as typed
+ * @returns the reference in its stored form; empty when only white space, dashes and invisible characters were typed
+ */
+export function normalizeBankReference(reference: string): string {
+  return reference
+    .normalize('NFKC')
+    .replace(/[\s\p{Pd}\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2212\u2800]+/gu, '')
+    .replace(/\p{Nd}/gu, asciiDigit)
+    .toUpperCase();
+}
+
+/**
+ * Why a bank reference in its stored form cannot be taken: it holds a character other than a printable ASCII one (U+0021 to U+007E).
+ *
+ * Why: banks print a transfer reference in Latin letters, digits and plain punctuation, and one transfer has one stored reference, so
+ * a stored reference holds only characters a person can see and tell apart in plain ASCII: a letter of another script, an accented
+ * letter, a combining mark, a private-use or unassigned code point and a symbol outside ASCII are refused. An empty reference
+ * (nothing was typed) stays allowed.
+ *
+ * @param reference the reference in its stored form (`normalizeBankReference`)
+ * @returns the sentence for the payer (`422` on `reference`, `invalid`), or `undefined` when the reference may be taken
+ */
+export function bankReferenceProblem(reference: string): string | undefined {
+  return /[^\u0021-\u007e]/u.test(reference)
+    ? 'Type the reference as the bank printed it, in Latin letters and digits.'
+    : undefined;
+}

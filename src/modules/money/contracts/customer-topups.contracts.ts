@@ -164,8 +164,10 @@ export const attachMyTopUpReceipt = defineRoute({
   key: 'POST /store/v1/me/wallet/top-ups/:id/receipt',
   summary: 'Attach the transfer receipt',
   description:
-    'Attaches the receipt of a manual transfer (`fileId` from `POST /store/v1/files`, PDF, JPEG or PNG) and the optional bank ' +
-    'reference; the top-up then waits for staff (`in_review`). Sending the same receipt again answers the top-up again. Allowed ' +
+    'Attaches the receipt of a manual transfer (`fileId` from `POST /store/v1/files`, PDF, JPEG or PNG; a document the shop ' +
+    'stored for the customer, such as a tax receipt, is `422` on `fileId`) and the optional bank reference, kept in upper case ' +
+    'without white space or dashes: a pending or approved payment of the method holds it (`422` on `reference`, `taken`), a ' +
+    'rejected one releases it. The top-up then waits for staff (`in_review`). Sending the same receipt again answers the top-up again. Allowed ' +
     'while the balance is switched off (the money may already be on its way). The `Idempotency-Key` header is required. A receipt ' +
     'whose file, or a file with the same content, already backs a pending or approved payment is `422` on `fileId` (`taken`; ' +
     'decision 049).',
@@ -179,7 +181,7 @@ export const attachMyTopUpReceipt = defineRoute({
   errors: [...WRITE_ERRORS, 'NOT_FOUND', 'CONFLICT'],
   examples: {
     request: { fileId: 90, reference: 'CLIQ-77812' },
-    response: { ...topUp, status: 'in_review', reference: 'CLIQ-77812', receiptUploaded: true },
+    response: { ...topUp, status: 'in_review', reference: 'CLIQ77812', receiptUploaded: true },
   },
 });
 

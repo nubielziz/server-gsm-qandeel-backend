@@ -354,7 +354,7 @@ describe('POST /client/invoices/:id/receipt', () => {
       currency: 'USD',
       status: 'pending',
       methodType: 'bank',
-      reference: 'TRX-5521',
+      reference: 'TRX5521',
       receiptFileId: fileId,
       capturedAt: null,
     });
@@ -366,7 +366,7 @@ describe('POST /client/invoices/:id/receipt', () => {
     const queue = await admin.get('/admin/payments?status=pending');
     expect(queue.body[0]).toMatchObject({
       id: res.body.id,
-      gatewayTxnId: 'TRX-5521',
+      gatewayTxnId: 'TRX5521',
       receiptFileId: fileId,
       invoiceId: invoice.id,
     });

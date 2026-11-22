@@ -17,6 +17,15 @@ import { deleteUnreferencedFiles } from '../infra/file.repository';
  */
 export const PROOF_MIME_TYPES: readonly string[] = ['application/pdf', 'image/jpeg', 'image/png'];
 
+/**
+ * The area of the files an owner uploaded itself through the upload routes (`POST /client/files`, `POST /v1/files`,
+ * `POST /store/v1/files`): `FileUploadService` stores them under `files/`.
+ *
+ * Why: a transfer receipt must be a file its owner uploaded; the documents the platform stores for an owner (invoice PDFs, tax
+ * receipts, dispute evidence, ticket attachments) are kept under other areas.
+ */
+export const UPLOAD_AREA = 'files';
+
 /** What a stored file looks like to the module that asked for it. */
 export interface FileMeta {
   readonly id: number;

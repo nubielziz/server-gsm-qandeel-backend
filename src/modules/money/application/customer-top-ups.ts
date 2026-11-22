@@ -10,7 +10,7 @@ import { APP_CONFIG, type AppConfig } from '../../../config';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService } from '../../../infra/rate-limit';
-import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
+import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles, UPLOAD_AREA } from '../../platform';
 import type { TopUpDetailSchema } from '../contracts/customer-topups.contracts';
 import { type Invoice, type Payment, type PaymentGateway, RECEIPT_LIVE_INDEX } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
@@ -25,6 +25,7 @@ import {
   parseAmount,
   topupInvoiceTotals,
 } from '../domain/invoice-rules';
+import { bankReferenceProblem, normalizeBankReference } from '../domain/payment-rules';
 import {
   findCustomerTopUp,
   findTopUpByKey,
@@ -41,7 +42,7 @@ import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-dr
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway, findGatewaysByIds } from '../infra/gateway.repository';
 import { insertInvoice, reserveInvoiceId, updateInvoice } from '../infra/invoice.repository';
-import { findPaymentByReference, insertPayment, pendingPaymentsOfInvoice } from '../infra/payment.repository';
+import { findLiveBankReference, insertPayment, pendingPaymentsOfInvoice } from '../infra/payment.repository';
 import { type WirePaymentMethod, paymentMethodToWire } from './billing-wire';
 import { CustomerWallets } from './customer-wallets';
 import { GatewayCredentialsVault } from './gateway-credentials';
@@ -338,8 +339,11 @@ export class CustomerTopUps {
   /**
    * Attaches the receipt of a manual transfer and queues the top-up for staff review.
    *
-   * Why: plan 21 § 5.6.4: the merchant receipt flow for a customer. The file must be the customer's own upload; a bank reference is unique
-   * per gateway; the receipt, or a copy of its bytes, must not back another pending or approved payment (decision 049). Sending the same
+   * Why: plan 21 § 5.6.4: the merchant receipt flow for a customer. The file must be the customer's own upload (`POST /store/v1/files`),
+   * never a document the platform stored for the customer (a tax receipt); a bank reference is compared and stored in one form
+   * (`normalizeBankReference`), holds printable ASCII characters only (`bankReferenceProblem`) and is held by a pending or approved payment of the
+   * gateway only (a rejected claim releases it); the
+   * receipt, or a copy of its bytes, must not back another pending or approved payment (decision 049). Sending the same
    * receipt again is a retry and answers the top-up. Manual top-ups always wait for staff; a risk hit only
    * writes its reason as a hint. Allowed while the balance is switched off (the money may already be on its way, P6).
    *
@@ -349,8 +353,9 @@ export class CustomerTopUps {
    * @param id the top-up
    * @param input the receipt file and the optional bank reference
    * @returns the top-up, now in review
-   * @throws {AppError} `NOT_FOUND`; `CONFLICT` (not open, online, another receipt in review); `VALIDATION_FAILED` on `fileId` (`invalid`,
-   *   `taken`: decision 049) or `reference` (`length`, `taken`)
+   * @throws {AppError} `NOT_FOUND`; `CONFLICT` (not open, online, another receipt in review); `VALIDATION_FAILED` on `fileId` (`invalid`:
+   *   unknown, another owner's, not an upload, or not a PDF, JPEG or PNG; `taken`: decision 049) or `reference` (`length`, `invalid`: a
+   *   character other than printable ASCII, `bankReferenceProblem`; `taken`)
    */
   async attachReceipt(
     customerId: number,
@@ -361,6 +366,9 @@ export class CustomerTopUps {
     if (reference.length > MAX_REFERENCE) {
       throw fieldError('reference', 'length', `Keep the reference to ${MAX_REFERENCE} characters or fewer.`);
     }
+    const bankReference = normalizeBankReference(reference);
+    const referenceProblem = bankReferenceProblem(bankReference);
+    if (referenceProblem) throw fieldError('reference', 'invalid', referenceProblem);
     try {
       return await this.db.runInTransaction(async ({ tx }) => {
         const invoice = await findCustomerTopUp(tx, customerId, id, true);
@@ -379,10 +387,11 @@ export class CustomerTopUps {
         if (pending.length > 0)
           throw new AppError('CONFLICT', { detail: 'A receipt for this top-up is waiting for review.' });
         const file = await this.files.findOwned(tx, input.fileId, { type: 'customer', id: customerId });
-        if (!file || !PROOF_MIME_TYPES.includes(file.mime)) {
+        // Only the customer's own upload: a document the platform stored for the customer (a tax receipt) is no transfer receipt.
+        if (!file || file.area !== UPLOAD_AREA || !PROOF_MIME_TYPES.includes(file.mime)) {
           throw fieldError('fileId', 'invalid', 'Upload the receipt as a PDF, JPEG or PNG file first.');
         }
-        if (reference !== '' && (await findPaymentByReference(tx, gateway.id, reference))) {
+        if (bankReference !== '' && (await findLiveBankReference(tx, gateway.id, bankReference))) {
           throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
         }
         await assertReceiptUnused(tx, this.files, file.id);
@@ -394,7 +403,7 @@ export class CustomerTopUps {
           invoiceId: invoice.id,
           customerId,
           gatewayId: gateway.id,
-          gatewayTxnId: reference === '' ? null : reference,
+          gatewayTxnId: bankReference === '' ? null : bankReference,
           amount: invoice.amount,
           feeAmount: invoice.fee,
           currency: invoice.currency,

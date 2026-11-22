@@ -1,12 +1,13 @@
 // Drizzle queries on payments (map routes /admin/payments*, /client/invoices/:id/receipt, the payment webhook and the automatic
 // credit job, stage 8): the top-up list with sort, search and exact count, find with a row lock, insert, guarded update, the due
 // payments of the job and the lookups the wire needs. Only the money module touches this table.
-import { type SQL, and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { CustomerContact } from '../../../common/customer-contact';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
 import { type NewPayment, type Payment, invoices, payments } from '../db/schema';
+import { normalizeBankReference } from '../domain/payment-rules';
 import { findCustomerIdsByNameOrEmail, findMerchantIdsByName } from './foreign-directory.repository';
 
 /** The sort fields of the top-up payment list. */
@@ -41,7 +42,8 @@ const ROW = { payment: payments, clientId: invoices.clientId, customerId: invoic
  * filter then matches nothing).
  *
  * @param db the database or a transaction
- * @param query the parsed list request (`q` searches the gateway reference and the merchant name)
+ * @param query the parsed list request (`q` searches the gateway reference, as typed and in the stored form of a bank reference
+ *   (`normalizeBankReference`), and the merchant name)
  * @param contact what the caller may see of customers' addresses: for `masked` `q` matches a customer's name only (decision 047)
  * @returns the page of rows and the number matching the filters
  */
@@ -54,6 +56,11 @@ export async function listPaymentRows(
   if (query.search) {
     const pattern = `%${escapeLike(query.search.text)}%`;
     alternatives.push(sql`${payments.gatewayTxnId} ilike ${pattern}`);
+    // A bank reference of a receipt is stored in one form: staff may type it as the payer wrote it.
+    const folded = normalizeBankReference(query.search.text);
+    if (folded !== '' && folded !== query.search.text) {
+      alternatives.push(sql`${payments.gatewayTxnId} ilike ${`%${escapeLike(folded)}%`}`);
+    }
     const clientIds = await findMerchantIdsByName(db, pattern);
     if (clientIds.length > 0) alternatives.push(inArray(invoices.clientId, clientIds));
     const customerIds = await findCustomerIdsByNameOrEmail(db, pattern, contact === 'full');
@@ -137,6 +144,42 @@ export async function findPaymentByReference(
     .select()
     .from(payments)
     .where(and(eq(payments.gatewayId, gatewayId), eq(payments.gatewayTxnId, reference)))
+    .limit(1);
+  return row;
+}
+
+/**
+ * Finds the payment of a gateway that holds a bank reference: one without a receipt file whatever its status, or a pending or approved
+ * one with a receipt file.
+ *
+ * Why: a bank reference names one transfer, so it backs one live payment of a manual method; a rejected claim releases it, so the payer
+ * who made the transfer can still name it. New references are stored in one form (`normalizeBankReference`); a row stored before that
+ * is compared with its white space and `-` removed and in upper case. The partial unique index `payments_gateway_txn_uq` decides
+ * between two receipts that pass this check at the same moment.
+ *
+ * @param db the receipt's transaction
+ * @param gatewayId the manual gateway
+ * @param reference the reference in its stored form (`normalizeBankReference`, not empty)
+ * @returns the payment, or `undefined`
+ */
+export async function findLiveBankReference(
+  db: DbExecutor,
+  gatewayId: number,
+  reference: string,
+): Promise<Payment | undefined> {
+  const [row] = await db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        eq(payments.gatewayId, gatewayId),
+        or(isNull(payments.receiptFileId), inArray(payments.status, ['pending', 'approved'])),
+        or(
+          eq(payments.gatewayTxnId, reference),
+          sql`upper(regexp_replace(${payments.gatewayTxnId}, '[[:space:]-]+', '', 'g')) = ${reference}`,
+        ),
+      ),
+    )
     .limit(1);
   return row;
 }

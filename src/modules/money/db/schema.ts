@@ -623,9 +623,13 @@ export const payments = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    // A gateway's own reference names one payment for good (a repeated confirmation creates none); a bank reference typed on a receipt is
+    // held only by a pending or approved payment, so a rejected claim releases it (stored in one form, `normalizeBankReference`).
     uniqueIndex('payments_gateway_txn_uq')
       .on(t.gatewayId, t.gatewayTxnId)
-      .where(sql`${t.gatewayTxnId} is not null`),
+      .where(
+        sql`${t.gatewayTxnId} is not null and (${t.receiptFileId} is null or ${inList(t.status, ['pending', 'approved'])})`,
+      ),
     check('payments_purpose_check', inList(t.purpose, PAYMENT_PURPOSES)),
     // One vocabulary per purpose (RESOLUTIONS money-2); the union also covers b2c-6 (method_type in the six values).
     check(

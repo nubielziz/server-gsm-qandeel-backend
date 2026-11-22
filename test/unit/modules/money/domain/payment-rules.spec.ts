@@ -3,9 +3,11 @@ import { describe, expect, it } from 'bun:test';
 import {
   aftermathNote,
   autoCreditAtOf,
+  bankReferenceProblem,
   closedInvoiceNote,
   confirmationMismatch,
   decideAutoCredit,
+  normalizeBankReference,
   reviewRefusal,
   topUpRecordProblem,
   waitingNote,
@@ -169,5 +171,112 @@ describe('topUpRecordProblem (decision 048)', () => {
       "The gateway's record of this payment names INV-2026-0008, not INV-2026-0007. The gateway's record shows this payment is " +
         "disputed. The gateway's record does not match the invoice. The gateway reports 1.0000 paid; the invoice is 100.0000.",
     );
+  });
+});
+
+describe('normalizeBankReference', () => {
+  it('upper-cases the reference and drops its white space and dashes', () => {
+    expect(normalizeBankReference(' ft-2611 0177\t88 ')).toBe('FT2611017788');
+    expect(normalizeBankReference('Ft\u20102611\u2013017788\u00a0')).toBe('FT2611017788');
+    expect(normalizeBankReference('TRX/55.21_a')).toBe('TRX/55.21_A');
+    expect(normalizeBankReference(' - ')).toBe('');
+  });
+
+  it('drops invisible (control, format and default-ignorable) characters and the minus sign, and folds full-width letters and digits', () => {
+    for (const typed of [
+      'FT2611\u0001017788', // start of heading (control)
+      'FT2611\u001f017788', // unit separator (control)
+      'FT2611\u007f017788', // delete (control)
+      'FT2611\u0085017788', // next line (control)
+      'FT2611\u009f017788', // application program command (control)
+      'FT2611\u200b017788', // zero width space
+      'FT\u00ad2611017788', // soft hyphen
+      'FT2611\u2060017788', // word joiner
+      'FT2611\u200e017788', // left-to-right mark
+      'FT2611\u034f017788', // combining grapheme joiner
+      'FT2611\ufe0f017788', // variation selector 16
+      'FT2611\u3164017788', // Hangul filler
+      'FT2611\u2800017788', // braille pattern blank
+      'FT\u22122611017788', // minus sign
+      '\uff26\uff34\uff12\uff16\uff11\uff11\uff10\uff11\uff17\uff17\uff18\uff18', // full-width FT2611017788
+    ]) {
+      expect(normalizeBankReference(typed), JSON.stringify(typed)).toBe('FT2611017788');
+    }
+    expect(normalizeBankReference('\u200b\u00ad ')).toBe('');
+  });
+
+  it('reads digits of any script as their ASCII digits', () => {
+    expect(normalizeBankReference('\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669')).toBe('0123456789');
+    expect(normalizeBankReference('\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9')).toBe('0123456789');
+    // Arabic-Indic and Eastern Arabic-Indic digits
+    expect(normalizeBankReference('ft\u0662\u0666\u0661\u0661\u0660\u0661\u0667\u0667\u0668\u0668')).toBe(
+      'FT2611017788',
+    );
+    expect(normalizeBankReference('FT\u06f2\u06f6\u06f1\u06f1 \u06f0\u06f1\u06f7\u06f7\u06f8\u06f8')).toBe(
+      'FT2611017788',
+    );
+  });
+
+  it('leaves an ordinary reference as it is', () => {
+    for (const reference of ['FT2611017788', 'TRX/55.21_A', 'CLIQ77812']) {
+      expect(normalizeBankReference(reference)).toBe(reference);
+    }
+  });
+});
+
+describe('bankReferenceProblem', () => {
+  it('refuses a reference that holds a letter outside A to Z', () => {
+    for (const typed of [
+      'F\u04222611017788', // Cyrillic Te
+      '\u03a4F2611017788', // Greek Tau
+      'FT2611017788\u0430', // Cyrillic a
+      'FT\u00c92611017788', // Latin E with acute
+      'FT\u06452611017788', // Arabic letter
+    ]) {
+      expect(bankReferenceProblem(normalizeBankReference(typed)), JSON.stringify(typed)).toBe(
+        'Type the reference as the bank printed it, in Latin letters and digits.',
+      );
+    }
+  });
+
+  it('refuses a character outside printable ASCII that the stored form keeps', () => {
+    for (const typed of [
+      'FT2611\u0301017788', // combining acute accent
+      'FT2611\u0332017788', // combining low line
+      'FT2611\ue000017788', // private use
+      'FT2611\u0378017788', // unassigned
+      'FT2611\u{16fe4}017788', // Khitan small script filler
+      'FT2611\u{1d159}017788', // musical null notehead
+      'FT\u01f02611017788', // Latin j with caron
+      'FT\u1e972611017788', // Latin t with diaeresis
+      'FT\u1e962611017788', // Latin h with line below
+      'FT\u1e982611017788', // Latin w with ring above
+      'FT\u1e992611017788', // Latin y with ring above
+      'FT\u20ac2611017788', // euro sign
+      'FT2611\u2022017788', // bullet
+      'FT\u{1f4b3}2611017788', // emoji
+      'FT2611\ud800017788', // lone surrogate
+    ]) {
+      expect(bankReferenceProblem(normalizeBankReference(typed)), JSON.stringify(typed)).toBe(
+        'Type the reference as the bank printed it, in Latin letters and digits.',
+      );
+    }
+  });
+
+  it('takes Latin letters, digits of any script and the punctuation the stored form keeps', () => {
+    for (const typed of [
+      'FT2611017788',
+      ' ft-2611 0177\t88 ',
+      'FT2611\u0001017788',
+      'FT2611\u0085017788',
+      'TRX/55.21_a',
+      '!"#$%&()*+,./:;<=>?@[\\]^_`{|}~',
+      'FT\u0662\u0666\u0661\u0661\u0660\u0661\u0667\u0667\u0668\u0668',
+      '\uff26\uff34\uff12\uff16\uff11\uff11\uff10\uff11\uff17\uff17\uff18\uff18',
+      'FT2611\u3164017788',
+      '',
+    ]) {
+      expect(bankReferenceProblem(normalizeBankReference(typed)), JSON.stringify(typed)).toBeUndefined();
+    }
   });
 });

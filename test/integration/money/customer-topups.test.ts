@@ -331,7 +331,7 @@ describe('the receipt, the cancel and the reads', () => {
     const { customer, store, topUp, fileId, db } = await openTopUp();
     const res = await receipt(store, topUp.id, { fileId, reference: ' CLIQ-1 ' });
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toMatchObject({ status: 'in_review', reference: 'CLIQ-1', receiptUploaded: true });
+    expect(res.json()).toMatchObject({ status: 'in_review', reference: 'CLIQ1', receiptUploaded: true });
     expect(res.json().instructions).toBeUndefined();
     expect((await receipt(store, topUp.id, { fileId, reference: 'CLIQ-1' })).statusCode).toBe(201);
     const [payment, ...more] = await db.select().from(s.payments).where(eq(s.payments.invoiceId, topUp.id));
