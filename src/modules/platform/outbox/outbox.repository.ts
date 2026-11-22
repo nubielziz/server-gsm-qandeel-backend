@@ -2,7 +2,8 @@
 import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type OutboxEvent, outboxEvents } from '../db/schema';
-import type { OutboxBacklog, OutboxEventTrace } from './outbox.types';
+import { OUTBOX_META_KEY } from './outbox-payload';
+import type { OutboxBacklog, OutboxEventTrace, OutboxPayload } from './outbox.types';
 
 /** The Postgres channel the relay listens on. */
 export const OUTBOX_CHANNEL = 'outbox';
@@ -149,17 +150,44 @@ export async function outboxEventExists(
 }
 
 /**
+ * Deletes relayed outbox rows handed over before a time, oldest first, at most `limit` of them.
+ *
+ * Why: decision 055: a relayed row is read again only by readers that look back far less than the retention (the price change scan 30
+ * days, the notification reconcile 48 hours, the dispatch sweep 24 hours); a pending row is never deleted. The partial index
+ * `outbox_events_processed_idx` covers the search.
+ *
+ * Side effects: deletes `outbox_events` rows.
+ *
+ * @param db the database or a transaction
+ * @param before the cut: rows relayed before it go
+ * @param limit the most rows one statement deletes
+ * @returns how many rows were deleted
+ */
+export async function purgeRelayedOutboxEvents(db: DbExecutor, before: Date, limit: number): Promise<number> {
+  const result = await db.execute(sql`
+    delete from ${outboxEvents}
+    where ${outboxEvents.id} in (
+      select ${outboxEvents.id} from ${outboxEvents}
+      where ${outboxEvents.processedAt} is not null and ${outboxEvents.processedAt} < ${before}
+      order by ${outboxEvents.processedAt}
+      limit ${limit}
+    )`);
+  return result.rowCount ?? 0;
+}
+
+/**
  * Reads the newest events of one type and aggregate.
  *
  * Why: decision 044: the dispatch sweep must know whether the relay still holds a request of an order and which jobs (`outbox-<id>`)
- * to look for. The aggregate index `outbox_events_aggregate_idx` covers the lookup.
+ * to look for; decision 055: the lost-work reconcile also reads the payloads (its own requests carry `reconcile: true`). The aggregate
+ * index `outbox_events_aggregate_idx` covers the lookup.
  *
  * @param db the database or a transaction
  * @param type the event type
  * @param aggregateType the aggregate table-like name
  * @param aggregateId the aggregate id
  * @param limit the most events returned
- * @returns id, creation time and relay time, newest first
+ * @returns id, creation time, relay time and payload (without `meta`), newest first
  */
 export async function outboxEventsOf(
   db: DbExecutor,
@@ -168,8 +196,13 @@ export async function outboxEventsOf(
   aggregateId: number,
   limit: number,
 ): Promise<OutboxEventTrace[]> {
-  return db
-    .select({ id: outboxEvents.id, createdAt: outboxEvents.createdAt, processedAt: outboxEvents.processedAt })
+  const rows = await db
+    .select({
+      id: outboxEvents.id,
+      createdAt: outboxEvents.createdAt,
+      processedAt: outboxEvents.processedAt,
+      payload: outboxEvents.payload,
+    })
     .from(outboxEvents)
     .where(
       and(
@@ -180,4 +213,8 @@ export async function outboxEventsOf(
     )
     .orderBy(desc(outboxEvents.id))
     .limit(limit);
+  return rows.map((row) => {
+    const { [OUTBOX_META_KEY]: _meta, ...payload } = row.payload;
+    return { id: row.id, createdAt: row.createdAt, processedAt: row.processedAt, payload: payload as OutboxPayload };
+  });
 }

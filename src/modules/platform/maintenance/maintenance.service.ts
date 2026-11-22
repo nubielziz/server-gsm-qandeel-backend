@@ -69,12 +69,12 @@ export class MaintenanceService {
    *
    * Side effects: clears the in-memory copy of this process and deletes `CacheKeys.maintenance()`.
    *
-   * @returns resolves when the cache key is gone
-   * @throws {Error} when Redis fails; the in-memory copy is cleared anyway and the old cache entry expires within a minute
+   * @returns resolves when the cache key is gone, or when every try to delete it failed. Never throws: a failed delete is retried and
+   *   reported (decision 055); the in-memory copy is cleared anyway and the old cache entry expires within a minute
    */
   async invalidate(): Promise<void> {
     this.memo.clear();
-    await this.cache.del(this.keys.maintenance());
+    await this.cache.invalidate(this.keys.maintenance());
   }
 
   private async load(): Promise<MaintenanceState> {

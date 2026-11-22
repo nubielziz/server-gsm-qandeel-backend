@@ -13,3 +13,7 @@ credentials) come only from env or the secret store and are never logged; the bo
 variables (defaults: `gsm_test`, Redis DB 1, `gsm-files-test`); the normal variables are ignored (decision 014).
 
 **Consequences.** A missing or malformed setting fails at deploy time, not on the first request that needs it.
+
+Amended by decision 055: the three database time limits `DATABASE_STATEMENT_TIMEOUT_MS`, `DATABASE_LOCK_TIMEOUT_MS` and
+`DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` (defaults 15 s, 5 s and 60 s; 0 means none; none under `NODE_ENV=test`; a value from 1 to 999 ms
+is refused) are settings of each process; the production compose file gives the worker its own.

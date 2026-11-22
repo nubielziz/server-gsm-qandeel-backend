@@ -20,6 +20,11 @@ function reader(values: Record<string, unknown>) {
       deleted.push(...names);
       return Promise.resolve(names.length);
     },
+    // Decision 055: the invalidation after a settings change is retried by the cache and never throws.
+    invalidate: (...names: string[]) => {
+      deleted.push(...names);
+      return Promise.resolve(true);
+    },
   } as unknown as CacheService;
   // loadAllSettings selects { key, value } rows from the table: a tiny fake of the Drizzle chain.
   const rows = Object.entries(values).map(([key, value]) => ({ key, value }));

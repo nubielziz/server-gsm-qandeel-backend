@@ -158,6 +158,11 @@ The lookup is cached 60 s (a key that matches nothing 10 s). **The features that
 change a merchant's status call, after their commit:** `afterCommit(() => directory.invalidate([keyHash]))` /
 `directory.invalidateClient(clientId, work)`; until then the old view is served for up to a minute.
 
+**Cached views are bound to their credential (decision 055).** A cached session view is used only when its `tokenHash` equals the hash of
+the presented cookie, and a cached API key view only when its `keyHash` equals the hash of the presented key (constant-time compare); a
+view of another credential answers 401, is deleted and logs one warning a minute. The deletes that follow a security change (sessions,
+API keys, role permissions, IP rules) go through `CacheService.invalidate`: retried, reported, never thrown.
+
 **Capability tokens** (`capability-tokens.ts`). The guard takes the `token` path parameter or, for the sign-in link routes, the `token`
 field of the body; a token that is not 16 to 128 base64url characters never reaches a resolver. The owning module registers a
 `CapabilityTokenResolver` per kind in `onModuleInit` (orders: `tracking-token`; customers: `checkout-token`, `link-token`; support:

@@ -82,6 +82,9 @@ services:
     # The worker holds only the indexer key (feature 29): it writes documents, aliases, synonym and curation sets.
     environment:
       TYPESENSE_INDEXER_KEY: ${TYPESENSE_INDEXER_KEY:?set it in deploy/.env}
+      # Decision 055: the worker's jobs read more per statement than a request; the API keeps the defaults (15 s, 5 s).
+      DATABASE_STATEMENT_TIMEOUT_MS: "300000"
+      DATABASE_LOCK_TIMEOUT_MS: "30000"
     healthcheck:
       # The worker has no /health; its metrics listener answers only with the METRICS_TOKEN, so a 200 proves the process is up.
       test:

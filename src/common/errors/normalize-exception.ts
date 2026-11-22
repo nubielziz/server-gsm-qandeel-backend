@@ -29,6 +29,31 @@ const RETRYABLE_CONFLICT_DETAIL = 'This was changed by another request at the sa
 /** SQLSTATE `40P01` (deadlock detected) and `40001` (serialization failure): Postgres asks the caller to retry. */
 const RETRYABLE_SQLSTATES: ReadonlySet<string> = new Set(['40P01', '40001']);
 
+/** Shown when Postgres stopped a statement or ended the session (decision 055): nothing of the transaction was written. */
+const DATABASE_TIMEOUT_DETAIL = 'The database took too long to answer. Try again in a moment.';
+
+/**
+ * Decision 055: a statement cancelled by `statement_timeout` (`57014`), a lock not granted within `lock_timeout` (`55P03`), a session
+ * ended by `idle_in_transaction_session_timeout` (`25P03`), by an administrator or a restart (`57P01`) or by `idle_session_timeout`
+ * (`57P05`): the transaction was rolled back and the client can repeat the request.
+ */
+const TIMEOUT_SQLSTATES: ReadonlySet<string> = new Set(['57014', '55P03', '25P03', '57P01', '57P05']);
+
+const MAX_CAUSE_DEPTH = 4;
+
+/**
+ * True for the error pg gives a statement sent on a client whose session Postgres already ended (it has no SQLSTATE), also as the
+ * `cause` of another error.
+ */
+function isEndedSessionError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < MAX_CAUSE_DEPTH && current instanceof Error; depth++) {
+    if (current.message.includes('has encountered a connection error and is not queryable')) return true;
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+  return false;
+}
+
 /** Curated sentences for the framework-level 4xx answers (their raw messages are technical). */
 const FRAMEWORK_DETAIL: Readonly<Record<number, string>> = {
   400: 'The request could not be read. Check that the URL and the JSON body are valid.',
@@ -123,7 +148,9 @@ function fromStatus(
  * detail; the full error is logged by the filter. A raw ZodError is a bug (contract validation throws AppError
  * itself), so it is a 500 too. A Postgres deadlock (`40P01`) or serialization failure (`40001`), also when it is the
  * `cause` of another error, is not a fault: Postgres rolled the transaction back, so the answer is a retryable
- * `409 CONFLICT`, logged at warn level (a rare lock-order clash between two money paths cannot be removed by ordering alone).
+ * `409 CONFLICT`, logged at warn level (a rare lock-order clash between two money paths cannot be removed by ordering alone). A
+ * database time limit (a statement or lock limit, an idle transaction ended) or a session Postgres ended answers a retryable
+ * `503 UNAVAILABLE`, logged at warn level (decision 055).
  * Outside production the 500 detail shows the error's type and its safe text: never a database statement or its values (decision 054).
  *
  * @param exception whatever was thrown
@@ -149,6 +176,13 @@ export function normalizeException(exception: unknown, options: { exposeInternal
   if (pg && RETRYABLE_SQLSTATES.has(pg.code)) {
     return {
       error: new AppError('CONFLICT', { detail: RETRYABLE_CONFLICT_DETAIL, cause: exception }),
+      logAsError: false,
+      logAsWarning: true,
+    };
+  }
+  if ((pg && TIMEOUT_SQLSTATES.has(pg.code)) || (!pg && isEndedSessionError(exception))) {
+    return {
+      error: new AppError('UNAVAILABLE', { detail: DATABASE_TIMEOUT_DETAIL, cause: exception }),
       logAsError: false,
       logAsWarning: true,
     };

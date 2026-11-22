@@ -1,9 +1,11 @@
 // SessionService: create, rotate, touch, revoke and look up the sessions of staff, merchants and customers (decision 018).
 // Tokens are random and stored only as keyed hashes (decision 019); lookups are cached 60 seconds in the cache Redis and
 // deleted after the commit of any change to the session or its account, which also rings the `session` doorbell (decision 037).
-import { Inject, Injectable } from '@nestjs/common';
+// A cached view is used only when it belongs to the presented token, and its deletes are retried (decision 055).
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
+import { LogThrottle } from '../../../common/log-throttle';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { TokenService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
@@ -63,14 +65,18 @@ function assertCreateInput(input: CreateSessionInput): void {
  * a row in `sessions` with a sign-in stage, absolute and idle expiry from settings, rotation when a step completes
  * (no fixation) and revocation of one session or all sessions of an account.
  *
- * Side effects: reads and writes `sessions`; reads and deletes `gsm:{env}:identity:session:{tokenHash}` in the cache Redis; after
- * the commit of an end (revoke, rotate, revoke all) rings `session ended` with the session ids, and after an account change
- * (`invalidateSubject`) `session subject`, so the live streams of those sessions close (decision 037).
+ * Side effects: reads and writes `sessions`; reads and deletes `gsm:{env}:identity:session:{tokenHash}` in the cache Redis (the
+ * deletes after the commit, retried and reported when Redis fails, decision 055); after the commit of an end (revoke, rotate, revoke
+ * all) rings `session ended` with the session ids, and after an account change (`invalidateSubject`) `session subject`, so the live
+ * streams of those sessions close (decision 037).
  *
- * @see docs/decisions/018-auth-sessions-csrf.md and docs/cache-keys.md
+ * @see docs/decisions/018-auth-sessions-csrf.md, docs/decisions/055-infra.md and docs/cache-keys.md
  */
 @Injectable()
 export class SessionService {
+  private readonly logger = new Logger(SessionService.name);
+  private readonly throttle = new LogThrottle(60_000);
+
   constructor(
     private readonly db: DbService,
     private readonly cache: CacheService,
@@ -141,20 +147,32 @@ export class SessionService {
    * Finds the live session behind a cookie token.
    *
    * Why: every authenticated request starts here; the answer is cached 60 seconds (a token that matches nothing 10 seconds).
-   * The result can be up to a minute old, so the caller judges expiry with `livenessOf` on every request.
+   * The result can be up to a minute old, so the caller judges expiry with `livenessOf` on every request. The view is used only
+   * when it belongs to the presented token (decision 055): a cached view whose token hash is another one is refused and deleted.
+   *
+   * Side effects: on a view that does not belong to the token, deletes its cache key (best effort) and logs one warning a minute.
    *
    * @param token the value of the session cookie
-   * @returns the session view, or `undefined` for an unknown, revoked or ended session, an account that is gone, or a token
-   *   that cannot be one of ours
+   * @returns the session view, or `undefined` for an unknown, revoked or ended session, an account that is gone, a token
+   *   that cannot be one of ours, or a cached view of another token
    */
   async lookup(token: string): Promise<SessionView | undefined> {
     if (!TOKEN_SHAPE.test(token)) return undefined;
     const hash = this.tokens.hash(token);
-    const view = await this.cache.getOrLoad(this.keys.session(hash), SESSION_CACHE_TTL_SECONDS, () => this.load(hash), {
+    const key = this.keys.session(hash);
+    const view = await this.cache.getOrLoad(key, SESSION_CACHE_TTL_SECONDS, () => this.load(hash), {
       negativeTtlSeconds: UNKNOWN_SESSION_TTL_SECONDS,
     });
     // A cached "nothing" comes back as null.
-    return view ?? undefined;
+    if (!view) return undefined;
+    if (!this.tokens.equals(view.tokenHash, hash)) {
+      if (this.throttle.attempt('binding')) {
+        this.logger.warn('A cached session view did not belong to the token it was stored for; it was ignored.');
+      }
+      await this.cache.del(key).catch(() => undefined);
+      return undefined;
+    }
+    return view;
   }
 
   /**
@@ -328,7 +346,8 @@ export class SessionService {
     });
   }
 
+  /** Deletes the cached views; never throws: a failed delete is retried and reported by the cache (decision 055). */
   private async forget(hashes: readonly string[]): Promise<void> {
-    if (hashes.length > 0) await this.cache.del(...hashes.map((hash) => this.keys.session(hash)));
+    if (hashes.length > 0) await this.cache.invalidate(...hashes.map((hash) => this.keys.session(hash)));
   }
 }

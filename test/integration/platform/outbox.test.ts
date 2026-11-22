@@ -4,9 +4,10 @@
 // is never relayed; the queue Redis being down loses nothing; a NOTIFY wakes the relay within a second and the one-second
 // tick is the safety net; the metrics tell lag and throughput. Lag, backlog age and the retry wait run on a TestClock
 // (decision 031). The waits that remain are real on purpose: the NOTIFY wake-up and the one-second BullMQ tick are the
-// behaviour under test, and the tests poll for their effect with `eventually`.
+// behaviour under test, and the tests poll for their effect with `eventually`. Decision 055: the trace of an event carries its payload,
+// and relayed events are purged after 45 days, in batches, never a pending one (rows carry the clock's time; the clock moves).
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Client } from 'pg';
 import { runWithRequestId } from '@src/common/request-id';
 import { parseEnv } from '@src/config';
@@ -14,13 +15,19 @@ import { DbModule, DbService, schema as s } from '@src/infra/db';
 import { MetricsModule, MetricsService } from '@src/infra/metrics';
 import { QueueWorkersModule, QueuesModule, QueuesService, queueJobId } from '@src/infra/queues';
 import { RedisModule, RedisService } from '@src/infra/redis';
+import { JobRunsModule } from '@src/modules/health';
 import {
+  OUTBOX_PURGE_JOB,
+  OUTBOX_PURGE_SCHEDULER,
+  OutboxPurge,
+  OutboxPurgeProcessor,
   OutboxRelay,
   OutboxRelayModule,
   OutboxRouteRegistry,
   OutboxService,
   RELAY_BATCH_SIZE,
 } from '@src/modules/platform';
+import { JobSchedulerRegistry } from '@src/infra/queues';
 import { OutboxListener } from '@src/modules/platform/outbox/outbox-listener';
 import { ManualTimers, SECOND, TestClock } from '../../support/clock';
 import { TEST_DATABASE_URL, closeTestDb, testDb } from '../../support/db';
@@ -220,6 +227,13 @@ describe('OutboxService.add', () => {
     expect(relayed.map((event) => event.processedAt?.getTime())).toEqual([clock.nowMs(), clock.nowMs()]);
   });
 
+  it("recentEvents returns each event's payload without meta", async () => {
+    const r = await rig();
+    await runWithRequestId('req-trace-1', () => addEvent(r, 31));
+    const [event] = await r.outbox.recentEvents(r.db.db, 'test.event', 'orders', 31);
+    expect(event?.payload).toEqual({ orderId: 31 });
+  });
+
   it('reports the backlog: how many events wait and for how long', async () => {
     const clock = new TestClock();
     const r = await rig({ clock });
@@ -231,6 +245,61 @@ describe('OutboxService.add', () => {
     const backlog = await r.outbox.backlog(r.db.db);
     expect(backlog.pending).toBe(2);
     expect(backlog.oldestAgeSeconds).toBeCloseTo(25, 6);
+  });
+});
+
+describe('the outbox purge (decision 055)', () => {
+  it('purges events relayed more than 45 days ago, in batches, and never a pending one', async () => {
+    const clock = new TestClock('2026-09-01T00:00:00.000Z');
+    const noListener = { onApplicationBootstrap: () => undefined, onModuleDestroy: () => undefined, listening: false };
+    const harness = await createInfra({
+      modules: [MetricsModule, RedisModule, DbModule, QueuesModule, OutboxRelayModule, JobRunsModule],
+      env: { DATABASE_URL_TEST: TEST_DATABASE_URL, BULL_PREFIX: `${base}-purge` },
+      overrides: [[OutboxListener, noListener]],
+      clock,
+    });
+    open.push(harness);
+    const db = harness.get(DbService).db;
+    /** Inserts `count` rows at the clock's time: relayed at that time too, or pending. */
+    const insertRows = (count: number, relayed: boolean) =>
+      db.execute(sql`
+        insert into outbox_events (type, aggregate_type, aggregate_id, payload, created_at, updated_at, processed_at, attempts)
+        select 'test.event', 'orders', g, jsonb_build_object('orderId', g), ${clock.now()}, ${clock.now()},
+          ${relayed ? clock.now() : null}::timestamptz, ${relayed ? 1 : 0}
+        from generate_series(1, ${count}) as g`);
+    await insertRows(5_001, true);
+    await insertRows(3, false);
+    clock.advance(2 * 86_400_000);
+    await insertRows(3, true);
+    // 46 days after the first rows: they are past the 45 days, the later ones (44 days) are not.
+    clock.advance(44 * 86_400_000);
+
+    expect(await harness.get(OutboxPurge).run()).toEqual({ deleted: 5_001, batches: 2 });
+    const left = await db.select({ processedAt: s.outboxEvents.processedAt }).from(s.outboxEvents);
+    expect(left).toHaveLength(6);
+    expect(left.filter((row) => row.processedAt === null)).toHaveLength(3);
+
+    // Through the processor, every run is recorded, also one that deleted nothing.
+    const runs = () => db.select().from(s.jobRuns).where(eq(s.jobRuns.job, OUTBOX_PURGE_JOB)).orderBy(s.jobRuns.id);
+    const before = (await runs()).length;
+    expect(await harness.get(OutboxPurgeProcessor).process({ data: {} })).toEqual({ deleted: 0, batches: 1 });
+    const recorded = await runs();
+    expect(recorded).toHaveLength(before + 1);
+    expect(recorded.at(-1)).toMatchObject({
+      status: 'succeeded',
+      processed: 0,
+      result: { deleted: 0, batches: 1, retentionDays: 45 },
+    });
+    expect(
+      harness
+        .get(JobSchedulerRegistry)
+        .list()
+        .find((spec) => spec.id === OUTBOX_PURGE_SCHEDULER),
+    ).toMatchObject({
+      queue: 'maintenance',
+      jobName: OUTBOX_PURGE_JOB,
+      pattern: '50 4 * * *',
+    });
   });
 });
 

@@ -41,7 +41,8 @@ const RUN_AGGREGATE = 'listing_publish_runs';
  * Writes the events of a publish run.
  *
  * Why: decision 020 and plan 31 section 6: the API only moves the run and writes the event in one commit; the worker does the slow work.
- * A payload carries ids only (fact 14): the worker re-reads everything else from the run.
+ * A payload carries ids only (fact 14): the worker re-reads everything else from the run. The lost-work reconcile writes the same
+ * events again with `reconcile: true` when a job was lost (decision 055).
  *
  * Side effects: inserts `outbox_events` rows on the caller's transaction.
  *
@@ -56,13 +57,14 @@ export class PublishOutbox {
    *
    * @param tx the transaction that inserted the run (`preparing`)
    * @param runId the run
+   * @param options `reconcile`: the lost-work reconcile asks again (decision 055)
    */
-  async prepareRequested(tx: DbExecutor, runId: number): Promise<void> {
+  async prepareRequested(tx: DbExecutor, runId: number, options: { readonly reconcile?: boolean } = {}): Promise<void> {
     await this.outbox.add(tx, {
       type: PUBLISH_PREPARE_EVENT,
       aggregateType: RUN_AGGREGATE,
       aggregateId: runId,
-      payload: { runId },
+      payload: { runId, ...(options.reconcile === true ? { reconcile: true } : {}) },
     });
   }
 
@@ -71,13 +73,14 @@ export class PublishOutbox {
    *
    * @param tx the transaction that moved the run to `queued`
    * @param runId the run
+   * @param options `reconcile`: the lost-work reconcile asks again (decision 055)
    */
-  async applyRequested(tx: DbExecutor, runId: number): Promise<void> {
+  async applyRequested(tx: DbExecutor, runId: number, options: { readonly reconcile?: boolean } = {}): Promise<void> {
     await this.outbox.add(tx, {
       type: PUBLISH_APPLY_EVENT,
       aggregateType: RUN_AGGREGATE,
       aggregateId: runId,
-      payload: { runId },
+      payload: { runId, ...(options.reconcile === true ? { reconcile: true } : {}) },
     });
   }
 
@@ -88,13 +91,20 @@ export class PublishOutbox {
    * @param runId the run
    * @param listed the target: on the shop, or off it
    * @param requestedBy the staff member who pressed the button (the audit rows carry it; the worker acts as `system`)
+   * @param options `reconcile`: the lost-work reconcile asks again (decision 055)
    */
-  async switchRequested(tx: DbExecutor, runId: number, listed: boolean, requestedBy: number | null): Promise<void> {
+  async switchRequested(
+    tx: DbExecutor,
+    runId: number,
+    listed: boolean,
+    requestedBy: number | null,
+    options: { readonly reconcile?: boolean } = {},
+  ): Promise<void> {
     await this.outbox.add(tx, {
       type: PUBLISH_SET_LISTED_EVENT,
       aggregateType: RUN_AGGREGATE,
       aggregateId: runId,
-      payload: { runId, listed, requestedBy },
+      payload: { runId, listed, requestedBy, ...(options.reconcile === true ? { reconcile: true } : {}) },
     });
   }
 }

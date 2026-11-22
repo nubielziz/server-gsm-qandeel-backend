@@ -42,3 +42,8 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** The API stays fast and consistent: no job is enqueued for a rolled-back change, and no committed
 change loses its job.
+
+Amended by decision 055: `lost_work_reconcile` (queue `maintenance`, every 5 minutes) asks again, through new outbox events marked
+`reconcile: true`, for the work whose queue job was lost; the owning modules register its passes on the `LostWorkRegistry` of the global
+outbox module. Handed-over outbox rows are deleted after 45 days (`outbox_purge`), and failed jobs are kept 14 days and at most 10 000 per
+queue.

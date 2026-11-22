@@ -49,13 +49,19 @@ export class QuickAddOutbox implements OnModuleInit {
    * @param tx the start's transaction
    * @param runId the `supplier_import_runs` row
    * @param supplierId the supplier
+   * @param options `reconcile`: the lost-work reconcile asks again for a run whose job was lost (decision 055)
    */
-  async requested(tx: DbExecutor, runId: number, supplierId: number): Promise<void> {
+  async requested(
+    tx: DbExecutor,
+    runId: number,
+    supplierId: number,
+    options: { readonly reconcile?: boolean } = {},
+  ): Promise<void> {
     await this.outbox.add(tx, {
       type: QUICK_ADD_EVENT,
       aggregateType: 'supplier_import_runs',
       aggregateId: runId,
-      payload: { runId, supplierId },
+      payload: { runId, supplierId, ...(options.reconcile === true ? { reconcile: true } : {}) },
     });
   }
 

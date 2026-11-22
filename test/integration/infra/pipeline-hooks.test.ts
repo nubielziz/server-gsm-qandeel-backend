@@ -7,7 +7,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { ErrorFormatterRegistry } from '@src/common/errors';
 import { ipRateLimitKey, parseIpAddress } from '@src/common/ip-address';
 import { PIPELINE_STAGES, RequestPipeline } from '@src/common/pipeline';
-import { CacheKeys } from '@src/infra/cache';
+import { CacheKeys, cacheMacKey, openEntry } from '@src/infra/cache';
 import { schema as s } from '@src/infra/db';
 import { type LimiterName, RateLimitService } from '@src/infra/rate-limit';
 import { RedisService } from '@src/infra/redis';
@@ -350,7 +350,10 @@ describe('maintenance (scenario system-integrity)', () => {
     const key = t.app.get(CacheKeys).maintenance();
     await setMaintenance(maintenanceOn('store'));
     expect((await STORE_PING(freshIp())).statusCode).toBe(503);
-    expect(JSON.parse((await redis.get(key)) ?? 'null')).not.toBeNull();
+    // Decision 055: the stored state is a sealed entry.
+    expect(openEntry(cacheMacKey(t.config.security.tokenPepper), key, (await redis.get(key)) ?? '')).toMatchObject({
+      negative: false,
+    });
     // Written straight to the table: nobody told the cache, so the old state is still served (this process or Redis).
     const { db } = await testDb();
     await db.delete(s.settings);

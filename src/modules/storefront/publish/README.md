@@ -32,7 +32,7 @@ slices B3a and B3b.
 | Application | `application/publish-run-admin.service.ts` (create, list, show, items, apply, cancel, switch), `publish-item-edit.service.ts` (the row `PATCH` and `bulk`), `publish-item-views.ts` (the wire rows), `publish-permissions.ts`, `publish-preparer.ts` (the job), `publish-from-quick-add.ts` (the Quick add hand-over), `publish-scope.ts` (the walk of a scope), `publish-draft-facts.ts` (the facts a row is judged on), `publish-outbox.ts` (events), `publish-runner.ts`, `publish-switch.ts` |
 | Domain (pure) | `domain/publish-item.ts` (states, flags, the price of a row, the stall rule), `publish-draft.ts` (what a draft row stores), `publish-edit.ts` (what an edit turns a row into), `publish-moves.ts` (when apply, cancel and the switch are allowed), `publish-view.ts` (the wire row), `publish-run.ts`, `naming/` (title, slug, brand, carrier, country) |
 | Infra | `infra/publish.repository.ts` (own tables: claims, guarded writes, the draft's edits), `infra/publish-read.repository.ts` (lists, counts, the selection of a bulk) |
-| Jobs | `jobs/publish.processors.ts` (`publish_prepare`, `publish_apply`, `publish_set_listed`, `publish_from_quick_add` on the `imports` queue), `jobs/publish-outbox-routes.ts` |
+| Jobs | `jobs/publish.processors.ts` (`publish_prepare`, `publish_apply`, `publish_set_listed`, `publish_from_quick_add` on the `imports` queue), `jobs/publish-outbox-routes.ts`, `jobs/publish-reconcile.ts` (the lost-work pass, decision 055) |
 | Modules | `publish-engine.module.ts` (API and worker), `publish-http.module.ts` (API: the routes), `publish-worker.module.ts` (worker: the processors) |
 
 ## The scope
@@ -58,6 +58,17 @@ ready rows go on the shop at the rules' prices without another click; the rows t
 and the run switch takes the whole run off the shop. A job that dies leaves no run, or one that reads `failed`: the console then offers
 the scope `quickAddRun` by hand, and that `POST` closes the automatic run when it stalled while `preparing` (`PREPARE_STALLED_ERROR`), so a
 worker that only slept finds nothing to finish and cannot publish beside the run staff started.
+
+## Lost jobs (decision 055)
+
+`PublishReconcilePass` (kind `publish_runs`, in `PublishWorkerModule`) is the bulk publish's pass of the platform's `lost_work_reconcile`.
+It watches the three waits of a run, each by itself: a preparation nobody claimed (`preparing` with `prepare_claimed_at` null), a queued
+apply (`queued`) and a queued run switch (`switch_status = 'queued'`). When the newest request of that wait has had no live job for 10
+minutes it writes the same event again (`PublishOutbox.prepareRequested | applyRequested | switchRequested` with `reconcile: true`; the
+switch repeats `switch_listed` and the staff member of the last request), under the run's lock after the same check. After three
+re-requests it writes nothing: the run already reads as stalled after five minutes without a heartbeat, and staff resume it. Every job
+claims with a guarded update, so a request that arrives after staff moved the run on claims nothing. The Quick add hand-over
+(`supplier.quick_add_done`) is not asked for again: the console offers the scope `quickAddRun` by hand (above).
 
 ## Prepare (`publish_prepare`)
 

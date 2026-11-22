@@ -89,17 +89,14 @@ export class IpRuleCache {
    *
    * Side effects: clears the in-memory copy of this process and deletes `CacheKeys.ipRules()`.
    *
-   * @returns resolves when the cache key is gone
-   * @throws {Error} when Redis fails; the in-memory copy is cleared anyway and the old entry expires within a minute
+   * @returns resolves when the cache key is gone, or when every try to delete it failed. Never throws: a failed delete is retried and
+   *   reported (decision 055); the in-memory copy is cleared anyway and the old entry expires within a minute
    */
   async invalidate(): Promise<void> {
     this.memo.clear();
-    try {
-      await this.cache.del(this.keys.ipRules());
-    } finally {
-      // Cleared again: a request between the two steps may have re-read the old Redis copy into memory.
-      this.memo.clear();
-    }
+    await this.cache.invalidate(this.keys.ipRules());
+    // Cleared again: a request between the two steps may have re-read the old Redis copy into memory.
+    this.memo.clear();
   }
 
   private async load(): Promise<IpRuleSnapshot> {

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { parseEnv } from '@src/config';
-import { CacheKeys, CacheModule, decodeEntry } from '@src/infra/cache';
+import { CacheKeys, CacheModule, cacheMacKey, openEntry } from '@src/infra/cache';
 import { DbModule, DbService, schema as s } from '@src/infra/db';
 import { MetricsModule, MetricsService } from '@src/infra/metrics';
 import { JobSchedulerRegistry, QueueWorkers, QueueWorkersModule, QueuesModule, QueuesService } from '@src/infra/queues';
@@ -284,8 +284,10 @@ describe('the cache', () => {
     });
     await restrictAdmin(true);
     await get('/store/v1/t/ping', blocked, AUTH);
-    const entry = decodeEntry((await redis.get(key)) ?? '');
-    const snapshot = entry?.value as { restricted: boolean; rules: Array<Record<string, unknown>> };
+    // Decision 055: the stored snapshot is sealed with the key derived from TOKEN_PEPPER.
+    const entry = openEntry(cacheMacKey(t.config.security.tokenPepper), key, (await redis.get(key)) ?? '');
+    if (entry === 'unreadable' || entry === 'forged') throw new Error(`the stored snapshot is ${entry}`);
+    const snapshot = entry.value as { restricted: boolean; rules: Array<Record<string, unknown>> };
     expect(snapshot.restricted).toBe(true);
     expect(snapshot.rules).toEqual([
       { id, kind: 'block', scope: 'store', cidr: `${blocked}/32`, expiresAt: expect.any(String) },

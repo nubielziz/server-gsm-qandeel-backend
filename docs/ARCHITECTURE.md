@@ -139,14 +139,18 @@ never came to `needs_attention`.
 
 Outbox rows written with the state change; the relay moves them to BullMQ with `jobId = outbox-<id>` (D020). Every job
 carries ids only, re-reads state and acts through guarded transitions; schedulers are upserted on every worker boot;
-every run writes `job_runs`. Queues, payloads, idempotency keys, retries and schedules: `docs/queues.md`. Shutdown:
-workers drain in `onModuleDestroy`, connections close in `onApplicationShutdown`.
+every run writes `job_runs`. Lost work is asked for again by a reconcile job whose passes the owning modules register; handed-over
+outbox rows are kept 45 days; failed jobs at most 10 000 per queue (D055). Queues, payloads, idempotency keys, retries and schedules:
+`docs/queues.md`. Database sessions carry statement, lock and idle-in-transaction limits per process (D055). Shutdown: workers drain
+in `onModuleDestroy`, connections close in `onApplicationShutdown`.
 
 ## 8. Cache and limits
 
 Cache-aside through `CacheService` (D022) with jitter, stampede locks, version keys and post-commit invalidation;
-every key family in `docs/cache-keys.md`. Rate limits through `RateLimitService` (D021). Never cached: balances,
-ledger, holds, decision-making statuses, risk decisions, idempotency results.
+every key family in `docs/cache-keys.md`. Entries are sealed with a key derived from the token pepper; a stale entry is served only
+inside the reader's window; cached session and API key views are bound to their credential; invalidations after a security change
+are retried (D055). Rate limits through `RateLimitService` (D021). Never cached: balances, ledger, holds, decision-making statuses,
+risk decisions, idempotency results.
 
 ## 9. Security
 

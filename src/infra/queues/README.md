@@ -38,6 +38,9 @@ listed in `docs/queues.md`; a test fails when that document and `QUEUES` disagre
 - **Rate limits** (feature 23): a queue may declare `limiter: { max, durationMs }` in `QUEUES`; the worker passes it to BullMQ's
   `Worker` `limiter`, which caps the jobs that start per window across every worker of that queue. Only
   `notification-broadcasts` has one (30 a second), so the transactional queues are never slowed by a broadcast.
+- **Retention.** Completed jobs are kept 24 hours (at most 10 000 per queue) and failed jobs 14 days, at most 10 000 per queue
+  (`FAILED_JOB_MAX_COUNT`, decision 055), so one kind of job that keeps failing cannot fill the `noeviction` queue Redis; the producers'
+  defaults and the workers' options both carry the limits.
 - **Failure text.** The worker stores the sanitised error of a failed job: its `failedReason` and stack never carry a database
   statement or its values, only the SQLSTATE, table, constraint and a fixed sentence (decision 054, `toQueueError`).
 - **Retries.** The queue's `attempts` and exponential backoff with jitter apply to every job. Throw `UnrecoverableError`

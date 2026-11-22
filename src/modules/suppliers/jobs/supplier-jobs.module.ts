@@ -6,6 +6,7 @@ import { JobRunsModule } from '../../health';
 import { SupplierEngineModule } from '../supplier-engine.module';
 import { DISPATCH_SWEEP_JOB, DispatchSweepProcessor } from './dispatch-sweep.processor';
 import { QuickAddProcessor } from './quick-add.processor';
+import { QuickAddReconcilePass } from './quick-add-reconcile';
 import { SupplierDispatchProcessor } from './supplier-dispatch.processor';
 import { SUPPLIER_POLL_TICK_JOB } from '../application/supplier-poll';
 import { SupplierPollProcessor } from './supplier-poll.processor';
@@ -22,7 +23,8 @@ export const SUPPLIER_SCHEDULERS = {
 /**
  * Provides the processors of `supplier-dispatch`, `supplier-poll`, `supplier-sync`, the `supplier_quick_add` job of `imports` and the
  * `dispatch_sweep` job of `maintenance` (decision 044), and registers the schedules: the poll tick and the dispatch sweep every minute,
- * the price sync every 15 minutes and the balance check every 30 minutes (the console's job list).
+ * the price sync every 15 minutes and the balance check every 30 minutes (the console's job list); and the lost-work pass of Quick add runs
+ * (decision 055).
  *
  * Why: the API only enqueues (the outbox row of a placed order, a staff sync request); the worker runs the supplier calls (decision 020).
  */
@@ -34,6 +36,7 @@ export const SUPPLIER_SCHEDULERS = {
     SupplierSyncProcessor,
     QuickAddProcessor,
     DispatchSweepProcessor,
+    QuickAddReconcilePass,
   ],
 })
 export class SupplierJobsModule implements OnModuleInit {

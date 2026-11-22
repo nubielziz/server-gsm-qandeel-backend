@@ -7,10 +7,11 @@ import { RefundSettlement } from '../application/refund-settlement';
 import { StorefrontOrderPorts } from '../application/storefront-ports';
 import { MoneyOutboxModule } from '../money-outbox.module';
 import { RefundProcessProcessor } from './refund-process.processor';
+import { RefundReconcilePass } from './refund-reconcile';
 import { RefundSender } from './refund-sender';
 
 /**
- * Provides the refund sender, its processor and the outbox route of `refund.process`.
+ * Provides the refund sender, its processor, the outbox route of `refund.process` and the lost-work pass of refunds (decision 055).
  *
  * Why: the API never calls a gateway inside a staff request (decision 020); the worker does. The classes the job needs are plain
  * services, so the worker builds them here instead of loading the API's money module. The orders module's port is found through the
@@ -26,6 +27,7 @@ import { RefundSender } from './refund-sender';
     RefundSettlement,
     RefundSender,
     RefundProcessProcessor,
+    RefundReconcilePass,
   ],
   exports: [RefundSender],
 })

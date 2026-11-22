@@ -1,6 +1,6 @@
 // Drizzle queries on `webhook_deliveries` (platform module): creating a delivery once per event and endpoint, the guarded writes
 // of an attempt's result, a manual retry, the staff log with its joins and the endpoint's own log.
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
 import {
@@ -297,6 +297,45 @@ export async function recordAttempt(
     )
     .returning({ id: webhookDeliveries.id });
   return rows.length > 0;
+}
+
+/**
+ * Lists the pending deliveries whose current attempt was due at or before a time.
+ *
+ * Why: decision 055: the lost-work reconcile re-arms a delivery whose job was lost; the partial index `webhook_deliveries_retry_idx`
+ * (pending rows by `next_retry_at`) covers the search.
+ *
+ * @param db the database or a transaction
+ * @param before only deliveries due at or before this time
+ * @param limit the most deliveries returned
+ * @returns the deliveries, by due time then id
+ */
+export async function overduePendingDeliveries(
+  db: DbExecutor,
+  before: Date,
+  limit: number,
+): Promise<WebhookDelivery[]> {
+  return db
+    .select()
+    .from(webhookDeliveries)
+    .where(and(eq(webhookDeliveries.status, 'pending'), lte(webhookDeliveries.nextRetryAt, before)))
+    .orderBy(asc(webhookDeliveries.nextRetryAt), asc(webhookDeliveries.id))
+    .limit(limit);
+}
+
+/**
+ * Reads deliveries by id.
+ *
+ * @param db the database or a transaction
+ * @param ids the delivery ids
+ * @returns the deliveries that exist, in no particular order
+ */
+export async function deliveriesByIds(db: DbExecutor, ids: readonly number[]): Promise<WebhookDelivery[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(webhookDeliveries)
+    .where(inArray(webhookDeliveries.id, [...ids]));
 }
 
 /**

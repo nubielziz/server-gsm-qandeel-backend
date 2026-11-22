@@ -1,14 +1,23 @@
-// Cache-aside on the cache Redis (decision 022): getOrLoad with TTL jitter, in-process coalescing, a cross-instance lock,
-// stale-while-revalidate and negative caching; deletion by key or prefix; version keys for bulk invalidation.
+// Cache-aside on the cache Redis (decisions 022 and 055): getOrLoad with TTL jitter, in-process coalescing, a cross-instance lock,
+// stale-while-revalidate and negative caching over sealed entries; deletion by key or prefix, retried invalidation; version keys.
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { Counter } from 'prom-client';
 import { CLOCK, type Clock } from '../../common/clock';
 import { LogThrottle } from '../../common/log-throttle';
 import { sleep, withTimeout } from '../../common/timeout';
+import { APP_CONFIG, type AppConfig } from '../../config';
 import { MetricsService } from '../metrics';
 import { RedisService } from '../redis';
-import { type CacheEntry, CacheValueTooLargeError, decodeEntry, encodeEntry, jitterTtlMs } from './cache-entry';
+import {
+  type CacheEntry,
+  CacheValueTooLargeError,
+  cacheMacKey,
+  jitterTtlMs,
+  openEntry,
+  sealEntry,
+} from './cache-entry';
+import { INVALIDATION_RETRY_DELAYS_MS, withRetries } from './cache-invalidation';
 import { type CacheKey, CacheKeys, type CachePrefix, familyOf } from './cache-keys';
 
 /**
@@ -97,12 +106,14 @@ function assertOptions(options: GetOrLoadOptions): void {
  * Why: decision 022 keeps hot reads (Dhru `imeiservicelist`, price lists, settings, permissions, IP rules) off Postgres
  * without risking stale money decisions: it is never used for balances, ledger rows, holds, payment or order status
  * used for decisions, risk decisions or idempotency results. The cache is an optimisation, so a Redis failure on the
- * read path becomes a miss (the loader runs), never an error for the caller.
+ * read path becomes a miss (the loader runs), never an error for the caller. Every entry is sealed with a key derived from
+ * TOKEN_PEPPER (decision 055); an entry without a valid seal is a miss.
  *
  * Side effects: reads and writes keys built by {@link CacheKeys}; counts `cache_hits_total`, `cache_misses_total` and
- * `cache_errors_total` per key family; a background refresh may run after a call returned a stale value.
+ * `cache_errors_total` per key family (`operation="mac"`, logged at error level, is an entry whose seal did not match); a
+ * background refresh may run after a call returned a stale value.
  *
- * @see docs/decisions/022-caching.md and docs/cache-keys.md
+ * @see docs/decisions/022-caching.md, docs/decisions/055-infra.md and docs/cache-keys.md
  */
 @Injectable()
 export class CacheService implements OnApplicationShutdown {
@@ -114,13 +125,17 @@ export class CacheService implements OnApplicationShutdown {
   private readonly hits: Counter<'family'>;
   private readonly misses: Counter<'family'>;
   private readonly errors: Counter<'family' | 'operation'>;
+  /** The seal key of every entry (decision 055), derived once from TOKEN_PEPPER. */
+  private readonly macKey: Buffer;
 
   constructor(
     private readonly redis: RedisService,
     private readonly keys: CacheKeys,
     metrics: MetricsService,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(APP_CONFIG) config: AppConfig,
   ) {
+    this.macKey = cacheMacKey(config.security.tokenPepper);
     const registers = [metrics.registry];
     this.hits = new Counter({
       name: 'cache_hits_total',
@@ -136,7 +151,7 @@ export class CacheService implements OnApplicationShutdown {
     });
     this.errors = new Counter({
       name: 'cache_errors_total',
-      help: 'Cache operations that failed (Redis down, unreadable or oversize entry), by key family and operation.',
+      help: 'Cache operations that failed (Redis down, unreadable, unsealed or oversize entry), by key family and operation.',
       labelNames: ['family', 'operation'],
       registers,
     });
@@ -197,7 +212,7 @@ export class CacheService implements OnApplicationShutdown {
   async del(...keys: CacheKey[]): Promise<number> {
     for (const key of keys) {
       this.assertOwned(key);
-      this.invalidate(key);
+      this.cancelLoads(key);
     }
     if (keys.length === 0) return 0;
     try {
@@ -206,6 +221,39 @@ export class CacheService implements OnApplicationShutdown {
       this.failed(familyOf(keys[0] ?? ''), 'del', error);
       throw error;
     }
+  }
+
+  /**
+   * Deletes keys after a security change, retrying a failed delete, and never throws.
+   *
+   * Why: decision 055: the invalidations that follow a change of a session, an API key, a role, the IP rules, the settings or the
+   * maintenance state are tried three times (waits of 50 ms and 250 ms); the change is already committed, so a failure must not fail
+   * the request (a 500 would invite the client to repeat it). A final failure is counted and logged at error level without the keys
+   * (they hold token hashes); the old entries then live until their TTL. A load of the same key running in this process is told not
+   * to store its value, as with {@link CacheService.del}.
+   *
+   * Side effects: `UNLINK` on the cache Redis (up to three times); on a final failure `cache_errors_total{operation="invalidate"}`
+   * and one error line.
+   *
+   * @param keys the keys to delete
+   * @returns true when the delete went through (also when no key existed), false when every try failed
+   * @throws {RangeError} only for a key not built by {@link CacheKeys} (a programming error)
+   */
+  async invalidate(...keys: CacheKey[]): Promise<boolean> {
+    for (const key of keys) {
+      this.assertOwned(key);
+      this.cancelLoads(key);
+    }
+    if (keys.length === 0) return true;
+    const outcome = await withRetries(() => this.redis.cache.unlink(...keys), INVALIDATION_RETRY_DELAYS_MS, sleep);
+    if (outcome.ok) return true;
+    const family = familyOf(keys[0] ?? '');
+    this.errors.inc({ family, operation: 'invalidate' });
+    const reason = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+    this.logger.error(
+      `Cache invalidation failed for ${family} after ${outcome.attempts} attempts (${keys.length} key(s)): ${reason}. The old entries are served until their TTL ends.`,
+    );
+    return false;
   }
 
   /**
@@ -227,7 +275,7 @@ export class CacheService implements OnApplicationShutdown {
       throw new RangeError('A prefix must be built with CacheKeys.prefix (module and entity at least)');
     }
     for (const key of [...this.loading.keys(), ...this.refreshing.keys()]) {
-      if (key.startsWith(prefix)) this.invalidate(key);
+      if (key.startsWith(prefix)) this.cancelLoads(key);
     }
     try {
       let cursor = '0';
@@ -307,7 +355,7 @@ export class CacheService implements OnApplicationShutdown {
    * Tells loads of this key that run in this process not to store their result, and stops sharing them: a caller
    * that arrives after the invalidation starts a fresh load instead of joining one that may read the old data.
    */
-  private invalidate(key: string): void {
+  private cancelLoads(key: string): void {
     const loading = this.loading.get(key);
     if (loading) {
       loading.invalidated = true;
@@ -320,16 +368,18 @@ export class CacheService implements OnApplicationShutdown {
     }
   }
 
-  private failed(family: string, operation: string, error: unknown): void {
+  private failed(family: string, operation: string, error: unknown, level: 'warn' | 'error' = 'warn'): void {
     this.errors.inc({ family, operation });
     const allowed = this.throttle.attempt(`${family}:${operation}`);
     if (!allowed) return;
     const reason = error instanceof Error ? error.message : String(error);
     const more = allowed.suppressed > 0 ? ` (${allowed.suppressed} similar errors not logged)` : '';
-    this.logger.warn(`Cache ${operation} failed for ${family}: ${reason}${more}`);
+    const line = `Cache ${operation} failed for ${family}: ${reason}${more}`;
+    if (level === 'error') this.logger.error(line);
+    else this.logger.warn(line);
   }
 
-  /** Reads the entry; a Redis error or an unreadable entry counts as a miss. */
+  /** Reads and opens the entry; a Redis error, an unreadable entry or a wrong seal counts as a miss. */
   private async lookup(key: CacheKey): Promise<CacheEntry | undefined> {
     let text: string | null;
     try {
@@ -339,9 +389,22 @@ export class CacheService implements OnApplicationShutdown {
       return undefined;
     }
     if (text === null) return undefined;
-    const entry = decodeEntry(text);
-    if (!entry) this.failed(familyOf(key), 'decode', new Error('stored entry is not readable; it will be overwritten'));
-    return entry;
+    const opened = openEntry(this.macKey, key, text);
+    if (opened === 'unreadable') {
+      this.failed(familyOf(key), 'decode', new Error('stored entry is not readable; it will be overwritten'));
+      return undefined;
+    }
+    if (opened === 'forged') {
+      // Decision 055: only tampering or a TOKEN_PEPPER that differs between processes produce a wrong seal, so it is an error line.
+      this.failed(
+        familyOf(key),
+        'mac',
+        new Error('stored entry failed its integrity check; it is ignored and will be overwritten'),
+        'error',
+      );
+      return undefined;
+    }
+    return opened;
   }
 
   private async readThrough<T>(
@@ -352,13 +415,15 @@ export class CacheService implements OnApplicationShutdown {
     flight: InFlight,
   ): Promise<T> {
     const family = familyOf(key);
+    const now = this.clock.nowMs();
     const entry = await this.lookup(key);
     if (entry) {
-      if (this.clock.nowMs() <= entry.freshUntil) {
+      if (now <= entry.freshUntil) {
         this.hits.inc({ family });
         return entry.value as T;
       }
-      if (options.staleWhileRevalidate !== undefined) {
+      // Decision 055: a stale entry is served only inside this reader's own window, whatever lifetime the key has in Redis.
+      if (options.staleWhileRevalidate !== undefined && now <= entry.freshUntil + options.staleWhileRevalidate * 1000) {
         // Stale but inside the window: answer now, refresh once in the background.
         this.hits.inc({ family });
         this.refreshInBackground(key, ttlSeconds, loader, options);
@@ -418,7 +483,7 @@ export class CacheService implements OnApplicationShutdown {
     const freshMs = jitterTtlMs(negative ? (options.negativeTtlSeconds ?? ttlSeconds) : ttlSeconds);
     const staleMs = negative ? 0 : Math.round((options.staleWhileRevalidate ?? 0) * 1000);
     try {
-      const text = encodeEntry(value, this.clock.nowMs() + freshMs);
+      const text = sealEntry(this.macKey, key, value, this.clock.nowMs() + freshMs);
       await this.redis.cache.set(key, text, 'PX', freshMs + staleMs);
     } catch (error) {
       const tooLarge = error instanceof CacheValueTooLargeError;

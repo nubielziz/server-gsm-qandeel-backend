@@ -51,15 +51,15 @@ export class RolePermissions {
    * Why: decision 022 invalidates after the commit. Call it from the role update and delete use cases (and when a role is
    * created with an id that may have been cached as missing).
    *
-   * Side effects: deletes `gsm:{env}:identity:role:{roleId}` (after the commit when `work` is given).
+   * Side effects: deletes `gsm:{env}:identity:role:{roleId}` (after the commit when `work` is given). Never throws: a failed delete is
+   * retried and reported (decision 055).
    *
    * @param roleId the role id
    * @param work the caller's transaction context, if it has one
-   * @throws {Error} when Redis fails and no `work` is given
    */
   async invalidate(roleId: number, work?: Pick<TransactionContext, 'afterCommit'>): Promise<void> {
     const forget = async (): Promise<void> => {
-      await this.cache.del(this.keys.rolePermissions(roleId));
+      await this.cache.invalidate(this.keys.rolePermissions(roleId));
     };
     if (work) work.afterCommit(forget);
     else await forget();

@@ -486,6 +486,27 @@ export async function lockRun(tx: DbExecutor, runId: number): Promise<ListingPub
 }
 
 /**
+ * Lists the runs that wait for a job: a preparation nobody claimed, an apply that is queued, or a run switch that is queued.
+ *
+ * Why: decision 055: the lost-work reconcile asks again for the job of a run whose job was lost; every job claims with a guarded update,
+ * so a second job of the same run does nothing.
+ *
+ * @param db the database or a transaction
+ * @param limit the most runs returned
+ * @returns the runs, by id
+ */
+export async function runsAwaitingJobs(db: DbExecutor, limit: number): Promise<ListingPublishRun[]> {
+  return db
+    .select()
+    .from(runs)
+    .where(
+      sql`(${runs.status} = 'preparing' and ${runs.prepareClaimedAt} is null) or ${runs.status} = 'queued' or ${runs.switchStatus} = 'queued'`,
+    )
+    .orderBy(asc(runs.id))
+    .limit(limit);
+}
+
+/**
  * Moves a run to `queued`: the first apply of a draft, or a resume.
  *
  * Why: plan 31 section 5.2: a draft that was never prepared is never applied, whatever the caller checked; a run that is finished for

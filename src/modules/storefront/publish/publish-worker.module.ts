@@ -7,10 +7,12 @@ import {
   PublishPrepareProcessor,
   PublishSetListedProcessor,
 } from './jobs/publish.processors';
+import { PublishReconcilePass } from './jobs/publish-reconcile';
 import { PublishEngineModule } from './publish-engine.module';
 
 /**
- * Provides the processors of `publish_prepare`, `publish_apply`, `publish_set_listed` and `publish_from_quick_add`.
+ * Provides the processors of `publish_prepare`, `publish_apply`, `publish_set_listed` and `publish_from_quick_add`, and the lost-work
+ * pass of publish runs (decision 055).
  *
  * Why: decision 020: the API only moves a run and writes its event; the worker does the work. `QueueWorkers` finds the processors and
  * closes its BullMQ workers in `onModuleDestroy`, before the connections close.
@@ -19,6 +21,12 @@ import { PublishEngineModule } from './publish-engine.module';
  */
 @Module({
   imports: [PublishEngineModule],
-  providers: [PublishPrepareProcessor, PublishApplyProcessor, PublishSetListedProcessor, PublishFromQuickAddProcessor],
+  providers: [
+    PublishPrepareProcessor,
+    PublishApplyProcessor,
+    PublishSetListedProcessor,
+    PublishFromQuickAddProcessor,
+    PublishReconcilePass,
+  ],
 })
 export class PublishWorkerModule {}

@@ -115,7 +115,20 @@ export interface AppConfig {
     readonly telegramChatId: string | undefined;
   };
   readonly log: { readonly level: LogLevel };
-  readonly database: { readonly url: string; readonly testUrl: string; readonly poolMax: number };
+  readonly database: {
+    readonly url: string;
+    readonly testUrl: string;
+    readonly poolMax: number;
+    /**
+     * Session limits of this process's pool (decision 055); 0 means no limit. Defaults 15 s, 5 s and 60 s; none under
+     * NODE_ENV=test; the production compose gives the worker 300 s and 30 s.
+     */
+    readonly timeouts: {
+      readonly statementMs: number;
+      readonly lockMs: number;
+      readonly idleInTransactionMs: number;
+    };
+  };
   readonly redis: { readonly queueUrl: string; readonly cacheUrl: string; readonly bullPrefix: string };
   readonly s3: {
     /** Unset means the AWS default endpoint for the region. */
@@ -364,6 +377,9 @@ const rawSchema = z.object({
   DATABASE_URL: postgresUrl.optional(),
   DATABASE_URL_TEST: postgresUrl.optional(),
   DATABASE_POOL_MAX: int(1, 200).optional(),
+  DATABASE_STATEMENT_TIMEOUT_MS: int(0, 3_600_000).optional(),
+  DATABASE_LOCK_TIMEOUT_MS: int(0, 600_000).optional(),
+  DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: int(0, 3_600_000).optional(),
   REDIS_QUEUE_URL: redisUrl.optional(),
   REDIS_CACHE_URL: redisUrl.optional(),
   REDIS_QUEUE_URL_TEST: redisUrl.optional(),
@@ -640,6 +656,22 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   const trust = parseTrustProxy(raw.TRUST_PROXY);
   if (!trust.ok) fail('TRUST_PROXY', trust.message);
 
+  // Decision 055: the session limits of the pool. Off under NODE_ENV=test (parallel suites under load); the limit tests set them.
+  const limit = (variable: string, given: number | undefined, fallback: number): number => {
+    const value = given ?? (testing ? 0 : fallback);
+    if (value > 0 && value < 1000) fail(variable, 'must be 0 (no limit) or at least 1000 milliseconds');
+    return value;
+  };
+  const databaseTimeouts = {
+    statementMs: limit('DATABASE_STATEMENT_TIMEOUT_MS', raw.DATABASE_STATEMENT_TIMEOUT_MS, 15_000),
+    lockMs: limit('DATABASE_LOCK_TIMEOUT_MS', raw.DATABASE_LOCK_TIMEOUT_MS, 5_000),
+    idleInTransactionMs: limit(
+      'DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS',
+      raw.DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS,
+      60_000,
+    ),
+  };
+
   const keysText = withDefault(
     'ENCRYPTION_KEYS',
     raw.ENCRYPTION_KEYS,
@@ -877,6 +909,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       url: withDefault('DATABASE_URL', raw.DATABASE_URL, DEV_DEFAULTS.databaseUrl),
       testUrl: raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest,
       poolMax: raw.DATABASE_POOL_MAX ?? 10,
+      timeouts: databaseTimeouts,
     },
     // Under NODE_ENV=test the normal variables are ignored on purpose: a test run can never reach the development
     // Redis data or bucket, even when both are configured (same guarantee as DATABASE_URL_TEST, decision 014).
@@ -1080,7 +1113,11 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
     // Addresses and the chat id are personal data: the summary says only how many and whether they are set.
     alerts: { emailRecipients: config.alerts.emailTo.length, telegramChat: flag(config.alerts.telegramChatId) },
     logLevel: config.log.level,
-    database: { url: redactUrl(config.database.url), poolMax: config.database.poolMax },
+    database: {
+      url: redactUrl(config.database.url),
+      poolMax: config.database.poolMax,
+      timeouts: config.database.timeouts,
+    },
     redis: {
       queueUrl: redactUrl(config.redis.queueUrl),
       cacheUrl: redactUrl(config.redis.cacheUrl),

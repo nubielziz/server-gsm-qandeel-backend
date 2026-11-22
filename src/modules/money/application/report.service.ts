@@ -6,7 +6,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
-import { DbService } from '../../../infra/db';
+import { DbService, REPORT_STATEMENT_TIMEOUT_MS } from '../../../infra/db';
 import {
   type ProfitGroup,
   type ProfitRowFigures,
@@ -29,8 +29,15 @@ import {
 } from '../infra/report.repository';
 
 const DAY_MS = 86_400_000;
-/** How a report with more than one query reads: one snapshot of the database, and no write possible. */
-const SNAPSHOT = { isolation: 'repeatable read', readOnly: true } as const;
+/**
+ * How a report with more than one query reads: one snapshot of the database, and no write possible. Its statements may take up to
+ * two minutes (decision 055: it reads a whole period).
+ */
+const SNAPSHOT = {
+  isolation: 'repeatable read',
+  readOnly: true,
+  statementTimeoutMs: REPORT_STATEMENT_TIMEOUT_MS,
+} as const;
 /** How many wallets the exposure report lists (the totals always cover every merchant). */
 export const EXPOSURE_ROW_LIMIT = 50;
 /** The base currency every report amount is in (decision 011). */

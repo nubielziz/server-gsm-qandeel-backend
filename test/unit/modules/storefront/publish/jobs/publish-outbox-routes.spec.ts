@@ -8,6 +8,7 @@ import { OutboxRouteRegistry } from '@src/modules/platform';
 import { PublishEngineModule } from '@src/modules/storefront/publish/publish-engine.module';
 import { PublishWorkerModule } from '@src/modules/storefront/publish/publish-worker.module';
 import { PublishOutboxRoutes } from '@src/modules/storefront/publish/jobs/publish-outbox-routes';
+import { PublishReconcilePass } from '@src/modules/storefront/publish/jobs/publish-reconcile';
 import {
   PublishApplyProcessor,
   PublishFromQuickAddProcessor,
@@ -53,6 +54,8 @@ describe('PublishOutboxRoutes', () => {
       PublishApplyProcessor,
       PublishSetListedProcessor,
       PublishFromQuickAddProcessor,
+      // Decision 055: the lost-work pass of the runs, worker only.
+      PublishReconcilePass,
     ]);
   });
 

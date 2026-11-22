@@ -95,12 +95,11 @@ export class SettingsReader {
    *
    * Why: decision 022 invalidates after the commit: a settings write calls it inside `afterCommit`.
    *
-   * Side effects: deletes `gsm:{env}:platform:settings:all`.
-   *
-   * @throws {Error} when Redis fails, so the caller can log it (the old snapshot then lives until its TTL)
+   * Side effects: deletes `gsm:{env}:platform:settings:all`. Never throws: a failed delete is retried and reported (decision 055); the
+   * old snapshot then lives until its TTL.
    */
   async invalidate(): Promise<void> {
-    await this.cache.del(this.keys.settings());
+    await this.cache.invalidate(this.keys.settings());
   }
 
   private pickInteger(values: Readonly<Record<string, unknown>>, key: string, spec: IntegerSetting): number {

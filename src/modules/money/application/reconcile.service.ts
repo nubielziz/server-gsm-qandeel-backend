@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
-import { DbService } from '../../../infra/db';
+import { DbService, REPORT_STATEMENT_TIMEOUT_MS } from '../../../infra/db';
 import { JobRunsService } from '../../health';
 import { AuditService } from '../../platform';
 import type { ReconcileReportSchema } from '../contracts/ledger.contracts';
@@ -62,7 +62,8 @@ export async function compareLedgerBalances(db: DbService, ranAt: Date): Promise
         }),
       };
     },
-    { isolation: 'repeatable read' },
+    // Decision 055: it reads every account; the limit only ever rises (the nightly check in the worker keeps its longer one).
+    { isolation: 'repeatable read', statementTimeoutMs: REPORT_STATEMENT_TIMEOUT_MS },
   );
 }
 

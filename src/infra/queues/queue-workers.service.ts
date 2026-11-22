@@ -17,6 +17,7 @@ import {
   COMPLETED_JOB_MAX_AGE_SECONDS,
   COMPLETED_JOB_MAX_COUNT,
   FAILED_JOB_MAX_AGE_SECONDS,
+  FAILED_JOB_MAX_COUNT,
   QUEUES,
   type QueueDefinition,
   type QueueName,
@@ -184,7 +185,7 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
         : {}),
       // The producer's defaults already carry these; they cover jobs that were added some other way.
       removeOnComplete: { age: COMPLETED_JOB_MAX_AGE_SECONDS, count: COMPLETED_JOB_MAX_COUNT },
-      removeOnFail: { age: FAILED_JOB_MAX_AGE_SECONDS },
+      removeOnFail: { age: FAILED_JOB_MAX_AGE_SECONDS, count: FAILED_JOB_MAX_COUNT },
     });
     // Without an error listener BullMQ would throw the first connection error as an uncaught exception.
     worker.on('error', (error: Error) => {

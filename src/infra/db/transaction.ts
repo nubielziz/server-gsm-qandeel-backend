@@ -1,7 +1,8 @@
-// The transaction helper with post-commit callbacks (decisions 022, 024, 037): one place that opens a transaction, hands the
+// The transaction helper with post-commit callbacks (decisions 022, 024, 037, 055): one place that opens a transaction, hands the
 // callback `tx`, and runs the registered `afterCommit` / `onCommit` callbacks only once the commit has succeeded.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Logger } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import type { Database, Transaction } from './database';
 
 /** Isolation levels a use case may ask for; the default is `read committed`. */
@@ -16,7 +17,20 @@ export interface TransactionOptions {
    * must see one snapshot of the data.
    */
   readonly readOnly?: boolean;
+  /**
+   * Raises the statement limit for this transaction only, for a report that reads much (decision 055). Raise-only: a session limit
+   * of 0 (none) or one already larger is kept, so a worker's longer limit is never lowered. 0 asks for no limit.
+   */
+  readonly statementTimeoutMs?: number;
 }
+
+/**
+ * The statement limit of the reports that read whole periods in one snapshot (money reports, the client statement, the reconcile).
+ *
+ * Why: decision 055: those repeatable-read reports read whole periods, so their statements may take longer than the API's 15 s; they
+ * raise their own limit to two minutes instead of the process giving every request that much.
+ */
+export const REPORT_STATEMENT_TIMEOUT_MS = 120_000;
 
 /** What a transaction callback receives. */
 export interface TransactionContext {
@@ -128,15 +142,31 @@ export async function runOrDiscard(
 }
 
 /**
+ * Raises `statement_timeout` for the rest of the transaction (`set_config(..., true)`), never lowering it: a session limit of 0
+ * (none) or one already at least `ms` is kept (decision 055: the nightly ledger check runs in the worker, whose limit is longer).
+ */
+async function raiseStatementTimeout(tx: Transaction, ms: number): Promise<void> {
+  const wanted = String(ms);
+  await tx.execute(sql`select set_config('statement_timeout', ${wanted}::text, true)
+    from pg_settings
+    where name = 'statement_timeout'
+      and setting::bigint <> 0
+      and (${wanted}::bigint = 0 or setting::bigint < ${wanted}::bigint)`);
+}
+
+/**
  * Runs `fn` in one database transaction and then its post-commit callbacks.
  *
  * Why: decision 020 and 024 want every state change, its ledger posting and its outbox row in one commit; callers that
  * also touch the cache register the invalidation with `afterCommit` (or `onCommit`) so it happens only for a committed change.
  *
+ * With `statementTimeoutMs` the first statement of the transaction raises the statement limit for it alone (decision 055).
+ *
  * @param db the Drizzle database (or any object with `transaction`)
  * @param fn the work; its return value becomes the result. Throwing rolls everything back and skips the callbacks
- * @param options isolation level
+ * @param options isolation level, read only, and a raised statement limit
  * @returns what `fn` returned
+ * @throws {RangeError} when `statementTimeoutMs` is not a whole number from 0 (before any transaction is opened)
  * @throws whatever `fn` threw, or the database error of a failed commit (no callback runs then)
  */
 export async function runInTransaction<T>(
@@ -144,19 +174,25 @@ export async function runInTransaction<T>(
   fn: (context: TransactionContext) => Promise<T>,
   options: TransactionOptions = {},
 ): Promise<T> {
+  const raiseTo = options.statementTimeoutMs;
+  if (raiseTo !== undefined && (!Number.isSafeInteger(raiseTo) || raiseTo < 0)) {
+    throw new RangeError('statementTimeoutMs must be a whole number of milliseconds from 0');
+  }
   const scope: CommitScope = { callbacks: [], state: 'open' };
   let result: T;
   try {
     result = await scopes.run(scope, () =>
       db.transaction(
-        (tx) =>
-          fn({
+        async (tx) => {
+          if (raiseTo !== undefined) await raiseStatementTimeout(tx, raiseTo);
+          return fn({
             tx,
             afterCommit: (callback) => {
               if (scope.state !== 'open') throw new Error('afterCommit() was called after the transaction ended');
               scope.callbacks.push(callback);
             },
-          }),
+          });
+        },
         options.isolation || options.readOnly
           ? {
               ...(options.isolation ? { isolationLevel: options.isolation } : {}),

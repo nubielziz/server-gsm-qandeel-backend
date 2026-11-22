@@ -3,7 +3,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import { type DbExecutor, DbService } from '../../../infra/db';
+import { type DbExecutor, DbService, REPORT_STATEMENT_TIMEOUT_MS } from '../../../infra/db';
 import { type PermissionHolder, requirePermission } from '../../identity';
 import { AuditService, PdfRenderer } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
@@ -153,7 +153,8 @@ export class ClientStatementService {
           createdAt: now,
         };
       },
-      { isolation: 'repeatable read', readOnly: true },
+      // Decision 055: a statement reads a whole period in one snapshot, so it may take longer than a request's limit.
+      { isolation: 'repeatable read', readOnly: true, statementTimeoutMs: REPORT_STATEMENT_TIMEOUT_MS },
     );
   }
 }

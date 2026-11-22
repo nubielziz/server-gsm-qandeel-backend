@@ -139,12 +139,58 @@ describe('normalizeException with a Postgres deadlock or serialization failure',
   });
 
   it('keeps every other Postgres error a server fault', () => {
-    for (const code of ['23505', '57014', '40002']) {
+    // 57014 (a statement time limit) left this list with decision 055: it is a retryable 503 now.
+    for (const code of ['23505', '42P01', '40002']) {
       const result = normalizeException(new Error('wrapped', { cause: driverError(code) }), prod);
       expect(result.error.code).toBe('INTERNAL_ERROR');
       expect(result.logAsError).toBe(true);
       expect(result.logAsWarning).toBe(false);
     }
+  });
+});
+
+describe('normalizeException with a database time limit or an ended session (decision 055)', () => {
+  const detail = 'The database took too long to answer. Try again in a moment.';
+  const driverError = (code: string) => Object.assign(new Error('driver error'), { code });
+
+  it.each([
+    ['57014', 'statement cancelled by statement_timeout'],
+    ['55P03', 'lock not granted within lock_timeout'],
+    ['25P03', 'session ended by idle_in_transaction_session_timeout'],
+    ['57P01', 'session ended by an administrator or a restart'],
+    ['57P05', 'session ended by idle_session_timeout'],
+  ])('answers SQLSTATE %s (%s) as a retryable 503 UNAVAILABLE, logged as a warning', (code) => {
+    const direct = driverError(code);
+    const wrapped = new Error('Failed query: select pg_sleep($1)', { cause: driverError(code) });
+    for (const exception of [direct, wrapped]) {
+      for (const options of [prod, dev]) {
+        const result = normalizeException(exception, options);
+        expect(result.error.code).toBe('UNAVAILABLE');
+        expect(result.error.status).toBe(503);
+        expect(result.error.detail).toBe(detail);
+        expect(result.error.detail).not.toContain('pg_sleep');
+        expect(result.error.cause).toBe(exception);
+        expect(result.logAsError).toBe(false);
+        expect(result.logAsWarning).toBe(true);
+      }
+    }
+  });
+
+  it('answers a statement sent on a client whose session Postgres ended as a 503, also wrapped', () => {
+    const ended = new Error('Client has encountered a connection error and is not queryable');
+    for (const exception of [ended, new Error('Failed query: select 1', { cause: ended })]) {
+      const result = normalizeException(exception, prod);
+      expect(result.error.code).toBe('UNAVAILABLE');
+      expect(result.error.detail).toBe(detail);
+      expect(result.logAsWarning).toBe(true);
+      expect(result.logAsError).toBe(false);
+    }
+  });
+
+  it('still answers 409 for a deadlock', () => {
+    const result = normalizeException(driverError('40P01'), prod);
+    expect(result.error.code).toBe('CONFLICT');
+    expect(result.error.status).toBe(409);
   });
 });
 

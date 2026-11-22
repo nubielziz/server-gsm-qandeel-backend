@@ -1,6 +1,9 @@
-// Unit tests of the transaction helper (decisions 022, 024, 037) with a fake database: when afterCommit and onCommit callbacks run.
+// Unit tests of the transaction helper (decisions 022, 024, 037, 055) with a fake database: when afterCommit and onCommit callbacks run,
+// and the statement limit a transaction raises for itself.
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   type TransactionContext,
   type TransactionRunner,
@@ -132,6 +135,67 @@ describe('runInTransaction', () => {
       { accessMode: 'read only' },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
     ]);
+  });
+});
+
+describe('runInTransaction with statementTimeoutMs (decision 055)', () => {
+  /** A runner whose transaction handle records every statement it is given, rendered to text and parameters. */
+  function recordingRunner() {
+    const events: string[] = [];
+    const statements: Array<{ sql: string; params: unknown[] }> = [];
+    let opened = 0;
+    const dialect = new PgDialect();
+    const tx = {
+      execute: (statement: SQL) => {
+        const query = dialect.sqlToQuery(statement);
+        statements.push({ sql: query.sql, params: query.params });
+        events.push('execute');
+        return Promise.resolve({ rows: [] });
+      },
+    };
+    const runner = {
+      transaction: async (fn: (handle: unknown) => Promise<unknown>) => {
+        opened += 1;
+        const result = await fn(tx);
+        events.push('commit');
+        return result;
+      },
+    } as unknown as TransactionRunner;
+    return { runner, events, statements, opened: () => opened };
+  }
+
+  it('statementTimeoutMs sets the statement limit first in the transaction', async () => {
+    const { runner, events, statements } = recordingRunner();
+    await runInTransaction(
+      runner,
+      () => {
+        events.push('work');
+        return Promise.resolve();
+      },
+      { statementTimeoutMs: 120_000 },
+    );
+    expect(events).toEqual(['execute', 'work', 'commit']);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]?.sql).toContain("set_config('statement_timeout'");
+    // The value is a bound parameter, never part of the statement text; the limit is only raised, never lowered.
+    expect(statements[0]?.sql).not.toContain('120000');
+    expect(statements[0]?.params).toEqual(['120000', '120000', '120000']);
+    expect(statements[0]?.sql).toContain('setting::bigint <> 0');
+  });
+
+  it('runs no extra statement without the option', async () => {
+    const { runner, statements } = recordingRunner();
+    await runInTransaction(runner, () => Promise.resolve());
+    expect(statements).toEqual([]);
+  });
+
+  it('refuses a negative or fractional statementTimeoutMs before it opens a transaction', async () => {
+    for (const statementTimeoutMs of [-1, 1.5, Number.NaN]) {
+      const { runner, opened } = recordingRunner();
+      const error = await rejectionOf(runInTransaction(runner, () => Promise.resolve(), { statementTimeoutMs }));
+      expect(error, String(statementTimeoutMs)).toBeInstanceOf(RangeError);
+      expect(opened()).toBe(0);
+    }
   });
 });
 

@@ -11,7 +11,9 @@ import { databaseUrlFor } from './url';
  * Owns the pg pool and the Drizzle instance of this process.
  *
  * Why: decision 005 wants one `Pool` per process with its size from the environment; every repository and the health
- * indicator share it. Under `NODE_ENV=test` it points at the test database (decision 014).
+ * indicator share it. Under `NODE_ENV=test` it points at the test database (decision 014). Its connections carry the session time
+ * limits of this process (decision 055: `DATABASE_STATEMENT_TIMEOUT_MS`, `DATABASE_LOCK_TIMEOUT_MS`,
+ * `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS`).
  *
  * Side effects: none until the first query; `onApplicationShutdown` ends the pool.
  */
@@ -24,7 +26,7 @@ export class DbService implements OnApplicationShutdown {
   private closed = false;
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
-    this.pool = createPool(databaseUrlFor(config), config.database.poolMax);
+    this.pool = createPool(databaseUrlFor(config), config.database.poolMax, config.database.timeouts);
     this.db = createDrizzle(this.pool);
   }
 
@@ -34,7 +36,7 @@ export class DbService implements OnApplicationShutdown {
    * Why: see {@link runInTransaction}; this is the entry point use cases call (decisions 020, 022, 024).
    *
    * @param fn the work, given `tx` and `afterCommit`
-   * @param options isolation level
+   * @param options isolation level, read only, and a raised statement limit
    * @returns what `fn` returned
    * @throws whatever `fn` threw; the transaction is rolled back and no callback runs
    */

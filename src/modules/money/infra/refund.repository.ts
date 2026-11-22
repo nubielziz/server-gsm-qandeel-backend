@@ -1,6 +1,6 @@
 // Drizzle queries on `refunds` (map routes /admin/refunds*, feature 16): the storefront refund list with sort, filter, search and exact
 // count, find with a row lock, insert, guarded updates and the sums the refundable amount needs. Only the money module touches this table.
-import { type SQL, and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
+import { type SQL, and, eq, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { listOrderBy, listWhere } from '../../../infra/db/list-sql';
@@ -164,6 +164,39 @@ export async function failProcessingRefund(
     .where(and(eq(refunds.id, id), eq(refunds.status, 'processing')))
     .returning();
   return updated;
+}
+
+/**
+ * Lists the storefront refunds that wait for their gateway call: `processing`, paid back to the original payment, with no gateway
+ * reference yet, unchanged since `before`.
+ *
+ * Why: decision 055: the lost-work reconcile asks again for the send of a refund whose `refund.process` job was lost. `updated_at` is
+ * the start of the current send (approval and retry write it from the clock); the index `refunds_status_created_idx` narrows by status.
+ *
+ * @param db the database or a transaction
+ * @param before only refunds whose `updated_at` is at or before this time
+ * @param limit the most refunds returned
+ * @returns id, `updated_at` and send attempt, by id
+ */
+export async function refundsAwaitingSend(
+  db: DbExecutor,
+  before: Date,
+  limit: number,
+): Promise<Array<{ id: number; updatedAt: Date; sendAttempt: number }>> {
+  return db
+    .select({ id: refunds.id, updatedAt: refunds.updatedAt, sendAttempt: refunds.sendAttempt })
+    .from(refunds)
+    .where(
+      and(
+        eq(refunds.status, 'processing'),
+        eq(refunds.method, 'original'),
+        isNotNull(refunds.paymentId),
+        isNull(refunds.gatewayRefundId),
+        lte(refunds.updatedAt, before),
+      ),
+    )
+    .orderBy(refunds.id)
+    .limit(limit);
 }
 
 /**

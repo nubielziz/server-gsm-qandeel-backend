@@ -35,6 +35,14 @@ See `docs/queues.md` (`supplier-dispatch`, `supplier-poll`, `supplier-sync`). In
 
 Money: a supplier's result settles the order through `OrderTransitions`: the hold becomes revenue and, because the order has `supplier_id` and `supplier_ref`, the cost (`credit x credit_rate`, refreshed on the order when the supplier is chosen) is booked from the prepaid balance at the supplier (B17); a rejection releases the hold with no cost.
 
+## Lost Quick add jobs (decision 055)
+
+`QuickAddReconcilePass` (kind `quick_add_runs`, in `SupplierJobsModule`) is the Quick add's pass of the platform's `lost_work_reconcile`:
+a run `queued` whose newest `supplier.quick_add` request has had no live job for 10 minutes gets the event again
+(`QuickAddOutbox.requested` with `reconcile: true`), under the run's lock while it is still `queued`, at most three times. Then nothing is
+written: the run reads as stalled and staff start it again (the start closes the old run, so its late job claims nothing). The hand-over
+to the bulk publish (`supplier.quick_add_done`) is not asked for again: the Quick add progress offers to prepare the preview by hand.
+
 ## Public API (`index.ts`)
 
 Exports the modules (`SuppliersModule`, `SuppliersAdminModule`, `SupplierEngineModule`, `SupplierJobsModule`), the health rules (`supplierHealth`, `healthFromCalls`, `toPageHealth`, `runwayDays`, `isLowBalance`: the system health view of feature 9 reuses them), the link rules (`pickLink`, `linkUnitCost`), the four supplier call contracts (`SUPPLIER_CALLS`), the key hint (`apiKeyHintOf`, `KEY_HINT_MASK`), `SupplierDirectory` (supplier names for other modules), `SupplierReader`, `SupplierDispatch` (and `ANSWER_NOT_RECORDED_REASON`), `DispatchRequests`, `DispatchSweep` (with `DispatchSweepProcessor`, `DISPATCH_SWEEP_JOB`, the sweep's rule constants and `lostRequestAction`, and the result and plan types), `SupplierPoll`, `SupplierSync`, `QuickAddRunner` (feature 26), the vocabularies and row types, and the test policy token. Other modules import only `src/modules/suppliers/index.ts` (lint rule `gsm/module-boundaries`).

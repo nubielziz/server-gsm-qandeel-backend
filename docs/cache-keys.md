@@ -11,11 +11,18 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
   share an instance never collide. Each part is letters, digits, `.`, `_` or `-`.
 - Every key has a TTL, with +-15 % jitter (`getOrLoad` adds it). Values are JSON under about 100 KB (larger values are
   refused and counted in `cache_errors_total{operation="too_large"}`).
+- Every entry is sealed (decision 055): `c1:<kind>:<freshUntil>:<seal>:<JSON>`; an entry without a valid seal is a miss
+  (`cache_errors_total{operation="mac"}`, logged at error level: tampering, or a `TOKEN_PEPPER` that differs between processes). A stale
+  entry is served only inside the reader's `staleWhileRevalidate` window. What `getOrLoad` does not write stays unsealed: the rate-limit
+  counters, stampede locks, version counters, semaphores, replay marks, the IP rule hit counters, the real-time doorbell and the health
+  "last snapshot" copy.
 - Read with `CacheService.getOrLoad(key, ttlSeconds, loader, options)`; options: `lockMs` (cross-instance stampede lock),
   `staleWhileRevalidate` (seconds), `negativeTtlSeconds` (short caching of "not found").
 - Invalidate **after the commit**: `afterCommit(() => cache.del(key))`. For a group use a version key
   (`bumpVersion('catalog')`, read through `versioned('catalog', key)`) or, for small groups, `delByPrefix` (`SCAN`, never
   `KEYS`).
+- Invalidations that follow a security change (sessions, API keys, roles, IP rules, settings, maintenance) use
+  `CacheService.invalidate`: three tries, then one error line (`operation="invalidate"`); it never throws.
 - Never cache as truth: balances, ledger rows, holds, payment or order status used for decisions, risk decisions,
   idempotency results (decision 022). They live in Postgres.
 - Metrics: `cache_hits_total{family}`, `cache_misses_total{family}`, `cache_errors_total{family,operation}`, where the

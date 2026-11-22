@@ -30,16 +30,19 @@ export interface OutboxEventInput {
 }
 
 /**
- * What a reader may know about a written outbox event: its id (the job id is `outbox-<id>`), when it was written and whether the
- * relay handed it over.
+ * What a reader may know about a written outbox event: its id (the job id is `outbox-<id>`), when it was written, whether the
+ * relay handed it over, and its payload.
  *
- * Why: decision 044: a sweep that asks for lost work again must tell a request still waiting for the relay from one whose job is gone.
+ * Why: decision 044: a sweep that asks for lost work again must tell a request still waiting for the relay from one whose job is gone;
+ * decision 055: the lost-work reconcile counts its own earlier requests (`reconcile: true`) and repeats the ids of the last one.
  */
 export interface OutboxEventTrace {
   readonly id: number;
   readonly createdAt: Date;
   /** `null` while the relay has not handed the event to its queue. */
   readonly processedAt: Date | null;
+  /** The caller's ids, without the bookkeeping key `meta`. */
+  readonly payload: OutboxPayload;
 }
 
 /**

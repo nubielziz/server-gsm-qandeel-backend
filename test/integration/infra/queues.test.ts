@@ -77,14 +77,14 @@ describe('producers', () => {
       attempts: 3,
       backoff: { type: 'exponential', delay: 5_000, jitter: 0.5 },
       removeOnComplete: { age: 86_400, count: 10_000 },
-      removeOnFail: { age: 1_209_600 },
+      removeOnFail: { age: 1_209_600, count: 10_000 },
     });
     const stored = await queues.queue('supplier-dispatch').getJob(job.id as string);
     expect(stored?.opts).toMatchObject({
       attempts: 3,
       backoff: { type: 'exponential', delay: 5_000, jitter: 0.5 },
       removeOnComplete: { age: 86_400, count: 10_000 },
-      removeOnFail: { age: 1_209_600 },
+      removeOnFail: { age: 1_209_600, count: 10_000 },
     });
     expect(stored?.data).toEqual({ orderId: 1 });
     expect(QUEUES['supplier-dispatch'].maxStalledCount).toBe(0);

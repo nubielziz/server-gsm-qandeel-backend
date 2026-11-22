@@ -1,12 +1,13 @@
 # Cache (`src/infra/cache`)
 
-Cache-aside on the cache Redis (decision 022). `docs/cache-keys.md` lists every key family.
+Cache-aside on the cache Redis (decisions 022 and 055). `docs/cache-keys.md` lists every key family.
 
 | What                                                     | Where                                                           |
 | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `CacheService`: `getOrLoad`, `del`, `delByPrefix`, `bumpVersion`, `versioned` | `cache.service.ts`                               |
+| `CacheService`: `getOrLoad`, `del`, `invalidate`, `delByPrefix`, `bumpVersion`, `versioned` | `cache.service.ts`                 |
 | `CacheKeys`: the only way to build a key, `CACHE_KEY_FAMILIES` | `cache-keys.ts`                                           |
-| Entry envelope, TTL jitter, the 100 KB limit             | `cache-entry.ts`                                                |
+| Sealed entries (`sealEntry`, `openEntry`, `cacheMacKey`), TTL jitter, the 100 KB limit | `cache-entry.ts`                      |
+| The retries of `invalidate` (`withRetries`)              | `cache-invalidation.ts`                                         |
 
 ## Using it
 
@@ -31,10 +32,18 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   processes: the others wait for the holder's result (they load themselves if it fails or is slower than `lockMs`).
 - **Negative caching:** `negativeTtlSeconds` remembers "nothing there" (an unknown TAC) for a short time; the call returns
   `null`. Without it a `null`/`undefined` result is never cached.
+- **Sealed entries** (decision 055): `c1:<kind>:<freshUntil>:<seal>:<JSON>`, the seal an HMAC-SHA256 over the key, the kind, the
+  freshness time and the value with a key derived from `TOKEN_PEPPER` (HKDF, so it never equals a credential hash a key name
+  carries); a missing or wrong seal is a miss (`cache_errors_total{operation="mac"}`, logged at error level: tampering or a
+  `TOKEN_PEPPER` that differs between processes), and an entry of an earlier release reads as unreadable once
+  (`operation="decode"`) and is overwritten.
 - **Stale-while-revalidate:** the key outlives its freshness by the stale window; a stale read answers at once and starts
-  one background refresh (a failing refresh keeps the old value).
+  one background refresh (a failing refresh keeps the old value). **Stale entries** are served only inside the caller's
+  `staleWhileRevalidate` window, counted from the entry's freshness time (decision 055).
 - **Redis down:** a read or write failure is a miss (the loader runs, `cache_errors_total` counts it). `del`,
   `delByPrefix` and `bumpVersion` throw instead, because a missed invalidation leaves old data until the TTL.
+- **`invalidate(...keys)`** retries a failed delete twice (50 ms, 250 ms), then writes one error line and counts
+  `operation="invalidate"`; it never throws. Use it for invalidations that follow a security change; `del` keeps throwing.
 - **Invalidate after the commit.** A `del` while a load of the same key runs in this process stops that load from storing its
   older value; across processes the TTL bounds the race.
 - **Version keys** (`bumpVersion('catalog')`, `versioned('catalog', key)`) invalidate a whole group with one write. The

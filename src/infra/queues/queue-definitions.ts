@@ -36,8 +36,12 @@ export interface QueueDefinition {
 export const COMPLETED_JOB_MAX_AGE_SECONDS = 24 * 60 * 60;
 /** See {@link COMPLETED_JOB_MAX_AGE_SECONDS}. */
 export const COMPLETED_JOB_MAX_COUNT = 10_000;
-/** Failed jobs are kept 14 days so that staff can look at them and retry them from the console. */
+/** Failed jobs are kept 14 days so that staff can look at them and retry them from the console (at most {@link FAILED_JOB_MAX_COUNT}). */
 export const FAILED_JOB_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
+/**
+ * Failed jobs are kept 14 days and at most 10 000 per queue, so one failing kind of job cannot fill the noeviction Redis (decision 055).
+ */
+export const FAILED_JOB_MAX_COUNT = 10_000;
 
 /**
  * Every queue, by name.
@@ -168,7 +172,8 @@ export function isQueueName(value: string): value is QueueName {
  * The job options every job of a queue starts from.
  *
  * Why: decision 020: attempts with exponential backoff and jitter for transient errors, completed jobs kept 24 hours
- * (at most 10 000) and failed jobs 14 days. A job that must not follow them overrides them in its own `add` call.
+ * (at most 10 000) and failed jobs 14 days (at most 10 000, decision 055). A job that must not follow them overrides them in its own
+ * `add` call.
  *
  * @param name the queue
  * @returns BullMQ default job options for the queue
@@ -187,6 +192,6 @@ export function defaultJobOptions(name: QueueName): JobsOptions {
         }
       : {}),
     removeOnComplete: { age: COMPLETED_JOB_MAX_AGE_SECONDS, count: COMPLETED_JOB_MAX_COUNT },
-    removeOnFail: { age: FAILED_JOB_MAX_AGE_SECONDS },
+    removeOnFail: { age: FAILED_JOB_MAX_AGE_SECONDS, count: FAILED_JOB_MAX_COUNT },
   };
 }

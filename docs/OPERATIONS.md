@@ -304,7 +304,7 @@ The private key only has to be on the machine for the minute the drill runs.
 | --- | --- | --- |
 | `ENCRYPTION_KEYS` | values sealed by a key that is gone cannot be read: TOTP secrets (staff and merchants enrol 2FA again), supplier and gateway credentials and webhook secrets (they stop until typed in again), stored IMEIs and inventory codes, and the copies of the shop's links (mails and account pages can no longer show those links; the links themselves keep working) | two offline copies, two people, with the backup key; never lose it, never change an existing key; add keys as below |
 | `age` private key | no backup can be read | two offline copies, two people; never on the server except during a drill |
-| `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset, invitation and Telegram link stops working | change only as a planned operation |
+| `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset, invitation and Telegram link stops working; the cache is emptied too (every entry becomes a miss, decision 055) | change only as a planned operation; every API and worker process must have the same value |
 | `LOOKUP_HASH_KEY` | every stored lookup stops matching: blocked e-mails, cards and IMEIs pass the blocklist again, the IMEI history and the duplicate checks of inventory codes and open orders forget what they knew, unsubscribe links in sent mails stop working, Idempotency-Key replays of the last 7 days and the event ids of pending merchant webhook deliveries change, and every checkout, tracking and ticket link stops working | never change it (production refuses to start with a different key); on an installation that has data it equals the `TOKEN_PEPPER` the data was made with (section 3) |
 | `CSRF_SECRET` | forms that are open fail once and are sent again | any time |
 | `TELEGRAM_WEBHOOK_SECRET` | Telegram's calls are refused until the webhook is registered again | change it, restart api, run `scripts/telegram-webhook.ts` (section 6); the release of decision 054 gives it a new value (section 3) |
@@ -354,12 +354,36 @@ not yet handed over (still in Postgres); supplier sends (the dispatch sweep asks
 lost, and moves orders whose send was in flight to Needs attention after the supplier's timeout plus 2 minutes; nothing is sent twice; an
 order that waited more than 24 hours, or was asked for 3 times, goes to Needs attention); status polls of sent orders (the poll tick); queued
 notifications (`notification_reconcile` adds their send again once they waited 30 minutes); scheduled campaigns; the search index (its
-reconcile, within 15 minutes); storefront receipts (made at their first download); every scheduled job. These do not come back yet:
-storefront refunds approved and waiting for their gateway (they stay `processing`; the console's retry is for failed refunds only), merchant
-webhook deliveries (they stay `pending`), Quick add and bulk publish runs waiting for their job, mails sent by a job of their own that had
-not run yet (sign-in and password links, invitations, ticket mails, abandoned-checkout reminders: the person asks again), a waiting price
-change scan (the next price change asks for one), the one-time category name clean-up of migration 0046, and the failed jobs kept for staff
-(the failed list is empty afterwards). Note the affected orders, refunds and runs before you change anything.
+reconcile, within 15 minutes); storefront receipts (made at their first download); every scheduled job; and (decision 055) within about 15
+minutes, through `lost_work_reconcile`: storefront refunds waiting for their gateway call, merchant webhook deliveries that were already
+created, bulk publish runs (preparation, apply, switch) and Quick add runs. These do not come back by themselves: mails sent by a job of
+their own that had not run yet (sign-in and password links, invitations, ticket mails, abandoned-checkout reminders: the person asks
+again), merchant webhook events whose fan-out job had not run yet (no delivery was created, so nothing re-arms it: order status, invoice
+paid, low balance and price change webhooks), event notifications whose planning job had not run yet (no notification row exists), a
+waiting price change scan (the next price change asks for one), the one-time category name clean-up of migration 0046, the Quick add
+hand-over to the bulk publish (the Quick add progress offers to prepare the preview by hand), and the failed jobs kept for staff (the
+failed list is empty afterwards).
+A refund asked for three times without an answer, or whose send started more than 20 hours ago, is failed with the note "...check the
+payment at the gateway before you send it again": check the payment at the gateway before you press retry (the retry sends under the same
+gateway key, so the gateway does not refund twice for one key). A publish or Quick add run asked for three times stays stalled: start it
+again from the console. Note the affected orders, refunds and runs before you change anything.
+
+**Database time limits** (decision 055). Every connection of the API and the worker carries three limits: a statement runs at most
+`DATABASE_STATEMENT_TIMEOUT_MS` (default 15 s), waits for a lock at most `DATABASE_LOCK_TIMEOUT_MS` (5 s), and a transaction left idle is
+ended after `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` (60 s); `0` means no limit. `deploy/compose.prod.yaml` gives the worker 300 s and 30 s
+(its jobs read more per statement) and keeps its 60 s idle limit. The money reports, the client statement and the ledger reconcile raise
+their own statement limit to 2 minutes (never lower). A request that hits a limit answers `503` with "The database took too long to answer.
+Try again in a moment." and a warning line that names the SQLSTATE (`57014` statement, `55P03` lock, `25P03` idle transaction; `57P01` a
+session ended by an administrator or a restart). When a report or a job keeps hitting a limit, raise the setting for that container (the
+`environment` of the worker in the compose file, or `.env.production` for the API), not for every process, and say which query it was.
+
+**Cache errors that mean something** (decision 055). `cache_errors_total{operation="mac"}` (an error line "Cache mac failed ... integrity
+check") means an entry in the cache Redis was not written by this application with this `TOKEN_PEPPER`: tampering, or two processes with
+different peppers. Check who can reach the cache Redis and that every API and worker has the same value. `operation="invalidate"` (an error
+line "Cache invalidation failed for <family> after 3 attempts") means a delete that follows a security change (a revoke, a role change, a
+suspension) did not reach Redis; the old entry lives until its TTL (60 s for sessions and keys, 300 s for roles) unless Redis comes back.
+A short burst of `operation="decode"` right after this release is expected: entries of the previous release are read once as unreadable
+and replaced.
 
 **An order stays "being sent"** (decision 044). While the supplier is called, an order reads Pending in the console and staff actions on it
 (reply, reject, send again, change supplier, refund approval) answer 409 with "This order is being sent to its supplier right now: wait for the

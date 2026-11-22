@@ -48,6 +48,15 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
   and does not stop the others (the data is already committed). A failing `COMMIT` (a deferred constraint such as the
   ledger zero-sum rule) also skips them.
 - `isolation: 'repeatable read' | 'serializable'` is optional; there is no automatic retry on a serialization failure.
+- **Time limits (decision 055).** Every connection of the process's pool carries `statement_timeout`, `lock_timeout` and
+  `idle_in_transaction_session_timeout` from `DATABASE_STATEMENT_TIMEOUT_MS` (default 15 s), `DATABASE_LOCK_TIMEOUT_MS` (5 s) and
+  `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` (60 s); 0 means none, and under `NODE_ENV=test` all three default to none (the limit tests set
+  them). The production worker gets 300 s and 30 s from `deploy/compose.prod.yaml`. A transaction that reads much passes
+  `statementTimeoutMs` (the reports use `REPORT_STATEMENT_TIMEOUT_MS`, 120 s): its first statement raises the limit for it alone, and never
+  lowers a longer or absent one. Migrations and setup build pools without limits. A limit that strikes (SQLSTATE `57014`, `55P03`,
+  `25P03`) or a session Postgres ended (`57P01`, `57P05`, or the client error of a statement sent on it) answers `503 UNAVAILABLE`.
+  Every pool client has its own `error` listener, so a session that ends while a transaction holds it fails that transaction, never the
+  process.
 - Callbacks registered inside a nested transaction (savepoint) that rolls back still run after the outer commit. That is
   harmless for cache deletes and real-time doorbells (the uses today: the hub finds no row and sends nothing); track callbacks
   per savepoint before using them for jobs or emails.

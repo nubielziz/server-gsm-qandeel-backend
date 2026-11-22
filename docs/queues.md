@@ -26,7 +26,7 @@ when a queue is missing here or when the numbers in a section differ from `QUEUE
   `UnrecoverableError` for a permanent failure (no retry); any other error is retried. `maxStalledCount` says how often a
   job whose worker vanished goes back to the queue: 0 means never (a supplier dispatch may already have reached the
   supplier, decision 025).
-- **Retention:** completed jobs 24 hours (at most 10 000), failed jobs 14 days (decision 020), so the noeviction Redis stays
+- **Retention:** completed jobs 24 hours (at most 10 000), failed jobs 14 days and at most 10 000 per queue (decisions 020 and 055), so the noeviction Redis stays
   bounded and staff can retry failed jobs from the console (`GET /admin/system/queues/:name/failed`).
 - **Runs are recorded:** a scheduled or manual job wraps its work with `JobRunsService.run(...)` (health module), which
   writes `job_runs` (start, end, duration, items, result, error). `duration_ms` and `processed` are `NOT NULL DEFAULT 0`: both
@@ -153,7 +153,7 @@ Delivers signed events to the webhook endpoints of merchants.
   `status = 'pending' and attempt = <this attempt>`, so a job that runs twice, or after a manual retry, records nothing twice. A job whose row has moved on only makes sure the current attempt has its job. Sends are at least
   once; the same `X-GSM-Event-Id` on every retry lets the receiver drop repeats.
 - **Retry policy:** 8 attempts, exponential backoff from 10 min (jitter 20 %), about 21 hours in total, matching the public rule "8 attempts over about 24 h" (`docs/contract/ALIGNMENT.md` § 7). The worker itself schedules the retries of an HTTP outcome and writes them to the row: a failed attempt n (a non-2xx answer, no answer within 10 s, a refused connection) sets `attempt = n + 1`, `next_retry_at` to `10 min x 2^(n-1)` shortened by up to 20 % at random, and adds the delayed job `webhook-<delivery>-<n + 1>`; after the 8th attempt the delivery is `failed` (a manual retry by staff is one more attempt, never a new ladder). A refusal that cannot change (the address no longer passes the SSRF guard) fails the delivery at once. The queue's own policy above only covers a job that throws (Postgres or Redis failed); every such run is safe to repeat.
-- **Schedule:** none (event-driven). Open point: nothing re-queues a pending delivery whose job was lost with the queue Redis's data; `webhook_deliveries_retry_idx` supports a sweep.
+- **Schedule:** none (event-driven). A pending delivery whose job was lost is re-armed by `lost_work_reconcile` (decision 055): overdue by 10 minutes with its job `webhook-<delivery>-<attempt>` missing, or finished without moving the row, it gets that job again (`webhook_deliveries_retry_idx` serves the search). The reconcile re-arms deliveries, not the fan-out: an outbox job of a merchant event lost before it created its deliveries is not asked for again (a fan-out pass is a later feature).
 
 ## notifications
 
@@ -376,7 +376,8 @@ Runs bulk imports (service lists, inventory codes) started by staff.
   (a run that stalled while `preparing` says to start a new preview).
 - **Retry policy:** 1 attempt, no retry. Stalled jobs are not re-run (`maxStalledCount` 0). Staff start it again: it continues with what
   is left (an import records its progress and is started again by staff, so it is never retried automatically). A publish run goes on
-  from the rows that have no result, and a run switch is pressed again.
+  from the rows that have no result, and a run switch is pressed again. A queued Quick add run, and a publish run waiting for its
+  preparation, apply or switch, whose job was lost is asked for again by `lost_work_reconcile` (at most three times, decision 055).
 - **Schedule:** none (started by staff).
 
 ## files
@@ -406,7 +407,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), `lost_work_reconcile`, every 5 minutes, and `outbox_purge`, daily at 04:50 UTC (platform module, decision 055, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -431,7 +432,9 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   (`src/modules/suppliers/jobs/supplier-jobs.module.ts`); `fx-refresh` every hour at minute 0
   (`src/modules/money/jobs/fx-refresh.module.ts`); `checkout-recovery-sweep` every 5 minutes
   (`src/modules/customers/checkout-recovery.module.ts`); `notification-campaign-sweep` every minute
-  (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`); the health jobs in
+  (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`); `lost-work-reconcile` every 5 minutes
+  (`src/modules/platform/lost-work/lost-work.module.ts`) and `outbox-purge` at 04:50 UTC (`src/modules/platform/outbox/outbox-relay.module.ts`,
+  decision 055); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; `support-reply-mail-sweep` every minute and `ticket-attachment-retention` at 03:30 UTC
   (`src/modules/support/support-jobs.module.ts`); the others are registered with `JobSchedulerRegistry` by the owning
   features.
@@ -581,6 +584,44 @@ Moves the supplier sends that lost their answer or their request (`DispatchSweep
   (`Dispatch sweep: moved <n>, failed <n>; first failure: <first line of its message>`; no payloads), so the row is `failed` with that text and the next minute plans again.
 - **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next minute is the real retry.
 
+### `lost_work_reconcile` (platform module, decision 055)
+
+Asks again for the work whose queue job was lost (`LostWorkReconcile`, `src/modules/platform/lost-work/`; processor `LostWorkReconcileProcessor`).
+
+- **Trigger:** the scheduler `lost-work-reconcile` every 5 minutes, or a manual run (`POST /admin/system/jobs/lost_work_reconcile/run`).
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** runs the passes the owning modules register on `LostWorkRegistry`: storefront refunds waiting for their gateway call
+  (`refunds`, money), merchant webhook deliveries (`webhook_deliveries`, platform), bulk publish runs waiting for their preparation, apply
+  or switch (`publish_runs`, storefront) and queued Quick add runs (`quick_add_runs`, suppliers). A row is lost when its newest request
+  (of the kind's event type, for that aggregate) is older than 10 minutes and none of its newest ten requests is live: not handed over yet,
+  or its job `outbox-<event id>` waits, runs, is delayed, prioritized or waits for children on one of the type's queues. Jobs that cannot be
+  read (the queue Redis does not answer), or a type no route names in the process, decide nothing; a row with no request is left alone.
+  A lost row gets a new event of the same type and aggregate, the payload as before plus `reconcile: true`. At most three such requests per
+  row; then refunds are failed with a note (the key is kept, the console's retry applies), and runs are left to their stalled state, which
+  staff resume (they make no item, so a run that only finds them writes nothing). Webhook deliveries are re-armed with their own job id
+  (`webhook-<delivery>-<attempt>`: added when missing, replaced when completed or failed) and have no give-up. At most 200 refunds, 500
+  deliveries and 100 runs of each kind per run.
+- **Idempotency:** each re-request is a new outbox event, written in a transaction that locks the row and makes the same check again (the
+  state of the row and of its requests), so a manual run beside a scheduled one, a staff action or a parallel worker changes nothing twice;
+  the consumers claim with guarded updates; a delivery's job id is its own. `JobRunsService.run` skips a run while another is going on.
+- **Recorded in `job_runs`** (through the `JOB_RUN_RECORDER` port; job `lost_work_reconcile`, `processed` = requests + give-ups,
+  `result` = the five counts per kind (`checked`, `unknown`, `exhausted`, `requested`, `gaveUp`) and `unknown`) only when it asked again,
+  gave up or failed, and for every manual run. A pass that throws does not stop the others; the run then fails with
+  `Lost work reconcile: <n> pass(es) failed (<kinds>); first failure: <first line of its message>`.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min); the next run is the real retry.
+
+### `outbox_purge` (platform module, decision 055)
+
+Deletes handed-over outbox rows (`OutboxPurge`, `src/modules/platform/outbox/outbox-purge.ts`; processor `OutboxPurgeProcessor`).
+
+- **Trigger:** the scheduler `outbox-purge` daily at 04:50 UTC, or a manual run (`{ runId }`).
+- **What it does:** deletes the rows whose `processed_at` is more than 45 days before the clock's time, oldest first, 5 000 per statement and
+  at most 20 statements a run (the rest waits for the next night). Never a pending row. 45 days is longer than every reader of handed-over
+  rows looks back (the price change scan 30 days, the notification reconcile 48 hours, the dispatch sweep and the lost-work reconcile hours).
+- **Idempotency:** a delete by a cut from the clock: a repeat only finds fewer rows.
+- **Recorded in `job_runs`** on every run (`processed` = rows deleted, `result` = `{ deleted, batches, retentionDays }`).
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min).
+
 ### `refund.process` (money module)
 
 Sends an approved storefront refund to its payment gateway (scenario b2c-refund step 6, RESOLUTIONS money-11, user rule 7).
@@ -591,6 +632,7 @@ Sends an approved storefront refund to its payment gateway (scenario b2c-refund 
 - **Idempotency:** only a `processing` refund moves (guarded `UPDATE ... WHERE status = 'processing'` under the refund's row lock), the gateway call carries a stable key, and the ledger is untouched, so a stalled job, a retry and a staff retry cannot refund twice. The key moves on only when the gateway refused the refund for good (a 4xx answer other than 408, 409, 425 and 429; a refund object that comes back `failed`; the signed `refund.failed` event): the same key would only replay the refusal. After an answer that is not known (a timeout, a network error, a 5xx) the key stays, so a refund the gateway may already have made is never made twice.
 - **Retry policy:** the `maintenance` queue's (3 attempts, exponential backoff from 1 min, jitter 50 %). An error of the call whose outcome is not known (a timeout, a 5xx) is rethrown so the queue retries it with the same key; on the last attempt the refund is set to `failed` with that error and staff retry it from the console (`POST /admin/refunds/:id/retry`, which queues a new event, same key). A permanent refusal (4xx) fails the refund at once and ends the job with an `UnrecoverableError` (no queue retries); the staff retry then sends under the new key.
 - **Not recorded in `job_runs`:** event-driven, like the supplier dispatch; the refund row is the record.
+- **Lost jobs** (decision 055): `lost_work_reconcile` writes the event again (`{ refundId, reconcile: true }`) for a refund `processing` with no gateway reference whose job was lost; after three such requests, or once the current send started more than 20 hours ago, it fails the refund with the note "The refund was approved, but its send to the payment gateway was not confirmed. Check the payment at the gateway before you send it again." and keeps its key, so the console's retry sends under the same key.
 
 ### `checkout_recovery_sweep` (customers module)
 
@@ -833,7 +875,7 @@ none); the job id is `outbox-<event id>`.
 | `order.dispatch_requested` | `supplier-dispatch` | `order.dispatch_requested` | `orderId` (aggregate: `orders`) | orders (`OrderOutbox`), written by placement of an automatic order with an active supplier link, by a staff dispatch, by `change-supplier` with `dispatch: true`, by a risk release and by the `dispatch_sweep` (decision 044). The processor is `SupplierDispatchProcessor` (`src/modules/suppliers/jobs/`) |
 | `invoice.paid` | `merchant-webhooks` | `invoice.paid` | `invoiceId`, `clientId` (aggregate: `invoices`) | money (`InvoiceOutbox`, loaded by the API and the worker), written by every credit of a top-up: a staff approval (`POST /admin/payments/:id/approve`) and the automatic credit job. The fan-out re-reads the invoice (7b) |
 | `receipt.render` | `files` | `receipt.render` | `invoiceId` (aggregate: `invoices`) | money (`ReceiptOutbox`, loaded by the API and the worker), written by the capture of a storefront payment together with the receipt invoice. The processor is `ReceiptRenderProcessor` (`src/modules/money/jobs/`) |
-| `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds. The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
+| `refund.process` | `maintenance` | `refund.process` | `refundId` (aggregate: `refunds`) | money (`RefundOutbox`, loaded by the API and the worker), written by the approval and the retry of a storefront refund and by the system's automatic refunds; also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `RefundProcessProcessor` (`src/modules/money/jobs/`) |
 | `notification.campaign_fanout` | `notifications` | `notification.campaign_fanout` | none (aggregate: `notification_campaigns`, the campaign) | platform (`NotificationRoutes`), written by `POST /admin/notification-campaigns/:id/send` and the `notification_campaign_sweep` job, in the transaction that moves the campaign to `queued` (feature 23) |
 | `catalog.services_changed` | `search-index` | `search_sync` | `serviceIds` (1-50), `reason` (`service`, `price`, `options`, `stock`) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`, loaded by the API and the worker), written by the catalog's `CatalogSignals` in the writer's transaction: service create, edit, archive and delete, every `PUT /admin/services/:id/group-prices`, `PUT /admin/services/:id/options`, an inventory import and void, and the stock claim of an order placement (feature 29) |
 | `catalog.category_changed` | `search-index` | `search_sync` | `categoryId` (aggregate: `service_categories`) | storefront (`SearchOutboxRoutes`), written by `CatalogSignals` on a category edit or delete and, once per category, by a merchant group delete that removed the group from categories (feature 29) |
@@ -845,10 +887,10 @@ none); the job id is `outbox-<event id>`.
 | `customers.checkout_tokens_seal` | `maintenance` | `checkout_tokens_seal` | none (aggregate: `checkout_sessions`, 1) | customers (`CheckoutTokenSealModule`, worker only), written once by migration `capability_tokens_seal` |
 | `orders.tracking_tokens_seal` | `maintenance` | `tracking_tokens_seal` | none (aggregate: `orders`, 1) | orders (`TrackingTokenSealModule`, worker only), written once by migration `capability_tokens_seal` |
 | `support.ticket_tokens_seal` | `maintenance` | `ticket_tokens_seal` | none (aggregate: `support_tickets`, 1) | support (`TicketTokenSealModule`, worker only), written once by migration `capability_tokens_seal` |
-| `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
-| `storefront.publish_prepare` | `imports` | `publish_prepare` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that inserts a run in `preparing` (`POST /admin/publish-runs`, feature 31). The processor is `PublishPrepareProcessor` (`src/modules/storefront/publish/jobs/`) |
-| `storefront.publish_apply` | `imports` | `publish_apply` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that moves a run to `queued` (feature 31). The processor is `PublishApplyProcessor` (`src/modules/storefront/publish/jobs/`) |
-| `storefront.publish_set_listed` | `imports` | `publish_set_listed` | `runId`, `listed`, `requestedBy` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`), written by `PublishOutbox` in the transaction that queues a run switch (feature 31). The processor is `PublishSetListedProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
+| `storefront.publish_prepare` | `imports` | `publish_prepare` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that inserts a run in `preparing` (`POST /admin/publish-runs`, feature 31); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `PublishPrepareProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `storefront.publish_apply` | `imports` | `publish_apply` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that moves a run to `queued` (feature 31); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `PublishApplyProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `storefront.publish_set_listed` | `imports` | `publish_set_listed` | `runId`, `listed`, `requestedBy` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`), written by `PublishOutbox` in the transaction that queues a run switch (feature 31); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `PublishSetListedProcessor` (`src/modules/storefront/publish/jobs/`) |
 | `supplier.quick_add_done` | `imports` | `publish_from_quick_add` | `runId`, `supplierId`, `requestedBy`, `listed` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox.done`, written in the transaction that closes a Quick add run that asked to publish and created services; feature 31); the route is registered by the storefront's `PublishOutboxRoutes` (the suppliers module never imports the storefront). The processor is `PublishFromQuickAddProcessor` (`src/modules/storefront/publish/jobs/`) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
@@ -869,6 +911,8 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `notification-campaign-sweep` | `maintenance` | `notification_campaign_sweep` | every minute | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
 | `notification-reconcile` | `maintenance` | `notification_reconcile` | every 5 minutes | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
 | `notification-retention` | `maintenance` | `notification_retention` | daily 04:20 UTC | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
+| `lost-work-reconcile` | `maintenance` | `lost_work_reconcile` | every 5 minutes | platform (`src/modules/platform/lost-work/`) |
+| `outbox-purge` | `maintenance` | `outbox_purge` | daily 04:50 UTC | platform (`src/modules/platform/outbox/`) |
 | `service-checks` | `maintenance` | `service_checks` | every minute | health (`src/modules/health/jobs/`) |
 | `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
 | `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |

@@ -18,7 +18,7 @@ The audit log: `AuditModule` (global) provides `AuditService.record(tx, { action
 
 Settings and maintenance: `SettingsModule` (global) and `SettingsService.get(key, executor?)` (the raw JSON value of one setting, `undefined` when it was never set); `MaintenanceModule` with `MaintenanceService` (`state()`, `invalidate()`), the pure `maintenanceRefusal`, `scopesCovering`, `parseMaintenanceState`, `MAINTENANCE_KEY`, `MAINTENANCE_OFF`, `MAINTENANCE_SCOPES`, `DEFAULT_MAINTENANCE_MESSAGE` and the types `MaintenanceState`, `MaintenanceScope`, `MaintenanceRequest`.
 
-The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)`, `recentEvents(db, type, aggregateType, aggregateId, limit?)` (the newest events of one aggregate with their relay time, for sweeps) and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, `OutboxEventTrace`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay`.
+The outbox: `OutboxModule` (global: `OutboxService`, `OutboxRouteRegistry`), `OutboxService.add(tx, event)`, `recentEvents(db, type, aggregateType, aggregateId, limit?)` (the newest events of one aggregate with their relay time, for sweeps) and `backlog(db)`, `OutboxRouteRegistry.register({ type, queue, jobName? })`, the types `OutboxEventInput`, `OutboxPayload`, `OutboxJobData`, `OutboxRoute`, `OutboxBacklog`, `OutboxEventTrace`, and, for the worker only, `OutboxRelayModule` with `OutboxRelay` and `OutboxPurge` (`OUTBOX_RETENTION_DAYS`, `OUTBOX_PURGE_JOB`). Decision 055: `LostWorkRegistry` (in the global `OutboxModule`), `LostWorkModule` (worker only) with `LostWorkReconcile`, `LostWorkReconcileProcessor`, `LOST_WORK_RECONCILE_JOB`, `OutboxRequests`, `hasWork`, `applyLostWorkItems`, the rule `lostWorkAction` (`LOST_AFTER_MS`, `MAX_RECONCILE_REQUESTS`) and the types of a pass (`LostWorkPass`, `LostWorkPlan`, `LostWorkItem`, `LostWorkApplied`, `LostWorkCounts`, `LostWorkContext`).
 
 Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRenderer.render(document)` (`PdfDocument`, `PdfBlock`, `PdfColumn`), and `StoredFiles` (`store`, `metaOf`, `findOwned`, with `StoreFileInput`, `FileMeta` and `PROOF_MIME_TYPES`) is the public side of the `files` table for the money and identity modules.
 
@@ -310,7 +310,12 @@ types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map
   row that cannot be handed over for its own reason (no queue registered for its type, BullMQ refuses the job): the
   attempt is counted and the row waits 2^attempts seconds (at most 5 minutes). Rows are never dropped; a stuck row shows in
   the backlog (`OutboxService.backlog`, metrics `outbox_pending_events`, `outbox_oldest_pending_age_seconds`).
-- **Not here yet:** deleting processed rows (data retention, a maintenance job of a later feature).
+- **Purge** (worker only, decision 055): `outbox_purge` (`OutboxPurge`, queue `maintenance`, daily 04:50 UTC, scheduler `outbox-purge`)
+  deletes rows handed over more than 45 days ago (`OUTBOX_RETENTION_DAYS`), 5 000 per statement and at most 20 statements a run, never a
+  pending row; every run is recorded in `job_runs` through the `JOB_RUN_RECORDER` port. 45 days is longer than every reader of handed-over
+  rows looks back: the price change scan (30 days), the notification reconcile (`notification.send` rows of 48 hours), the dispatch sweep
+  and the lost-work reconcile (hours); the health view reads pending rows only.
+- **Trace.** `recentEvents` returns each event's payload too (without `meta`), so a sweep can count its own earlier requests.
 - **Metrics** (worker `/metrics`): `outbox_events_relayed_total{queue}`, `outbox_relay_lag_seconds`,
   `outbox_relay_failures_total{reason}`, `outbox_pending_events`, `outbox_oldest_pending_age_seconds`.
 
@@ -338,6 +343,27 @@ upload routes are feature 7a's; invoice PDFs are written here as the merchant's 
 
 The relay tick: `outbox-relay-tick`, every second, queue `outbox-relay`, job `tick` (processor `OutboxRelayProcessor`). Listed
 in `docs/queues.md`. The webhook deliveries (7b) and the notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
+Decision 055 adds `outbox_purge` (above) and `lost_work_reconcile` (below).
+
+### Lost work (`lost-work/`, decision 055)
+
+Work whose queue job was lost (a queue Redis that lost its data, a job removed by hand) is asked for again. The owning modules register
+a pass each on `LostWorkRegistry` (provided by the global `OutboxModule`, so a module that registers needs no new import) in
+`onModuleInit`; `LostWorkModule` (worker only) runs them in `lost_work_reconcile` (queue `maintenance`, every 5 minutes, scheduler
+`lost-work-reconcile`, processor `LostWorkReconcileProcessor`). Every pass plans read-only, then applies each item in its own transaction
+under the row's lock, after the same check is made again (a manual run beside a scheduled one changes nothing twice); a pass that throws
+does not stop the others, and the run then fails with one short error that names the kinds. A scheduled run that planned nothing writes
+no `job_runs` row; one that asked again, gave up or failed, and every manual run, is recorded (`processed` = requests + give-ups, `result`
+= checked, unknown, exhausted, requested and gaveUp per kind, and `unknown`). The rule (`lostWorkAction`, pure): jobs that cannot be read
+decide nothing; a live request (not handed over yet, or its job `outbox-<id>` waits, runs or is delayed: `OutboxRequests.inspect`) is
+waited for; a row with no request is left alone; a request younger than 10 minutes is waited for; after three automatic requests
+(`reconcile: true` in the payload) the kind gives up; otherwise a new event of the same type goes out. An event type no route names in the
+process reads as `unknown`.
+
+The platform's own pass, `WebhookDeliveryReconcilePass` (kind `webhook_deliveries`, in `WebhookDeliveryModule`), watches pending
+deliveries overdue by 10 minutes: a missing job `webhook-<delivery>-<attempt>` is added again (`WebhookDeliveries.ensureJobs`), a completed
+or failed job of that id is removed first, a waiting, active or delayed one is left. There is no give-up: the delivery's write is guarded
+by `status = 'pending' and attempt = n`, so adding the current attempt's job is always safe.
 
 ## Cache keys
 

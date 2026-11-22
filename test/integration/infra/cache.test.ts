@@ -3,10 +3,19 @@
 // prefix, version keys, values over 100 KB, hit/miss metrics, and the fallback to the loader while Redis is down.
 // Freshness is counted on the injected clock (decision 031), so TTLs and stale windows pass by moving a TestClock; what Redis
 // itself does with a TTL is asserted by reading it back (PTTL), never by waiting for it. The only real waits are the lock
-// tests, which are about the polling and the deadline of the cross-process lock.
+// tests, which are about the polling and the deadline of the cross-process lock, and the retry waits of invalidate() on a dead Redis
+// (decision 055: entries are sealed; a stale entry is served only inside the reader's window; invalidate() retries and never throws).
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { type CacheKey, CacheKeys, CacheService, MAX_CACHED_VALUE_BYTES } from '@src/infra/cache';
+import {
+  type CacheKey,
+  CacheKeys,
+  CacheService,
+  MAX_CACHED_VALUE_BYTES,
+  cacheMacKey,
+  openEntry,
+  sealEntry,
+} from '@src/infra/cache';
 import { MetricsService } from '@src/infra/metrics';
 import { RedisService } from '@src/infra/redis';
 import { TestClock } from '../../support/clock';
@@ -155,6 +164,30 @@ describe('getOrLoad', () => {
       expect(await cache.getOrLoad(key, 60, source.loader)).toBe(value);
       expect(source.state.calls, JSON.stringify(value)).toBe(1);
     }
+  });
+
+  it('ignores an entry that carries no valid seal and loads the source', async () => {
+    const macKey = cacheMacKey(harness.config.security.tokenPepper);
+    const far = clock.nowMs() + 3_600_000;
+    const decodeBefore = await metrics('cache_errors_total', { family: FAMILY, operation: 'decode' });
+    const macBefore = await metrics('cache_errors_total', { family: FAMILY, operation: 'mac' });
+    // The previous release's JSON envelope, then an entry sealed with another secret.
+    const texts = (key: CacheKey) => [
+      `{"v":"planted","f":${far}}`,
+      sealEntry(cacheMacKey('another secret of at least 32 characters, not ours'), key, 'planted', far),
+    ];
+    let calls = 0;
+    for (const index of [0, 1]) {
+      const key = newKey();
+      await redis.cache.set(key, texts(key)[index]!, 'PX', 60_000);
+      const value = await cache.getOrLoad(key, 60, () => Promise.resolve(`from the source ${++calls}`));
+      expect(value).toBe(`from the source ${calls}`);
+      // The stored text was replaced by one this process sealed.
+      expect(openEntry(macKey, key, (await redis.cache.get(key)) ?? '')).toMatchObject({ value });
+    }
+    expect(calls).toBe(2);
+    expect(await metrics('cache_errors_total', { family: FAMILY, operation: 'decode' })).toBe(decodeBefore + 1);
+    expect(await metrics('cache_errors_total', { family: FAMILY, operation: 'mac' })).toBe(macBefore + 1);
   });
 
   it('treats an unreadable entry as a miss and overwrites it', async () => {
@@ -363,6 +396,17 @@ describe('stale-while-revalidate', () => {
     expect(calls).toBeGreaterThanOrEqual(2);
   });
 
+  it('never serves a stale entry beyond its own stale window', async () => {
+    const key = newKey();
+    const macKey = cacheMacKey(harness.config.security.tokenPepper);
+    // Sealed by this process, but stale for 400 s, and kept by Redis for 10 minutes: the reader's window is 300 s.
+    await redis.cache.set(key, sealEntry(macKey, key, 'old', clock.nowMs() - 400_000), 'PX', 600_000);
+    const source = counted('new');
+    expect(await cache.getOrLoad(key, 60, source.loader, { staleWhileRevalidate: 300 })).toBe('new');
+    // The loader ran in the call, not in the background.
+    expect(source.state.calls).toBe(1);
+  });
+
   it('without the option an expired entry is a plain miss', async () => {
     const key = newKey();
     const source = counted('v');
@@ -432,6 +476,7 @@ describe('deleting', () => {
     const inGroup = Array.from({ length: 1_200 }, (_, i) => newKey(`${group}-${i}`));
     const outside = [newKey(), newKey()];
     const pipeline = redis.cache.pipeline();
+    // Filler values: what is stored does not matter to a delete.
     for (const key of [...inGroup, ...outside]) pipeline.set(key, '{"v":1,"f":9999999999999}', 'PX', 60_000);
     await pipeline.exec();
     const removed = await cache.delByPrefix(keys.prefix('infra', 'test', group));
@@ -453,6 +498,33 @@ describe('deleting', () => {
     ]) {
       await expectRejection(cache.delByPrefix(bad as never), RangeError, bad);
     }
+  });
+});
+
+describe('invalidate (decision 055)', () => {
+  it('deletes the keys and retries a delete that failed once', async () => {
+    const key = newKey();
+    await cache.getOrLoad(key, 60, () => Promise.resolve('cached'));
+    expect(await redis.cache.exists(key)).toBe(1);
+    const original = redis.cache.unlink.bind(redis.cache);
+    let calls = 0;
+    const patched = (...args: Parameters<typeof original>) => {
+      calls += 1;
+      return calls === 1 ? Promise.reject(new Error('connection reset')) : original(...args);
+    };
+    (redis.cache as unknown as { unlink: unknown }).unlink = patched;
+    try {
+      expect(await cache.invalidate(key)).toBe(true);
+    } finally {
+      (redis.cache as unknown as { unlink: unknown }).unlink = original;
+    }
+    expect(calls).toBe(2);
+    expect(await redis.cache.exists(key)).toBe(0);
+  });
+
+  it('answers true for no key and for keys that do not exist', async () => {
+    expect(await cache.invalidate()).toBe(true);
+    expect(await cache.invalidate(newKey(), newKey())).toBe(true);
   });
 });
 
@@ -550,6 +622,33 @@ describe('while the cache Redis is down', () => {
       const two = await service.versioned('catalog', base);
       expect(one).not.toBe(two);
       expect(one.startsWith(`${base}:v`)).toBe(true);
+    } finally {
+      await down.close();
+    }
+  });
+
+  it('invalidate() on a Redis that does not answer resolves false, counts the failure and writes one error line', async () => {
+    const down = await downHarness();
+    try {
+      const service = down.get(CacheService);
+      const key = (down.get(CacheKeys).keyspace + `infra:test:secret-${randomUUID()}`) as CacheKey;
+      const before = metricValue(await down.get(MetricsService).render(), 'cache_errors_total', {
+        family: FAMILY,
+        operation: 'invalidate',
+      });
+      down.logger.lines.length = 0;
+      expect(await service.invalidate(key)).toBe(false);
+      const lines = down.logger.lines.filter((line) => line.includes('Cache invalidation failed'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toStartWith('error ');
+      expect(lines[0]).toContain('after 3 attempts (1 key(s))');
+      expect(lines[0]).not.toContain(key);
+      expect(lines[0]).not.toContain('secret-');
+      const after = metricValue(await down.get(MetricsService).render(), 'cache_errors_total', {
+        family: FAMILY,
+        operation: 'invalidate',
+      });
+      expect(after).toBe(before + 1);
     } finally {
       await down.close();
     }

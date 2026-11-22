@@ -237,6 +237,44 @@ export async function lockLiveRun(db: DbExecutor, supplierId: number): Promise<Q
 }
 
 /**
+ * Lists the runs that wait for their worker: `queued`.
+ *
+ * Why: decision 055: the lost-work reconcile asks again for the job of a queued run whose job was lost.
+ *
+ * @param db the database or a transaction
+ * @param limit the most runs returned
+ * @returns the queued runs, by id
+ */
+export async function queuedRuns(db: DbExecutor, limit: number): Promise<QuickAddRunRecord[]> {
+  const rows = await db
+    .select()
+    .from(supplierImportRuns)
+    .where(eq(supplierImportRuns.status, 'queued'))
+    .orderBy(asc(supplierImportRuns.id))
+    .limit(limit);
+  return rows.map(toRunRecord);
+}
+
+/**
+ * Locks a run while it is still `queued`.
+ *
+ * Why: decision 055: the reconcile writes its new request only for a run that is still queued, under the row's lock.
+ *
+ * @param tx the reconcile's transaction
+ * @param runId the run
+ * @returns the run, or `undefined` when it is no longer queued
+ */
+export async function lockQueuedRun(tx: DbExecutor, runId: number): Promise<QuickAddRunRecord | undefined> {
+  const [row] = await tx
+    .select()
+    .from(supplierImportRuns)
+    .where(and(eq(supplierImportRuns.id, runId), eq(supplierImportRuns.status, 'queued')))
+    .limit(1)
+    .for('update');
+  return row ? toRunRecord(row) : undefined;
+}
+
+/**
  * Closes a live run as failed.
  *
  * Why: a stalled run is closed by the next start (`STALLED_ERROR`), and an unexpected error closes the run it hit.

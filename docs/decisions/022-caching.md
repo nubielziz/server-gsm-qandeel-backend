@@ -15,3 +15,8 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** Hot reads (Dhru `imeiservicelist`, price lists, settings, permissions, IP rules) stay off
 Postgres without risking stale money decisions.
+
+Amended by decision 055: every entry is sealed (an HMAC over the key, the kind, the freshness time and the value, with a key derived from
+`TOKEN_PEPPER`); an entry without a valid seal is a miss. A stale entry is served only inside the reader's `staleWhileRevalidate` window.
+The session and API key lookups check that a cached view belongs to the presented credential. Invalidations that follow a security change
+use `CacheService.invalidate` (three tries, then an error line; it never throws).

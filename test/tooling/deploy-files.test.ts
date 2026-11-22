@@ -109,7 +109,20 @@ describe('deploy/compose.prod.yaml', () => {
     for (const name of ['api', 'worker'])
       expect(service(name).depends_on?.typesense, name).toEqual({ condition: 'service_started' });
     expect(Object.keys(service('api').environment ?? {})).toEqual(['TYPESENSE_SEARCH_KEY']);
-    expect(Object.keys(service('worker').environment ?? {})).toEqual(['TYPESENSE_INDEXER_KEY']);
+    expect(Object.keys(service('worker').environment ?? {})).toEqual([
+      'TYPESENSE_INDEXER_KEY',
+      'DATABASE_STATEMENT_TIMEOUT_MS',
+      'DATABASE_LOCK_TIMEOUT_MS',
+    ]);
+  });
+
+  it('gives the worker its own database time limits; the API keeps the defaults (decision 055)', () => {
+    expect(service('worker').environment).toMatchObject({
+      DATABASE_STATEMENT_TIMEOUT_MS: '300000',
+      DATABASE_LOCK_TIMEOUT_MS: '30000',
+    });
+    expect(service('api').environment ?? {}).not.toHaveProperty('DATABASE_STATEMENT_TIMEOUT_MS');
+    expect(service('migrate').environment ?? {}).not.toHaveProperty('DATABASE_STATEMENT_TIMEOUT_MS');
   });
 
   it('pins every image by tag and never uses latest', () => {

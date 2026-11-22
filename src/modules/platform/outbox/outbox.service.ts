@@ -90,7 +90,7 @@ export class OutboxService {
    * @param aggregateType the aggregate of the events
    * @param aggregateId the id of the aggregate row
    * @param limit the most events returned (default 10)
-   * @returns id, creation time and relay time, newest first; writes nothing
+   * @returns id, creation time, relay time and payload (without `meta`), newest first; writes nothing
    */
   recentEvents(
     db: DbExecutor,

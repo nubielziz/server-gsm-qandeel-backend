@@ -78,6 +78,32 @@ export { OutboxRelay, RELAY_BATCH_SIZE } from './outbox/outbox-relay';
 export type { RelayResult } from './outbox/outbox-relay';
 export { OutboxRouteRegistry } from './outbox/outbox-routes';
 export { OutboxService } from './outbox/outbox.service';
+// Decision 055: the outbox purge, and the lost-work reconcile with the registry its passes use.
+export {
+  OUTBOX_PURGE_BATCH,
+  OUTBOX_PURGE_MAX_BATCHES,
+  OUTBOX_RETENTION_DAYS,
+  OutboxPurge,
+} from './outbox/outbox-purge';
+export { OUTBOX_PURGE_JOB, OutboxPurgeProcessor } from './outbox/outbox-purge.processor';
+export { OUTBOX_PURGE_SCHEDULER } from './outbox/outbox-relay.module';
+export { LostWorkRegistry } from './lost-work/lost-work.registry';
+export { LOST_WORK_RECONCILE_SCHEDULER, LostWorkModule } from './lost-work/lost-work.module';
+export { LOST_WORK_RECONCILE_JOB, LostWorkReconcileProcessor } from './lost-work/lost-work-reconcile.processor';
+export { LostWorkReconcile, applyLostWorkItems, hasWork } from './lost-work/lost-work-reconcile';
+export type { LostWorkPlans, LostWorkResult } from './lost-work/lost-work-reconcile';
+export { LIVE_JOB_STATES, OutboxRequests } from './lost-work/outbox-requests';
+export type { OutboxRequestInfo } from './lost-work/outbox-requests';
+export { LOST_AFTER_MS, MAX_RECONCILE_REQUESTS, lostWorkAction } from './lost-work/lost-work-rules';
+export type { LostWorkAction, OutboxRequestState } from './lost-work/lost-work-rules';
+export type {
+  LostWorkApplied,
+  LostWorkContext,
+  LostWorkCounts,
+  LostWorkItem,
+  LostWorkPass,
+  LostWorkPlan,
+} from './lost-work/lost-work.types';
 export type {
   OutboxBacklog,
   OutboxEventInput,

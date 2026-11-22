@@ -7,6 +7,7 @@ import {
   COMPLETED_JOB_MAX_AGE_SECONDS,
   COMPLETED_JOB_MAX_COUNT,
   FAILED_JOB_MAX_AGE_SECONDS,
+  FAILED_JOB_MAX_COUNT,
   QUEUES,
   QUEUE_NAMES,
   defaultJobOptions,
@@ -93,14 +94,15 @@ describe('QUEUES', () => {
 });
 
 describe('defaultJobOptions', () => {
-  it('keeps completed jobs 24 hours (at most 10 000) and failed jobs 14 days', () => {
+  it('keeps completed jobs 24 hours (at most 10 000) and failed jobs 14 days (at most 10 000, decision 055)', () => {
     expect(COMPLETED_JOB_MAX_AGE_SECONDS).toBe(24 * 3600);
     expect(COMPLETED_JOB_MAX_COUNT).toBe(10_000);
     expect(FAILED_JOB_MAX_AGE_SECONDS).toBe(14 * 24 * 3600);
+    expect(FAILED_JOB_MAX_COUNT).toBe(10_000);
     for (const name of QUEUE_NAMES) {
       const options = defaultJobOptions(name);
       expect(options.removeOnComplete, name).toEqual({ age: 86_400, count: 10_000 });
-      expect(options.removeOnFail, name).toEqual({ age: 1_209_600 });
+      expect(options.removeOnFail, name).toEqual({ age: 1_209_600, count: 10_000 });
     }
   });
 

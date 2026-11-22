@@ -609,7 +609,8 @@ describe('the reports that read more than once', () => {
         // One transaction for the whole report, asked for as a read-only snapshot (sessions and audit use their own calls).
         const reads = spy.mock.calls.filter(([, options]) => options?.isolation === 'repeatable read');
         expect(reads).toHaveLength(1);
-        expect(reads[0]![1]).toEqual({ isolation: 'repeatable read', readOnly: true });
+        // Decision 055: the report raises its statement limit for its own transaction.
+        expect(reads[0]![1]).toEqual({ isolation: 'repeatable read', readOnly: true, statementTimeoutMs: 120_000 });
       }
     } finally {
       spy.mockRestore();

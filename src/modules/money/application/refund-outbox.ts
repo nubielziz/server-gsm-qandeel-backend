@@ -13,8 +13,8 @@ export const REFUND_PROCESS_EVENT = 'refund.process';
  * transaction; the approval writes a row in the same commit and the worker's job does the call, with an
  * idempotency key so a retry never refunds twice. The payload is the record's id only.
  *
- * Side effects: registers the event type with the `maintenance` queue at boot; `refund` inserts one `outbox_events` row on the
- * caller's transaction.
+ * Side effects: registers the event type with the `maintenance` queue at boot; `refund` and `refundAgain` insert one `outbox_events` row
+ * on the caller's transaction.
  *
  * @see docs/queues.md (outbox event types)
  */
@@ -42,6 +42,24 @@ export class RefundOutbox implements OnModuleInit {
       aggregateType: 'refunds',
       aggregateId: refundId,
       payload: { refundId },
+    });
+  }
+
+  /**
+   * Asks again for the gateway call of a refund whose job was lost.
+   *
+   * Why: decision 055: the lost-work reconcile writes a new event (never re-opens the old one), marked `reconcile: true` so the
+   * automatic requests can be counted; the job reads only `refundId` and sends under the refund's current idempotency key.
+   *
+   * @param tx the reconcile's transaction, holding the refund row
+   * @param refundId the refund
+   */
+  async refundAgain(tx: DbExecutor, refundId: number): Promise<void> {
+    await this.outbox.add(tx, {
+      type: REFUND_PROCESS_EVENT,
+      aggregateType: 'refunds',
+      aggregateId: refundId,
+      payload: { refundId, reconcile: true },
     });
   }
 }

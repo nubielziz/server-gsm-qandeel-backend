@@ -1,6 +1,7 @@
-// ApiKeyDirectory: finds a merchant API key by the key a caller presents, through the cache (decisions 018, 019, 022), records its
+// ApiKeyDirectory: finds a merchant API key by the key a caller presents, through the cache (decisions 018, 019, 022, 055), records its
 // use at most once a minute, and drops the cached view when the key or its merchant changes.
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { LogThrottle } from '../../../../../common/log-throttle';
 import { CacheKeys, CacheService } from '../../../../../infra/cache';
 import { TokenService } from '../../../../../infra/crypto';
 import { DbService, type TransactionContext } from '../../../../../infra/db';
@@ -27,15 +28,19 @@ const KEY_SHAPE = /^[\x21-\x7e]{16,256}$/;
  *
  * Why: REST v1 and Dhru authenticate every request with a key (decision 018), so the lookup must not cost a query each time. The
  * cached view also carries the merchant's status; the features that change a key or a merchant call `invalidate` /
- * `invalidateClient` after their commit, so a revoke or a suspension applies on the next request.
+ * `invalidateClient` after their commit, so a revoke or a suspension applies on the next request. A cached view is used only when it
+ * belongs to the presented key (decision 055).
  *
- * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}`; writes
- * `api_keys.last_used_at` / `last_used_ip`.
+ * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}` (an invalidation is retried
+ * and reported when Redis fails, decision 055); writes `api_keys.last_used_at` / `last_used_ip`.
  *
  * @see docs/cache-keys.md
  */
 @Injectable()
 export class ApiKeyDirectory {
+  private readonly logger = new Logger(ApiKeyDirectory.name);
+  private readonly throttle = new LogThrottle(60_000);
+
   constructor(
     private readonly db: DbService,
     private readonly cache: CacheService,
@@ -56,21 +61,35 @@ export class ApiKeyDirectory {
   /**
    * Finds the key a caller presented.
    *
+   * Why: the view is used only when it belongs to the presented key (decision 055): a cached view whose key hash is another one is
+   * refused and deleted.
+   *
+   * Side effects: on a view that does not belong to the key, deletes its cache key (best effort) and logs one warning a minute.
+   *
    * @param key the key as sent (`Authorization: Bearer ...` or Dhru `apiaccesskey`)
-   * @returns the view, or `undefined` for an unknown key or text that cannot be a key. Revoked and expired keys are returned:
-   *   judge them with `checkApiKey`. The view can be up to a minute old.
+   * @returns the view, or `undefined` for an unknown key, text that cannot be a key, or a cached view of another key. Revoked and
+   *   expired keys are returned: judge them with `checkApiKey`. The view can be up to a minute old.
    */
   async findByKey(key: string): Promise<ApiKeyView | undefined> {
     const hash = this.hashOf(key);
     if (hash === undefined) return undefined;
+    const cacheKey = this.keys.apiKey(hash);
     const view = await this.cache.getOrLoad(
-      this.keys.apiKey(hash),
+      cacheKey,
       API_KEY_CACHE_TTL_SECONDS,
       () => findApiKeyByHash(this.db.db, hash),
       { negativeTtlSeconds: UNKNOWN_API_KEY_TTL_SECONDS },
     );
     // A cached "nothing" comes back as null.
-    return view ?? undefined;
+    if (!view) return undefined;
+    if (!this.tokens.equals(view.keyHash, hash)) {
+      if (this.throttle.attempt('binding')) {
+        this.logger.warn('A cached API key view did not belong to the key it was stored for; it was ignored.');
+      }
+      await this.cache.del(cacheKey).catch(() => undefined);
+      return undefined;
+    }
+    return view;
   }
 
   /**
@@ -99,16 +118,16 @@ export class ApiKeyDirectory {
    * Why: revoking a key, changing its scopes or allowed IPs must apply at once, not after the minute the view lives
    * (`DELETE /admin/api-keys/:id`: "effective at once").
    *
-   * Side effects: deletes the cache keys (after the commit when `work` is given).
+   * Side effects: deletes the cache keys (after the commit when `work` is given). Never throws: a failed delete is retried and
+   * reported (decision 055).
    *
    * @param keyHashes the `api_keys.key_hash` values of the keys that changed
    * @param work the caller's transaction context, if it has one
-   * @throws {Error} when Redis fails and no `work` is given
    */
   async invalidate(keyHashes: readonly string[], work?: Pick<TransactionContext, 'afterCommit'>): Promise<void> {
     if (keyHashes.length === 0) return;
     const forget = async (): Promise<void> => {
-      await this.cache.del(...keyHashes.map((hash) => this.keys.apiKey(hash)));
+      await this.cache.invalidate(...keyHashes.map((hash) => this.keys.apiKey(hash)));
     };
     if (work) work.afterCommit(forget);
     else await forget();
@@ -120,11 +139,11 @@ export class ApiKeyDirectory {
    * Why: the view holds the merchant's status, so suspending, reactivating or approving a merchant must clear it, or the old
    * status would be served for up to a minute.
    *
-   * Side effects: reads the merchant's key hashes, then deletes their cache keys (after the commit when `work` is given).
+   * Side effects: reads the merchant's key hashes, then deletes their cache keys (after the commit when `work` is given). Never throws
+   * for Redis: a failed delete is retried and reported (decision 055).
    *
    * @param clientId the merchant id
    * @param work the caller's transaction context, if it has one
-   * @throws {Error} when Redis fails and no `work` is given
    */
   async invalidateClient(clientId: number, work?: Pick<TransactionContext, 'afterCommit' | 'tx'>): Promise<void> {
     const hashes = await liveKeyHashesOf(work?.tx ?? this.db.db, clientId);

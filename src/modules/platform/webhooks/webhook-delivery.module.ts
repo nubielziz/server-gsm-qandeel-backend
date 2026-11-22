@@ -4,18 +4,20 @@
 import { Module } from '@nestjs/common';
 import { MerchantWebhooksProcessor } from './merchant-webhooks.processor';
 import { WebhookDeliveries } from './webhook-deliveries';
+import { WebhookDeliveryReconcilePass } from './webhook-delivery-reconcile';
 import { WebhookEventsModule } from './webhook-events.module';
 import { WebhookFanOut } from './webhook-fan-out';
 
 /**
- * Provides {@link WebhookDeliveries}, {@link WebhookFanOut} and the queue's processor.
+ * Provides {@link WebhookDeliveries}, {@link WebhookFanOut}, the queue's processor and the lost-work pass of deliveries (decision 055).
  *
  * Why: decision 020: the worker turns each merchant event into deliveries and sends them. Only the worker starts a BullMQ worker
- * for the processor; the API loads the class and never runs it.
+ * for the processor; the API loads the class and never runs it (the pass registers in both processes; only the worker runs the
+ * reconcile).
  */
 @Module({
   imports: [WebhookEventsModule],
-  providers: [WebhookDeliveries, WebhookFanOut, MerchantWebhooksProcessor],
+  providers: [WebhookDeliveries, WebhookFanOut, MerchantWebhooksProcessor, WebhookDeliveryReconcilePass],
   exports: [WebhookDeliveries],
 })
 export class WebhookDeliveryModule {}

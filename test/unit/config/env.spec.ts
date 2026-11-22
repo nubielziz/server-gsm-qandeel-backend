@@ -898,6 +898,63 @@ describe('parseEncryptionKeys', () => {
   });
 });
 
+describe('DATABASE_*_TIMEOUT_MS (decision 055)', () => {
+  it('reads the three database time limits, defaults to 15 s, 5 s and 60 s, and to none under NODE_ENV=test', () => {
+    expect(parseEnv({}).database.timeouts).toEqual({ statementMs: 15_000, lockMs: 5_000, idleInTransactionMs: 60_000 });
+    expect(parseEnv(production()).database.timeouts).toEqual({
+      statementMs: 15_000,
+      lockMs: 5_000,
+      idleInTransactionMs: 60_000,
+    });
+    expect(parseEnv({ NODE_ENV: 'test' }).database.timeouts).toEqual({
+      statementMs: 0,
+      lockMs: 0,
+      idleInTransactionMs: 0,
+    });
+    expect(
+      parseEnv({
+        DATABASE_STATEMENT_TIMEOUT_MS: '300000',
+        DATABASE_LOCK_TIMEOUT_MS: '30000',
+        DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: '120000',
+      }).database.timeouts,
+    ).toEqual({ statementMs: 300_000, lockMs: 30_000, idleInTransactionMs: 120_000 });
+    // A limit test sets its own under NODE_ENV=test.
+    expect(parseEnv({ NODE_ENV: 'test', DATABASE_LOCK_TIMEOUT_MS: '1200' }).database.timeouts.lockMs).toBe(1_200);
+  });
+
+  it('refuses a limit between 1 and 999 ms and accepts 0', () => {
+    const message = 'must be 0 (no limit) or at least 1000 milliseconds';
+    expect(
+      issuesOf({
+        DATABASE_STATEMENT_TIMEOUT_MS: '500',
+        DATABASE_LOCK_TIMEOUT_MS: '1',
+        DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: '999',
+      }),
+    ).toEqual([
+      { variable: 'DATABASE_STATEMENT_TIMEOUT_MS', message },
+      { variable: 'DATABASE_LOCK_TIMEOUT_MS', message },
+      { variable: 'DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS', message },
+    ]);
+    expect(
+      parseEnv({
+        DATABASE_STATEMENT_TIMEOUT_MS: '0',
+        DATABASE_LOCK_TIMEOUT_MS: '0',
+        DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS: '1000',
+      }).database.timeouts,
+    ).toEqual({ statementMs: 0, lockMs: 0, idleInTransactionMs: 1_000 });
+    expect(issuesOf({ DATABASE_LOCK_TIMEOUT_MS: '600001' }).map((issue) => issue.variable)).toEqual([
+      'DATABASE_LOCK_TIMEOUT_MS',
+    ]);
+  });
+
+  it('shows the limits in the boot summary', () => {
+    const summary = summarizeConfig(parseEnv({ DATABASE_STATEMENT_TIMEOUT_MS: '20000' })) as {
+      database: { timeouts: unknown };
+    };
+    expect(summary.database.timeouts).toEqual({ statementMs: 20_000, lockMs: 5_000, idleInTransactionMs: 60_000 });
+  });
+});
+
 describe('summarizeConfig', () => {
   it('never contains secrets, passwords or key material', () => {
     const config = parseEnv({
