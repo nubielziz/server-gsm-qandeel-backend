@@ -58,8 +58,16 @@ export interface AppConfig {
     /** Proxies trusted for `X-Forwarded-*` (client IP, protocol). */
     readonly trustProxy: TrustProxy;
     readonly bodyLimitBytes: number;
-    /** Exact origins allowed by CORS (scheme + host + optional port, no path). Empty = no cross-origin access. */
-    readonly corsOrigins: readonly string[];
+    /**
+     * Exact browser origins of the admin console (`CONSOLE_ORIGINS`): CORS on `/admin` and `/reference` and the Origin checks of the
+     * staff surface (decision 045). Empty = none.
+     */
+    readonly consoleOrigins: readonly string[];
+    /**
+     * Exact browser origins of the storefront and the merchant portal (`SHOP_ORIGINS`): CORS on `/client` and `/store/v1` and the Origin
+     * checks of those surfaces (decision 045). Empty = none.
+     */
+    readonly shopOrigins: readonly string[];
     /** Base of the problem+json `type` URI, without a trailing slash (decision 028). */
     readonly errorsBaseUrl: string;
     /** Base URL of the merchant portal, without a trailing slash; links in invitation emails are built from it. */
@@ -196,6 +204,12 @@ export interface AppConfig {
     /** When this build went live (ISO time), or `undefined` when the deploy did not say. */
     readonly deployedAt: string | undefined;
   };
+  /**
+   * Settings that are accepted but should change; the API and the worker log one warning line per entry at boot (decision 045).
+   * Entries: the deprecated `CORS_ORIGINS` outside production; in production a `CONSOLE_ORIGINS` or `SHOP_ORIGINS` that leaves out
+   * the origin of its own page(s), and an origin that both lists share.
+   */
+  readonly warnings: readonly ConfigIssue[];
 }
 
 /**
@@ -252,8 +266,10 @@ export const DEV_DEFAULTS = {
   portalBaseUrl: 'http://localhost:5174',
   consoleBaseUrl: 'http://localhost:5173',
   storeBaseUrl: 'http://localhost:5175',
-  // The console on 5173 and the merchant portal on 5174 (the origin of `portalBaseUrl`); development only: production and tests default to none.
-  corsOrigins: 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174',
+  // The console on 5173 (decision 045; development only: production derives the lists from the base URLs, tests default to none).
+  consoleOrigins: 'http://localhost:5173,http://127.0.0.1:5173',
+  // The merchant portal on 5174 (the origin of `portalBaseUrl`) and the storefront on 5175, which also serves the portal under /merchant.
+  shopOrigins: 'http://localhost:5174,http://localhost:5175',
   // The Mailpit of compose.yaml (decision 033): SMTP on 1025, a web UI on 8025 with every message.
   mailSmtpUrl: 'smtp://localhost:1025',
   mailFrom: 'IMEI-HUB <noreply@gsm.local>',
@@ -303,6 +319,8 @@ const rawSchema = z.object({
   TRUST_PROXY: z.string().optional(),
   BODY_LIMIT_BYTES: int(1024, 100 * 1024 * 1024).optional(),
   CORS_ORIGINS: z.string().optional(),
+  CONSOLE_ORIGINS: z.string().optional(),
+  SHOP_ORIGINS: z.string().optional(),
   ERRORS_BASE_URL: httpUrl.optional(),
   PORTAL_BASE_URL: httpUrl.optional(),
   CONSOLE_BASE_URL: httpUrl.optional(),
@@ -455,7 +473,8 @@ export function parseTrustProxy(value: string | undefined): TrustProxyResult {
 }
 
 /**
- * Parses `CORS_ORIGINS`: a comma list of exact origins (`https://console.example.com`, `http://localhost:5173`).
+ * Parses a list of exact browser origins (`CONSOLE_ORIGINS`, `SHOP_ORIGINS` and the deprecated `CORS_ORIGINS`):
+ * `https://console.example.com, http://localhost:5173`.
  *
  * Why: credentials are allowed (ALIGNMENT § 6), so wildcards, paths and trailing slashes are refused.
  *
@@ -571,6 +590,10 @@ export function parseEncryptionKeys(
   return { ok: true, value: keys };
 }
 
+/** Why: decision 045 replaced the one list of browser origins with one list per audience; production refuses the old setting. */
+const CORS_ORIGINS_REFUSED =
+  'is not read in production: set CONSOLE_ORIGINS (the admin console) and SHOP_ORIGINS (the storefront and the merchant portal), or remove it to derive both from CONSOLE_BASE_URL, STORE_BASE_URL and PORTAL_BASE_URL';
+
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value) && !Buffer.isBuffer(value)) {
     Object.freeze(value);
@@ -601,10 +624,13 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     if (production && given === devValue) fail(variable, 'must not use the development default in production');
   };
 
+  const warnings: ConfigIssue[] = [];
+  const warn = (variable: string, message: string) => {
+    warnings.push({ variable, message });
+  };
+
   const trust = parseTrustProxy(raw.TRUST_PROXY);
   if (!trust.ok) fail('TRUST_PROXY', trust.message);
-  const cors = parseCorsOrigins(raw.CORS_ORIGINS ?? (production || env === 'test' ? '' : DEV_DEFAULTS.corsOrigins));
-  if (!cors.ok) fail('CORS_ORIGINS', cors.message);
 
   const keysText = withDefault(
     'ENCRYPTION_KEYS',
@@ -658,6 +684,109 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   );
   // The customer links are `<STORE_BASE_URL>/sign-in?token=...` and `/set-password?token=...` (feature 14b).
   const storeBaseUrl = withDefault('STORE_BASE_URL', raw.STORE_BASE_URL, DEV_DEFAULTS.storeBaseUrl).replace(/\/+$/, '');
+  // Decision 045: production serves every browser page and every emailed link over https.
+  if (production) {
+    for (const [variable, given] of [
+      ['ERRORS_BASE_URL', raw.ERRORS_BASE_URL],
+      ['PORTAL_BASE_URL', raw.PORTAL_BASE_URL],
+      ['CONSOLE_BASE_URL', raw.CONSOLE_BASE_URL],
+      ['STORE_BASE_URL', raw.STORE_BASE_URL],
+    ] as const) {
+      if (given !== undefined && new URL(given).protocol !== 'https:')
+        fail(variable, 'must be an https URL in production');
+    }
+  }
+  // Decision 045: one list of browser origins per audience. Outside production the deprecated CORS_ORIGINS stands in for a list
+  // that is not set (with a boot warning); production refuses it and derives a list that is not set from the base URLs.
+  const originList = (variable: string, text: string): readonly string[] => {
+    const parsed = parseCorsOrigins(text);
+    if (!parsed.ok) fail(variable, parsed.message);
+    return parsed.ok ? parsed.value : [];
+  };
+  if (production && raw.CORS_ORIGINS !== undefined) fail('CORS_ORIGINS', CORS_ORIGINS_REFUSED);
+  const legacyOrigins =
+    production || raw.CORS_ORIGINS === undefined ? undefined : originList('CORS_ORIGINS', raw.CORS_ORIGINS);
+  const filledByLegacy: string[] = [];
+  const audienceOrigins = (
+    variable: 'CONSOLE_ORIGINS' | 'SHOP_ORIGINS',
+    given: string | undefined,
+    derived: () => readonly string[],
+    devDefault: string,
+  ): readonly string[] => {
+    if (given !== undefined) {
+      const list = originList(variable, given);
+      if (production && list.some((origin) => new URL(origin).protocol !== 'https:')) {
+        fail(variable, 'must list https origins only in production');
+      }
+      return list;
+    }
+    if (legacyOrigins !== undefined) {
+      filledByLegacy.push(variable);
+      return legacyOrigins;
+    }
+    if (production) return derived();
+    return testing ? [] : originList(variable, devDefault);
+  };
+  const consoleOrigins = audienceOrigins(
+    'CONSOLE_ORIGINS',
+    raw.CONSOLE_ORIGINS,
+    () => [new URL(consoleBaseUrl).origin],
+    DEV_DEFAULTS.consoleOrigins,
+  );
+  const shopOrigins = audienceOrigins(
+    'SHOP_ORIGINS',
+    raw.SHOP_ORIGINS,
+    () => [...new Set([new URL(storeBaseUrl).origin, new URL(portalBaseUrl).origin])],
+    DEV_DEFAULTS.shopOrigins,
+  );
+  if (legacyOrigins !== undefined) {
+    warn(
+      'CORS_ORIGINS',
+      filledByLegacy.length > 0
+        ? `is deprecated and refused in production: it is read here as ${filledByLegacy.join(' and ')}; set CONSOLE_ORIGINS and SHOP_ORIGINS instead`
+        : 'is deprecated and refused in production: it is ignored because CONSOLE_ORIGINS and SHOP_ORIGINS are both set; remove it',
+    );
+  }
+  if (production) {
+    // A list that is given is used as it is (it replaces the derived one), so one that leaves out the origin of its own page
+    // refuses sign-in from that page. A warning, not a refusal: the list stays as given. Development and tests set short lists on purpose.
+    const leftOut = (
+      variable: 'CONSOLE_ORIGINS' | 'SHOP_ORIGINS',
+      given: string | undefined,
+      list: readonly string[],
+      pages: ReadonlyArray<readonly [string, string]>,
+    ) => {
+      if (given === undefined) return;
+      const missing = new Map<string, string[]>();
+      for (const [name, url] of pages) {
+        const origin = new URL(url).origin;
+        if (!list.includes(origin)) missing.set(origin, [...(missing.get(origin) ?? []), name]);
+      }
+      if (missing.size === 0) return;
+      const named = [...missing]
+        .map(([origin, names]) => `${origin} (the origin of ${names.join(' and ')})`)
+        .join(' and ');
+      warn(
+        variable,
+        `does not include ${named}: sign-in from ${missing.size === 1 ? 'that page' : 'those pages'} will be refused, because a list given here is used as it is and replaces the one derived from the base URLs; add it, or remove the line`,
+      );
+    };
+    leftOut('CONSOLE_ORIGINS', raw.CONSOLE_ORIGINS, consoleOrigins, [['CONSOLE_BASE_URL', consoleBaseUrl]]);
+    leftOut('SHOP_ORIGINS', raw.SHOP_ORIGINS, shopOrigins, [
+      ['STORE_BASE_URL', storeBaseUrl],
+      ['PORTAL_BASE_URL', portalBaseUrl],
+    ]);
+    // One origin per audience is the point of decision 045: a page of a shared origin passes the Origin checks of both surfaces.
+    const shared = consoleOrigins.filter((origin) => shopOrigins.includes(origin));
+    if (shared.length > 0) {
+      warn(
+        'CONSOLE_ORIGINS and SHOP_ORIGINS',
+        shared.length === 1
+          ? `share the origin ${shared[0]}: a page of that origin is trusted on both the staff and the shop surfaces; give each audience its own origin`
+          : `share the origins ${shared.join(' and ')}: a page of one of those origins is trusted on both the staff and the shop surfaces; give each audience its own origin`,
+      );
+    }
+  }
   const s3Endpoint = raw.S3_ENDPOINT ?? (production ? undefined : DEV_DEFAULTS.s3Endpoint);
   // Decision 034: production never runs the dummy verifier, which accepts a public test token.
   if (production && raw.TURNSTILE_SECRET_KEY === undefined) fail('TURNSTILE_SECRET_KEY', 'is required in production');
@@ -691,7 +820,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       port: raw.PORT ?? 3000,
       trustProxy: trust.ok ? trust.value : false,
       bodyLimitBytes: raw.BODY_LIMIT_BYTES ?? 1024 * 1024,
-      corsOrigins: cors.ok ? cors.value : [],
+      consoleOrigins,
+      shopOrigins,
       errorsBaseUrl,
       portalBaseUrl,
       consoleBaseUrl,
@@ -792,6 +922,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       commit: (raw.GIT_SHA ?? 'unknown').slice(0, 7),
       deployedAt: raw.DEPLOYED_AT,
     },
+    warnings,
   };
 }
 
@@ -908,7 +1039,8 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       port: config.http.port,
       trustProxy: config.http.trustProxy,
       bodyLimitBytes: config.http.bodyLimitBytes,
-      corsOrigins: config.http.corsOrigins,
+      consoleOrigins: config.http.consoleOrigins,
+      shopOrigins: config.http.shopOrigins,
       errorsBaseUrl: config.http.errorsBaseUrl,
       portalBaseUrl: config.http.portalBaseUrl,
       consoleBaseUrl: config.http.consoleBaseUrl,

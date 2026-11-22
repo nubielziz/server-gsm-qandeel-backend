@@ -55,7 +55,7 @@ export const exportCustomerData = defineRoute({
     'statement (`wallet`, staff reasons hidden). It works for an anonymized ' +
     'customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is ' +
     'audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the ' +
-    'request must come from the same site (`Sec-Fetch-Site: same-origin` or `same-site`, else an `Origin` that is one of the allowed ' +
+    'request must be started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s ' +
     'origins): anything else is `403 CSRF_FAILED`.',
   tags: ['customers'],
   surface: 'admin',

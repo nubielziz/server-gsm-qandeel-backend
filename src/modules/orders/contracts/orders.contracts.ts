@@ -103,14 +103,17 @@ export const exportOrders = defineRoute({
     'Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with ' +
     '`Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, ' +
     'cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is ' +
-    '`422` ("Too many rows (N); narrow the filters (max 100000)"). The file is streamed. Every export writes an audit row.',
+    '`422` ("Too many rows (N); narrow the filters (max 100000)"). The file is streamed. Every export writes an audit row. It is ' +
+    'answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the ' +
+    'console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'orders:read',
+  originCheck: true,
   query: z.record(z.string(), z.unknown()).pipe(STAFF_ORDER_QUERY),
   success: { status: 200, contentType: 'text/csv' },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED', 'CSRF_FAILED'],
 });
 
 /** `GET /admin/orders/:id`. */

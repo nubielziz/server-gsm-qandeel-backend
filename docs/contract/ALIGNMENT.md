@@ -43,9 +43,11 @@ Disagreements are B-entries; nothing is picked silently.
 - **Success statuses**: creates answer `201` with the created record; deletes `204`; actions answer `204` when the
   console expects no body, otherwise `200` with the documented body (`successStatus` per endpoint). The console accepts
   any 2xx, the contract fixes one.
-- **GETs never change state.** The one exception, `GET /admin/customers/:id/export` (closes the export request), sets the
-  contract flag `originCheck: true`: the CSRF guard also requires a same-site `Sec-Fetch-Site` or, when absent, an `Origin`
-  that is one of `CORS_ORIGINS` (`403 CSRF_FAILED` otherwise); the console sends no CSRF token on that GET.
+- **GETs never change state.** The exceptions are `GET /admin/customers/:id/export` (closes the export request) and the audited
+  downloads `GET /admin/orders/export` and `GET /admin/reports/client-statement/:clientId` (decision 045); they set the contract flag
+  `originCheck: true`: the CSRF guard requires `Sec-Fetch-Site: same-origin` or an `Origin` that is one of the console's origins
+  (`CONSOLE_ORIGINS`), else `403 CSRF_FAILED`; the console downloads them with `fetch` from its own origin and sends no CSRF token
+  on them.
 
 ## 2. Lists (simple-rest dialect)
 
@@ -96,7 +98,9 @@ Disagreements are B-entries; nothing is picked silently.
   SameSite=Lax, `Domain` from config so the console origin can read it; value = HMAC of the session (the merchant portal
   and the storefront use `csrf_token_client` and `csrf_token_store`, so apps on one domain do not overwrite each other's
   token). A mutation without a session on `/admin` or `/client` (sign-in, password set by token, register) sends no token and
-  is accepted only with an `Origin` header that is one of `CORS_ORIGINS` (a same-origin deployment lists its own origin too).
+  is accepted only with an `Origin` header that is one of the origins of its audience: `CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS`
+  on `/client` (production derives them from `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL`; decision 045). The
+  storefront's `POST /store/v1/auth/verify` and `/login` follow the same rule with the shop's origins.
   Cross-site deployments (different registrable domains): session cookie `SameSite=None; Secure` (not configurable yet:
   the cookies are `SameSite=Lax`), and the console relies on the `X-CSRF-Token` response header.
 - **Other surfaces** (decision 018): merchant portal `/client/auth/*` (optional TOTP, email verification, reset links),
@@ -135,11 +139,14 @@ Disagreements are B-entries; nothing is picked silently.
   on non-GET requests, cookies (`credentials: include`); no `Authorization`, no `Idempotency-Key` on admin calls.
 - It reads `x-total-count`, `X-Request-Id`, `Retry-After` (seconds or HTTP date), `X-CSRF-Token` (any response),
   `Content-Disposition` (`filename*=UTF-8''…` preferred).
-- CORS (when the console is another origin): exact configured origins, `Access-Control-Allow-Credentials: true`,
-  `Vary: Origin` on **every** response including errors (otherwise a 401 looks like a network error and never signs
-  out); preflight allows `GET, POST, PUT, PATCH, DELETE` and headers `Content-Type, X-CSRF-Token, Idempotency-Key,
-  Accept`, `Max-Age: 600`, answered before IP rules, rate limits, auth and CSRF; `Access-Control-Expose-Headers:
-  x-total-count, x-request-id, x-csrf-token, retry-after, content-disposition`.
+- CORS (decision 045; only when a page runs on another origin than the API, a development setup: production serves the console and
+  the shop from the API's own hosts): the exact origins of the route's audience, with `Access-Control-Allow-Credentials: true`: the
+  console's (`CONSOLE_ORIGINS`) on `/admin` and `/reference`, the shop's (`SHOP_ORIGINS`) on `/client` and `/store/v1`, none on the
+  machine routes; any other origin gets no CORS header. `Vary: Origin` on **every** response including errors (otherwise a 401 looks
+  like a network error and never signs out); the preflight of a listed origin allows `GET, POST, PUT, PATCH, DELETE` and headers
+  `Content-Type, X-CSRF-Token, Idempotency-Key, Accept`, `Max-Age: 600`, and is answered before IP rules, rate limits, auth and CSRF
+  (any other `OPTIONS` request is not a preflight and goes through the pipeline); `Access-Control-Expose-Headers: x-total-count,
+  x-request-id, x-csrf-token, retry-after, content-disposition`.
 - `Cache-Control: no-store` on `/admin/auth/*` and on any response carrying a secret (temporary passwords, TOTP
   secrets, new API keys).
 

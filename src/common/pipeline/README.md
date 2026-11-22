@@ -5,7 +5,7 @@ hooks, cheap and independent of the Nest guards, and they run in one explicit or
 
 | # | Stage (`PIPELINE_STAGES`) | Owner                                                      | Refusal                                              |
 | - | ------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
-| 0 | CORS preflight, request id | Nest's Fastify adapter, `registerRequestIdHooks`          | (answered first; a refusal below still has CORS headers) |
+| 0 | CORS (preflights from the origins of the path's surface, decision 045), request id | Nest's Fastify adapter, `registerRequestIdHooks`          | (a listed origin's preflight is answered first; a refusal below still has its CORS headers; any other `OPTIONS` request runs the stages) |
 | 1 | `ip-rules`                | identity: `src/modules/identity/security/ip-rules/`        | `403 IP_NOT_ALLOWED`                                 |
 | 2 | `maintenance`             | platform: `src/modules/platform/maintenance/`              | `503 MAINTENANCE` (Dhru envelope on `/api/index.php`) |
 | 3 | `rate-limit`              | rate-limit infrastructure: `src/infra/rate-limit/public-ip-limit.hook.ts` | `429 RATE_LIMITED` with `Retry-After` |

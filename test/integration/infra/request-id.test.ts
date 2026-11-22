@@ -53,7 +53,7 @@ describe('X-Request-Id', () => {
       await t.app.inject({ method: 'DELETE', url: '/t/items/9' }),
       await t.app.inject({
         method: 'OPTIONS',
-        url: '/t/items',
+        url: '/admin/t/secure',
         headers: { origin: 'https://console.example.com', 'access-control-request-method': 'POST' },
       }),
     ];

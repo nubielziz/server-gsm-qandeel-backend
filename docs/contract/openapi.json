@@ -46655,7 +46655,7 @@
     },
     "/admin/customers/{id}/export": {
       "get": {
-        "description": "A JSON file (`Content-Disposition: attachment; filename=\"customer-<id>.json\"`, never cached) with everything the shop holds about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout sessions, the support tickets with their public messages, the IMEI checks, the data requests and the store balance with its statement (`wallet`, staff reasons hidden). It works for an anonymized customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the request must come from the same site (`Sec-Fetch-Site: same-origin` or `same-site`, else an `Origin` that is one of the allowed origins): anything else is `403 CSRF_FAILED`.",
+        "description": "A JSON file (`Content-Disposition: attachment; filename=\"customer-<id>.json\"`, never cached) with everything the shop holds about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout sessions, the support tickets with their public messages, the IMEI checks, the data requests and the store balance with its statement (`wallet`, staff reasons hidden). It works for an anonymized customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the request must be started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins): anything else is `403 CSRF_FAILED`.",
         "operationId": "getAdminCustomersByIdExport",
         "parameters": [
           {
@@ -96012,7 +96012,7 @@
     },
     "/admin/orders/export": {
       "get": {
-        "description": "Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with `Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is `422` (\"Too many rows (N); narrow the filters (max 100000)\"). The file is streamed. Every export writes an audit row.",
+        "description": "Every order that matches the same filters, `q` and sort as `GET /admin/orders` (`_start` and `_end` are ignored) as `text/csv` with `Content-Disposition: attachment`. Columns: `id,created,channel,buyer,service,input,status,supplier,price,cost`; CRLF line ends, cells that start with `=`, `+`, `-` or `@` are written as text. The matching rows are counted first: more than 100,000 is `422` (\"Too many rows (N); narrow the filters (max 100000)\"). The file is streamed. Every export writes an audit row. It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.",
         "operationId": "getAdminOrdersExport",
         "parameters": [],
         "responses": {
@@ -96125,7 +96125,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to do this.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -96155,7 +96155,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "FORBIDDEN"
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -96199,6 +96200,17 @@
                       "status": 403,
                       "code": "FORBIDDEN",
                       "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -132154,7 +132166,7 @@
     },
     "/admin/reports/client-statement/{clientId}": {
       "get": {
-        "description": "A PDF (`application/pdf`, `Content-Disposition: attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\"` with the UTF-8 form, `Cache-Control: no-store`) made on the spot from the ledger, not stored. It shows the merchant (name, company, country), the period, the opening balance, the wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), the totals, the closing balance, the credit limit and the invoices issued in the period. Amounts are USD with 4 decimals. `from` and `to` are UTC days, both included; the default is the whole history (from the day of the first wallet line to today). Lines are ordered by ledger entry id, so the closing balance is the wallet balance. Without `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit `from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row (`exported statement of`).",
+        "description": "A PDF (`application/pdf`, `Content-Disposition: attachment; filename=\"statement-<clientId>-<from>-<to>.pdf\"` with the UTF-8 form, `Cache-Control: no-store`) made on the spot from the ledger, not stored. It shows the merchant (name, company, country), the period, the opening balance, the wallet lines oldest first (date, `JRN-<id>`, kind, memo, debit, credit, balance after), the totals, the closing balance, the credit limit and the invoices issued in the period. Amounts are USD with 4 decimals. `from` and `to` are UTC days, both included; the default is the whole history (from the day of the first wallet line to today). Lines are ordered by ledger entry id, so the closing balance is the wallet balance. Without `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit `from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row (`exported statement of`). It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.",
         "operationId": "getAdminReportsClientStatementByClientId",
         "parameters": [
           {
@@ -132311,7 +132323,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN: You do not have permission to do this.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -132341,7 +132353,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "FORBIDDEN"
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -132385,6 +132398,17 @@
                       "status": 403,
                       "code": "FORBIDDEN",
                       "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -173372,7 +173396,7 @@
     },
     "/admin/stream": {
       "get": {
-        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Same-site requests only (`Sec-Fetch-Site`). A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
+        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Only a request started by the page’s own site is answered: `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route’s audience (the console’s for `/admin`, the shop’s for `/client` and `/store/v1`); anything else is `403 CSRF_FAILED`. A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
         "operationId": "getAdminStream",
         "parameters": [
           {
@@ -234789,7 +234813,7 @@
     },
     "/client/stream": {
       "get": {
-        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Same-site requests only (`Sec-Fetch-Site`). A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
+        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Only a request started by the page’s own site is answered: `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route’s audience (the console’s for `/admin`, the shop’s for `/client` and `/store/v1`); anything else is `403 CSRF_FAILED`. A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
         "operationId": "getClientStream",
         "parameters": [
           {
@@ -244070,7 +244094,7 @@
     },
     "/store/v1/auth/login": {
       "post": {
-        "description": "Opens a session: a full one, or a `pending_password` one when the customer must change a temporary password first (`next` `password`: only `POST /store/v1/me/password` and logout work until then). One `401` answers an unknown email, a wrong password and an account with no password yet. A correct password on a suspended or blocked account is `403 ACCOUNT_SUSPENDED`. Five attempts per email and address in 15 minutes, and ten wrong passwords in a row lock the email (known or not, so the answer never shows who has an account) for 15 minutes: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`).",
+        "description": "Opens a session: a full one, or a `pending_password` one when the customer must change a temporary password first (`next` `password`: only `POST /store/v1/me/password` and logout work until then). One `401` answers an unknown email, a wrong password and an account with no password yet. A correct password on a suspended or blocked account is `403 ACCOUNT_SUSPENDED`. Five attempts per email and address in 15 minutes, and ten wrong passwords in a row lock the email (known or not, so the answer never shows who has an account) for 15 minutes: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
         "operationId": "postStoreV1AuthLogin",
         "parameters": [
           {
@@ -244245,7 +244269,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nTURNSTILE_FAILED: The anti-bot check failed.",
+            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.\nTURNSTILE_FAILED: The anti-bot check failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -244277,6 +244301,7 @@
                       "enum": [
                         "ACCOUNT_SUSPENDED",
                         "IP_NOT_ALLOWED",
+                        "CSRF_FAILED",
                         "TURNSTILE_FAILED"
                       ]
                     },
@@ -244332,6 +244357,17 @@
                       "status": 403,
                       "code": "IP_NOT_ALLOWED",
                       "detail": "Access from this network address is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   },
@@ -245951,7 +245987,7 @@
     },
     "/store/v1/auth/verify": {
       "post": {
-        "description": "Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details. A link that is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link sent after an email change works the same way.",
+        "description": "Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details. A link that is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link sent after an email change works the same way. Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
         "operationId": "postStoreV1AuthVerify",
         "parameters": [],
         "requestBody": {
@@ -246089,7 +246125,7 @@
             }
           },
           "403": {
-            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.",
+            "description": "IP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -246119,7 +246155,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "IP_NOT_ALLOWED"
+                        "IP_NOT_ALLOWED",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -246163,6 +246200,17 @@
                       "status": 403,
                       "code": "IP_NOT_ALLOWED",
                       "detail": "Access from this network address is not allowed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -256848,7 +256896,7 @@
     },
     "/store/v1/me/stream": {
       "get": {
-        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Same-site requests only (`Sec-Fetch-Site`). A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
+        "description": "A server-sent event stream (`text/event-stream`) of the signed-in person: `ready` first, `hb` every 15 seconds, `notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Only a request started by the page’s own site is answered: `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route’s audience (the console’s for `/admin`, the shop’s for `/client` and `/store/v1`); anything else is `403 CSRF_FAILED`. A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates are switched off or the server is full: keep polling.",
         "operationId": "getStoreV1MeStream",
         "parameters": [
           {

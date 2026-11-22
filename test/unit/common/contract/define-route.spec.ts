@@ -544,13 +544,36 @@ describe('defineRoute originCheck option (RESOLUTIONS b2c-8)', () => {
     expect(download({ originCheck: true }).originCheck).toBe(true);
   });
 
-  it('is refused on a mutation and on a route without a session', () => {
-    expect(() =>
-      define({ key: 'POST /admin/spec-origin-post', surface: 'admin', access: 'staff-session', originCheck: true }),
-    ).toThrow(/only applies to GET routes/);
+  it('is refused on a GET without a session, on a session mutation and on a mutation without a session outside /store/v1', () => {
     expect(() =>
       define({ key: 'GET /store/v1/spec-origin-public', surface: 'store', access: 'public', originCheck: true }),
     ).toThrow(/only applies to routes with a session/);
+    expect(() =>
+      define({ key: 'POST /admin/spec-origin-post', surface: 'admin', access: 'staff-session', originCheck: true }),
+    ).toThrow(/only applies to a route without a session/);
+    expect(() =>
+      define({
+        key: 'POST /admin/spec-origin-public-post',
+        surface: 'admin',
+        access: 'public',
+        csrf: false,
+        originCheck: true,
+      }),
+    ).toThrow(/only applies to \/store\/v1 routes/);
+    expect(() =>
+      define({ key: 'POST /store/v1/spec-origin-csrf', surface: 'store', access: 'public', originCheck: true }),
+    ).toThrow(/only applies to a route without a session/);
+  });
+
+  it('is allowed on a /store/v1 mutation without a session (a sign-in route)', () => {
+    const contract = define({
+      key: 'POST /store/v1/spec-origin-sign-in',
+      surface: 'store',
+      access: 'public',
+      csrf: false,
+      originCheck: true,
+    });
+    expect(contract.originCheck).toBe(true);
   });
 });
 

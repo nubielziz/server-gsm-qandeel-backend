@@ -18,11 +18,25 @@ certificates itself, and needs port 80 for that. Nothing else is published.
 | Host (`deploy/.env`) | Serves | Sent to the API |
 | --- | --- | --- |
 | `SHOP_HOST` (`shop.example.com`) | the storefront and the merchant portal (container `site`) | `/client/*`, `/store/v1/*` |
-| `ADMIN_HOST` (`admin.example.com`) | the admin console (container `console`, nginx) | `/admin/*`, `/health`, `/reference*` |
+| `ADMIN_HOST` (`admin.example.com`) | the admin console (container `console`, nginx) | `/admin/*`, `/health`, `/reference*`, `/store/v1/media/*` (the pictures the console shows) |
 | `API_HOST` (`api.example.com`) | machine clients only | `/api/index.php` (Dhru), `/v1/*` (REST v1), `/webhooks/*`, `/docs*`; everything else is 404 |
 
 Why this shape: the sessions' cookies belong to one host, so the browser must reach the API on the page's own host. `/metrics` is routed
 on no host.
+
+**Which pages the API trusts** (decision 045). Pages of `ADMIN_HOST` may call `/admin/*` and `/reference*`, pages of `SHOP_HOST` may call
+`/client/*` and `/store/v1/*`, and no browser page may read the machine routes (`/v1/*`, `/api/index.php`, `/webhooks/*`, `/docs*`) or
+`/health`. The two lists of origins come from `CONSOLE_BASE_URL` and from `STORE_BASE_URL` and `PORTAL_BASE_URL`. A list given in
+`.env.production` is used as it is: it replaces the derived one, it does not add to it. So `CONSOLE_ORIGINS` must include the origin of
+`CONSOLE_BASE_URL`, and `SHOP_ORIGINS` the origins of `STORE_BASE_URL` and `PORTAL_BASE_URL`; leave both unset unless another https
+origin must be trusted. At boot the API and the worker log a configuration warning when a given list leaves out the origin of its own
+page (sign-in from that page is refused) and when the two lists share an origin (a page of that origin is trusted on both the staff and
+the shop surfaces; keep one origin per audience). Neither warning stops the start. `CORS_ORIGINS` is refused in production. The
+session cookies are `SameSite=Lax`, which separates registrable domains, not hosts: a console host on another registrable domain than
+the shop's is the strongest separation, and the configuration supports it. **Page headers:** Caddy adds to the console's and the shop's
+pages (not to the API's answers, which carry their own) `Content-Security-Policy` with `frame-ancestors 'none'`, `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff` and a `Referrer-Policy`; HSTS is on every host. The script policies belong to the console and the
+storefront.
 
 | Service | What it is |
 | --- | --- |
@@ -59,7 +73,8 @@ on no host.
    printf '%s' "<the METRICS_TOKEN value>" > deploy/secrets/metrics_token && chmod 644 deploy/secrets/metrics_token
    ```
 
-   The app refuses to start in production with a missing required value, a development secret or `COOKIE_SECURE=false`, and prints the full list.
+   The app refuses to start in production with a missing required value, a development secret, `COOKIE_SECURE=false`, an `http:` base URL or
+   origin, or a `CORS_ORIGINS` line, and prints the full list.
 
 2. **Build the images** (the console from the console repository, with the API on the same origin):
 
@@ -92,6 +107,11 @@ on no host.
    - `gsmc ps` shows `api`, `worker`, `postgres`, both Redis roles and `prometheus` healthy; `gsmc logs worker` shows the queue workers.
    - Prometheus has both targets up: `gsmc exec prometheus wget -qO- 'http://localhost:9090/api/v1/targets'` lists `gsm-api` and
      `gsm-worker` as `up`.
+   - **Origins per surface:** `curl -s -o /dev/null -D - -H 'Origin: https://<SHOP_HOST>' https://<ADMIN_HOST>/admin/auth/me | grep -i '^access-control-allow'`
+     prints nothing; with `-H 'Origin: https://<ADMIN_HOST>'` it prints `access-control-allow-origin: https://<ADMIN_HOST>` and
+     `access-control-allow-credentials: true`.
+   - **Page headers:** `curl -sI https://<ADMIN_HOST>/ | grep -i -e content-security-policy -e x-frame-options -e referrer-policy` shows
+     `frame-ancestors 'none'`, `DENY` and `same-origin`; `https://<SHOP_HOST>/` shows `frame-ancestors 'none'` and `DENY`.
    - A mail is delivered to an outside address (section 7), then run a backup and a restore drill (section 4) before real money flows.
 
 Never run the development seed (`bun run db:seed`, `db:reset`) against the production database: the seed refuses production, and the
@@ -164,6 +184,13 @@ database (section 4) and start the previous images; there is no down-migration. 
 back (`howToRestore`). Exit codes of the export: 0 written and verified, or nothing to export (no file, no marker needed); 3 the
 database is not at `0033` or `0034`, or already migrated; 1 any other error (a missing or unwritable `--out` folder, no
 `DATABASE_URL`; nothing half-written is left).
+
+### Release with decision 045 (origins per surface)
+
+Every command of the image (the API, the worker, `migrate`, `setup`) refuses `CORS_ORIGINS` in production from this release on. Before
+step 3: delete the `CORS_ORIGINS` line from `.env.production` (the origins now come from the base URLs) and check that `CONSOLE_BASE_URL`,
+`STORE_BASE_URL`, `PORTAL_BASE_URL` and `ERRORS_BASE_URL` start with `https://`. After step 4, load the new page headers with `gsmc
+exec caddy caddy reload --config /etc/caddy/Caddyfile`, then run the two checks of section 2.5 named above.
 
 ## 4. Backups and the restore drill
 
@@ -393,5 +420,6 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] A backup ran and a restore drill passed (section 4), and the first-day-of-month copy is understood.
 - [ ] `ENCRYPTION_KEYS` and the backup private key exist offline in two places, with two people.
 - [ ] `COOKIE_SECURE=true`, `REFERENCE_DOCS=staff`, the dev seed was never run on this database.
+- [ ] `.env.production` has no `CORS_ORIGINS`, and the four base URLs are https (decision 045).
 - [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
 - [ ] Docker log rotation is set, and the host has disk space for the volumes (database, files, Prometheus).

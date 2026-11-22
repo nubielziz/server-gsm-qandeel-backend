@@ -23,8 +23,10 @@ const DESCRIPTION =
   '`notification.created`, `notification.read`, `unread.changed`, `resync` and `bye`; the data of every event is one line of ' +
   'JSON (docs/contract/realtime-events.md). A reconnect sends the last event id back (`Last-Event-ID`, or `cursor`) and gets ' +
   'what it missed, at most 50 items, else `resync`. At most 3 streams per session and 30 per address (429 for the next one), ' +
-  'ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Same-site requests only ' +
-  '(`Sec-Fetch-Site`). A refusal is an ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates ' +
+  'ended after 15 minutes (`bye max_age`) and when the session ends (`bye session_ended`). Only a request started by the ' +
+  'page’s own site is answered: `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route’s audience ' +
+  '(the console’s for `/admin`, the shop’s for `/client` and `/store/v1`); anything else is `403 CSRF_FAILED`. A refusal is an ' +
+  'ordinary problem+json answer before the stream starts. `503 UNAVAILABLE` when live updates ' +
   'are switched off or the server is full: keep polling.';
 
 const STREAM = {

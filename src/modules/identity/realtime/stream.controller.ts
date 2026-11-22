@@ -17,7 +17,8 @@ type StreamHeaders = HeadersOf<typeof adminStream>;
  * The live event stream of each signed-in surface.
  *
  * Why: decision 037: a notification appears at once, without a reload. Thin: the guard has authenticated the session (and its
- * stage, account state, IP rules and same-site origin); the handler maps the principal to a viewer and its caps and hands the
+ * stage, account state, IP rules and the Origin rule: `Sec-Fetch-Site: same-origin`, or an `Origin` of the surface's audience, the
+ * console's on `/admin` and the shop's on `/client` and `/store/v1`); the handler maps the principal to a viewer and its caps and hands the
  * request to the hub, which refuses it (problem+json) or answers with the stream itself (the reply is hijacked: `@Res()`).
  *
  * @route GET /admin/stream

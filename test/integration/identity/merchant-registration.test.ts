@@ -247,7 +247,7 @@ describe('POST /client/auth/register', () => {
     expect(text).not.toContain('verify-email?token');
 
     const production = await createTestApp({
-      env: productionEnvOnTestInstances({ CORS_ORIGINS: PORTAL_ORIGIN }),
+      env: productionEnvOnTestInstances({ SHOP_ORIGINS: PORTAL_ORIGIN }),
       clock,
     });
     try {

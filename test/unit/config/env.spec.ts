@@ -74,28 +74,117 @@ describe('parseEnv in development and test', () => {
     expect(config.security.cookieSecure).toBe(false);
     expect(config.http.referenceDocs).toBe('open');
     expect(config.log.level).toBe('debug');
-    expect(config.http.corsOrigins).toEqual([
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'http://localhost:5174',
-    ]);
+    expect(config.http.consoleOrigins).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173']);
+    expect(config.http.shopOrigins).toEqual(['http://localhost:5174', 'http://localhost:5175']);
+    expect(config.warnings).toEqual([]);
     expect(config.redis.bullPrefix).toBe('gsm:development:bull');
     expect(config.http.portalBaseUrl).toBe(DEV_DEFAULTS.portalBaseUrl);
   });
 
-  it('lets the merchant portal origin through CORS in development only (P4a): the origin of PORTAL_BASE_URL is in the dev default', () => {
+  it('gives each audience its own origins: the development defaults, none under test, the base URLs in production (decision 045)', () => {
     const portalOrigin = new URL(DEV_DEFAULTS.portalBaseUrl).origin;
     expect(portalOrigin).toBe('http://localhost:5174');
-    expect(parseEnv({}).http.corsOrigins).toContain(portalOrigin);
-    // A given CORS_ORIGINS is used as it is: nothing is added to it.
-    expect(parseEnv({ CORS_ORIGINS: 'https://console.example.com' }).http.corsOrigins).toEqual([
-      'https://console.example.com',
+    const development = parseEnv({}).http;
+    expect(development.shopOrigins).toContain(portalOrigin);
+    expect(development.consoleOrigins).not.toContain(portalOrigin);
+    // Tests default to no browser origins, with or without a portal URL.
+    for (const env of [{ NODE_ENV: 'test' }, { NODE_ENV: 'test', PORTAL_BASE_URL: 'http://localhost:5174' }]) {
+      const config = parseEnv(env).http;
+      expect(config.consoleOrigins).toEqual([]);
+      expect(config.shopOrigins).toEqual([]);
+    }
+    // Production derives them: the console's from CONSOLE_BASE_URL, the shop's from STORE_BASE_URL and PORTAL_BASE_URL.
+    const prod = parseEnv(production()).http;
+    expect(prod.consoleOrigins).toEqual(['https://admin.gsm.example']);
+    expect(prod.shopOrigins).toEqual(['https://shop.gsm.example', 'https://portal.gsm.example']);
+    // A portal served under the shop's host is one origin, not two.
+    const shared = parseEnv({ ...production(), PORTAL_BASE_URL: 'https://shop.gsm.example/merchant' }).http;
+    expect(shared.shopOrigins).toEqual(['https://shop.gsm.example']);
+  });
+
+  it('reads CONSOLE_ORIGINS and SHOP_ORIGINS as exact origin lists, each for its own audience', () => {
+    const given = {
+      CONSOLE_ORIGINS: 'https://console.example.com, https://console.example.com,http://localhost:4000',
+      SHOP_ORIGINS: 'https://shop.example.com',
+    };
+    const development = parseEnv(given);
+    expect(development.http.consoleOrigins).toEqual(['https://console.example.com', 'http://localhost:4000']);
+    expect(development.http.shopOrigins).toEqual(['https://shop.example.com']);
+    expect(development.warnings).toEqual([]);
+    const prod = parseEnv({
+      ...production(),
+      CONSOLE_ORIGINS: 'https://admin.gsm.example,https://console.gsm.example',
+      SHOP_ORIGINS: 'https://shop.gsm.example',
+    });
+    expect(prod.http.consoleOrigins).toEqual(['https://admin.gsm.example', 'https://console.gsm.example']);
+    expect(prod.http.shopOrigins).toEqual(['https://shop.gsm.example']);
+    // One list given: the other is still the default of its audience.
+    expect(parseEnv({ SHOP_ORIGINS: 'https://shop.example.com' }).http.consoleOrigins).toEqual([
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
     ]);
-    // Tests and production default to no cross-origin access, with or without a portal URL.
-    expect(parseEnv({ NODE_ENV: 'test' }).http.corsOrigins).toEqual([]);
-    expect(parseEnv({ NODE_ENV: 'test', PORTAL_BASE_URL: 'http://localhost:5174' }).http.corsOrigins).toEqual([]);
-    expect(parseEnv(production()).http.corsOrigins).toEqual([]);
-    expect(parseEnv({ ...production(), PORTAL_BASE_URL: 'https://portal.gsm.example' }).http.corsOrigins).toEqual([]);
+    for (const bad of ['*', 'https://a.example/app']) {
+      expect(issuesOf({ CONSOLE_ORIGINS: bad }).map((issue) => issue.variable)).toEqual(['CONSOLE_ORIGINS']);
+      expect(issuesOf({ SHOP_ORIGINS: bad }).map((issue) => issue.variable)).toEqual(['SHOP_ORIGINS']);
+    }
+  });
+
+  it('reads the deprecated CORS_ORIGINS outside production for each list that is not set, with a warning', () => {
+    const origin = 'https://console.example.com';
+    const warning = (message: string) => [{ variable: 'CORS_ORIGINS', message }];
+    for (const NODE_ENV of ['development', 'test']) {
+      const only = parseEnv({ NODE_ENV, CORS_ORIGINS: origin });
+      expect(only.http.consoleOrigins).toEqual([origin]);
+      expect(only.http.shopOrigins).toEqual([origin]);
+      expect(only.warnings).toEqual(
+        warning(
+          'is deprecated and refused in production: it is read here as CONSOLE_ORIGINS and SHOP_ORIGINS; set CONSOLE_ORIGINS and SHOP_ORIGINS instead',
+        ),
+      );
+
+      const one = parseEnv({ NODE_ENV, CORS_ORIGINS: origin, CONSOLE_ORIGINS: 'https://other.example.com' });
+      expect(one.http.consoleOrigins).toEqual(['https://other.example.com']);
+      expect(one.http.shopOrigins).toEqual([origin]);
+      expect(one.warnings).toEqual(
+        warning(
+          'is deprecated and refused in production: it is read here as SHOP_ORIGINS; set CONSOLE_ORIGINS and SHOP_ORIGINS instead',
+        ),
+      );
+
+      const both = parseEnv({
+        NODE_ENV,
+        CORS_ORIGINS: origin,
+        CONSOLE_ORIGINS: 'https://other.example.com',
+        SHOP_ORIGINS: 'https://shop.example.com',
+      });
+      expect(both.http.consoleOrigins).toEqual(['https://other.example.com']);
+      expect(both.http.shopOrigins).toEqual(['https://shop.example.com']);
+      expect(both.warnings).toEqual(
+        warning(
+          'is deprecated and refused in production: it is ignored because CONSOLE_ORIGINS and SHOP_ORIGINS are both set; remove it',
+        ),
+      );
+    }
+    // A malformed old value still stops the boot outside production.
+    expect(issuesOf({ CORS_ORIGINS: '*' }).map((issue) => issue.variable)).toEqual(['CORS_ORIGINS']);
+  });
+
+  it('refuses http origins and base URLs in production, and accepts them outside it (decision 045)', () => {
+    for (const variable of ['ERRORS_BASE_URL', 'PORTAL_BASE_URL', 'CONSOLE_BASE_URL', 'STORE_BASE_URL']) {
+      expect(issuesOf({ ...production(), [variable]: 'http://plain.gsm.example' })).toEqual([
+        { variable, message: 'must be an https URL in production' },
+      ]);
+      expect(issuesOf({ [variable]: 'http://plain.gsm.example' })).toEqual([]);
+    }
+    expect(issuesOf({ ...production(), CONSOLE_ORIGINS: 'http://admin.gsm.example' })).toEqual([
+      { variable: 'CONSOLE_ORIGINS', message: 'must list https origins only in production' },
+    ]);
+    expect(issuesOf({ ...production(), SHOP_ORIGINS: 'https://shop.gsm.example,http://portal.gsm.example' })).toEqual([
+      { variable: 'SHOP_ORIGINS', message: 'must list https origins only in production' },
+    ]);
+    expect(issuesOf({ CONSOLE_ORIGINS: 'http://admin.gsm.example', SHOP_ORIGINS: 'http://shop.gsm.example' })).toEqual(
+      [],
+    );
   });
 
   it('reads PORTAL_BASE_URL without a trailing slash and refuses a value that is not an http(s) URL', () => {
@@ -124,10 +213,11 @@ describe('parseEnv in development and test', () => {
     expect(issuesOf({ STORE_BASE_URL: 'shop.example.com' }).map((i) => i.variable)).toEqual(['STORE_BASE_URL']);
   });
 
-  it('uses warn logs and no CORS origins in test', () => {
+  it('uses warn logs and no browser origins in test', () => {
     const config = parseEnv({ NODE_ENV: 'test' });
     expect(config.log.level).toBe('warn');
-    expect(config.http.corsOrigins).toEqual([]);
+    expect(config.http.consoleOrigins).toEqual([]);
+    expect(config.http.shopOrigins).toEqual([]);
     expect(config.redis.bullPrefix).toBe('gsm:test:bull');
   });
 
@@ -180,7 +270,8 @@ describe('parseEnv in development and test', () => {
     const config = parseEnv({});
     expect(Object.isFrozen(config)).toBe(true);
     expect(Object.isFrozen(config.http)).toBe(true);
-    expect(Object.isFrozen(config.http.corsOrigins)).toBe(true);
+    expect(Object.isFrozen(config.http.consoleOrigins)).toBe(true);
+    expect(Object.isFrozen(config.warnings)).toBe(true);
     expect(() => {
       (config.http as { port: number }).port = 1;
     }).toThrow();
@@ -205,8 +296,137 @@ describe('parseEnv in production', () => {
     expect(config.security.cookieSecure).toBe(true);
     expect(config.s3.endpoint).toBeUndefined();
     expect(config.s3.forcePathStyle).toBe(false);
-    expect(config.http.corsOrigins).toEqual([]);
+    expect(config.http.consoleOrigins).toEqual(['https://admin.gsm.example']);
+    expect(config.http.shopOrigins).toEqual(['https://shop.gsm.example', 'https://portal.gsm.example']);
     expect(Object.keys(config.security.encryptionKeys)).toEqual(['k1']);
+  });
+
+  it('refuses CORS_ORIGINS in production and names the two settings that replace it', () => {
+    expect(issuesOf({ ...production(), CORS_ORIGINS: 'https://admin.gsm.example' })).toEqual([
+      {
+        variable: 'CORS_ORIGINS',
+        message:
+          'is not read in production: set CONSOLE_ORIGINS (the admin console) and SHOP_ORIGINS (the storefront and the merchant portal), or remove it to derive both from CONSOLE_BASE_URL, STORE_BASE_URL and PORTAL_BASE_URL',
+      },
+    ]);
+  });
+
+  describe('origin lists that leave out their own page or share an origin (decision 045)', () => {
+    const replaced =
+      'because a list given here is used as it is and replaces the one derived from the base URLs; add it, or remove the line';
+
+    it('warns when CONSOLE_ORIGINS is given without the origin of CONSOLE_BASE_URL, and keeps the list as given', () => {
+      const config = parseEnv({ ...production(), CONSOLE_ORIGINS: 'https://other.gsm.example' });
+      expect(config.http.consoleOrigins).toEqual(['https://other.gsm.example']);
+      expect(config.warnings).toEqual([
+        {
+          variable: 'CONSOLE_ORIGINS',
+          message: `does not include https://admin.gsm.example (the origin of CONSOLE_BASE_URL): sign-in from that page will be refused, ${replaced}`,
+        },
+      ]);
+    });
+
+    it('warns when SHOP_ORIGINS is given without the origin of STORE_BASE_URL or of PORTAL_BASE_URL', () => {
+      const withoutPortal = parseEnv({ ...production(), SHOP_ORIGINS: 'https://shop.gsm.example' });
+      expect(withoutPortal.http.shopOrigins).toEqual(['https://shop.gsm.example']);
+      expect(withoutPortal.warnings).toEqual([
+        {
+          variable: 'SHOP_ORIGINS',
+          message: `does not include https://portal.gsm.example (the origin of PORTAL_BASE_URL): sign-in from that page will be refused, ${replaced}`,
+        },
+      ]);
+      const withoutStore = parseEnv({ ...production(), SHOP_ORIGINS: 'https://portal.gsm.example' });
+      expect(withoutStore.warnings).toEqual([
+        {
+          variable: 'SHOP_ORIGINS',
+          message: `does not include https://shop.gsm.example (the origin of STORE_BASE_URL): sign-in from that page will be refused, ${replaced}`,
+        },
+      ]);
+      const neither = parseEnv({ ...production(), SHOP_ORIGINS: 'https://elsewhere.gsm.example' });
+      expect(neither.warnings).toEqual([
+        {
+          variable: 'SHOP_ORIGINS',
+          message: `does not include https://shop.gsm.example (the origin of STORE_BASE_URL) and https://portal.gsm.example (the origin of PORTAL_BASE_URL): sign-in from those pages will be refused, ${replaced}`,
+        },
+      ]);
+      // A portal served under the shop's host is one origin: it is named once, with both variables.
+      const sharedHost = parseEnv({
+        ...production(),
+        PORTAL_BASE_URL: 'https://shop.gsm.example/merchant',
+        SHOP_ORIGINS: 'https://elsewhere.gsm.example',
+      });
+      expect(sharedHost.warnings).toEqual([
+        {
+          variable: 'SHOP_ORIGINS',
+          message: `does not include https://shop.gsm.example (the origin of STORE_BASE_URL and PORTAL_BASE_URL): sign-in from that page will be refused, ${replaced}`,
+        },
+      ]);
+    });
+
+    it('does not warn when a given list includes the origins of the base URLs, or when no list is given', () => {
+      expect(parseEnv(production()).warnings).toEqual([]);
+      const config = parseEnv({
+        ...production(),
+        CONSOLE_ORIGINS: 'https://admin.gsm.example,https://console.gsm.example',
+        SHOP_ORIGINS: 'https://portal.gsm.example,https://shop.gsm.example,https://extra.gsm.example',
+      });
+      expect(config.http.shopOrigins).toEqual([
+        'https://portal.gsm.example',
+        'https://shop.gsm.example',
+        'https://extra.gsm.example',
+      ]);
+      expect(config.warnings).toEqual([]);
+    });
+
+    it('does not warn about a short list outside production', () => {
+      const given = { CONSOLE_ORIGINS: 'https://other.example.com', SHOP_ORIGINS: 'https://elsewhere.example.com' };
+      for (const NODE_ENV of ['development', 'test']) {
+        expect(parseEnv({ NODE_ENV, ...given }).warnings).toEqual([]);
+        // Lists that share an origin are the development default of a single-host setup.
+        const same = { CONSOLE_ORIGINS: 'http://localhost:5173', SHOP_ORIGINS: 'http://localhost:5173' };
+        expect(parseEnv({ NODE_ENV, ...same }).warnings).toEqual([]);
+      }
+      expect(parseEnv(given).warnings).toEqual([]);
+    });
+
+    it('warns once when the two lists share an origin, given or derived, and names it', () => {
+      const given = parseEnv({
+        ...production(),
+        CONSOLE_ORIGINS: 'https://admin.gsm.example,https://shop.gsm.example',
+      });
+      expect(given.http.consoleOrigins).toEqual(['https://admin.gsm.example', 'https://shop.gsm.example']);
+      expect(given.warnings).toEqual([
+        {
+          variable: 'CONSOLE_ORIGINS and SHOP_ORIGINS',
+          message:
+            'share the origin https://shop.gsm.example: a page of that origin is trusted on both the staff and the shop surfaces; give each audience its own origin',
+        },
+      ]);
+      // Derived: the console and the shop served from one host.
+      const derived = parseEnv({ ...production(), CONSOLE_BASE_URL: 'https://shop.gsm.example/' });
+      expect(derived.warnings).toEqual(given.warnings);
+      // Two shared origins: still one entry.
+      const two = parseEnv({
+        ...production(),
+        CONSOLE_ORIGINS: 'https://admin.gsm.example,https://shop.gsm.example,https://portal.gsm.example',
+      });
+      expect(two.warnings).toEqual([
+        {
+          variable: 'CONSOLE_ORIGINS and SHOP_ORIGINS',
+          message:
+            'share the origins https://shop.gsm.example and https://portal.gsm.example: a page of one of those origins is trusted on both the staff and the shop surfaces; give each audience its own origin',
+        },
+      ]);
+    });
+
+    it('does not warn about a shared origin when the lists are distinct', () => {
+      const config = parseEnv({
+        ...production(),
+        CONSOLE_ORIGINS: 'https://admin.gsm.example,https://console.gsm.example',
+        SHOP_ORIGINS: 'https://shop.gsm.example,https://portal.gsm.example',
+      });
+      expect(config.warnings).toEqual([]);
+    });
   });
 
   it('fails on an empty environment and names every missing variable', () => {
@@ -639,6 +859,13 @@ describe('summarizeConfig', () => {
     expect(text).toContain('postgres://app:***@db.internal:5432/gsm');
     expect(text).toContain('"encryptionKeyIds":["k1"]');
     expect(text).toContain('"metricsToken":"[set]"');
+  });
+
+  it('shows the origin lists of the two audiences and no corsOrigins (decision 045)', () => {
+    const summary = summarizeConfig(parseEnv(production())) as { http: Record<string, unknown> };
+    expect(summary.http.consoleOrigins).toEqual(['https://admin.gsm.example']);
+    expect(summary.http.shopOrigins).toEqual(['https://shop.gsm.example', 'https://portal.gsm.example']);
+    expect(summary.http).not.toHaveProperty('corsOrigins');
   });
 });
 

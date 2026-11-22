@@ -24,7 +24,7 @@ import { notificationRows, seedDefaultTemplates } from '../../support/notificati
 import { eventsOf, orderRow, systemBalance } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { type StorefrontWorld, storefrontWorld } from '../../support/storefront';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 
 const clock = new TestClock('2026-11-10T12:00:00.000Z');
 let t: TestApp;
@@ -34,7 +34,7 @@ let staff: AdminApi;
 
 beforeAll(async () => {
   ({ db } = await testDb());
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 afterAll(async () => {
   await resetDb();

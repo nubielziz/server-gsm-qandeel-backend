@@ -73,7 +73,9 @@ and the request id; their refusals are problem+json with the CORS and security h
 (`AccessGuard`, identity module) that reads the route contract (`access`, `sessionStages`, `permission`, `csrf`); a route without
 a contract is refused:
 
-0. **CORS preflight** answered first, so a refused request still carries readable CORS headers.
+0. **CORS** by the path's surface (D045): the console's origins on `/admin` and `/reference`, the shop's on `/client` and `/store/v1`, none
+   elsewhere. A preflight from a listed origin is answered first, so a refused request still carries readable CORS headers; any other
+   `OPTIONS` request goes on through steps 1 to 4 and ends as 404.
 1. **Request id** (`X-Request-Id` kept or generated, echoed; D012).
 2. **IP rules**: active `ip_rules` cached in Redis (invalidated on change): block rules first; then, for `/admin`
    when the access restriction is on, the allowlist (`403 IP_NOT_ALLOWED`).
@@ -83,7 +85,8 @@ a contract is refused:
 5. **Authentication** by surface: staff session cookie (admin), merchant session cookie (client), customer session or
    capability token (store), Bearer API key with scopes and allowed IPs (v1), username + apiaccesskey (Dhru),
    signature + replay window (webhooks), network or token (`/metrics`).
-6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`).
+6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`); a mutation without a session on `/admin` or `/client` (and the
+   `/store/v1` sign-in routes) needs an `Origin` of its surface, and an `originCheck` GET needs `Sec-Fetch-Site: same-origin` or such an `Origin`.
 7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource).
    **Anti-bot** (D034): a `/store/v1` or public `/client` route with `turnstile: true` needs a passing `X-Turnstile-Token` (`403 TURNSTILE_FAILED`; the merchant sign-up, sign-in and forgot routes only while `TURNSTILE_MERCHANT_AUTH` is on); the
    verifier is Cloudflare's siteverify through `OutboundHttp`, or a dummy one without `TURNSTILE_SECRET_KEY` outside production.
@@ -93,7 +96,7 @@ a contract is refused:
    interceptor checks that every successful staff mutation wrote one (a 500 in development and tests, an error log in
    production; `audit: false` on the contract opts a sign-in step out).
 
-Errors anywhere become problem+json (D028). CORS allows exact origins with credentials and exposes `x-total-count`,
+Errors anywhere become problem+json (D028). CORS allows the exact origins of each surface (D045) with credentials and exposes `x-total-count`,
 `x-request-id`, `x-csrf-token`, `content-disposition`, `retry-after`. Security headers via @fastify/helmet; body limits
 per route (uploads go through multipart limits).
 

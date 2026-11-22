@@ -33,9 +33,13 @@ afterAll(async () => {
 /** The CSV lines of an export answer, without the header. */
 const rowsOf = (body: string): string[] => body.split('\r\n').slice(1, -1);
 
-/** Calls an export route as the signed-in staff member (the shared client parses JSON, an export answers text). */
+/** Calls an export route as the signed-in staff member (the shared client parses JSON, an export answers text). The console fetches it from its own origin. */
 async function csv(url: string) {
-  const res = await t.app.inject({ method: 'GET', url, headers: staff.session.headers });
+  const res = await t.app.inject({
+    method: 'GET',
+    url,
+    headers: { ...staff.session.headers, 'sec-fetch-site': 'same-origin' },
+  });
   return { status: res.statusCode, res, body: res.body, json: () => res.json() };
 }
 
@@ -111,6 +115,25 @@ describe('GET /admin/orders/export', () => {
     const body = (await csv('/admin/orders/export?_sort=id&_order=asc')).body;
     expect(body).toContain(",'=SUM(A1:A9),");
     expect(body).toContain(',"say ""hi"", please",');
+  });
+
+  it('answers only a request started by the console itself (decision 045)', async () => {
+    const { db, merchant, auto } = world;
+    await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });
+    const url = '/admin/orders/export?status=pending';
+    const bare = await t.app.inject({ method: 'GET', url, headers: staff.session.headers });
+    expect(bare.statusCode).toBe(403);
+    expect(bare.json().code).toBe('CSRF_FAILED');
+    const sameSite = await t.app.inject({
+      method: 'GET',
+      url,
+      headers: { ...staff.session.headers, 'sec-fetch-site': 'same-site' },
+    });
+    expect(sameSite.statusCode).toBe(403);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
+    const sameOrigin = await csv(url);
+    expect(sameOrigin.status).toBe(200);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(1);
   });
 
   it('writes one audit row per export with the number of rows', async () => {

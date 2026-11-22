@@ -13,7 +13,8 @@ backups somebody can restore, and an operations document. Nothing here changes a
   API; `API_HOST` serves only the machine surfaces (`/api/index.php`, `/v1/*`, `/webhooks/*`, `/docs*`) and answers 404 elsewhere.
   Why: session cookies are host-only and `SameSite=Lax` (`docs/contract/ALIGNMENT.md`, sessions and CSRF), so the API must share the page's origin; there is then no
   preflight, the `X-Turnstile-Token` header needs no CORS change, `CSRF_COOKIE_DOMAIN` stays unset and no cookie crosses hosts.
-  `/metrics` is routed on no host. A separate API host for browsers (topology B) is not built.
+  `/metrics` is routed on no host. A separate API host for browsers (topology B) is not built. (Decision 045: `SameSite=Lax` separates
+  registrable domains, not hosts, so the API also trusts browser origins per surface; production derives them from the base URLs.)
 - **Client address.** Only Caddy publishes ports (80, 443). Caddy sets `X-Forwarded-For` itself; the compose network has the fixed
   subnet `172.30.0.0/24` and `TRUST_PROXY=172.30.0.0/24`, so the API trusts exactly Caddy (and, for the storefront's server-side
   calls, the forwarded header the site passes on). No `trusted_proxies` unless a CDN is put in front.

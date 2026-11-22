@@ -10,14 +10,20 @@ import { clearIdentityCaches } from '../../support/auth';
 import { DAY, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { auditRows } from '../../support/risk';
-import { StoreClient, captureCustomerLinks, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import {
+  STORE_ORIGIN,
+  StoreClient,
+  captureCustomerLinks,
+  clearStoreRateLimits,
+  makeCustomer,
+} from '../../support/store';
 
 const clock = new TestClock('2026-11-08T09:00:00.000Z');
 let t: TestApp;
 let staff: AdminApi;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   clock.set('2026-11-08T09:00:00.000Z');

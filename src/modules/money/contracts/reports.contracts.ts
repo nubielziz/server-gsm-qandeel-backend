@@ -257,13 +257,15 @@ export const getClientStatement = defineRoute({
     '10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them (the opening balance is the ' +
     'balance before that line), and a history of more than 10,000 invoices is cut to the newest 10,000 the same way; only an explicit ' +
     '`from` period with more than 10,000 lines, or with more than 10,000 invoices, is `422`. Every download writes an audit row ' +
-    '(`exported statement of`).',
+    '(`exported statement of`). It is answered only to a request started by the console itself (`Sec-Fetch-Site: same-origin`, or an ' +
+    '`Origin` that is one of the console’s origins); anything else is `403 CSRF_FAILED` and writes no audit row.',
   tags: ['reports'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'reports:read',
+  originCheck: true,
   params: z.object({ clientId: zIdParam }),
   query: z.object({ from: zDateOnly.optional(), to: zDateOnly.optional() }),
   success: { status: 200, contentType: 'application/pdf' },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED', 'CSRF_FAILED'],
 });

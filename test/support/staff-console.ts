@@ -11,7 +11,7 @@ import { type TestApp } from './app';
 import { insertRole } from './auth';
 import { testDb } from './db';
 
-/** The origin the test app lists in `CORS_ORIGINS`. */
+/** The origin the test app lists for the console (`CONSOLE_ORIGINS`, or the deprecated `CORS_ORIGINS`). */
 export const CONSOLE_ORIGIN = 'https://console.example.com';
 /** The password of every staff member `makeStaff` creates unless told otherwise. */
 export const PASSWORD = 'correct-horse-battery';

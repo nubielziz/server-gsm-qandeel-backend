@@ -25,7 +25,7 @@ import { ledgerTotals } from '../../support/money';
 import { notificationRows, seedDefaultTemplates } from '../../support/notifications';
 import { eventsOf, orderRow, systemBalance } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 
 const clock = new TestClock('2026-11-10T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -35,7 +35,11 @@ let world: B2cWorld;
 
 beforeAll(async () => {
   ({ db } = await testDb());
-  t = await createTestApp({ clock, imports: [GatewayTestModule, RefundProcessModule] });
+  t = await createTestApp({
+    clock,
+    imports: [GatewayTestModule, RefundProcessModule],
+    env: { SHOP_ORIGINS: STORE_ORIGIN },
+  });
 });
 afterAll(async () => {
   await fake.stop();

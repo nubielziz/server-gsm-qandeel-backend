@@ -124,7 +124,7 @@ describe('GET /admin/customers/:id/export with a store balance', () => {
     const res = await t.app.inject({
       method: 'GET',
       url: `/admin/customers/${customer.id}/export`,
-      headers: { ...staff.session.headers, 'sec-fetch-site': 'same-site' },
+      headers: { ...staff.session.headers, 'sec-fetch-site': 'same-origin' },
       remoteAddress: '127.0.0.1',
     });
     expect(res.statusCode).toBe(200);

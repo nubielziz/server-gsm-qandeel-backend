@@ -1,6 +1,6 @@
 // Integration tests of the admin customer privacy actions (feature 18, POST /admin/customers/:id/block, GET /admin/customers/:id/export,
 // POST /admin/customers/:id/anonymize; scenario b2c-account, RESOLUTIONS b2c-4, b2c-5 and b2c-8, MISMATCHES B48, B49, B50): what a block
-// adds and an unblock removes, the same-site check and content of the export, and everything anonymizing cuts and keeps.
+// adds and an unblock removes, the origin check (decision 045) and content of the export, and everything anonymizing cuts and keeps.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
@@ -18,6 +18,7 @@ import { blocklistRows, insertBlock, insertHeldOrder, insertImeiCheck } from '..
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
 import { insertSupportTicket } from '../../support/support';
 import {
+  STORE_ORIGIN,
   StoreClient,
   captureCustomerLinks,
   clearStoreRateLimits,
@@ -32,7 +33,7 @@ let world: OrdersWorld;
 let staff: AdminApi;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, env: { CORS_ORIGINS: CONSOLE_ORIGIN } });
+  t = await createTestApp({ clock, env: { CONSOLE_ORIGINS: CONSOLE_ORIGIN, SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   clock.set('2026-11-08T09:00:00.000Z');
@@ -283,7 +284,7 @@ describe('GET /admin/customers/:id/export', () => {
     await db
       .insert(s.dataRequests)
       .values({ customerId: customer.id, kind: 'export', dueAt: new Date('2026-12-08T09:00:00.000Z') });
-    const res = await download(customer.id, { 'sec-fetch-site': 'same-site' });
+    const res = await download(customer.id, { 'sec-fetch-site': 'same-origin' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('application/json');
     expect(res.headers['content-disposition']).toContain(`filename="customer-${customer.id}.json"`);
@@ -333,7 +334,7 @@ describe('GET /admin/customers/:id/export', () => {
     const before = await customerRow(customer.id);
     expect(before).toMatchObject({ riskLevel: 'high', suspendedReason: 'Account may be compromised' });
     expect(before.internalNotes).toContain('Likes email.');
-    const res = await download(customer.id, { 'sec-fetch-site': 'same-site' });
+    const res = await download(customer.id, { 'sec-fetch-site': 'same-origin' });
     expect(res.statusCode).toBe(200);
     const file = res.json();
     // What the customer gave and did stays.
@@ -392,12 +393,12 @@ describe('GET /admin/customers/:id/export', () => {
 
   it('works for an anonymized customer', async () => {
     const customer = await makeCustomer(t, { status: 'anonymized', name: 'Deleted customer' });
-    const res = await download(customer.id, { 'sec-fetch-site': 'same-site' });
+    const res = await download(customer.id, { 'sec-fetch-site': 'same-origin' });
     expect(res.statusCode).toBe(200);
     expect(res.json().profile).toMatchObject({ status: 'anonymized', name: 'Deleted customer' });
   });
 
-  it('only answers a same-site request (RESOLUTIONS b2c-8): Sec-Fetch-Site same-origin or same-site, else an exact allowed Origin', async () => {
+  it('only answers a request started by the console itself (decision 045): Sec-Fetch-Site same-origin or a console Origin', async () => {
     const customer = await makeCustomer(t);
     const refused = async (headers: Record<string, string>) => {
       const res = await download(customer.id, headers);
@@ -407,30 +408,38 @@ describe('GET /admin/customers/:id/export', () => {
     await refused({});
     await refused({ 'sec-fetch-site': 'cross-site' });
     await refused({ 'sec-fetch-site': 'none' });
+    // Every host of the registrable domain is same-site: that alone no longer starts an export.
+    await refused({ 'sec-fetch-site': 'same-site' });
     await refused({ origin: 'https://evil.example' });
-    // A cross-site browser request is refused even when it carries an allowed Origin: the browser's own header decides.
-    await refused({ 'sec-fetch-site': 'cross-site', origin: CONSOLE_ORIGIN });
+    // The shop's origin is not the console's.
+    await refused({ origin: STORE_ORIGIN });
     expect((await download(customer.id, { 'sec-fetch-site': 'same-origin' })).statusCode).toBe(200);
     // A client without Sec-Fetch-Site (old browser, a script) must send the console's Origin.
     expect((await download(customer.id, { origin: CONSOLE_ORIGIN })).statusCode).toBe(200);
+    expect((await download(customer.id, { 'sec-fetch-site': 'same-site', origin: CONSOLE_ORIGIN })).statusCode).toBe(
+      200,
+    );
+    expect((await download(customer.id, { 'sec-fetch-site': 'cross-site', origin: CONSOLE_ORIGIN })).statusCode).toBe(
+      200,
+    );
     // Nothing was audited by the refused attempts.
-    expect(await auditOfCustomer((await testDb()).db, customer.id)).toHaveLength(2);
+    expect(await auditOfCustomer((await testDb()).db, customer.id)).toHaveLength(4);
   });
 
   it('answers 404 for an unknown customer, 401 without a session, and needs customers:privacy', async () => {
-    expect((await download(999999, { 'sec-fetch-site': 'same-site' })).statusCode).toBe(404);
+    expect((await download(999999, { 'sec-fetch-site': 'same-origin' })).statusCode).toBe(404);
     const customer = await makeCustomer(t);
     const anonymous = await t.app.inject({
       method: 'GET',
       url: `/admin/customers/${customer.id}/export`,
-      headers: { 'sec-fetch-site': 'same-site' },
+      headers: { 'sec-fetch-site': 'same-origin' },
     });
     expect(anonymous.statusCode).toBe(401);
     const other = await adminWith(t, ['customers:read']);
     const res = await t.app.inject({
       method: 'GET',
       url: `/admin/customers/${customer.id}/export`,
-      headers: { ...other.session.headers, 'sec-fetch-site': 'same-site' },
+      headers: { ...other.session.headers, 'sec-fetch-site': 'same-origin' },
     });
     expect(res.statusCode).toBe(403);
   });

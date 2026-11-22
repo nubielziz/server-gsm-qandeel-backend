@@ -140,12 +140,16 @@ describe('a stream', () => {
     expect(hubOf().size).toBe(0);
   });
 
-  it('refuses a cross-site request and one without Sec-Fetch-Site or an allowed Origin (403 CSRF_FAILED)', async () => {
+  it('refuses a cross-site request, a same-site one, and one without Sec-Fetch-Site or an allowed Origin (403 CSRF_FAILED)', async () => {
     const { headers } = await customer();
     const { cookie } = headers as { cookie: string };
     const crossSite = await stream('/store/v1/me/stream', { ...headers, 'sec-fetch-site': 'cross-site' });
     expect(crossSite.status).toBe(403);
     expect(crossSite.body).toMatchObject({ code: 'CSRF_FAILED' });
+    // Every host of the registrable domain is same-site: only same-origin or a listed Origin starts a stream (decision 045).
+    const sameSite = await stream('/store/v1/me/stream', { ...headers, 'sec-fetch-site': 'same-site' });
+    expect(sameSite.status).toBe(403);
+    expect(sameSite.body).toMatchObject({ code: 'CSRF_FAILED' });
     const bare = await stream('/store/v1/me/stream', { cookie, accept: 'text/event-stream' });
     expect(bare.status).toBe(403);
     const foreign = await stream('/store/v1/me/stream', { cookie, origin: 'https://evil.example' });

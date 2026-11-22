@@ -23,9 +23,9 @@ OpenAPI description of the stream routes points here. Plans: `docs/briefs/27-rea
 - Query: `cursor` (the last event `id` the page saw, at most 64 characters). There is no language parameter: the text of every item
   is English (decision 039). Header: `Last-Event-ID` (the browser's own reconnect; it wins over `cursor`). A cursor that is malformed
   or names an unknown source is ignored: the stream starts fresh.
-- Same-site only (`originCheck`): a request whose `Sec-Fetch-Site` is not `same-origin` or `same-site` (for example `cross-site`) is
-  `403 CSRF_FAILED`; without that header the `Origin` must be one of the CORS origins. An `EventSource` from the page's own origin
-  sends `same-origin`.
+- Started by the page's own site only (`originCheck`): `Sec-Fetch-Site: same-origin` (an `EventSource` from the page's own origin sends
+  it), or an `Origin` that is one of the origins of the stream's audience (the console's for `/admin/stream`, the shop's for
+  `/client/stream` and `/store/v1/me/stream`); anything else, `same-site` alone included, is `403 CSRF_FAILED`.
 - Limits: at most **3 open streams per session** and **30 per client address**; the newest one over a limit is refused with
   `429 RATE_LIMITED` (`Retry-After: 60`, detail `Too many open live connections.`), never an older one closed. 20 attempts a minute
   per session (`429` with its own `Retry-After`). `503 UNAVAILABLE` (`Retry-After: 30`) when live updates are switched off

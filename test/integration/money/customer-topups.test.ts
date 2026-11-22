@@ -11,7 +11,7 @@ import { TestClock } from '../../support/clock';
 import { fundCustomer, insertWalletTemplates, walletSettings } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;
@@ -19,7 +19,7 @@ let fake: FakeGateway;
 let cliq: number;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, imports: [GatewayTestModule] });
+  t = await createTestApp({ clock, imports: [GatewayTestModule], env: { SHOP_ORIGINS: STORE_ORIGIN } });
   fake = new FakeGateway();
 });
 beforeEach(async () => {

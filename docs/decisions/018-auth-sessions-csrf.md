@@ -33,7 +33,8 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
   rate limits instead. GETs never change state, except routes whose contract sets `originCheck: true` (only allowed on GET routes
   with a session access; today the customer data export): the CSRF guard then requires `Sec-Fetch-Site: same-origin|same-site`
   or, when that header is absent, an `Origin` exactly in the configured CORS origins, else `403 CSRF_FAILED`; such a GET sends
-  no CSRF token.
+  no CSRF token. (Amended by decision 045: the Origin lists are per surface, the storefront's sign-in routes are Origin-checked,
+  and an `originCheck` GET needs `Sec-Fetch-Site: same-origin` or an `Origin` on its surface's list.)
 - **API keys** (REST v1) `Authorization: Bearer <key>`; **Dhru** `username` + `apiaccesskey`: both resolve an
   `api_keys` row by keyed hash, then check revoked/expired, `allowed_ips`, scopes (`dhru` scope for Dhru), the key's
   per-minute limit and the merchant's status.
@@ -42,7 +43,7 @@ Status: accepted, 2026-10-31. Source of the staff flow: `docs/contract/ALIGNMENT
   current permissions (no snapshot per session). An Owner is a staff member whose role contains `*`. Guards: no
   change may leave zero active Owners (`409 LAST_OWNER`); actions on an Owner account need `*`; nobody changes their
   own role or suspends themselves; IP rules are judged against the real request IP behind the trusted proxy chain.
-- **Pipeline order** (ARCHITECTURE § 3): CORS preflight → request id → IP rules → maintenance → per-IP rate limit →
+- **Pipeline order** (ARCHITECTURE § 3): CORS preflight (from a listed origin of the path's surface, decision 045) → request id → IP rules → maintenance → per-IP rate limit →
   authentication (+ per-principal limit) → CSRF → permission → validation → handler → audit. The three checks before
   authentication are Fastify hooks installed in this order by `RequestPipeline` (`PIPELINE_STAGES`, `src/common/pipeline`), so
   the order is a table and not an accident of module loading.

@@ -21,7 +21,7 @@ import { multipartRequest } from '../../support/machine-orders';
 import { insertWalletMerchant } from '../../support/money';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 import { portalFor } from '../../support/webhooks';
 
 const clock = new TestClock('2026-11-17T10:00:00.000Z');
@@ -29,7 +29,7 @@ let t: TestApp;
 let admin: AdminApi;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   clock.set('2026-11-17T10:00:00.000Z');

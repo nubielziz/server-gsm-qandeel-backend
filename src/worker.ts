@@ -13,3 +13,9 @@ app.useLogger(app.get(Logger));
 // BullMQ workers close in onModuleDestroy, connections in onApplicationShutdown (decision 001).
 app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
 app.get(Logger).log({ msg: 'Worker started', config: summarizeConfig(config) }, 'Bootstrap');
+// Settings that work but should change (a deprecated variable, decision 045): one warning line each.
+for (const warning of config.warnings) {
+  app
+    .get(Logger)
+    .warn({ msg: 'Configuration warning', variable: warning.variable, warning: warning.message }, 'Bootstrap');
+}

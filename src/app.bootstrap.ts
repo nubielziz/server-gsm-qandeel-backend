@@ -5,9 +5,10 @@ import fastifyHelmet from '@fastify/helmet';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Logger } from 'nestjs-pino';
+import { type CorsDecision, corsDecision } from './common/browser-origins';
 import { ProblemExceptionFilter } from './common/errors';
 import { registerMultipartBodies } from './common/multipart';
-import { RequestPipeline } from './common/pipeline';
+import { RequestPipeline, requestPath } from './common/pipeline';
 import { registerRawBodyCapture } from './common/raw-body';
 import { registerRaisedBodyLimits } from './common/route-body-limits';
 import { REQUEST_ID_HEADER, resolveRequestId, runWithRequestId } from './common/request-id';
@@ -15,38 +16,6 @@ import type { AppConfig, TrustProxy } from './config';
 import { registerAccessLog } from './infra/logging';
 import { MetricsService, registerHttpMetrics } from './infra/metrics';
 import { OpenApiService } from './modules/platform';
-
-/**
- * Methods a cross-origin console may use (ALIGNMENT § 6).
- *
- * Why: ALIGNMENT § 6 lists exactly these methods; a console on another origin may use no others.
- */
-export const CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
-/**
- * Request headers a preflight may ask for (ALIGNMENT § 6).
- *
- * Why: ALIGNMENT § 6: the console sends only these, so a preflight asking for anything else is refused.
- */
-export const CORS_ALLOWED_HEADERS = ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key', 'Accept'] as const;
-/**
- * Response headers the console may read (ALIGNMENT § 6).
- *
- * Why: browsers hide other response headers from scripts; the console reads these (pager total, request id, CSRF token,
- * retry delay, download name).
- */
-export const CORS_EXPOSED_HEADERS = [
-  'x-total-count',
-  'x-request-id',
-  'x-csrf-token',
-  'retry-after',
-  'content-disposition',
-] as const;
-/**
- * How long a browser may cache a preflight answer.
- *
- * Why: ALIGNMENT § 6 asks for 600, so the console does not preflight every call.
- */
-export const CORS_MAX_AGE_SECONDS = 600;
 
 type FastifyTrustProxy = boolean | string[] | ((address: string, hop: number) => boolean);
 
@@ -120,10 +89,10 @@ export function registerRequestIdHooks(fastify: FastifyInstance): void {
  * headers, access log, request metrics, the raw-body tap of the webhook surface and the multipart parser of the upload routes. Shutdown hooks and listening stay in
  * `main.ts`.
  *
- * Why: ALIGNMENT § 6 and decision 018 fix the order: CORS preflight is answered first (so a refused request still
- * carries readable CORS headers), then the request id; then the request pipeline (IP rules, maintenance, per-IP rate
- * limit), installed last so that its refusals carry the CORS and security headers too; authentication, CSRF and
- * permissions are Nest guards and run after it.
+ * Why: ALIGNMENT § 6 and decision 018 fix the order: the CORS hook runs first: a preflight from one of the origins of the
+ * path's surface is answered at once, and every refusal below still carries the CORS headers of a listed origin (decision
+ * 045); then the request id; then the request pipeline (IP rules, maintenance, per-IP rate limit), installed last so that its
+ * refusals carry the CORS and security headers too; authentication, CSRF and permissions are Nest guards and run after it.
  *
  * @param app the Nest application, created but not initialised yet
  * @param config the process configuration
@@ -140,18 +109,16 @@ export async function configureApp(app: NestFastifyApplication, config: AppConfi
     slot.handle = (error, request, reply) => filter.handle(error, request, reply);
   }
 
-  // Nest 12 runs the CORS hook before everything else (middleware included): a preflight never meets IP rules or auth.
-  app.enableCors({
-    origin: [...config.http.corsOrigins],
-    credentials: true,
-    methods: [...CORS_METHODS],
-    allowedHeaders: [...CORS_ALLOWED_HEADERS],
-    exposedHeaders: [...CORS_EXPOSED_HEADERS],
-    maxAge: CORS_MAX_AGE_SECONDS,
-    // An OPTIONS request without Origin is not a browser preflight; answer it like any other instead of with
-    // @fastify/cors' plain-text 400 (decision 028: every error is problem+json).
-    strictPreflight: false,
-  });
+  // Decision 045: the origins a request may come from depend on its path's surface. Nest 12 runs this hook before everything else
+  // (middleware included): a preflight from a listed origin never meets IP rules or auth; any other OPTIONS request is not a
+  // preflight and goes on through the pipeline and the router like every request.
+  const corsDelegator = (
+    request: FastifyRequest,
+    callback: (error: Error | null, options: CorsDecision) => void,
+  ): void => {
+    callback(null, corsDecision(config.http, requestPath(request), request.headers.origin));
+  };
+  app.enableCors({ delegator: corsDelegator });
   registerRequestIdHooks(fastify);
   await app.register(fastifyCookie);
   // JSON-only API: deny everything by default. Only the documentation pages (GET /docs, GET /reference) send their own,

@@ -22,7 +22,7 @@ import { notificationRows, seedDefaultTemplates } from '../support/notifications
 import { orderRow } from '../support/orders';
 import { freshClientIp } from '../support/pipeline-routes';
 import { type StorefrontWorld, storefrontWorld } from '../support/storefront';
-import { type MadeCustomer, StoreClient, clearStoreRateLimits, makeCustomer } from '../support/store';
+import { type MadeCustomer, STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../support/store';
 
 const clock = new TestClock('2026-11-10T12:00:00.000Z');
 let t: TestApp;
@@ -36,7 +36,7 @@ let paymentId = 0;
 let orderId = 0;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
   await resetDb();
   await clearIdentityCaches(t);
   await clearStoreRateLimits(t);

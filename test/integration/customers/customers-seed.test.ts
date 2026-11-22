@@ -14,7 +14,7 @@ import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { StoreClient, clearStoreRateLimits } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits } from '../../support/store';
 
 setDefaultTimeout(180_000);
 
@@ -24,7 +24,7 @@ let staff: AdminApi;
 
 beforeAll(async () => {
   if (!frontendPresent) return;
-  t = await createTestApp();
+  t = await createTestApp({ env: { SHOP_ORIGINS: STORE_ORIGIN } });
   await resetDb();
   await clearIdentityCaches(t);
   await clearStoreRateLimits(t);

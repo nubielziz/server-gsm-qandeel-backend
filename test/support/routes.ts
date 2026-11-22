@@ -189,6 +189,46 @@ export const anyBody = defineRoute({
   errors: ['VALIDATION_FAILED'],
 });
 
+/** Public probes and error routes on the browser surfaces (decision 045): the CORS hook decides by the path's surface. */
+const plainAt = (
+  key: `GET /${'admin' | 'client' | 'store/v1'}/t/${string}`,
+  summary: string,
+  surface: 'admin' | 'client' | 'store',
+) =>
+  defineRoute({
+    key,
+    summary,
+    tags: ['test'],
+    surface,
+    access: 'public',
+    success: { status: 200, schema: z.object({ ok: z.boolean() }) },
+    errors: [],
+  });
+export const adminProbe = plainAt('GET /admin/t/probe', 'A public read on the staff surface', 'admin');
+export const clientProbe = plainAt('GET /client/t/probe', 'A public read on the merchant surface', 'client');
+export const storeProbe = plainAt('GET /store/v1/t/probe', 'A public read on the shop surface', 'store');
+export const adminBoom = plainAt('GET /admin/t/boom', 'Throws an unexpected error on the staff surface', 'admin');
+export const adminAppError = plainAt('GET /admin/t/app-error', 'Throws an AppError on the staff surface', 'admin');
+export const adminRateLimited = plainAt(
+  'GET /admin/t/rate-limited',
+  'Throws RATE_LIMITED on the staff surface',
+  'admin',
+);
+
+export const adminAnyBody = defineRoute({
+  key: 'POST /admin/t/any-body',
+  summary: 'Accepts any JSON object on the staff surface',
+  description: 'Test route: no session and no audit row (a body-limit probe).',
+  tags: ['test'],
+  surface: 'admin',
+  access: 'public',
+  csrf: false,
+  audit: false,
+  body: zJsonObject,
+  success: { status: 200, schema: z.object({ keys: z.number() }) },
+  errors: ['VALIDATION_FAILED', 'CSRF_FAILED'],
+});
+
 export const staffOnly = defineRoute({
   key: 'GET /admin/t/secure',
   summary: 'A staff route (the guard dispatcher enforces its permission)',
@@ -317,5 +357,46 @@ export class TestController {
   @Route(staffOnly)
   staffOnly(): ResultOf<typeof staffOnly> {
     return { ok: true };
+  }
+
+  @Route(adminProbe)
+  adminProbe(): ResultOf<typeof adminProbe> {
+    return { ok: true };
+  }
+
+  @Route(clientProbe)
+  clientProbe(): ResultOf<typeof clientProbe> {
+    return { ok: true };
+  }
+
+  @Route(storeProbe)
+  storeProbe(): ResultOf<typeof storeProbe> {
+    return { ok: true };
+  }
+
+  @Route(adminBoom)
+  adminBoom(): never {
+    throw new Error('connect ECONNREFUSED 10.0.0.5:5432 password=hunter2');
+  }
+
+  @Route(adminAppError)
+  adminAppError(): never {
+    throw new AppError('VALIDATION_FAILED', {
+      detail: 'Two fields are not valid.',
+      errors: [
+        { field: 'email', code: 'invalid_format', message: 'Not an email' },
+        { field: 'items.0.imei', code: 'too_small', message: 'Too short' },
+      ],
+    });
+  }
+
+  @Route(adminRateLimited)
+  adminRateLimited(): never {
+    throw new AppError('RATE_LIMITED', { retryAfterSeconds: 30 });
+  }
+
+  @Route(adminAnyBody)
+  adminAnyBody(@Body() body: BodyOf<typeof adminAnyBody>): ResultOf<typeof adminAnyBody> {
+    return { keys: Object.keys(body).length };
   }
 }

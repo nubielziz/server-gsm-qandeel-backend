@@ -83,7 +83,9 @@ describe('.env.production.example', () => {
     filled.DATABASE_URL = 'postgres://gsm:secretpassword@postgres:5432/gsm';
     const config = parseEnv(filled);
     expect(config.isProduction).toBe(true);
-    expect(config.http.corsOrigins).toEqual(['https://shop.example.com', 'https://admin.example.com']);
+    expect(config.http.consoleOrigins).toEqual(['https://admin.example.com']);
+    expect(config.http.shopOrigins).toEqual(['https://shop.example.com']);
+    expect(config.warnings).toEqual([]);
     expect(config.redis.queueUrl).toBe('redis://redis-queue:6379/0');
     expect(config.redis.cacheUrl).toBe('redis://redis-cache:6379/0');
   });
@@ -95,7 +97,9 @@ describe('.env.production.example', () => {
     const subnet = compose.networks.gsm.ipam.config[0]?.subnet;
     expect(productionVars.TRUST_PROXY).toBe(subnet);
     expect(parseTrustProxy(productionVars.TRUST_PROXY)).toEqual({ ok: true, value: [subnet as string] });
-    expect(productionVars.CORS_ORIGINS).toBe(`https://${deploy.SHOP_HOST},https://${deploy.ADMIN_HOST}`);
+    // Decision 045: the origins come from the base URLs; the old single list is refused in production.
+    expect(productionVars.CORS_ORIGINS).toBeUndefined();
+    expect(productionVars.CONSOLE_BASE_URL).toBe(`https://${deploy.ADMIN_HOST}`);
     expect(productionVars.STORE_BASE_URL).toBe(`https://${deploy.SHOP_HOST}`);
     expect(productionVars.PORTAL_BASE_URL).toBe(`https://${deploy.SHOP_HOST}/merchant`);
     expect(productionVars.ERRORS_BASE_URL).toBe(`https://${deploy.API_HOST}/errors`);

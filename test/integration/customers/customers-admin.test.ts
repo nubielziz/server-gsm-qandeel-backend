@@ -22,13 +22,20 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
 import { insertOrderRow } from '../../support/orders';
 import { insertBlock } from '../../support/risk';
-import { StoreClient, captureCustomerLinks, customerLinks, customerRow, makeCustomer } from '../../support/store';
+import {
+  STORE_ORIGIN,
+  StoreClient,
+  captureCustomerLinks,
+  customerLinks,
+  customerRow,
+  makeCustomer,
+} from '../../support/store';
 
 const clock = new TestClock('2026-11-07T10:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 afterAll(async () => {
   await resetDb();

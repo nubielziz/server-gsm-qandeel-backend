@@ -46,8 +46,8 @@ console can sign in against the real API. The simplest way is the console's part
 run `bun src/main.ts` (and `bun src/worker.ts` for the jobs), then in the frontend
 `VITE_API_MOCKS=unbuilt VITE_DEV_PROXY_TARGET=http://localhost:3000 VITE_API_BASE_URL= npm run dev`: the routes this API has
 built go to it through the Vite proxy (one origin, no CORS), the others stay mocked (`npm run mocks:live` there after this
-repository gains routes). Calling the API cross-origin (`VITE_API_BASE_URL=http://localhost:3000`) also works: the dev
-default of `CORS_ORIGINS` allows `http://localhost:5173`. The seed also allows `127.0.0.1` and `::1` on the admin allowlist
+repository gains routes). Calling the API cross-origin (`VITE_API_BASE_URL=http://localhost:3000`) also works: the development
+default of `CONSOLE_ORIGINS` allows `http://localhost:5173` (decision 045). The seed also allows `127.0.0.1` and `::1` on the admin allowlist
 (IP rules 8 and 9), so a console on the same machine is not locked out. Nothing here exists in production, and no code path
 skips the TOTP step.
 

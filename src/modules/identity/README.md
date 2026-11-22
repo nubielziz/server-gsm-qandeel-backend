@@ -57,7 +57,7 @@ route's own pipes and interceptors. A route without a contract is refused (`500`
 
 | Access kind | Who authenticates |
 |---|---|
-| `public` | nobody; a mutation on `/admin` or `/client` still needs an `Origin` from `CORS_ORIGINS` (`403 CSRF_FAILED` otherwise) |
+| `public` | nobody; a mutation on `/admin` or `/client` still needs an `Origin` of the route's audience (`CONSOLE_ORIGINS`, `SHOP_ORIGINS`; `403 CSRF_FAILED` otherwise); on `/store/v1` only the routes with `originCheck` (the sign-in routes, the link exchange included) |
 | `staff-session`, `staff-permission` | the staff session cookie; `staff-permission` adds the contract's `permission` (`403 FORBIDDEN`, the detail names it) |
 | `merchant-session`, `customer-session` | the same mechanics with their own cookie, table and statuses |
 | `internal-or-token` | the network-or-token rule of `/metrics` (`MetricsAccessGuard`) |
@@ -85,7 +85,9 @@ and Dhru calls of a pending merchant answer `403 ACCOUNT_PENDING_APPROVAL` as we
 **Cookies.** `gsm_admin_session`, `gsm_client_session`, `gsm_store_session` (httpOnly, `Secure` from `COOKIE_SECURE`, `SameSite=Lax`,
 `Path=/`, `__Host-` prefix when secure) and the readable CSRF cookies `csrf_token` (staff), `csrf_token_client`, `csrf_token_store`
 (`Domain` from `CSRF_COOKIE_DOMAIN`). The CSRF token is `HMAC(CSRF_SECRET, session token hash)`, so it changes when the session is
-rotated. A same-origin deployment must list its own origin in `CORS_ORIGINS` too, or the Origin check refuses its sign-in.
+rotated. The Origin checks use the origins of the route's audience (decision 045): `CONSOLE_ORIGINS` and `SHOP_ORIGINS`, which production derives from `CONSOLE_BASE_URL`,
+`STORE_BASE_URL` and `PORTAL_BASE_URL`; a deployment that serves a page from another host lists that origin too. The readable CSRF
+cookies keep their names and are not host-locked (the console and the storefront read them by name).
 
 **Lifetimes** are settings in minutes, with the defaults of decision 018: `sessions.staff_absolute_minutes` 480,
 `sessions.staff_idle_minutes` 30, `sessions.client_absolute_minutes` / `sessions.customer_absolute_minutes` 43200,
@@ -477,7 +479,7 @@ README) and the inbox is its first source (platform). Code: `realtime/` (`stream
 `stream-viewer.ts`, `stream.module.ts` = `StreamRoutesModule`).
 
 - **Thin controller.** The session guard authenticates the request like any other (stage, account state, IP rules, and `originCheck`:
-  `Sec-Fetch-Site` `same-origin` or `same-site`, else `403 CSRF_FAILED`); the handler maps the principal to a `StreamViewer`
+  `Sec-Fetch-Site: same-origin` or an `Origin` of the surface's audience, else `403 CSRF_FAILED`); the handler maps the principal to a `StreamViewer`
   (`streamViewerOf`: staff, merchant as `client`, customer; an API-key, capability or webhook principal is `401`) and the caps
   `session:<id>` (`REALTIME_MAX_PER_SESSION`) and `ip:<address>` (`REALTIME_MAX_PER_IP`) (`streamCapsOf`), then calls `RealtimeHub.open`.
   The hub refuses (problem+json, before the stream starts) or hijacks the reply and streams. `GET /client/stream` uses

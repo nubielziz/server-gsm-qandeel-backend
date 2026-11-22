@@ -9,14 +9,14 @@ import { fundCustomer, insertWalletTemplates, pushNegative, walletSettings } fro
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;
 let staff: AdminApi;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, env: { CORS_ORIGINS: CONSOLE_ORIGIN } });
+  t = await createTestApp({ clock, env: { CONSOLE_ORIGINS: CONSOLE_ORIGIN, SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   clock.set('2026-11-10T09:00:00.000Z');

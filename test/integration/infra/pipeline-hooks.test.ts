@@ -149,16 +149,25 @@ describe('pipeline order: IP rules, then maintenance, then the per-IP limit, all
     expect((await get('/store/v1/t/ping', ip, AUTH)).statusCode).toBe(200);
   });
 
-  it('answers a blocked address 403 IP_NOT_ALLOWED before authentication, on every surface, with the CORS headers', async () => {
+  it('answers a blocked address 403 IP_NOT_ALLOWED before authentication, on every surface, with the CORS headers of the browser surfaces', async () => {
     const blocked = freshIp();
     await blockEverywhere(blocked);
     const requests: Array<[string, string]> = [
       ['GET', '/admin/t/secure'],
       ['GET', '/store/v1/t/ping'],
-      ['GET', '/v1/t/ping'],
       ['GET', '/client/t/ping'],
       ['GET', '/store/v1/nope'],
     ];
+    // A machine surface sends no CORS grant to any origin (decision 045), the refusal included.
+    const machine = await t.app.inject({
+      method: 'GET',
+      url: '/v1/t/ping',
+      remoteAddress: blocked,
+      headers: { origin: CONSOLE },
+    });
+    refusedAs(machine, 403, 'IP_NOT_ALLOWED');
+    expect(machine.headers['access-control-allow-origin']).toBeUndefined();
+    expect(machine.headers['access-control-allow-credentials']).toBeUndefined();
     // Signed incoming webhooks are never judged by IP rules (B118): they reach their own checks.
     const hook = await t.app.inject({ method: 'POST', url: '/webhooks/t/ping', remoteAddress: blocked, payload: {} });
     expect(hook.statusCode).not.toBe(403);

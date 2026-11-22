@@ -21,3 +21,9 @@ await configureApp(app, config);
 app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
 await app.listen(config.http.port, config.http.host);
 app.get(Logger).log({ msg: 'API listening', config: summarizeConfig(config) }, 'Bootstrap');
+// Settings that work but should change (a deprecated variable, decision 045): one warning line each.
+for (const warning of config.warnings) {
+  app
+    .get(Logger)
+    .warn({ msg: 'Configuration warning', variable: warning.variable, warning: warning.message }, 'Bootstrap');
+}

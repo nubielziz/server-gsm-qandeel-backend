@@ -94,6 +94,7 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
   registers the `customer` session subject resolver (blocked behaves like suspended, anonymized like gone). `magic-link`, `login` and
   `password/forgot` are `turnstile: true` (decision 034): without the `X-Turnstile-Token` header the answer is `403 TURNSTILE_FAILED`
   before the route does anything (the tests send the dummy token through `test/support/store.ts`).
+  `POST /store/v1/auth/verify` and `/login` need an `Origin` of the shop (`originCheck`, decision 045).
 - **Account** (`CustomerAccountService`): `GET|PATCH /store/v1/me` (name, phone and country with the staff edit's rules, feature 24B:
   `domain/profile-edit.ts` judges "changed" against the locked row, `CustomerProfileRules` refuses a changed country with no current
   tax rate (`422` on `country`) and re-derives the currency unless the request sends one; email is not editable; no audit row;
@@ -129,7 +130,7 @@ and `domain/customer-export.ts`, and the reads and writes that reach other modul
 - **Export** (`GET /admin/customers/:id/export`, `customers:privacy`, RESOLUTIONS b2c-8): a `customer-<id>.json` download of the profile,
   orders with their IMEI, payments without card data, consents, checkout sessions, support tickets with their public messages, IMEI
   checks and data requests (what the customer gave and did: no internal notes, risk level, suspension reason or blocklist entries); closes the customer's waiting export request and is audited `exported data of`. The contract sets
-  `originCheck: true`: the CSRF guard asks for `Sec-Fetch-Site` `same-origin`/`same-site` or an exact allowed `Origin`, else `403
+  `originCheck: true`: the CSRF guard asks for `Sec-Fetch-Site: same-origin` or an `Origin` that is one of the console's origins (`CONSOLE_ORIGINS`), else `403
   CSRF_FAILED`. No copy of the file is kept.
 - **Anonymize** (`POST /admin/customers/:id/anonymize`, `customers:privacy`, B50, RESOLUTIONS b2c-4): irreversible. Name `Deleted
   customer`, email `deleted-<id>@redacted.invalid` (free again), phone and notes cleared, marketing off, account closed (credentials

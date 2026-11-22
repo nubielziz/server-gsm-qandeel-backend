@@ -78,12 +78,16 @@ async function seedWallet(): Promise<void> {
   await post('debit', '25', '2026-11-03T08:00:00.000Z');
 }
 
-/** Downloads the statement, keeping the document the renderer was given (the PDF text is compressed, so tests read it there). */
+/** Downloads the statement as the console does (from its own origin), keeping the document the renderer was given (the PDF text is compressed, so tests read it there). */
 async function download(path: string, as: AdminApi = staff) {
   const renderer = t.app.get(PdfRenderer, { strict: false });
   const spy = spyOn(renderer, 'render');
   try {
-    const res = await t.app.inject({ method: 'GET', url: path, headers: as.session.headers });
+    const res = await t.app.inject({
+      method: 'GET',
+      url: path,
+      headers: { ...as.session.headers, 'sec-fetch-site': 'same-origin' },
+    });
     const document: PdfDocument | undefined = spy.mock.calls[0]?.[0];
     return { res, status: res.statusCode, document };
   } finally {
@@ -278,6 +282,22 @@ describe('GET /admin/reports/client-statement/:clientId', () => {
       actorId: staff.staffId,
       after: { from: '2026-11-01', to: '2026-11-30', lines: 2, invoices: 0, opening: '75.0000', closing: '60.0000' },
     });
+  });
+
+  it('answers only a request started by the console itself (decision 045)', async () => {
+    const { db } = await testDb();
+    const bare = await t.app.inject({ method: 'GET', url: URL(merchant.id), headers: staff.session.headers });
+    expect(bare.statusCode).toBe(403);
+    expect(bare.json().code).toBe('CSRF_FAILED');
+    const sameSite = await t.app.inject({
+      method: 'GET',
+      url: URL(merchant.id),
+      headers: { ...staff.session.headers, 'sec-fetch-site': 'same-site' },
+    });
+    expect(sameSite.statusCode).toBe(403);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(0);
+    expect((await download(URL(merchant.id))).status).toBe(200);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(1);
   });
 
   it('answers 404 for a merchant that does not exist and writes nothing', async () => {

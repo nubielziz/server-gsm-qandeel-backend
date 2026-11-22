@@ -140,6 +140,56 @@ describe('deploy/Caddyfile', () => {
     expect(block('ADMIN_HOST')).toContain('reverse_proxy console:80');
   });
 
+  it("routes the console's own pictures (/store/v1/media/*) on the admin host to the API, and nothing else of /store/v1 (decision 045)", () => {
+    const admin = block('ADMIN_HOST');
+    expect(admin).toMatch(/@api path \/admin\/\* \/health \/reference \/reference\/\* \/store\/v1\/media\/\*\n/);
+    const matcher = /@api path (.+)\n/.exec(admin)?.[1] ?? '';
+    // Only the pictures: no other path of the shop surface is reachable through the console's host.
+    expect(matcher.split(' ').filter((path) => path.startsWith('/store/v1'))).toEqual(['/store/v1/media/*']);
+    expect(matcher).not.toContain('/client');
+    expect(block('SHOP_HOST')).toContain('@api path /client/* /store/v1/*');
+  });
+
+  it("puts the page headers of decision 045 on the console's and the shop's pages only, and no script policy at the edge", () => {
+    const snippet = (name: string): string => {
+      const start = caddyfile.indexOf(`(${name}) {`);
+      if (start < 0) throw new Error(`no snippet ${name}`);
+      return caddyfile.slice(start, caddyfile.indexOf('\n}\n', start));
+    };
+    const consoleHeaders = snippet('console_page_headers');
+    for (const line of [
+      "Content-Security-Policy \"frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'\"",
+      'X-Frame-Options "DENY"',
+      'X-Content-Type-Options "nosniff"',
+      'Referrer-Policy "same-origin"',
+    ]) {
+      expect(consoleHeaders).toContain(line);
+    }
+    expect(consoleHeaders).toMatch(/^\s*defer$/m);
+    const shopHeaders = snippet('shop_page_headers');
+    expect(shopHeaders).toContain(
+      "+Content-Security-Policy \"frame-ancestors 'none'; base-uri 'self'; object-src 'none'\"",
+    );
+    expect(shopHeaders).toContain('X-Frame-Options "DENY"');
+    expect(shopHeaders).toContain('X-Content-Type-Options "nosniff"');
+    expect(shopHeaders).toMatch(/^\s*defer$/m);
+    expect(shopHeaders).toContain('header ?Referrer-Policy "strict-origin-when-cross-origin"');
+
+    // Imported in the handle that proxies to the page server, never in the handle of the API's own routes.
+    expect(block('ADMIN_HOST')).toMatch(/handle \{\s*import console_page_headers\s*reverse_proxy console:80\s*\}/);
+    expect(block('ADMIN_HOST')).toMatch(/handle @api \{\s*reverse_proxy api:3000\s*\}/);
+    expect(block('SHOP_HOST')).toMatch(/handle \{\s*import shop_page_headers\s*reverse_proxy site:3000\s*\}/);
+    expect(block('SHOP_HOST')).toMatch(/handle @api \{\s*reverse_proxy api:3000\s*\}/);
+    expect(block('API_HOST')).not.toContain('_page_headers');
+
+    const active = caddyfile
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(active).not.toContain('script-src');
+    expect(active).toContain('header Strict-Transport-Security "max-age=31536000"');
+  });
+
   it('answers 404 on the API host except for the machine surfaces', () => {
     expect(block('API_HOST')).toContain('@api path /api/index.php /v1/* /webhooks/* /docs /docs/*');
     expect(block('API_HOST')).toContain('respond 404');

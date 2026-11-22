@@ -121,6 +121,17 @@ describe('configuration failure', () => {
     expect(await text(child.stdout)).not.toContain('API listening');
   });
 
+  it('refuses CORS_ORIGINS in production and names the two settings that replace it (decision 045)', async () => {
+    const child = start('src/main.ts', { ...PRODUCTION_ENV, CORS_ORIGINS: 'https://admin.gsm.example' });
+    const code = await Promise.race([child.exited, Bun.sleep(15_000).then(() => 'timeout' as const)]);
+    expect(code).toBe(1);
+    const stderr = await text(child.stderr);
+    expect(stderr).toContain('CORS_ORIGINS: is not read in production');
+    expect(stderr).toContain('CONSOLE_ORIGINS');
+    expect(stderr).toContain('SHOP_ORIGINS');
+    expect(await text(child.stdout)).not.toContain('API listening');
+  });
+
   it('stops the worker the same way', async () => {
     const child = start('src/worker.ts', { NODE_ENV: 'production' });
     expect(await child.exited).toBe(1);
@@ -182,6 +193,26 @@ describe('API process', () => {
     expect([0, 143]).toContain(code as number);
     expect(ms).toBeLessThan(5000);
     expect(await refuses(`http://127.0.0.1:${port}/health`)).toBe(true);
+  });
+
+  it('logs a configuration warning for the deprecated CORS_ORIGINS at boot (decision 045)', async () => {
+    const port = await freePort();
+    const child = start('src/main.ts', {
+      NODE_ENV: 'test',
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      DATABASE_URL_TEST: TEST_DATABASE_URL,
+      CORS_ORIGINS: 'http://localhost:5173',
+    });
+    await eventually(async () => {
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      return res.ok ? res : undefined;
+    });
+    expect([0, 143]).toContain((await stop(child)).code as number);
+    const stdout = await text(child.stdout);
+    expect(stdout).toContain('Configuration warning');
+    expect(stdout).toContain('CORS_ORIGINS');
+    expect(stdout).toContain('is deprecated and refused in production');
   });
 
   it('refuses to start when the port is taken, with a non-zero exit code', async () => {

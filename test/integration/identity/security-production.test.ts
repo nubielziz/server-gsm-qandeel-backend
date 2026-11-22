@@ -1,5 +1,5 @@
 // The security stack under production rules (decision 018), against the test instances: Secure cookies with the __Host-
-// prefix, the audit enforcement that only logs, and the CORS origin list. The rest of the suite runs in test mode.
+// prefix, the audit enforcement that only logs, and the origin lists (decision 045). The rest of the suite runs in test mode.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, productionEnvOnTestInstances, signInStaff } from '../../support/auth';
@@ -12,7 +12,7 @@ let t: TestApp;
 beforeAll(async () => {
   t = await createTestApp({
     controllers: [SecurityTestController],
-    env: productionEnvOnTestInstances({ CORS_ORIGINS: CONSOLE, CSRF_COOKIE_DOMAIN: 'example.com' }),
+    env: productionEnvOnTestInstances({ CONSOLE_ORIGINS: CONSOLE, CSRF_COOKIE_DOMAIN: 'example.com' }),
   });
 });
 afterAll(async () => {

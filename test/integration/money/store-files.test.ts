@@ -21,7 +21,7 @@ const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   await resetDb();

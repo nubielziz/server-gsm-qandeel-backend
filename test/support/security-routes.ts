@@ -197,6 +197,18 @@ export const adminPublicRead = defineRoute({
   errors: [],
 });
 
+/** A staff GET whose request must have been started by the console itself (decision 045). */
+export const adminOriginChecked = defineRoute({
+  key: 'GET /admin/t/sec/origin-checked',
+  summary: 'A staff GET with the origin check',
+  tags: ['security-test'],
+  surface: 'admin',
+  access: 'staff-session',
+  originCheck: true,
+  success: { status: 200, schema: Okay },
+  errors: ['UNAUTHORIZED', 'CSRF_FAILED'],
+});
+
 /** What a sign-in answers: the cookies and the CSRF header (the route creates a session for staff id 1). */
 export const issueCookies = defineRoute({
   key: 'POST /admin/t/sec/issue',
@@ -272,6 +284,30 @@ export const customerWrite = defineRoute({
   access: 'customer-session',
   success: { status: 200, schema: Seen },
   errors: ['UNAUTHORIZED', 'CSRF_FAILED'],
+});
+/** A customer GET whose request must have been started by the shop itself (decision 045). */
+export const storeOriginChecked = defineRoute({
+  key: 'GET /store/v1/t/sec/origin-checked',
+  summary: 'A customer GET with the origin check',
+  tags: ['security-test'],
+  surface: 'store',
+  access: 'customer-session',
+  originCheck: true,
+  success: { status: 200, schema: Okay },
+  errors: ['UNAUTHORIZED', 'CSRF_FAILED'],
+});
+/** A storefront mutation without a session that signs a visitor in: the Origin must be the shop's (decision 045). */
+export const storeSignIn = defineRoute({
+  key: 'POST /store/v1/t/sec/sign-in',
+  summary: 'A session-less storefront mutation with the origin check',
+  description: 'Test route: stands in for the storefront sign-in routes.',
+  tags: ['security-test'],
+  surface: 'store',
+  access: 'public',
+  csrf: false,
+  originCheck: true,
+  success: { status: 200, schema: Okay },
+  errors: ['CSRF_FAILED'],
 });
 export const storePublicWrite = defineRoute({
   key: 'POST /store/v1/t/sec/public',
@@ -461,6 +497,21 @@ export class SecurityTestController {
   @Route(customerWrite)
   customerWrite(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof customerWrite> {
     return seen(principal);
+  }
+
+  @Route(adminOriginChecked)
+  adminOriginChecked(): ResultOf<typeof adminOriginChecked> {
+    return { ok: true };
+  }
+
+  @Route(storeOriginChecked)
+  storeOriginChecked(): ResultOf<typeof storeOriginChecked> {
+    return { ok: true };
+  }
+
+  @Route(storeSignIn)
+  storeSignIn(): ResultOf<typeof storeSignIn> {
+    return { ok: true };
   }
 
   @Route(storePublicWrite)

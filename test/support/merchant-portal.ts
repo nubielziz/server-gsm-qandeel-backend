@@ -14,7 +14,7 @@ import type { Client } from '@src/modules/identity/db/schema';
 import type { TestApp } from './app';
 import { testDb } from './db';
 
-/** The origin the test app lists in `CORS_ORIGINS`. */
+/** The origin the test app lists for the shop (`SHOP_ORIGINS`, or the deprecated `CORS_ORIGINS`). */
 export const PORTAL_ORIGIN = 'https://portal.example.com';
 /** The password of every merchant `makeMerchant` creates unless told otherwise. */
 export const MERCHANT_PASSWORD = 'correct-horse-battery';

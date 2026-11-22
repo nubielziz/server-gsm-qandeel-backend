@@ -12,6 +12,7 @@ import { auditOfCustomer } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { freshClientIp } from '../../support/pipeline-routes';
 import {
+  STORE_ORIGIN,
   StoreClient,
   captureCustomerLinks,
   clearStoreRateLimits,
@@ -24,7 +25,7 @@ const clock = new TestClock('2026-11-07T10:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 afterAll(async () => {
   await resetDb();

@@ -89,7 +89,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   and the opening balance is the `balance_after` of the entry before the first line shown, so the closing balance is the wallet's. Without
   `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them, and
   more than 10,000 invoices are cut to the newest 10,000. `404` for an unknown merchant; `422` on `from` for a reversed period, or for an
-  explicit period of more than 10,000 lines or more than 10,000 invoices (never without `from`); every download writes an audit row (`exported statement of`, entity `merchant`).
+  explicit period of more than 10,000 lines or more than 10,000 invoices (never without `from`); every download writes an audit row (`exported statement of`, entity `merchant`). `originCheck`: same-origin or a console `Origin` (decision 045).
 - **Commission reversal (feature 11).** `commissionReversal` is a pure builder beyond the 13 map events (user rule 5): Dr `client_wallet` /
   Cr `commission_expense`, kind `commission`, ref type `accrual`. `PostTransactionInput.allowBelowCreditLimit` lets that one debit pass
   `INSUFFICIENT_FUNDS` (the agent already received and may have spent the commission); only the commissions module sets it.

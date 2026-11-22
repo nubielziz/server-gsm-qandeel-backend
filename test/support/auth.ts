@@ -159,7 +159,7 @@ export async function clearRateLimits(t: TestApp): Promise<void> {
  * against. With the test instances behind it, a test can run the real guards with production rules (Secure cookies with the
  * `__Host-` prefix, the audit enforcement that only logs, the staff-only reference pages).
  *
- * @param extra more variables, for example `CORS_ORIGINS`
+ * @param extra more variables, for example `CONSOLE_ORIGINS`
  * @returns variables for `createTestApp({ env })`
  */
 export function productionEnvOnTestInstances(extra: Record<string, string> = {}): Record<string, string> {

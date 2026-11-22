@@ -1,9 +1,12 @@
 # Reverse proxy of the production stack (feature 24D, decision 036, docs/OPERATIONS.md). One browser origin per audience:
 #   SHOP_HOST   the storefront (container `site`); /client/* and /store/v1/* go straight to the API, so there is no CORS
-#   ADMIN_HOST  the console (container `console`); /admin/*, /health and the internal reference go to the API
+#   ADMIN_HOST  the console (container `console`); /admin/*, /health, the internal reference and the pictures under /store/v1/media/*
+#               (the console's listing pictures and payment logos load on its own origin) go to the API
 #   API_HOST    machine clients only: Dhru, REST v1, incoming webhooks and the public docs; every other path is a 404
 # /metrics matches no route on any host. Caddy sets X-Forwarded-For itself (it drops a client-sent value), and the API trusts
 # exactly the compose subnet (TRUST_PROXY=172.30.0.0/24). Do not add `trusted_proxies` unless a CDN is placed in front.
+# The console's and the shop's pages get the anti-framing, nosniff and referrer headers of decision 045; the API's answers keep the
+# API's own headers.
 {
 	email {$ACME_EMAIL}
 }
@@ -27,6 +30,32 @@
 		output stdout
 		format json
 	}
+}
+
+# Headers of the console's own pages (decision 045): no site may frame them, no MIME sniffing, no address of a console page sent to
+# another site. Imported on the console's handle only: the API's answers keep the stricter headers the API sets itself. No script
+# policy here: the console's page runs an inline script, and its policy is the console's to write.
+(console_page_headers) {
+	header {
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		defer
+	}
+}
+
+# Headers of the storefront's and the merchant portal's pages (decision 045). The site may send a policy of its own (its script
+# policy is the storefront's to write): the edge adds its anti-framing policy as a second one, and both apply. The site's
+# X-Frame-Options and nosniff are replaced by one value each; its Referrer-Policy is kept, with a default when it sends none.
+(shop_page_headers) {
+	header {
+		+Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		defer
+	}
+	header ?Referrer-Policy "strict-origin-when-cross-origin"
 }
 
 {$SHOP_HOST} {
@@ -55,6 +84,7 @@
 		reverse_proxy api:3000
 	}
 	handle {
+		import shop_page_headers
 		reverse_proxy site:3000
 	}
 }
@@ -62,11 +92,12 @@
 {$ADMIN_HOST} {
 	import common
 	import json_log
-	@api path /admin/* /health /reference /reference/*
+	@api path /admin/* /health /reference /reference/* /store/v1/media/*
 	handle @api {
 		reverse_proxy api:3000
 	}
 	handle {
+		import console_page_headers
 		reverse_proxy console:80
 	}
 }

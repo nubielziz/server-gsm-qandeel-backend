@@ -39,14 +39,16 @@ export const verifyMagicLink = defineRoute({
     'Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a ' +
     'session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details. A link that ' +
     'is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link ' +
-    'sent after an email change works the same way.',
+    'sent after an email change works the same way. Accepted only with an `Origin` header that is one of the shop’s origins, like ' +
+    'the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'link-token',
   csrf: false,
+  originCheck: true,
   body: z.object({ token: TokenField }),
   success: { status: 200, schema: StoreMeSchema },
-  errors: ['VALIDATION_FAILED', 'TOKEN_INVALID', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
+  errors: ['VALIDATION_FAILED', 'TOKEN_INVALID', 'IP_NOT_ALLOWED', 'RATE_LIMITED', 'CSRF_FAILED'],
   examples: { request: { token: 'k3Jx9Qd7mT2vN8bR5yHc1WzA4uLsE6oPgF0iVtXnDqM' }, response: STORE_ME_EXAMPLE },
 });
 
@@ -60,15 +62,17 @@ export const loginCustomer = defineRoute({
     'password and an account with no password yet. A correct password on a suspended or blocked account is `403 ' +
     'ACCOUNT_SUSPENDED`. Five attempts per email and address in 15 minutes, and ten wrong passwords in a row lock the email ' +
     '(known or not, so the answer never shows who has an account) for 15 minutes: both answer `429 RATE_LIMITED` with `Retry-After`. ' +
-    'Needs the anti-bot token (`X-Turnstile-Token`).',
+    'Needs the anti-bot token (`X-Turnstile-Token`). Accepted only with an `Origin` header that is one of the shop’s origins, like the ' +
+    'public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'public',
   turnstile: true,
   csrf: false,
+  originCheck: true,
   body: z.object({ email: z.string().trim().min(1).max(254), password: z.string().min(1).max(1024) }),
   success: { status: 200, schema: z.object({ next: StoreNext }) },
-  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'RATE_LIMITED'],
+  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'RATE_LIMITED', 'CSRF_FAILED'],
   examples: {
     request: { email: 'daniel.whitmore@example.com', password: 'a-long-password' },
     response: { next: 'done' },

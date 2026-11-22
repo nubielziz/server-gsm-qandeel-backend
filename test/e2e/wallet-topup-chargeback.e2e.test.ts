@@ -32,7 +32,7 @@ import { closeTestDb, resetDb, testDb } from '../support/db';
 import { ledgerTotals } from '../support/money';
 import { freshClientIp } from '../support/pipeline-routes';
 import { type StorefrontWorld, storefrontWorld } from '../support/storefront';
-import { type MadeCustomer, StoreClient, clearStoreRateLimits, makeCustomer } from '../support/store';
+import { type MadeCustomer, STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../support/store';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 const fake = new FakeGateway();
@@ -44,7 +44,11 @@ let store: StoreClient;
 let reference = '';
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, imports: [GatewayTestModule, PaymentAutoCreditModule] });
+  t = await createTestApp({
+    clock,
+    imports: [GatewayTestModule, PaymentAutoCreditModule],
+    env: { SHOP_ORIGINS: STORE_ORIGIN },
+  });
   await resetDb();
   await clearIdentityCaches(t);
   await clearStoreRateLimits(t);

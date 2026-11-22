@@ -22,13 +22,13 @@ import {
   storefrontWorld,
   type StorefrontWorld,
 } from '../../support/storefront';
-import { StoreClient, customerRow, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, customerRow, makeCustomer } from '../../support/store';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock });
+  t = await createTestApp({ clock, env: { SHOP_ORIGINS: STORE_ORIGIN } });
 });
 beforeEach(async () => {
   clock.set('2026-11-07T12:00:00.000Z');

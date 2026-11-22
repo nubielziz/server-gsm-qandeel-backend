@@ -632,3 +632,50 @@ describe('the anti-bot token on the three public auth routes (decision 034)', ()
     expect(customerLinks()).toEqual([]);
   });
 });
+
+describe('the Origin of the sign-in routes (decision 045)', () => {
+  const FOREIGN = 'https://evil.example';
+
+  it('refuses the link exchange from a website that is not the shop, and the link still works from the shop', async () => {
+    const customer = await makeCustomer(t);
+    expect((await store().magicLink(customer.email)).statusCode).toBe(204);
+    const [link] = customerLinks();
+    const { db } = await testDb();
+    const spent = async () =>
+      (await db.select().from(s.authTokens).where(eq(s.authTokens.subjectId, customer.id)))[0]?.usedAt;
+
+    const client = store();
+    const foreign = await client.verify(link!.token, { headers: { origin: FOREIGN } });
+    expect(foreign.statusCode).toBe(403);
+    expect(problem(foreign).code).toBe('CSRF_FAILED');
+    expect(foreign.cookies).toEqual([]);
+    expect(await spent()).toBeNull();
+
+    const bare = await t.app.inject({ method: 'POST', url: '/store/v1/auth/verify', payload: { token: link!.token } });
+    expect(bare.statusCode).toBe(403);
+    expect(problem(bare).code).toBe('CSRF_FAILED');
+    expect(await spent()).toBeNull();
+    expect(await sessionsOf(customer.id)).toHaveLength(0);
+
+    const fromShop = await client.verify(link!.token);
+    expect(fromShop.statusCode).toBe(200);
+    expect(fromShop.cookies.map((cookie) => cookie.name)).toContain(SESSION_COOKIE_NAMES.customer);
+    expect(await spent()).not.toBeNull();
+  });
+
+  it('refuses the password sign-in from a website that is not the shop, before it looks at the password', async () => {
+    const customer = await makeCustomer(t);
+    const foreign = await store().login(customer.email, CUSTOMER_PASSWORD, { headers: { origin: FOREIGN } });
+    expect(foreign.statusCode).toBe(403);
+    expect(problem(foreign).code).toBe('CSRF_FAILED');
+    expect(foreign.cookies).toEqual([]);
+    expect(await sessionsOf(customer.id)).toHaveLength(0);
+    // The wrong password of a foreign page is not counted either: the refusal comes first.
+    for (let i = 0; i < 12; i++) {
+      expect((await store().login(customer.email, 'wrong-password', { headers: { origin: FOREIGN } })).statusCode).toBe(
+        403,
+      );
+    }
+    expect((await store().login(customer.email)).statusCode).toBe(200);
+  });
+});

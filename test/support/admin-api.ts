@@ -52,6 +52,9 @@ export class AdminApi {
     payload?: unknown,
   ): Promise<ApiAnswer> {
     headers.origin = CONSOLE_ORIGIN;
+    // The console calls the API from its own origin in production, so a browser sends this on every request.
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === 'sec-fetch-site'))
+      headers['sec-fetch-site'] = 'same-origin';
     const res = await this.t.app.inject({
       method,
       url,

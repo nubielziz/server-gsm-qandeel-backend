@@ -12,7 +12,7 @@ import { type B2cWorld, json, openCheckout } from '../../support/b2c';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertOrderRow } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
-import { StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
 import { APPLE_IMEI, type StorefrontWorld, storefrontWorld } from '../../support/storefront';
 
 setDefaultTimeout(60_000);
@@ -27,7 +27,7 @@ let db: Awaited<ReturnType<typeof testDb>>['db'];
 let world: StorefrontWorld;
 
 beforeAll(async () => {
-  t = await createTestApp();
+  t = await createTestApp({ env: { SHOP_ORIGINS: STORE_ORIGIN } });
   ({ db } = await testDb());
 });
 beforeEach(async () => {

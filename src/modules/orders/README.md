@@ -87,6 +87,7 @@ the one `POST /api/index.php` transport route.
 - **Export** (`application/order-export.service.ts`): counts first (more than 100,000 rows: `422`), writes one `audit_logs` row
   (staff), then streams the CSV in batches of 1,000 by keyset paging on `(sort value, id)`, so rows never repeat or get skipped while
   orders arrive. Cells that start with `=`, `+`, `-`, `@`, tab or CR are written as text. Only the first `_sort` key is used.
+  `originCheck`: same-origin or a console `Origin` (decision 045).
 - **Merchant stats** (`application/order-client-stats.ts`): the orders source of identity's `ClientStatsDirectory` (30 days of
   `created_at` with no end): orders, spend of the orders not rejected, profit of the completed ones, margin, success rate, last order.
 - **Outbox** (`application/order-outbox.ts`, `orders-outbox.module.ts`, also loaded by the worker): see "Events".

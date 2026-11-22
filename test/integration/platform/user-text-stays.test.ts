@@ -103,7 +103,11 @@ describe('CSV exports carry text as typed (critic G5)', () => {
       source: 'store',
     });
     const staff = await adminWith(t, ['orders:read']);
-    const res = await t.app.inject({ method: 'GET', url: '/admin/orders/export', headers: staff.session.headers });
+    const res = await t.app.inject({
+      method: 'GET',
+      url: '/admin/orders/export',
+      headers: { ...staff.session.headers, 'sec-fetch-site': 'same-origin' },
+    });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     const lines = res.body.split('\r\n');

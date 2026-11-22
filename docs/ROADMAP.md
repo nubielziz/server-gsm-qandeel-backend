@@ -74,7 +74,7 @@ Every item: permission `clients:update` (0.6 maybe a new one), one audit row, te
 | 1.5 | **Email links on one domain** | Both kinds use `/set-password?token=`. No code change: set `PORTAL_BASE_URL=https://<site>/merchant` and `STORE_BASE_URL=https://<site>`, so merchant links go to `/merchant/set-password`, `/merchant/verify-email` |
 | 1.6 | **Public pages** | Home, services list and service page (`/store/v1/services`, `/:slug`), IMEI check (`/store/v1/imei/check`), help (`/store/v1/help`), content pages (`/store/v1/pages/:slug`), site settings (`/store/v1/config`). A signed-in merchant sees their own prices (`/client/services`) instead of retail |
 | 1.7 | **Turnstile** on sign-up, sign-in, IMEI check, checkout and tickets | Site key in the app's build settings; the backend already checks the token |
-| 1.8 | **Hosting on one domain** | `shop.` (site), `admin.` (console), `api.` (API); `CORS_ORIGINS`, `CSRF_COOKIE_DOMAIN` and `TRUST_PROXY` set for them (cookies are SameSite=Lax) |
+| 1.8 | **Hosting on one domain** | `shop.` (site), `admin.` (console), `api.` (API); `CONSOLE_ORIGINS` and `SHOP_ORIGINS` (derived from the base URLs in production, decision 045), `CSRF_COOKIE_DOMAIN` and `TRUST_PROXY` set for them (cookies are SameSite=Lax) |
 
 ## Phase 2W: a wallet for customers (decided 2026-11-09; backend first, before phase 2 goes live)
 

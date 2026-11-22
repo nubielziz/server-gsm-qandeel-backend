@@ -31,7 +31,7 @@ import {
 } from '../../support/customer-wallet';
 import { seedDefaultTemplates } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
-import { StoreClient, makeCustomer } from '../../support/store';
+import { STORE_ORIGIN, StoreClient, makeCustomer } from '../../support/store';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { orderRow } from '../../support/orders';
@@ -46,7 +46,11 @@ let t: TestApp;
 let world: B2cWorld;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, imports: [GatewayTestModule, SupplierTestModule] });
+  t = await createTestApp({
+    clock,
+    imports: [GatewayTestModule, SupplierTestModule],
+    env: { SHOP_ORIGINS: STORE_ORIGIN },
+  });
   await resetDb();
   await clearIdentityCaches(t);
   const { db } = await testDb();

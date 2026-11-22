@@ -235,10 +235,12 @@ export interface RouteSpec<
    */
   readonly turnstileRollout?: TurnstileRollout;
   /**
-   * `true` marks a session `GET` route that has a side effect or hands out a download of personal data, so the CSRF guard asks
-   * for a same-site request instead of ignoring the safe method: `Sec-Fetch-Site` of `same-origin` or `same-site`, or (when the
-   * header is absent) an `Origin` exactly in the configured CORS origins, else `403 CSRF_FAILED` (RESOLUTIONS b2c-8). The console
-   * downloads send no CSRF token, so this is the check that fits a `GET`. Only for `GET` routes with a session access.
+   * `true` makes the CSRF guard check where the request was started (decision 045). On a `GET` with a session access (a route
+   * with a side effect or a download of personal data, which carries no CSRF token): `Sec-Fetch-Site: same-origin`, or an
+   * `Origin` that is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client` and
+   * `/store/v1`). On a `/store/v1` mutation without a session (`csrf: false`; the routes that sign a visitor in): an `Origin` of
+   * the shop. Anything else is `403 CSRF_FAILED`. Refused elsewhere: a session mutation has its CSRF token, and every session-less
+   * mutation on `/admin` and `/client` is checked without the flag.
    */
   readonly originCheck?: boolean;
 }
@@ -295,7 +297,7 @@ export interface RouteContract<
   readonly turnstile: boolean;
   /** The switch that must be on for the `turnstile` check to run (feature 24A); `undefined` = always checked. */
   readonly turnstileRollout: TurnstileRollout | undefined;
-  /** True when the CSRF guard also checks the origin of this `GET` route (RESOLUTIONS b2c-8). */
+  /** True when the CSRF guard checks where the request was started (see `RouteSpec.originCheck`; decision 045). */
   readonly originCheck: boolean;
 }
 
@@ -545,10 +547,18 @@ export function defineRoute<
 
   if (spec.originCheck !== undefined) {
     if (typeof spec.originCheck !== 'boolean') problem('originCheck must be true or false');
-    if (spec.originCheck && method !== 'GET')
-      problem('originCheck only applies to GET routes (a mutation is already protected by the CSRF token)');
-    if (spec.originCheck && !sessionAccess)
-      problem(`originCheck only applies to routes with a session (access is "${spec.access}")`);
+    if (spec.originCheck && method === 'GET' && !sessionAccess)
+      problem(`originCheck on a GET only applies to routes with a session (access is "${spec.access}")`);
+    if (spec.originCheck && method !== 'GET') {
+      if (spec.csrf !== false)
+        problem(
+          'originCheck on a mutation only applies to a route without a session (csrf: false): a session mutation is protected by its CSRF token',
+        );
+      if (spec.surface !== 'store')
+        problem(
+          'originCheck on a mutation only applies to /store/v1 routes: every mutation without a session on /admin and /client already needs an allowed Origin',
+        );
+    }
   }
   if (spec.turnstile !== undefined && typeof spec.turnstile !== 'boolean') problem('turnstile must be true or false');
   if (spec.turnstile === true && !(spec.surface === 'store' || (spec.surface === 'client' && spec.access === 'public')))
