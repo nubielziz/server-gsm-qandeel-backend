@@ -94,6 +94,7 @@ state each rule and its reason.
 | 38 payments integrity | `9a3aa04` | 048 | 0052 | A payment confirmation counts only when the gateway's own record says paid, for the quoted amount and currency, for this payment; what cannot be captured as quoted is held, sent back where the gateway can, and closed by staff; a late payment is refunded; a card top-up is credited only against the gateway's record; a refund of a disputed payment is not sent, and an unsent one is reversed at a chargeback |
 | 40 risk inputs | `8abc73e` | 050 | 0053 | The card's issuing country and funding and the visitor's country are read and used; a rule without an input source does not apply and is named at boot; while a tax window is in force a country without one is refused and a payment whose card or visitor country differs from the declared one is held; a guest checkout is judged as a first order; a block from a guest order can be limited to guest checkouts; order counts see checkouts still being paid; a top-up without a risk screening goes to staff |
 | 45b infrastructure, the production stack | `6ba0a4d` | 055 (part B) | none | Five networks with fixed proxy addresses; the application's own database role, checked at a production start; passwords on both Redis instances; application and backup users for the file store and a files host for signed reads only; a production start refuses template, development and weak values; encrypted, append-only backups |
+| 37 staff data access | `3d277cf` | 047 | 0054 | An email change of a merchant or a customer needs the security permission of that account, ends its sessions and tells the address before the change; the mails that carry a sign-in link or protect an account keep the link and the notice visible, hold no other address, and cannot be switched off; a stored file opens only with the read permission of every record that uses it, and identity documents and payment proofs are audited; a customer's address is masked outside the Customers pages; the order export and the digits of an IMEI check need their own permissions |
 
 Checks: the whole `bun run check` on the tree of `8065e0c` (main with 34, 35, 36): 8290 pass, 1 skip, 0 fail; on the tree of `745c9ce`
 (with 42): 8393 pass, 1 skip, 0 fail; on the tree of `50b8517` (with 41): 8456 pass, 1 skip, 2 fail, both Redis command timeouts under load in
@@ -103,15 +104,20 @@ parallel shards (same batches, isolated databases; a failed batch is run again a
 generators pass, 8631 pass, 1 skip, 1 fail (the 15-second limit of one openapi-generator test under load; its batch alone 179 pass); the tree
 of `e02e478` (with 45a): 8706 pass, 1 skip, the same single limit, its batch alone 317 pass; the tree of `9a3aa04` (with 38, after the
 generator tests got a time limit that fits, `c4f647a`): 8808 pass, 1 skip, 0 fail; the tree of `8abc73e` (with 40, after the test helper
-learned to clear the cached IP rules, `bab76b7`): 8863 pass, 1 skip, 0 fail; the tree of `6ba0a4d` (with 45b): 8978 pass, 1 skip, 0 fail.
-Dev DB `gsm` migrated to 0053 after a dump before each step (the worker's one-off review of stored field
+learned to clear the cached IP rules, `bab76b7`): 8863 pass, 1 skip, 0 fail; the tree of `6ba0a4d` (with 45b): 8978 pass, 1 skip, 0 fail; the tree of
+`3d277cf` (with 37): 9079 pass, 1 skip, 0 fail. Dev DB `gsm` migrated to 0054 after a dump before each step (the worker's one-off review of stored field
 patterns clears nothing there: all 458 are in the import's length form). **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
 `CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
 helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
 
-Next (2026-11-22, night): 37 staff data access (decision 047) passed both reviews, is merged with main and in a last round of small
-points; 43 public abuse limits (053) passed its reviews after one fix round and is being merged with main. Then the list of places worth
-another review and the notes for the console and the shop.
+Next (2026-11-22, night): 43 public abuse limits (decision 053), the last of the fixes, passed its reviews after one fix round and is in a
+last round of small points before its merge. Then the list of places worth another review; the notes for the console and the shop are
+written.
+
+**For the owner after decision 047:** a staff role that changes merchant emails needs `clients:security`, one that changes customer emails
+or creates customers with a temporary password needs `customers:password`, the order export needs `reports:read`. A stored mail template
+of an account link or a security notice that breaks the new rules is not sent: the shipped text goes out instead, with a warning in the
+worker's log, until the template is saved again in a form the rules accept.
 
 **For the owner after decision 050:** create a tax window for every country the shop sells to before the first window goes live (0 % with
 the type "no tax" where none is due): from then on a country without one is refused at checkout. `GEOIP_COUNTRY_HEADER` stays unset
