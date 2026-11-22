@@ -590,4 +590,26 @@ describe('fx_stale (RULES dashboard 3, M166)', () => {
       .sort();
     expect(staleOnPage).toEqual(['EUR', 'JOD']);
   });
+
+  it('lists a currency whose refresh was held at once, as the currencies page does (decision 049)', async () => {
+    const api = await adminWith(t, ['dashboard:read', 'settings:update']);
+    const { db } = await testDb();
+    await insertUsd(db);
+    await db.insert(s.currencies).values([
+      { code: 'EUR', name: 'Euro', rateToBase: '0.9200', rateUpdatedAt: ago(HOUR), rateHeldAt: ago(HOUR) },
+      { code: 'GBP', name: 'Pound', rateToBase: '0.7900', rateUpdatedAt: ago(HOUR) },
+    ]);
+    expect(item(await dashboard(api), 'fx_stale')).toEqual({
+      id: 'fx_stale',
+      severity: 'medium',
+      kind: 'fx_stale',
+      currencies: ['EUR'],
+      oldestUpdatedAt: ago(HOUR).toISOString(),
+    });
+    const page = await api.get('/admin/currencies?_end=100');
+    const stale = Object.fromEntries(
+      page.body.map((row: { code: string; isStale: boolean }) => [row.code, row.isStale]),
+    );
+    expect(stale).toMatchObject({ EUR: true, GBP: false, USD: false });
+  });
 });

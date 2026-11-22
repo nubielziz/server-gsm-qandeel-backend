@@ -1,7 +1,7 @@
 // Route contract of the console's Dashboard read model: `GET /admin/dashboard` (map domain G, stage 9; MISMATCHES B87; resolutions
 // identity-platform-8, -9, -10, catalog-1, b2c-10). The shapes are the console's `Dashboard` type (src/features/dashboard/types).
 import { z } from 'zod';
-import { defineRoute, zId, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, zId, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { zServiceType } from '../contracts/system-common';
 
 const severity = z.enum(['critical', 'high', 'medium', 'low']);
@@ -40,7 +40,7 @@ export const AttentionItem = z.discriminatedUnion('kind', [
     kind: z.literal('supplier_balance_low'),
     supplierId: zId,
     supplierName: z.string(),
-    balance: zMoney,
+    balance: zSignedMoney,
     minimum: zMoney,
     runwayDays: z.number().nullable(),
   }),
@@ -61,7 +61,7 @@ export const AttentionItem = z.discriminatedUnion('kind', [
     ...base,
     kind: z.literal('wallets_negative'),
     count: z.number().int(),
-    clients: z.array(z.object({ id: zId, name: z.string(), balance: zMoney })),
+    clients: z.array(z.object({ id: zId, name: z.string(), balance: zSignedMoney })),
   }),
   z.object({ ...base, kind: z.literal('merchants_pending'), count: z.number().int(), names: z.array(z.string()) }),
   z.object({
@@ -108,7 +108,7 @@ export const AttentionItem = z.discriminatedUnion('kind', [
 
 const PeriodStats = z.object({
   revenue: zMoney,
-  profit: zMoney,
+  profit: zSignedMoney,
   orders: z.number().int(),
   successRate: z.number().nullable(),
   medianTurnaroundSeconds: z.number().nullable(),
@@ -141,7 +141,7 @@ const Dashboard = z.object({
       health: z.enum(['up', 'degraded', 'down', 'unknown']),
       successRate1h: z.number().nullable(),
       p50Ms: z.number().nullable(),
-      balance: zMoney,
+      balance: zSignedMoney,
       lowBalance: z.boolean(),
     }),
   ),

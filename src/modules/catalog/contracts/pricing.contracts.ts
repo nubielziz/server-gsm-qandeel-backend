@@ -2,7 +2,7 @@
 // (preview, then apply) and the price resolver. Shapes match the console's api/pricing.ts and serviceParts.ts
 // (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -4, -11, -12, -14).
 import { z } from 'zod';
-import { defineRoute, zDecimal, zId, zIdParam, zMoney } from '../../../common/contract';
+import { defineRoute, zDecimal, zId, zIdParam, zMoney, zSignedMoney } from '../../../common/contract';
 import { NamedRef, PositiveMoney } from './shared';
 
 /** One group price of a service. */
@@ -210,13 +210,13 @@ export const resolvePrice = defineRoute({
     status: 200,
     schema: z.object({
       price: zMoney,
-      rawPrice: zMoney,
+      rawPrice: zSignedMoney,
       floor: zMoney,
       clamped: z.boolean(),
       source: z.enum(['client', 'group', 'base']),
       cost: zMoney,
       minProfit: zMoney,
-      margin: zMoney,
+      margin: zSignedMoney,
       marginPct: zDecimal,
       steps: z.array(StepRow),
       otherGroups: z.array(z.object({ group: NamedRef, price: zMoney, clamped: z.boolean() })).optional(),

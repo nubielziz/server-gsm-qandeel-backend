@@ -1,6 +1,7 @@
 // Integration tests of the staff customer wallet routes (feature 21, plan § 7.1 routes 11 to 16): the view, the statement with its window,
 // adjust (once per key, key reuse, approval limit, no overdraft, NO_ACCOUNT, ANONYMIZED, audit and mail), freeze and unfreeze, the list
-// with its filters, sorts, search and x-total-count, and the permission refusals.
+// with its filters, sorts, search and x-total-count, and the permission refusals. Decision 049: the approval limit caps a staff member's
+// credits to customer balances over 24 hours; an Owner is not limited.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -192,6 +193,31 @@ describe('POST /admin/customers/:id/wallet/adjust', () => {
     );
     expect(anonymized.body.code).toBe('ANONYMIZED');
     expect((await reader.post(`/admin/customers/${buyer.id}/wallet/adjust`, {}, key())).body.code).toBe('FORBIDDEN');
+  });
+
+  it("counts a staff member's credits to customer balances over 24 hours; an owner is not limited (decision 049)", async () => {
+    const first = await customer();
+    const second = await customer({ name: 'Second buyer' });
+    const adjustOf = (api: AdminApi, customerId: number, amount: string) =>
+      api.post(
+        `/admin/customers/${customerId}/wallet/adjust`,
+        { amount, direction: 'credit', reason: 'Goodwill credit' },
+        key(),
+      );
+    expect((await adjustOf(staff, first.id, '300.0000')).status).toBe(200);
+    expect((await adjustOf(staff, second.id, '200.0000')).status).toBe(200);
+    const refused = await adjustOf(staff, first.id, '0.0001');
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({
+      code: 'APPROVAL_REQUIRED',
+      detail: 'Credits over $500 in 24 hours need an owner: yours would come to $500.00.',
+    });
+    const owner = await adminWith(t, ['*']);
+    expect((await adjustOf(owner, first.id, '600.0000')).status).toBe(200);
+    expect((await adjustOf(owner, first.id, '600.0000')).status).toBe(200);
+    // Another staff member's credits are their own.
+    const colleague = await adminWith(t, ['wallet:read', 'wallet:adjust']);
+    expect((await adjustOf(colleague, second.id, '500.0000')).status).toBe(200);
   });
 
   it('never overspends under parallel debits of different keys', async () => {

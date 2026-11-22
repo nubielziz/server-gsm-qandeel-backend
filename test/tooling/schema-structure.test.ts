@@ -107,8 +107,11 @@ const ADDITIONS: Record<string, string[]> = {
     'checkout_url',
     'request_fingerprint',
   ],
-  // Feature 21 (customer wallet, migration 0020): the store top-up's Idempotency-Key and request fingerprint.
-  invoices: ['description', 'checkout_url', 'idempotency_key', 'request_fingerprint'],
+  // Feature 21 (customer wallet, migration 0020): the store top-up's Idempotency-Key and request fingerprint. Decision 049: who issued a
+  // manual invoice.
+  invoices: ['description', 'checkout_url', 'idempotency_key', 'request_fingerprint', 'issued_by'],
+  // Decision 049: when a refresh held the provider's rate.
+  currencies: ['rate_held_at'],
   // Feature 21: the freeze state of a customer wallet; whether a checkout was opened by a signed-in customer.
   ledger_accounts: ['frozen_at', 'frozen_reason'],
   // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token.

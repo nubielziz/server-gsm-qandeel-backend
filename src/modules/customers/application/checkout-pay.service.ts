@@ -7,7 +7,7 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { SettingsService } from '../../platform';
-import { StorefrontMoney, StorefrontPayments } from '../../money';
+import { REQUIRE_3DS_KEY, StorefrontMoney, StorefrontPayments } from '../../money';
 import { StorefrontPolicies, inCurrency } from '../../storefront';
 import type { payCheckoutSession } from '../contracts/checkout-pay.contracts';
 import { consentState, effectiveStatus, requiredConsents } from '../domain/checkout';
@@ -18,9 +18,6 @@ import { CheckoutSessionService } from './checkout-session.service';
 
 /** What the route answers. */
 export type StartedPaymentView = ResultOf<typeof payCheckoutSession>;
-
-/** The policy that asks for 3-D Secure on cards (RULES settings 5); on unless staff turn it off. */
-const REQUIRE_3DS_KEY = 'require3ds';
 
 /**
  * Starts payments.
@@ -78,7 +75,8 @@ export class CheckoutPayService {
         currency: session.currency,
         grossUsd: Money.of(session.grossAmount),
         description: `Order for ${(await this.sessions.view(this.db.db, session)).service.name}`,
-        require3ds: (await this.settings.get(REQUIRE_3DS_KEY)) !== false,
+        // The policy that asks for 3-D Secure on cards (RULES settings 5): money's `asks3ds` judges it with the method (decision 049).
+        threeDsPolicy: await this.settings.get(REQUIRE_3DS_KEY),
       },
       () => this.assertPayable(sessionId),
     );

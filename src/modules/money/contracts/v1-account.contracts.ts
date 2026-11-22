@@ -2,7 +2,7 @@
 // group) and `GET /v1/transactions` (the account statement by cursor), plus the Dhru action `accountinfo`. No console screen calls them;
 // the shapes follow ALIGNMENT § 7 and decision 026.
 import { z } from 'zod';
-import { defineRoute, zCursor, zCursorLimit, zCursorPage, zId, zMoney } from '../../../common/contract';
+import { defineRoute, zCursor, zCursorLimit, zCursorPage, zId, zSignedMoney } from '../../../common/contract';
 import { defineDhruAction } from '../../../common/dhru';
 import { StatementRowSchema, WalletViewSchema } from './wallet.contracts';
 
@@ -85,7 +85,7 @@ export const dhruAccountInfo = defineDhruAction({
   success: z.object({
     message: z.literal('Your Accout Info'),
     AccoutInfo: z.object({
-      credit: zMoney.describe('What the merchant may spend now: balance plus credit limit.'),
+      credit: zSignedMoney.describe('What the merchant may spend now: balance plus credit limit.'),
       mail: z.string(),
       currency: z.string(),
     }),

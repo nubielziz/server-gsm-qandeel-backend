@@ -358,6 +358,13 @@
       "when": 1795333911467,
       "tag": "0050_capability_tokens_seal",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795358360619,
+      "tag": "0051_manual_money_and_fx",
+      "breakpoints": true
     }
   ]
 }

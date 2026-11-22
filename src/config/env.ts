@@ -83,7 +83,7 @@ export interface AppConfig {
   /** Exchange-rate provider used by `POST /admin/currencies/refresh-fx` (RESOLUTIONS money-9). */
   readonly fx: {
     readonly provider: FxProviderName;
-    /** Secret of the provider account; unset with `openexchangerates` means "not configured". */
+    /** Secret of the provider account; unset with `openexchangerates` means "not configured" (refused in production, decision 049). */
     readonly apiKey: string | undefined;
     /** Explicit timeout of the provider call in milliseconds (decision 023). */
     readonly timeoutMs: number;
@@ -822,6 +822,15 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   const searchPrefix = testing
     ? (raw.TYPESENSE_PREFIX_TEST ?? searchPrefixOf(raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest))
     : (raw.TYPESENSE_PREFIX ?? (production ? 'gsm_production_' : 'gsm_development_'));
+  const fxProvider = raw.FX_PROVIDER ?? (production ? 'openexchangerates' : 'manual');
+  // Decision 049: a production process meant to refresh exchange rates refuses to start without the key, instead of selling on rates
+  // that nothing refreshes. FX_PROVIDER=manual is the explicit choice of rates kept by hand.
+  if (production && fxProvider === 'openexchangerates' && raw.FX_API_KEY === undefined) {
+    fail(
+      'FX_API_KEY',
+      'is required in production when FX_PROVIDER is openexchangerates (its default there); set FX_PROVIDER=manual to keep the rates by hand',
+    );
+  }
 
   return {
     env,
@@ -840,9 +849,10 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       geoipCountryHeader: raw.GEOIP_COUNTRY_HEADER?.toLowerCase(),
       referenceDocs: raw.REFERENCE_DOCS ?? (production ? 'staff' : 'open'),
     },
-    // The key stays optional: without it the refresh answers 502 FX_PROVIDER_DOWN instead of stopping the boot.
+    // Outside production the key stays optional: without it the refresh answers 502 FX_PROVIDER_DOWN. Production requires it for
+    // openexchangerates (decision 049).
     fx: {
-      provider: raw.FX_PROVIDER ?? (production ? 'openexchangerates' : 'manual'),
+      provider: fxProvider,
       apiKey: raw.FX_API_KEY,
       timeoutMs: raw.FX_TIMEOUT_MS ?? 5000,
     },

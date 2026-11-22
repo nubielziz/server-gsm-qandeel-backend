@@ -1,14 +1,14 @@
 // Route contracts of the ledger screens (map domain E, stage 3): journals with their lines, the trial balance and the
 // reconciliation. Shapes match the console (docs/contract/endpoints/money.md, resolutions money-1, money-6, money-15).
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { LEDGER_ACCOUNT_KINDS } from '../db/schema';
 import { WIRE_REF_TYPES } from '../domain/ref-types';
 
 const LedgerEntrySchema = z.object({
   id: zId,
-  amount: zMoney.describe('Signed, debit positive; the lines of one journal sum to zero.'),
-  balanceAfter: zMoney.describe('The account balance after the line, in the same sign as `amount`.'),
+  amount: zSignedMoney.describe('Signed, debit positive; the lines of one journal sum to zero.'),
+  balanceAfter: zSignedMoney.describe('The account balance after the line, in the same sign as `amount`.'),
   account: z.object({
     kind: z.enum(LEDGER_ACCOUNT_KINDS),
     id: zId,
@@ -37,7 +37,7 @@ export const LedgerTransactionSchema = z.object({
 /** The trial balance: one row per account kind. */
 export const TrialBalanceSchema = z.object({
   currency: z.string(),
-  rows: z.array(z.object({ kind: z.string(), balance: zMoney, accounts: z.number().int().nonnegative() })),
+  rows: z.array(z.object({ kind: z.string(), balance: zSignedMoney, accounts: z.number().int().nonnegative() })),
   totalDebit: zMoney,
   totalCredit: zMoney,
 });
@@ -52,9 +52,9 @@ export const ReconcileReportSchema = z.object({
       accountId: zId,
       kind: z.string(),
       ownerName: z.string().nullable(),
-      stored: zMoney,
-      expected: zMoney,
-      difference: zMoney,
+      stored: zSignedMoney,
+      expected: zSignedMoney,
+      difference: zSignedMoney,
     }),
   ),
 });

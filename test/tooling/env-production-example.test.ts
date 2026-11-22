@@ -86,6 +86,7 @@ describe('.env.production.example', () => {
     filled.METRICS_TOKEN = randomBytes(32).toString('hex');
     filled.MAIL_SMTP_URL = 'smtps://user:pass@smtp.example.com:465';
     filled.TURNSTILE_SECRET_KEY = 'turnstile-secret-for-the-test';
+    filled.FX_API_KEY = 'fx-app-id-for-the-test';
     filled.S3_ACCESS_KEY_ID = 'minio-user';
     filled.S3_SECRET_ACCESS_KEY = 'minio-password';
     filled.DATABASE_URL = 'postgres://gsm:secretpassword@postgres:5432/gsm';

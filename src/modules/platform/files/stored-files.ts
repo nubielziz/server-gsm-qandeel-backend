@@ -1,10 +1,10 @@
 // StoredFiles: the public side of the `files` table for other modules (decision 004): store a generated document in object storage
-// and record it, read the metadata of files by id, check which of them a merchant owns, hand out a short download link and delete files
-// that nothing uses any more (feature 28). The upload routes are 7a's.
+// and record it, read the metadata of files by id, check which of them a merchant owns, hand out a short download link, delete files
+// that nothing uses any more (feature 28) and find the files that hold the same bytes (decision 049). The upload routes are 7a's.
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, onCommit } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, DEFAULT_PRESIGN_SECONDS, StorageService } from '../../../infra/storage';
 import { type StoredFile, files } from '../db/schema';
@@ -78,6 +78,8 @@ function metaOf(row: StoredFile): FileMeta {
  * Why: invoice PDFs (decision 030) are written by billing, KYC documents and receipts are checked by identity and billing, and
  * the `files` table belongs to the platform module (decision 016). The object goes to S3 first and the row follows; a rolled-back
  * caller leaves an unreferenced object, never a row without an object.
+ *
+ * It also finds the files that hold the same bytes (`sha256Of`, `idsWithSha256`, decision 049).
  *
  * Side effects: `store` puts one object in the bucket and inserts one `files` row.
  */
@@ -175,6 +177,35 @@ export class StoredFiles {
       .where(and(eq(files.id, id), eq(files.ownerType, owner.type), eq(files.ownerId, owner.id)))
       .limit(1);
     return row ? metaOf(row) : undefined;
+  }
+
+  /**
+   * Reads the content hash of a file.
+   *
+   * Why: decision 049: a transfer receipt backs one live payment, whoever uploaded the copy; every file row keeps the SHA-256 of its
+   * bytes, so the caller can lock that content before it looks for the other files that hold it.
+   *
+   * @param db the database or the caller's transaction
+   * @param id the file id
+   * @returns the hex SHA-256 of the file's bytes, or `undefined` when no file has this id
+   */
+  async sha256Of(db: DbExecutor, id: number): Promise<string | undefined> {
+    const [row] = await db.select({ sha256: files.sha256 }).from(files).where(eq(files.id, id)).limit(1);
+    return row?.sha256;
+  }
+
+  /**
+   * Lists the files that hold the given bytes.
+   *
+   * Why: decision 049: the receipt rule looks at every copy of a receipt, whoever uploaded it (`files_sha256_idx` serves the read).
+   *
+   * @param db the database or the caller's transaction
+   * @param sha256 the hex SHA-256 of the content
+   * @returns the ids of every file with this hash, ascending (empty when none)
+   */
+  async idsWithSha256(db: DbExecutor, sha256: string): Promise<number[]> {
+    const rows = await db.select({ id: files.id }).from(files).where(eq(files.sha256, sha256)).orderBy(asc(files.id));
+    return rows.map((row) => row.id);
   }
 
   /**

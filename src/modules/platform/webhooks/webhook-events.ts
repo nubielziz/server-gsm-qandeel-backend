@@ -2,7 +2,7 @@
 // them under `webhooks` with the envelope, the signature header and the retry rule. `service.price_changed` is a backend
 // addition to the map's three events (user rule 9, MISMATCHES B117: route parity allows it under that entry).
 import { z } from 'zod';
-import { defineEvent, zId, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineEvent, zId, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 
 /** The order statuses a merchant sees (decision 025: the internal dispatch state is never sent). */
 const OrderStatus = z.enum(['pending', 'processing', 'completed', 'rejected']);
@@ -58,7 +58,7 @@ export const walletLowBalance = defineEvent({
   description:
     'Sent once each time a posting takes the available balance (balance plus credit limit) from the alert threshold or above ' +
     'to below it. It is not sent again until the balance has been at or above the threshold and fallen under it once more.',
-  payload: z.object({ currency: z.string(), available: zMoney, threshold: zMoney }),
+  payload: z.object({ currency: z.string(), available: zSignedMoney, threshold: zMoney }),
   example: { currency: 'USD', available: '42.5000', threshold: '50.0000' },
 });
 

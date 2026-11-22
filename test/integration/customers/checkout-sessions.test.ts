@@ -262,6 +262,27 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect(await counts()).toEqual({ customers: 0, sessions: 0, consents: 0 });
   });
 
+  it('refuses a currency whose rate is too old or held, and keeps a locked session in its rate (decision 049)', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const { token } = body(await open(valid(world)));
+    await db
+      .update(s.currencies)
+      .set({ rateUpdatedAt: new Date(clock.nowMs() - 49 * 60 * MINUTE) })
+      .where(eq(s.currencies.code, 'GBP'));
+    const refused = await open(valid(world, { email: 'late@mail.example' }));
+    expect(refused.statusCode).toBe(422);
+    expect(body(refused).errors[0]).toMatchObject({ field: 'currency', code: 'not_offered' });
+    // The session that locked the rate before still shows it.
+    expect(body(await show(token))).toMatchObject({ currency: 'GBP', fxRate: '0.80185000' });
+    await db
+      .update(s.currencies)
+      .set({ rateUpdatedAt: clock.now(), rateHeldAt: clock.now() })
+      .where(eq(s.currencies.code, 'GBP'));
+    expect((await open(valid(world, { email: 'held@mail.example' }))).statusCode).toBe(422);
+    expect((await open(valid(world, { email: 'usd@mail.example', currency: 'USD' }))).statusCode).toBe(201);
+  });
+
   it('refuses a service the shop cannot sell: unknown, disabled, archived, unpriced, B2B-only or not listed', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);

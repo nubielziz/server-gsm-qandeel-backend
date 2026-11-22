@@ -1,7 +1,7 @@
 // Route contracts of the pipeline and data store pages: `GET /admin/system/orders-health`, `/suppliers`, `/database` and `/cache`
 // (docs/contract/endpoints/health.md; resolutions orders-suppliers-1, -5, health-commissions-8, -10, -17).
 import { z } from 'zod';
-import { defineRoute, zId, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, zId, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { METRIC_STATES, zCheckStatus, zMeasure, zSeriesPoint, zServiceType } from './system-common';
 
 /** `GET /admin/system/orders-health`: orders past their SLA, dispatch time, outcomes per service type and held orders. */
@@ -76,7 +76,7 @@ export const getSuppliersHealth = defineRoute({
           circuit: z.enum(['closed', 'open', 'half_open']),
           lastSyncAt: zIsoDateTime.nullable(),
           balance: z.object({
-            amount: zMoney,
+            amount: zSignedMoney,
             currency: z.string(),
             state: z.enum(METRIC_STATES),
             checkedAt: zIsoDateTime.nullable(),

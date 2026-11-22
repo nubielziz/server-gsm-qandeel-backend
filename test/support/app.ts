@@ -82,6 +82,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   LOG_LEVEL: 'warn',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
+  FX_API_KEY: 'fx-app-id-for-tests',
   // Feature 29: the search engine of production; the keys are the process keys a production API and worker require.
   TYPESENSE_URL: 'http://typesense.internal:8108',
   TYPESENSE_SEARCH_KEY: 's'.repeat(32),

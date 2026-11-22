@@ -275,3 +275,20 @@ export function checkDepositAmount(amount: Money, limits: DepositLimits): FieldE
   }
   return undefined;
 }
+
+/** The storefront policy that asks a cardholder for 3-D Secure (RULES settings 5; also the risk rule of that name): on unless switched off. */
+export const REQUIRE_3DS_KEY = 'require3ds';
+
+/**
+ * Tells whether a card checkout asks for 3-D Secure.
+ *
+ * Why: decision 049: card top-ups follow the same policy as shop card payments: on unless staff stored `false`, and only through a
+ * method that supports it. Every checkout that opens a card page asks this one function.
+ *
+ * @param policy the stored value of `require3ds` (`undefined` when never set)
+ * @param supports3ds `payment_gateways.supports_3ds` of the method
+ * @returns true when the checkout asks for it
+ */
+export function asks3ds(policy: unknown, supports3ds: boolean): boolean {
+  return policy !== false && supports3ds;
+}

@@ -56,7 +56,7 @@ export class PaymentsController {
     @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof approvePayment>,
   ): Promise<ResultOf<typeof approvePayment>> {
-    return this.payments.approve(staff.staffId, params.id);
+    return this.payments.approve(staff, params.id);
   }
 
   /**
@@ -74,6 +74,6 @@ export class PaymentsController {
     @Param() params: ParamsOf<typeof rejectPayment>,
     @Body() body: BodyOf<typeof rejectPayment>,
   ): Promise<ResultOf<typeof rejectPayment>> {
-    return this.payments.reject(staff.staffId, params.id, body.reason);
+    return this.payments.reject(staff, params.id, body.reason);
   }
 }

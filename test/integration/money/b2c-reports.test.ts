@@ -135,6 +135,8 @@ describe('GET /admin/reports/vat', () => {
     clock.set('2026-12-01T00:00:00.000Z');
     staff = await adminWith(t, ['reports:finance'], { name: 'Layla Haddad' });
     await db.update(s.checkoutSessions).set({ expiresAt: new Date('2027-01-01T00:00:00.000Z') });
+    // Decision 049: the shop offers a currency only while its rate is younger than 48 hours: the rates are confirmed on the new day.
+    await db.update(s.currencies).set({ rateUpdatedAt: clock.now() });
     const december = await paidOrder(t, clock, world, { email: 'b@mail.example' });
     expect(december.orderId).toBeGreaterThan(0);
     const both = await staff.get('/admin/reports/vat?from=2026-11-07&to=2026-12-01');

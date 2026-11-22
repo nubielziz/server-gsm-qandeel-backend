@@ -1,10 +1,12 @@
 // Integration tests of the public storefront catalog (feature 14a): GET /store/v1/config, /store/v1/services and
-// /store/v1/services/:slug against the real API: visibility, the retail price, tax, the exchange rate, filters, paging.
+// /store/v1/services/:slug against the real API: visibility, the retail price, tax, the exchange rate, filters, paging. Decision 049: a
+// currency whose rate is too old or held by a refresh is not on offer.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
-import { TestClock } from '../../support/clock';
+import { HOUR, TestClock } from '../../support/clock';
+import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertCurrency, insertListing, insertTaxWindow, storefrontWorld } from '../../support/storefront';
 import { insertCategory, insertInventoryCodes, insertService } from '../../support/catalog';
@@ -99,6 +101,30 @@ describe('GET /store/v1/config', () => {
     const res = await get('/store/v1/config');
     expect(res.statusCode).toBe(200);
     expect(body(res).currencies).toEqual([]);
+  });
+
+  it('does not offer a currency whose rate is too old or held; the base currency always is (decision 049)', async () => {
+    const { db } = await testDb();
+    await storefrontWorld(db);
+    const codes = async () => body(await get('/store/v1/config')).currencies.map((row: { code: string }) => row.code);
+    const old = new Date(clock.nowMs() - 49 * HOUR);
+    await db.update(s.currencies).set({ rateUpdatedAt: old });
+    expect(await codes()).toEqual(['USD']);
+    const list = await get('/store/v1/services?currency=GBP');
+    expect(list.statusCode).toBe(422);
+    expect(body(list).errors[0]).toMatchObject({ field: 'currency', code: 'not_offered' });
+    // The bound is a setting.
+    await db.insert(s.settings).values({ key: 'fx.max_rate_age_hours', value: 72 });
+    await clearIdentityCaches(t);
+    expect(await codes()).toEqual(['GBP', 'USD']);
+    expect((await get('/store/v1/services?currency=GBP')).statusCode).toBe(200);
+    // A fresh rate that a refresh held is not offered either.
+    await db
+      .update(s.currencies)
+      .set({ rateUpdatedAt: clock.now(), rateHeldAt: clock.now() })
+      .where(eq(s.currencies.code, 'GBP'));
+    expect(await codes()).toEqual(['USD']);
+    expect((await get('/store/v1/services?currency=GBP')).statusCode).toBe(422);
   });
 });
 

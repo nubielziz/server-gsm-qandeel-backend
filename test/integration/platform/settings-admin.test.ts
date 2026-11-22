@@ -270,6 +270,51 @@ describe('PATCH /admin/settings', () => {
     expect((await auditRows()).filter((row) => row.action === 'changed settings')).toHaveLength(2);
   });
 
+  it('lets only an Owner change the exchange-rate guards and the customer adjustment limit (decision 049)', async () => {
+    const keys: Array<[string, number]> = [
+      ['fx.max_refresh_move_percent', 35],
+      ['fx.max_rate_age_hours', 72],
+      ['wallet.customer.adjust_approval_limit', 500],
+    ];
+    const limited = await adminWith(t, ['settings:update']);
+    for (const [key, value] of keys) {
+      const refused = await limited.patch('/admin/settings', { [key]: value });
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({ code: 'FORBIDDEN', detail: `Only an owner can change ${key}.` });
+    }
+    // One reserved key makes the whole patch refused, beside ordinary keys and beside the other reserved ones.
+    const mixed = await limited.patch('/admin/settings', {
+      imeiRetentionDays: 30,
+      'fx.max_rate_age_hours': 72,
+      'wallet.customer.adjust_approval_limit': 500,
+    });
+    expect(mixed.status).toBe(403);
+    expect(mixed.body.detail).toBe(
+      'Only an owner can change fx.max_rate_age_hours, wallet.customer.adjust_approval_limit.',
+    );
+    expect(await settingRows()).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+
+    // The value is judged first: a refused value is a 422 whoever sends it; the other keys keep settings:update.
+    expect((await limited.patch('/admin/settings', { 'fx.max_refresh_move_percent': 0 })).status).toBe(422);
+    expect((await limited.patch('/admin/settings', { imeiRetentionDays: 30 })).status).toBe(200);
+
+    const owner = await adminWith(t, ['*']);
+    for (const [key, value] of keys) {
+      const done = await owner.patch('/admin/settings', { [key]: value });
+      expect(done.status).toBe(200);
+      expect(done.body).toMatchObject({ [key]: value });
+      expect((await settingRows()).find((row) => row.key === key)?.value).toBe(value);
+    }
+    const changed = (await auditRows()).filter((row) => row.action === 'changed settings');
+    expect(changed.map((row) => row.entityLabel)).toEqual([
+      'imeiRetentionDays',
+      'fx.max_refresh_move_percent',
+      'fx.max_rate_age_hours',
+      'wallet.customer.adjust_approval_limit',
+    ]);
+  });
+
   it('needs settings:update and a CSRF token', async () => {
     const reader = await adminWith(t, ['settings:read']);
     const refused = await reader.patch('/admin/settings', { imeiRetentionDays: 30 });

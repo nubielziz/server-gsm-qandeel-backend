@@ -142,8 +142,11 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
 it accepts only the keys of a settings registry in this module, each with its validator (today `imeiRetentionDays`, a JSON
 integer 0 to 3650, shared with `PATCH /admin/storefront/settings`, and `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
-default 10 when never saved, read by the catalog's price guard, user rule 9; and, from feature 28, `support.replyEmailDelayMinutes`, a JSON integer 0 to 1440, default 5, and `support.attachmentRetentionDays`, a JSON integer 0 to 3650, default 180, both read by the support module through `SettingsReader.integer` and kept in `SUPPORT_SETTINGS`); any other key, including the keys owned by stricter routes
+default 10 when never saved, read by the catalog's price guard, user rule 9; and, from feature 28, `support.replyEmailDelayMinutes`, a JSON integer 0 to 1440, default 5, and `support.attachmentRetentionDays`, a JSON integer 0 to 3650, default 180, both read by the support module through `SettingsReader.integer` and kept in `SUPPORT_SETTINGS`; and, from decision 049, the exchange-rate guards of `FX_GUARD_SETTINGS`: `fx.max_refresh_move_percent`, a JSON integer 1 to 100, default 20, and `fx.max_rate_age_hours`, a JSON integer 1 to 720, default 48, read by the money module); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
+Four keys are changed by an Owner only (the registry's `ownerOnly` mark; any other caller with `settings:update` gets `403 FORBIDDEN`):
+`suppliers.allowPlainHttp` (decision 051), `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`
+(decision 049: limits on money).
 A feature that needs another key editable there adds it to the registry with its validator.
 
 **Maintenance** (scenario `system-integrity`, `docs/contract/endpoints/health.md` `PUT /admin/system/maintenance`) is the settings
@@ -193,18 +196,18 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 - **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
   sends `null` for `''` (a system row has no actor name, id or address). `before` and `after` were masked when the entry was written.
 - **`PATCH /admin/settings` is an allow-list** (`settings/settings-registry.ts`, resolution `identity-platform-13`): the registry holds
-  `imeiRetentionDays` (a JSON integer 0 to 3650), `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28). Every key of the patch is judged first; any other key (the keys of the stricter routes
+  `imeiRetentionDays` (a JSON integer 0 to 3650), `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28), and the two exchange-rate guards of decision 049, `fx.max_refresh_move_percent` (1 to 100) and `fx.max_rate_age_hours` (1 to 720). Every key of the patch is judged first; any other key (the keys of the stricter routes
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
-  `body`. A key the registry marks `ownerOnly` (today `suppliers.allowPlainHttp`, decision 051: it lowers the protection of supplier
-  calls) is then `403 FORBIDDEN` unless the caller is an Owner (identity's `requireOwner`, the helper of decision 046); the route keeps
+  `body`. A key the registry marks `ownerOnly` (`suppliers.allowPlainHttp`, decision 051: it lowers the protection of supplier
+  calls; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`, decision 049: limits on money) is then `403 FORBIDDEN` unless the caller is an Owner (identity's `requireOwner`, the helper of decision 046); the route keeps
   `settings:update`. The service and the controller reach identity through one late read, `infra/identity-access.ts` (decision 032's
   "late reads"): identity imports this module, so a static import of identity from here would close a load-time cycle. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
   `before` and `after` of the changed keys, secrets masked) in the same transaction. After the commit it calls `SettingsReader.invalidate()`
   and `MaintenanceService.invalidate()`. No registry key feeds the IP rule cache; a key added later that does must also clear
   `IpRuleCache` (identity module, by a seam, since this module may not import identity).
 - **Adding an editable setting:** add `{ key, validate }` to `EDITABLE_SETTINGS` with a unit test, name the cache it feeds and clear it after the commit;
-  mark it `ownerOnly` when only an Owner may change it (decision 051).
+  mark it `ownerOnly` when only an Owner may change it (decisions 051 and 049).
 
 ## File downloads (feature 5, MISMATCHES B154)
 
@@ -328,7 +331,7 @@ reuse it.
 `StoredFiles` (`files/stored-files.ts`, a plain provider: it needs `StorageService` and a database executor, so the money and identity modules list it themselves) is what other modules use instead of touching `files`:
 `store(db, { ownerType, ownerId, filename, mime, bytes, area })` puts the object in the files bucket (key `<area>/<owner>/<uuid>`, never built from the file name) and inserts the row (the object goes first: a rolled-back
 caller leaves an unreferenced object, never a row without an object), `metaOf(db, ids)` reads the metadata of files by id (with `area`, the first segment of the key: the support chat lets a ticket link attach only the uploads of its own ticket's area `tickets-<id>`), and `findOwned(db, id, owner)` returns a file only if it belongs to that owner (B161 and B163: a
-merchant attaches only its own uploads; another owner's id answers like an unknown one). Feature 28 (the support chat) adds two methods: `linkTo(db, id)` makes the presigned download link of a file (5 minutes, `Content-Disposition: attachment` with the stored name; the caller has already decided who may read it, and the object is not checked), and `remove(tx, ids)` deletes files that nothing else uses: the rows in the caller's transaction (a file another record still points at is kept) and the objects after its commit, best effort. Support uses them for the downloads of ticket attachments and for the deletion with an anonymized customer and after the retention. `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
+merchant attaches only its own uploads; another owner's id answers like an unknown one). Feature 28 (the support chat) adds two methods: `linkTo(db, id)` makes the presigned download link of a file (5 minutes, `Content-Disposition: attachment` with the stored name; the caller has already decided who may read it, and the object is not checked), and `remove(tx, ids)` deletes files that nothing else uses: the rows in the caller's transaction (a file another record still points at is kept) and the objects after its commit, best effort. Support uses them for the downloads of ticket attachments and for the deletion with an anonymized customer and after the retention. Decision 049 adds `sha256Of(db, id)` and `idsWithSha256(db, sha256)`: the files that hold the same bytes (every row keeps the SHA-256 of its object), so the money module's receipt rule finds a copy uploaded again. `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
 upload routes are feature 7a's; invoice PDFs are written here as the merchant's file, so `GET /client/files/:id` serves them.
 
 ## Jobs and schedules

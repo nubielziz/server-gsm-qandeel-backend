@@ -1,9 +1,11 @@
 // Integration tests of the exchange-rate refresh (feature 14b, POST /admin/currencies/refresh-fx; decision 029, RESOLUTIONS money-9):
 // the route with a stand-in provider (what was refreshed, what failed, the 502 cases, the stale rule, the audit trail) and the
-// openexchangerates driver against a local server (the request it sends, the answers it reads, how it fails).
+// openexchangerates driver against a local server (the request it sends, the answers it reads, how it fails). Decision 049: a refreshed
+// rate that moved more than the bound is held (kept, marked, reported once) until staff confirm a rate or a later refresh lands within it.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
+import { ErrorReporter } from '@src/infra/observability';
 import { OutboundHttp } from '@src/infra/http';
 import { FX_PROVIDER, FxProviderUnavailableError, type FxProvider } from '@src/modules/money/domain/fx-provider';
 import { OpenExchangeRatesProvider } from '@src/modules/money/infra/open-exchange-rates.provider';
@@ -233,6 +235,154 @@ describe('POST /admin/currencies/refresh-fx', () => {
     const wrong = await signInStaff(configured, ['settings:update']);
     expect((await refresh(configured, wrong)).statusCode).toBe(403);
     expect((await configured.app.inject({ method: 'POST', url: '/admin/currencies/refresh-fx' })).statusCode).toBe(401);
+  });
+});
+
+describe('POST /admin/currencies/refresh-fx and a rate that moved too far (decision 049)', () => {
+  const rows = async () => {
+    const { db } = await testDb();
+    return Object.fromEntries((await db.select().from(s.currencies)).map((row) => [row.code, row]));
+  };
+  const staleOf = async (staff: Awaited<ReturnType<typeof signInStaff>>) => {
+    const list = await configured.app.inject({
+      method: 'GET',
+      url: '/admin/currencies',
+      headers: staff.session.headers,
+    });
+    return Object.fromEntries(
+      list.json<Array<{ code: string; isStale: boolean }>>().map((row) => [row.code, row.isStale]),
+    );
+  };
+
+  it('holds a refreshed rate that moved more than the bound, keeps the old one, and reports it once', async () => {
+    await insertCurrencies();
+    const capture = spyOn(configured.app.get(ErrorReporter), 'capture');
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([
+        ['GBP', '0.79120000'],
+        ['EUR', '1.20000000'],
+      ]),
+    });
+    const staff = await signInStaff(configured, ['currencies:update', 'settings:update']);
+    const res = await refresh(configured, staff);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      refreshed: [{ code: 'GBP', rateToBase: '0.7912', rateUpdatedAt: '2026-11-07T10:00:00.000Z' }],
+      failed: [
+        { code: 'AED', message: 'Not offered by the provider' },
+        {
+          code: 'EUR',
+          message:
+            'Held: the provider sent 1.2000 against the stored 0.9200, moved by 30.4 %, beyond the 20 % allowed. Confirm a rate to offer the currency again.',
+        },
+      ],
+      source: 'openexchangerates',
+    });
+    expect((await rows()).EUR).toMatchObject({
+      rateToBase: '0.92000000',
+      rateUpdatedAt: new Date('2026-11-01T00:00:00.000Z'),
+      rateHeldAt: new Date('2026-11-07T10:00:00.000Z'),
+    });
+    expect((await staleOf(staff)).EUR).toBe(true);
+    const { db } = await testDb();
+    const [audit] = await db.select().from(s.auditLogs);
+    expect(audit!.after).toEqual({ GBP: '0.7912', held: { EUR: '1.2000' } });
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect((capture.mock.calls[0]![0] as Error).message).toContain('EUR 0.9200 -> 1.2000');
+    expect(capture.mock.calls[0]![1]).toEqual({
+      process: 'api',
+      method: 'POST',
+      route: '/admin/currencies/refresh-fx',
+    });
+    // Held again by the next refresh: the first time stays, nothing is reported twice.
+    clock.advance(10 * 60_000);
+    expect((await refresh(configured, staff)).statusCode).toBe(200);
+    expect((await rows()).EUR!.rateHeldAt).toEqual(new Date('2026-11-07T10:00:00.000Z'));
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('judges a fall like a rise', async () => {
+    await insertCurrencies();
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([
+        ['GBP', '0.65000000'],
+        ['EUR', '0.77000000'],
+        ['AED', '3.67000000'],
+      ]),
+    });
+    const staff = await signInStaff(configured, ['currencies:update']);
+    const res = await refresh(configured, staff);
+    // 0.79 / 0.65 is 21.5 % apart (held); 0.92 / 0.77 is 19.5 % (stored).
+    expect(res.json().refreshed.map((rate: { code: string }) => rate.code)).toEqual(['AED', 'EUR']);
+    expect(res.json().failed.map((rate: { code: string }) => rate.code)).toEqual(['GBP']);
+  });
+
+  it('stores a move inside the setting fx.max_refresh_move_percent', async () => {
+    await insertCurrencies();
+    const { db } = await testDb();
+    await db.insert(s.settings).values({ key: 'fx.max_refresh_move_percent', value: 40 });
+    await clearIdentityCaches(configured);
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([
+        ['GBP', '0.79120000'],
+        ['EUR', '1.20000000'],
+        ['AED', '3.67000000'],
+      ]),
+    });
+    const staff = await signInStaff(configured, ['currencies:update']);
+    const res = await refresh(configured, staff);
+    expect(res.json().refreshed.map((rate: { code: string }) => rate.code)).toEqual(['AED', 'EUR', 'GBP']);
+    expect((await rows()).EUR).toMatchObject({ rateToBase: '1.20000000', rateHeldAt: null });
+  });
+
+  it('is not FX_PROVIDER_DOWN when every rate was held', async () => {
+    await insertCurrencies();
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([
+        ['GBP', '1.18500000'],
+        ['EUR', '1.38000000'],
+        ['AED', '5.50500000'],
+      ]),
+    });
+    const staff = await signInStaff(configured, ['currencies:update']);
+    const res = await refresh(configured, staff);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().refreshed).toEqual([]);
+    expect(res.json().failed.map((rate: { code: string }) => rate.code)).toEqual(['AED', 'EUR', 'GBP']);
+    const all = await rows();
+    for (const code of ['AED', 'EUR', 'GBP']) expect(all[code]!.rateHeldAt).toEqual(clock.now());
+    expect(all.GBP!.rateToBase).toBe('0.79000000');
+  });
+
+  it('ends the hold with a typed rate or a later refresh within the bound', async () => {
+    await insertCurrencies();
+    const fetchRates = spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([['EUR', '1.20000000']]),
+    });
+    const staff = await signInStaff(configured, ['currencies:update', 'settings:update']);
+    await refresh(configured, staff);
+    const eur = (await rows()).EUR!;
+    expect(eur.rateHeldAt).not.toBeNull();
+    const typed = await configured.app.inject({
+      method: 'PATCH',
+      url: `/admin/currencies/${eur.id}`,
+      headers: staff.session.mutationHeaders,
+      payload: { rateToBase: '0.92' },
+    });
+    expect(typed.statusCode).toBe(200);
+    expect(typed.json().isStale).toBe(false);
+    expect((await rows()).EUR).toMatchObject({ rateHeldAt: null, rateUpdatedAt: clock.now() });
+
+    clock.advance(10 * 60_000);
+    await refresh(configured, staff);
+    expect((await rows()).EUR!.rateHeldAt).toEqual(clock.now());
+    fetchRates.mockResolvedValue({ rates: new Map([['EUR', '0.95000000']]) });
+    clock.advance(10 * 60_000);
+    const within = await refresh(configured, staff);
+    expect(within.json().refreshed).toEqual([
+      { code: 'EUR', rateToBase: '0.9500', rateUpdatedAt: clock.now().toISOString() },
+    ]);
+    expect((await rows()).EUR).toMatchObject({ rateToBase: '0.95000000', rateHeldAt: null });
   });
 });
 

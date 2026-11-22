@@ -2,7 +2,7 @@
 // Shapes match the console's `IntegrityReport` (docs/contract/endpoints/health.md; resolutions health-commissions-9, -16, ANSWERS system-health
 // Q35, Q36, MISMATCHES B99).
 import { z } from 'zod';
-import { defineRoute, zId, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, zId, zIsoDateTime, zSignedMoney } from '../../../common/contract';
 import { JobRunShape } from './system-ops.contracts';
 
 const Finding = z.object({
@@ -12,7 +12,7 @@ const Finding = z.object({
     .string()
     .describe('`#<ledger_transactions.id>`, `<account kind>:<owner id>`, `#<order id>` or the gateway transaction id.'),
   label: z.string(),
-  difference: zMoney.nullable(),
+  difference: zSignedMoney.nullable(),
   ageSeconds: z.number().int().nullable(),
   lastEntryAt: zIsoDateTime.nullable(),
 });
@@ -22,7 +22,7 @@ const Check = z.object({
   label: z.string(),
   status: z.enum(['pass', 'fail', 'unknown']),
   count: z.number().int().describe('The full number of findings.'),
-  difference: zMoney
+  difference: zSignedMoney
     .nullable()
     .describe('The sum of the differences of every finding; `null` for `stuck_holds` and for an unknown check.'),
   findings: z.array(Finding).describe('The first 20 findings.'),

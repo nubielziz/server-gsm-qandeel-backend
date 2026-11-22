@@ -23,8 +23,10 @@ export interface FxRefreshJobResult {
   readonly skipped: boolean;
   /** How many currencies got a new rate. */
   readonly refreshed: number;
-  /** How many currencies the provider did not offer or sent an unusable rate for. */
+  /** How many currencies the provider did not offer, sent an unusable rate for, or sent a rate that was held (the held ones included). */
   readonly failed: number;
+  /** How many currencies were held because their rate moved more than `fx.max_refresh_move_percent` (decision 049). */
+  readonly held: number;
 }
 
 /**
@@ -36,7 +38,8 @@ export interface FxRefreshJobResult {
  * reason in `result` (a `skipped` run shows a warning in the console, and this one would show it every hour). With a provider but no
  * active non-base currency it also ends without a call and without an audit row (nothing was refreshed, so nothing is logged every
  * hour). A provider that is configured but cannot answer fails the run (recorded as failed, retried by the queue's policy; the next
- * hour's tick is the real retry), and the old rates stay in place.
+ * hour's tick is the real retry), and the old rates stay in place. A rate that moved more than the bound is held (decision 049): the run
+ * counts it in `held`, and the refresh itself reports a newly held currency once (an error log line and an error report).
  */
 @Injectable()
 @QueueProcessor('maintenance', FX_REFRESH_JOB)
@@ -54,7 +57,7 @@ export class FxRefreshProcessor implements JobProcessor<FxRefreshJobData, FxRefr
    * @throws {AppError} `FX_PROVIDER_DOWN` when a configured provider gave no usable rate (the run is recorded as failed)
    */
   async process(job: Job<FxRefreshJobData, FxRefreshJobResult, string>): Promise<FxRefreshJobResult> {
-    let outcome: FxRefreshJobResult = { skipped: true, refreshed: 0, failed: 0 };
+    let outcome: FxRefreshJobResult = { skipped: true, refreshed: 0, failed: 0, held: 0 };
     const runId = job.data.runId;
     const options =
       runId === undefined
@@ -62,11 +65,19 @@ export class FxRefreshProcessor implements JobProcessor<FxRefreshJobData, FxRefr
         : ({ job: FX_REFRESH_JOB, trigger: 'manual', runId } as const);
     await this.runs.run(options, async () => {
       if (!this.fx.configured) return { processed: 0, result: { reason: 'no provider configured' } };
-      const done = await this.fx.refresh({ auditEmpty: false });
-      outcome = { skipped: false, refreshed: done.refreshed.length, failed: done.failed.length };
+      const done = await this.fx.refresh({
+        auditEmpty: false,
+        reportAs: { process: 'worker', queue: 'maintenance', job: FX_REFRESH_JOB },
+      });
+      outcome = {
+        skipped: false,
+        refreshed: done.refreshed.length,
+        failed: done.failed.length,
+        held: done.held.length,
+      };
       return {
         processed: outcome.refreshed,
-        result: { source: done.source, refreshed: outcome.refreshed, failed: outcome.failed },
+        result: { source: done.source, refreshed: outcome.refreshed, failed: outcome.failed, held: outcome.held },
       };
     });
     return outcome;

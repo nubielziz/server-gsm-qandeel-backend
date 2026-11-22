@@ -39,6 +39,7 @@ const PRODUCTION: Record<string, string> = {
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.gsm.example:465',
   MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
+  FX_API_KEY: 'fx-app-id-for-tests',
   // Feature 29: required in production while search is on.
   TYPESENSE_URL: 'http://typesense.internal:8108',
 };

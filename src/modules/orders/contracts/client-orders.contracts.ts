@@ -2,7 +2,7 @@
 // the list, one order with its timeline, cancel, verify and the CSV export. The console has no screen for these (the merchant portal is
 // another frontend): the shapes follow ALIGNMENT § 7, B121, B153 and decision 025, and are written up in the module README.
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zId, zIdParam, zMoney, zSignedMoney } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
@@ -46,10 +46,10 @@ const ORDER_EXAMPLE = {
 } as const;
 
 const WALLET = z.object({
-  balance: zMoney.describe('The wallet balance; negative while credit is in use.'),
+  balance: zSignedMoney.describe('The wallet balance; negative while credit is in use.'),
   reserved: zMoney.describe('Held for open orders.'),
   creditLimit: zMoney,
-  available: zMoney.describe('Spendable now: balance plus credit limit.'),
+  available: zSignedMoney.describe('Spendable now: balance plus credit limit.'),
 });
 
 /** `GET /client/dashboard`. */

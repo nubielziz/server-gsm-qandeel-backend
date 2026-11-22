@@ -154,7 +154,8 @@ export const openCheckoutSession = defineRoute({
     'INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ' +
     'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. The answer carries the session token: the whole credential of the next two routes. ' +
-    'Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached.',
+    'Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. ' +
+    '`currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).',
   tags: ['checkout'],
   surface: 'store',
   access: 'public',

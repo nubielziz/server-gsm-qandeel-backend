@@ -27,8 +27,9 @@ function publicSettings(all: Record<string, unknown>): Record<string, JsonValue>
  *
  * Why: RESOLUTIONS identity-platform-13. `PATCH /admin/settings` is an allow-list: only the keys of the settings registry, each
  * with its validator, so `settings:update` cannot bypass the routes that guard the other keys (`adminAllowlistOnly`,
- * `maintenance`, risk rules, storefront policies; MISMATCHES B67). Every other key is `422` with `errors[].field` = the key. Decision 051:
- * a key the registry marks `ownerOnly` (today `suppliers.allowPlainHttp`, which lowers the protection of supplier calls) is `403` for any
+ * `maintenance`, risk rules, storefront policies; MISMATCHES B67). Every other key is `422` with `errors[].field` = the key. Decisions 051
+ * and 049: a key the registry marks `ownerOnly` (`suppliers.allowPlainHttp`, which lowers the protection of supplier calls, and the three
+ * limits on money `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`) is `403` for any
  * caller who is not an Owner; the route itself keeps `settings:update`.
  *
  * Side effects: upserts `settings` rows and writes one `audit_logs` row with the before and after of the changed keys; after the
@@ -79,7 +80,7 @@ export class SettingsAdminService {
       });
     }
     const reserved = ownerOnlySettingKeys(patch);
-    // Decision 051: a setting that lowers the protection of supplier calls is an Owner's decision.
+    // Decisions 051 and 049: a setting that lowers the protection of supplier calls or sets a limit on money is an Owner's decision.
     if (reserved.length > 0)
       (await identity()).requireOwner(caller, `Only an owner can change ${reserved.join(', ')}.`);
     return this.db.runInTransaction(async (work) => {

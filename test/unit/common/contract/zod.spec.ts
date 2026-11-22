@@ -11,23 +11,54 @@ import {
   zIsoDateTime,
   zJsonObject,
   zMoney,
+  zSignedMoney,
 } from '@src/common/contract/zod';
 
 const accepts = (schema: z.ZodType, value: unknown) => schema.safeParse(value).success;
 
 describe('zMoney', () => {
-  it('accepts exactly 4 fraction digits', () => {
-    for (const ok of ['0.0000', '12.4900', '-3.5000', '99999999999999.9999', '007.0000'])
-      expect(accepts(zMoney, ok)).toBe(true);
+  it('accepts exactly 4 decimals, 0 or more, at most 14 digits before the point', () => {
+    for (const ok of ['0.0000', '12.4900', '99999999999999.9999', '007.0000']) expect(accepts(zMoney, ok)).toBe(true);
   });
-  it('rejects anything else, numbers included', () => {
-    for (const bad of ['12', '12.49', '12.49000', '12,4900', '+1.0000', '1e3', ' 1.0000', '', 12.49, null, undefined])
+  it('rejects anything else, numbers, negative and oversized amounts included (decision 049)', () => {
+    for (const bad of [
+      '12',
+      '12.49',
+      '12.49000',
+      '12,4900',
+      '+1.0000',
+      '1e3',
+      ' 1.0000',
+      '',
+      12.49,
+      null,
+      undefined,
+      '-3.5000',
+      '-0.0001',
+      '100000000000000.0000',
+    ])
       expect(accepts(zMoney, bad)).toBe(false);
   });
   it('explains itself in plain English', () => {
     expect(zMoney.safeParse('12.5').error?.issues[0]?.message).toBe(
-      'Must be a decimal amount with exactly 4 decimals, like 12.4900.',
+      'Must be an amount of 0 or more with exactly 4 decimals and at most 14 digits before the point, like 12.4900.',
     );
+  });
+  it('stops at its own message, so a refined field never answers twice', () => {
+    const positive = zMoney.refine((text) => /[1-9]/.test(text), 'Enter an amount greater than zero.');
+    expect(positive.safeParse('-5.0000').error?.issues).toHaveLength(1);
+    expect(positive.safeParse('0.0000').error?.issues[0]?.message).toBe('Enter an amount greater than zero.');
+  });
+});
+
+describe('zSignedMoney', () => {
+  it('accepts a minus sign and the same bounds', () => {
+    for (const ok of ['-3.5000', '0.0000', '12.4900', '-99999999999999.9999', '99999999999999.9999'])
+      expect(accepts(zSignedMoney, ok)).toBe(true);
+  });
+  it('rejects oversized amounts, a plus sign and other forms', () => {
+    for (const bad of ['-100000000000000.0000', '100000000000000.0000', '12.5', '+1.0000', '--1.0000', '-', 1, null])
+      expect(accepts(zSignedMoney, bad)).toBe(false);
   });
 });
 
@@ -121,7 +152,15 @@ describe('zJsonObject', () => {
 
 describe('JSON Schema of the shared types', () => {
   const schema = toJsonSchema(
-    z.object({ money: zMoney, rate: zDecimal, at: zIsoDateTime, id: zId, day: zDateOnly, meta: zJsonObject }),
+    z.object({
+      money: zMoney,
+      signed: zSignedMoney,
+      rate: zDecimal,
+      at: zIsoDateTime,
+      id: zId,
+      day: zDateOnly,
+      meta: zJsonObject,
+    }),
     'output',
   ) as {
     properties: Record<string, Record<string, unknown>>;
@@ -132,6 +171,7 @@ describe('JSON Schema of the shared types', () => {
       Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, value['x-gsm-alias']])),
     ).toEqual({
       money: 'Money',
+      signed: 'Money',
       rate: 'Decimal',
       at: 'IsoDateTime',
       id: 'Id',
@@ -141,7 +181,8 @@ describe('JSON Schema of the shared types', () => {
   });
 
   it('describes Money by its pattern and Id as an integer up to 2^53 - 1', () => {
-    expect(schema.properties.money).toMatchObject({ type: 'string', pattern: '^-?\\d+\\.\\d{4}$' });
+    expect(schema.properties.money).toMatchObject({ type: 'string', pattern: '^\\d{1,14}\\.\\d{4}$' });
+    expect(schema.properties.signed).toMatchObject({ type: 'string', pattern: '^-?\\d{1,14}\\.\\d{4}$' });
     expect(schema.properties.id).toMatchObject({ type: 'integer', exclusiveMinimum: 0, maximum: 9007199254740991 });
   });
 

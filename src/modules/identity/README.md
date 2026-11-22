@@ -698,6 +698,9 @@ area:
 - configuration that steers money or messages: `payments:gateways`, `suppliers:update`, `settings:update`, `currencies:update`,
   `notifications:update`, `system:manage`.
 
+Decision 049 adds limits on top: a staff member's credits beyond the daily approval limit, a single debit above it, a credit limit above it
+and the approval of a payment for an invoice one issued oneself need an Owner.
+
 The development seed's roles follow the console's demo and hold several of these through area wildcards: they are for development only.
 
 ## IP rules in the request pipeline (`security/ip-rules/`)

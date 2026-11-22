@@ -1,17 +1,28 @@
 // Integration tests of the store balance top-ups (feature 21, plan § 7.1 routes 3 to 8): the methods, a new top-up (manual and automatic),
 // every limit with the clock, the Idempotency-Key replay and reuse, parallel creates under the limits, the receipt (retry, conflicts,
-// ownership, reference), the cancel, and another customer's top-up never visible.
+// ownership, reference), the cancel, and another customer's top-up never visible. Decision 049: one receipt (or a copy of its bytes) backs
+// one live payment, whoever uploaded it; a card top-up asks for 3-D Secure under the shop's policy.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
-import { FakeGateway, GatewayTestModule, insertGateway, insertProofFile } from '../../support/billing';
+import {
+  FakeGateway,
+  GatewayTestModule,
+  insertGateway,
+  insertInvoiceRow,
+  insertPendingPayment,
+  insertProofFile,
+} from '../../support/billing';
 import { TestClock } from '../../support/clock';
 import { fundCustomer, insertWalletTemplates, walletSettings } from '../../support/customer-wallet';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
+import { PORTAL_ORIGIN } from '../../support/merchant-portal';
+import { insertWalletMerchant } from '../../support/money';
 import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
+import { portalFor } from '../../support/webhooks';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;
@@ -19,7 +30,11 @@ let fake: FakeGateway;
 let cliq: number;
 
 beforeAll(async () => {
-  t = await createTestApp({ clock, imports: [GatewayTestModule], env: { SHOP_ORIGINS: STORE_ORIGIN } });
+  t = await createTestApp({
+    clock,
+    imports: [GatewayTestModule],
+    env: { SHOP_ORIGINS: `${STORE_ORIGIN},${PORTAL_ORIGIN}` },
+  });
   fake = new FakeGateway();
 });
 beforeEach(async () => {
@@ -237,6 +252,29 @@ describe('POST /store/v1/me/wallet/top-ups', () => {
     // A manual top-up is still allowed while frozen (money in is safe, P1).
     expect((await create(store, { amount: '27', gatewayId: cliq })).statusCode).toBe(201);
   });
+
+  it("asks for 3-D Secure on a card top-up under the shop's policy (decision 049)", async () => {
+    const { db } = await testDb();
+    await walletSettings(t, db, { 'wallet.customer.card_topups': true });
+    const card = await insertGateway(t, db, {
+      code: 'card',
+      driver: 'card',
+      audience: 'b2c',
+      name: 'Card',
+      apiBase: fake.url,
+      supports3ds: true,
+    });
+    const { store } = await signedIn();
+    const threeDs = () => {
+      const checkouts = fake.requests.filter((request) => request.path === '/v1/checkout/sessions');
+      return new URLSearchParams(checkouts.at(-1)!.body).get('payment_method_options[card][request_three_d_secure]');
+    };
+    expect((await create(store, { amount: '25', gatewayId: card })).statusCode).toBe(201);
+    expect(threeDs()).toBe('any');
+    await walletSettings(t, db, { 'wallet.customer.card_topups': true, require3ds: false });
+    expect((await create(store, { amount: '26', gatewayId: card })).statusCode).toBe(201);
+    expect(threeDs()).toBeNull();
+  });
 });
 
 describe('the receipt, the cancel and the reads', () => {
@@ -292,6 +330,58 @@ describe('the receipt, the cancel and the reads', () => {
     expect(codeOf(await receipt(store, topUp.id, { fileId: mine, reference: 'REF-1' }))).toBe('taken');
     expect((await receipt(store, other.topUp.id, { fileId: mine })).statusCode).toBe(404);
     expect((await store.call('GET', `/store/v1/me/wallet/top-ups/${other.topUp.id}`)).statusCode).toBe(404);
+  });
+
+  it("refuses a receipt that backs another live payment, the customer's own or anyone's (decision 049)", async () => {
+    const { customer, store, topUp, fileId, db } = await openTopUp();
+    const second = (await create(store, { amount: '60', gatewayId: cliq })).json();
+    const third = (await create(store, { amount: '70', gatewayId: cliq })).json();
+    expect((await receipt(store, topUp.id, { fileId })).statusCode).toBe(201);
+    const reused = await receipt(store, second.id, { fileId });
+    expect(reused.statusCode).toBe(422);
+    expect(reused.json().errors[0]).toMatchObject({ field: 'fileId', code: 'taken' });
+    // A merchant's receipt waiting for review: the customer's copy of the same bytes is the same receipt.
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const bank = await insertGateway(t, db, { code: 'b2b-bank', driver: 'manual', isManual: true, audience: 'b2b' });
+    const merchantFile = await insertProofFile(db, merchant.id);
+    const [stored] = await db.select().from(s.files).where(eq(s.files.id, merchantFile));
+    await insertPendingPayment(db, await insertInvoiceRow(db, merchant.id, { gatewayId: bank }), bank, {
+      receiptFileId: merchantFile,
+    });
+    const copy = await insertProofFile(db, customer.id, { ownerType: 'customer', sha256: stored!.sha256 });
+    expect(codeOf(await receipt(store, third.id, { fileId: copy }))).toBe('taken');
+    // Sending the first receipt again to its own top-up is still a retry.
+    expect((await receipt(store, topUp.id, { fileId })).statusCode).toBe(201);
+    expect(await db.select().from(s.payments).where(eq(s.payments.customerId, customer.id))).toHaveLength(1);
+  });
+
+  it('judges the same bytes attached by a merchant and by a customer at the same moment one after the other (decision 049)', async () => {
+    const { db } = await testDb();
+    const bank = await insertGateway(t, db, { code: 'b2b-bank', driver: 'manual', isManual: true, audience: 'b2b' });
+    // The two uploads lock different invoice rows (and the merchant's top-up lock is the merchant's own): only the content lock orders them. Several
+    // rounds, each with a new merchant, a new customer and a new content.
+    for (let round = 0; round < 6; round += 1) {
+      const merchant = await insertWalletMerchant(db, { name: `Zain Mobile Hub ${round}` });
+      const portal = await portalFor(t, merchant.id);
+      const invoice = await insertInvoiceRow(db, merchant.id, { gatewayId: bank });
+      const merchantFile = await insertProofFile(db, merchant.id);
+      const [stored] = await db.select().from(s.files).where(eq(s.files.id, merchantFile));
+      const { customer, store, topUp } = await openTopUp();
+      const customerFile = await insertProofFile(db, customer.id, { ownerType: 'customer', sha256: stored!.sha256 });
+      const [byMerchant, byCustomer] = await Promise.all([
+        portal.call('POST', `/client/invoices/${invoice.id}/receipt`, { fileId: merchantFile }),
+        receipt(store, topUp.id, { fileId: customerFile }),
+      ]);
+      expect([byMerchant.status, byCustomer.statusCode].sort()).toEqual([201, 422]);
+      const refused = byMerchant.status === 422 ? byMerchant.body : byCustomer.json();
+      expect(refused.errors[0]).toMatchObject({ field: 'fileId', code: 'taken' });
+      const live = await db
+        .select({ id: s.payments.id })
+        .from(s.payments)
+        .innerJoin(s.files, eq(s.files.id, s.payments.receiptFileId))
+        .where(and(eq(s.files.sha256, stored!.sha256), inArray(s.payments.status, ['pending', 'approved'])));
+      expect(live).toHaveLength(1);
+    }
   });
 
   it('cancels a manual top-up without a receipt, twice the same; the list and the read show it', async () => {

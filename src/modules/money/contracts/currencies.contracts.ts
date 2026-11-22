@@ -18,7 +18,13 @@ export const CurrencySchema = z.object({
   createdAt: zIsoDateTime,
   // Optional like the console's own type (its mock omits both); the server always sends them.
   updatedAt: zIsoDateTime.optional().describe('When the row last changed; always sent.'),
-  isStale: z.boolean().optional().describe('A non-base currency whose rate is older than 24 hours; always sent.'),
+  isStale: z
+    .boolean()
+    .optional()
+    .describe(
+      'A non-base currency whose rate is older than 24 hours, or whose last refresh was held because the provider rate moved more ' +
+        'than fx.max_refresh_move_percent (decision 049); always sent.',
+    ),
 });
 
 const gbp = {
@@ -43,7 +49,8 @@ export const listCurrencies = defineRoute({
   summary: 'Currencies',
   description:
     'Currencies and their rates (`rateToBase` is units per 1 USD). `isStale` marks a non-base currency whose rate is older ' +
-    'than 24 hours. USD is the base row (rate 1, no markup, never stale). Reading needs `settings:update`, as the map says.',
+    "than 24 hours, or whose last refresh was held because the provider's rate moved more than `fx.max_refresh_move_percent` " +
+    '(decision 049). USD is the base row (rate 1, no markup, never stale). Reading needs `settings:update`, as the map says.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',
@@ -117,7 +124,8 @@ export const updateCurrency = defineRoute({
   description:
     'Changes the fields sent. Sending `rateToBase` stamps the rate with the current time. The base currency USD refuses a ' +
     'new rate, a new markup and being switched off. The code cannot be changed once created. Audited. ' +
-    'Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046).',
+    'Sending `rateToBase` or `markupPercent` also needs `currencies:update` (`403 FORBIDDEN`, decision 046). A sent `rateToBase` ' +
+    'also ends a hold of the refresh, and the shop offers the currency again (decision 049).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

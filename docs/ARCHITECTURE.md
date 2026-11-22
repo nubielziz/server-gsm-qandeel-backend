@@ -105,7 +105,8 @@ per route (uploads go through multipart limits).
 Every endpoint is a zod contract (D008) that drives validation, handler types, response serialisation and the
 OpenAPI metadata. Lists use the frontend's simple-rest dialect (`_start/_end/_sort/_order`, `q`, field filters with
 `_ne/_gte/_lte/_gt/_lt/_like` suffixes, repeated keys = IN; array body + `x-total-count`). Wire conventions: camelCase,
-numeric ids (D010), Money as 4-decimal strings (D011), ISO 8601 UTC timestamps with milliseconds. OpenAPI 3.1 is
+numeric ids (D010), Money as 4-decimal strings, 0 or more with at most 14 digits before the point unless a field is signed (D011,
+D049), ISO 8601 UTC timestamps with milliseconds. OpenAPI 3.1 is
 generated into `docs/contract/` and served by Scalar (public REST v1 + Dhru reference at `/docs`; everything at
 `/reference`, D017). Contract tests keep backend, map and frontend aligned (D009); the exact conventions per
 endpoint are in `docs/contract/ALIGNMENT.md`.
@@ -116,6 +117,9 @@ endpoint are in `docs/contract/ALIGNMENT.md`.
 (replay returns the first result), accounts locked `FOR UPDATE` in id order, wallet overdraft guard, `balance_after`
 written in the same transaction, append-only enforced by triggers, zero-sum enforced by a deferred constraint trigger.
 Each of the 13 map money events has one line builder with a unit test. Balances and holds are never cached.
+Manual money is limited (D049): a staff member's credits are capped over 24 hours, a staff-issued invoice is approved by someone else,
+one receipt backs one payment, commissions stay within the margin, and the shop charges only in currencies whose rate is fresh and was
+not held.
 
 ## 6. Orders
 

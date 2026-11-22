@@ -268,6 +268,8 @@ export const currencies = pgTable(
     name: text().notNull(),
     rateToBase: fxRate().notNull().default('1'),
     rateUpdatedAt: timestampTz().notNull().defaultNow(),
+    /** when a refresh held the provider's rate because it moved more than `fx.max_refresh_move_percent` from this one; null while not held (decision 049) */
+    rateHeldAt: timestampTz(),
     markupPercent: percent().notNull().default('0'),
     charmRounding: boolean().notNull().default(false),
     isStorefront: boolean().notNull().default(false),
@@ -473,6 +475,8 @@ export const invoices = pgTable(
     idempotencyKey: text(),
     /** what that top-up asked for (gateway and amount): the same key with another request is refused (feature 21) */
     requestFingerprint: text(),
+    /** the staff member who issued a manual invoice (decision 049); null for the other kinds and for invoices issued before it */
+    issuedBy: fk((): AnyPgColumn => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -492,6 +496,7 @@ export const invoices = pgTable(
     index('invoices_currency_idx').on(t.currency),
     index('invoices_gateway_id_idx').on(t.gatewayId),
     index('invoices_pdf_file_id_idx').on(t.pdfFileId),
+    index('invoices_issued_by_idx').on(t.issuedBy),
   ],
 );
 
@@ -553,6 +558,13 @@ export type PaymentGateway = typeof paymentGateways.$inferSelect;
 
 /** A row to insert into `payment_gateways`. */
 export type NewPaymentGateway = typeof paymentGateways.$inferInsert;
+
+/**
+ * The partial unique index that lets one receipt file back at most one pending or approved payment.
+ *
+ * Why: decision 049: the receipt routes tell this unique violation apart from the bank reference's.
+ */
+export const RECEIPT_LIVE_INDEX = 'payments_receipt_live_uq';
 
 /**
  * Payments and their confirmation: a wallet top-up or a B2C order payment.
@@ -634,6 +646,10 @@ export const payments = pgTable(
     index('payments_gateway_id_idx').on(t.gatewayId),
     index('payments_currency_idx').on(t.currency),
     index('payments_receipt_file_id_idx').on(t.receiptFileId),
+    // Decision 049: one receipt file backs one live payment; a rejected payment releases its file.
+    uniqueIndex(RECEIPT_LIVE_INDEX)
+      .on(t.receiptFileId)
+      .where(sql`${t.receiptFileId} is not null and ${inList(t.status, ['pending', 'approved'])}`),
     index('payments_reviewed_by_idx').on(t.reviewedBy),
     index('payments_auto_credit_idx')
       .on(t.autoCreditAt)

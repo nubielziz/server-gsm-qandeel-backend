@@ -1,6 +1,7 @@
 // HTTP controller of the invoices for staff (map domain E, stage 8, routes /admin/invoices).
 import { Body, Controller, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { InvoiceAdminService } from '../application/invoice-admin.service';
 import { createInvoice, getInvoice, listInvoices } from '../contracts/invoices.contracts';
 
@@ -44,12 +45,16 @@ export class InvoicesController {
   /**
    * Issues a manual invoice.
    *
+   * @param staff the signed-in staff member: the invoice records them as its issuer (decision 049)
    * @param body the merchant, the amount and the description
    * @returns the new invoice
    * @route POST /admin/invoices
    */
   @Route(createInvoice)
-  create(@Body() body: BodyOf<typeof createInvoice>): Promise<ResultOf<typeof createInvoice>> {
-    return this.invoices.issue(body);
+  create(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof createInvoice>,
+  ): Promise<ResultOf<typeof createInvoice>> {
+    return this.invoices.issue(staff, body);
   }
 }

@@ -1,7 +1,7 @@
 // Route contracts of the wallet top-ups for staff (map domain E, stage 8, routes /admin/payments*). Shapes match the console's
 // `Payment` (docs/contract/endpoints/money.md, RESOLUTIONS money-2, money-3, money-8).
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { DISPUTE_STATUSES, PAYMENT_PURPOSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
 
 /** A top-up (a merchant's deposit) as the console's Deposits tab shows it. */
@@ -12,7 +12,7 @@ export const PaymentSchema = z.object({
   methodType: z.enum(TOPUP_METHODS),
   amount: zMoney.describe('What the merchant paid.'),
   feeAmount: zMoney,
-  netAmount: zMoney.describe('Amount minus fee: what the wallet is credited.'),
+  netAmount: zSignedMoney.describe('Amount minus fee: what the wallet is credited.'),
   currency: z.string().describe('ISO code.'),
   gatewayTxnId: z.string().describe("The gateway's or the bank's reference; empty when there is none."),
   capturedAt: zIsoDateTime.nullable(),
@@ -24,7 +24,7 @@ export const PaymentSchema = z.object({
       id: zId,
       name: z.string(),
       group: z.string().nullable().describe('The merchant group name.'),
-      walletBalance: zMoney
+      walletBalance: zSignedMoney
         .nullable()
         .describe('The merchant wallet balance now (it includes this deposit once approved).'),
     })
@@ -34,7 +34,7 @@ export const PaymentSchema = z.object({
       id: zId,
       name: z.string(),
       email: z.string(),
-      walletBalance: zMoney
+      walletBalance: zSignedMoney
         .nullable()
         .describe('The customer store balance now; null while the customer has no wallet.'),
     })
@@ -155,7 +155,8 @@ export const approvePayment = defineRoute({
     'Approves a top-up and credits the wallet in one transaction: the money event `deposit` (Dr bank for a manual gateway or ' +
     'gateway_clearing for an automatic one, Cr client_wallet net, Cr fee_income fee, idempotency key `deposit:payment:<id>`), the ' +
     'linked invoice becomes paid, `invoice.paid` is queued for the merchant webhook, and the decision is audited. ' +
-    `${REVIEW_RULES} The answer's \`client.walletBalance\` already includes the credit.`,
+    `${REVIEW_RULES} The answer's \`client.walletBalance\` already includes the credit. ` +
+    '`403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',

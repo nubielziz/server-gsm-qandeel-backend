@@ -1,10 +1,10 @@
 // Drizzle queries on invoices (map routes /admin/invoices, /client/invoices, stage 8): lists for staff and for one merchant with
 // sort, search and exact count, find, id allocation, insert and update. Only the money module touches this table.
-import { type SQL, and, asc, eq, inArray, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { DbExecutor } from '../../../infra/db';
 import { escapeLike, listOrderBy, listWhere } from '../../../infra/db/list-sql';
-import { type Invoice, type InvoiceKind, type NewInvoice, invoices } from '../db/schema';
+import { type Invoice, type InvoiceKind, type NewInvoice, invoices, payments } from '../db/schema';
 import { findCustomerIdsByName, findMerchantIdsByName } from './foreign-directory.repository';
 
 /** The sort fields of the invoice lists (staff: createdAt, total, status; merchant: also number and dueAt). */
@@ -197,4 +197,46 @@ export async function findReceiptOfOrder(db: DbExecutor, orderId: number): Promi
     .orderBy(asc(invoices.id))
     .limit(1);
   return row;
+}
+
+/**
+ * Serialises the top-up invoices of one merchant until the transaction ends.
+ *
+ * Why: decision 049: the count of live unpaid top-ups and the insert that extends it run one request at a time per merchant.
+ *
+ * Side effects: takes `pg_advisory_xact_lock(hashtextextended('merchant-topup:<clientId>', 0))`, released at commit or rollback.
+ *
+ * @param tx the transaction that inserts the invoice or the receipt
+ * @param clientId the merchant
+ */
+export async function lockMerchantTopUps(tx: DbExecutor, clientId: number): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`merchant-topup:${clientId}`}, 0))`);
+}
+
+/**
+ * Counts a merchant's live unpaid top-up invoices: open, and created after `since` or with a payment waiting for review.
+ *
+ * Why: decision 049 (at most five; `MERCHANT_OPEN_TOPUPS`). The window takes the clock's time (decision 031).
+ *
+ * @param db the database or a transaction
+ * @param clientId the merchant
+ * @param since the start of the window (the clock's time minus 24 hours)
+ * @returns the count
+ */
+export async function countLiveMerchantTopUps(db: DbExecutor, clientId: number, since: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.clientId, clientId),
+        eq(invoices.kind, 'topup'),
+        eq(invoices.status, 'open'),
+        or(
+          gt(invoices.createdAt, since),
+          sql`exists (select 1 from ${payments} p where p.invoice_id = ${invoices.id} and p.status = 'pending')`,
+        ),
+      ),
+    );
+  return row?.n ?? 0;
 }

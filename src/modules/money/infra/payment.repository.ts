@@ -282,3 +282,62 @@ export async function customersWithApprovedTopup(db: DbExecutor, customerIds: re
     );
   return new Set(rows.flatMap((row) => (row.customerId === null ? [] : [row.customerId])));
 }
+
+/**
+ * Serialises the checks of one receipt content until the transaction ends.
+ *
+ * Why: decision 049: two uploads of the same bytes, to two invoices at once, are judged one after the other, so only one can pass.
+ *
+ * Side effects: takes `pg_advisory_xact_lock(hashtextextended('receipt-proof:<sha256>', 0))`, released at commit or rollback.
+ *
+ * @param tx the transaction that inserts the payment
+ * @param sha256 the hex SHA-256 of the receipt
+ */
+export async function lockReceiptContent(tx: DbExecutor, sha256: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`receipt-proof:${sha256}`}, 0))`);
+}
+
+/**
+ * Tells whether one of the given files is the receipt of a pending or approved payment.
+ *
+ * Why: decision 049: one receipt backs one live payment; a rejected payment releases its file.
+ *
+ * @param db the database or a transaction
+ * @param fileIds the file ids (every file with one content)
+ * @returns true when such a payment exists
+ */
+export async function liveReceiptPaymentExists(db: DbExecutor, fileIds: readonly number[]): Promise<boolean> {
+  if (fileIds.length === 0) return false;
+  const [row] = await db
+    .select({ id: payments.id })
+    .from(payments)
+    .where(and(inArray(payments.receiptFileId, [...fileIds]), inArray(payments.status, ['pending', 'approved'])))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Counts a merchant's receipts on top-up invoices that wait for review.
+ *
+ * Why: decision 049: at most five per merchant (`MERCHANT_OPEN_TOPUPS`), so older unpaid top-ups that stopped counting as open cannot
+ * fill the review queue. Read under the merchant's top-up lock.
+ *
+ * @param db the receipt's transaction
+ * @param clientId the merchant
+ * @returns the number of pending payments with a receipt file on the merchant's `topup` invoices
+ */
+export async function countPendingTopUpReceipts(db: DbExecutor, clientId: number): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(payments)
+    .innerJoin(invoices, eq(invoices.id, payments.invoiceId))
+    .where(
+      and(
+        eq(invoices.clientId, clientId),
+        eq(invoices.kind, 'topup'),
+        eq(payments.status, 'pending'),
+        sql`${payments.receiptFileId} is not null`,
+      ),
+    );
+  return row?.n ?? 0;
+}

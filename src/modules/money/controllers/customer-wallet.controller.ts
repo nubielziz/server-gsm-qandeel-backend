@@ -133,7 +133,7 @@ export class CustomerWalletController {
     @Body() body: BodyOf<typeof adjustCustomerWallet>,
     @ContractHeaders() headers: HeadersOf<typeof adjustCustomerWallet>,
   ): Promise<ResultOf<typeof adjustCustomerWallet>> {
-    return this.wallets.adjust(staff.staffId, params.id, { ...body, idempotencyKey: headers['idempotency-key'] });
+    return this.wallets.adjust(staff, params.id, { ...body, idempotencyKey: headers['idempotency-key'] });
   }
 
   /**

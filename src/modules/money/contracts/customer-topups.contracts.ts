@@ -104,7 +104,8 @@ export const createMyTopUp = defineRoute({
     '`Idempotency-Key` header is required: a retry with the same key and body answers the same top-up (`idempotency-replayed: true`); ' +
     'the same key with another body is `IDEMPOTENCY_KEY_REUSED`. Limits answer `422` on `amount` (`min`, `max`, `fee`, `daily_count`, ' +
     '`daily_amount`, `max_balance`) or `409 CONFLICT` (three unpaid top-ups). Refused while the balance is switched off ' +
-    '(`WALLET_DISABLED`), and through an automatic method while it is on hold (`WALLET_FROZEN`).',
+    '(`WALLET_DISABLED`), and through an automatic method while it is on hold (`WALLET_FROZEN`). A card method asks for 3-D Secure ' +
+    "while the shop's `require3ds` policy is on (decision 049).",
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',
@@ -164,7 +165,9 @@ export const attachMyTopUpReceipt = defineRoute({
   description:
     'Attaches the receipt of a manual transfer (`fileId` from `POST /store/v1/files`, PDF, JPEG or PNG) and the optional bank ' +
     'reference; the top-up then waits for staff (`in_review`). Sending the same receipt again answers the top-up again. Allowed ' +
-    'while the balance is switched off (the money may already be on its way). The `Idempotency-Key` header is required.',
+    'while the balance is switched off (the money may already be on its way). The `Idempotency-Key` header is required. A receipt ' +
+    'whose file, or a file with the same content, already backs a pending or approved payment is `422` on `fileId` (`taken`; ' +
+    'decision 049).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',

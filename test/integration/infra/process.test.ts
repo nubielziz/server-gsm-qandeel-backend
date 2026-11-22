@@ -116,6 +116,8 @@ describe('configuration failure', () => {
       'CONSOLE_BASE_URL',
       'STORE_BASE_URL',
       'TURNSTILE_SECRET_KEY',
+      // Decision 049: openexchangerates is the production default and needs its key.
+      'FX_API_KEY',
     ]) {
       expect(stderr).toContain(`${name}: is required in production`);
     }

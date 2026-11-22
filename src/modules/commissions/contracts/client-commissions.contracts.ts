@@ -82,7 +82,10 @@ export const listMyCommissions = defineRoute({
       merchant: z.object({ name: z.string() }),
       basisAmount: zMoney.describe("The order's revenue."),
       percent: zDecimal,
-      amount: zMoney,
+      amount: zMoney.describe(
+        '`basisAmount x percent / 100`, 4 decimals, capped so that the commissions of one order never exceed its margin (revenue ' +
+          'minus cost; decision 049).',
+      ),
       status: z.enum(COMMISSION_ACCRUAL_STATUSES),
       approvedAt: zIsoDateTime.nullable(),
       createdAt: zIsoDateTime,

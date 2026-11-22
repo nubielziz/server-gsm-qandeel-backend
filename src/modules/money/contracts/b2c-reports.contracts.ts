@@ -1,7 +1,7 @@
 // Route contracts of the storefront money reports (map domain E, stage 16, routes GET /admin/reports/vat and /payments). Shapes match the
 // console's `VatReport` (src/features/finance/types/reports.ts) and `PaymentsReport` (src/features/refunds/types).
 import { z } from 'zod';
-import { defineRoute, zDateOnly, zDecimal, zId, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, zDateOnly, zDecimal, zId, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { ORDER_METHODS } from '../db/schema';
 
 const VatRow = z.object({
@@ -9,8 +9,8 @@ const VatRow = z.object({
   period: z.string().describe('The month, `YYYY-MM` (UTC).'),
   rate: z.string().describe('The VAT rate in percent applied to the month (the rate of its latest order).'),
   orders: z.number().int().describe('Paid orders of the month.'),
-  taxable: zMoney.describe('Net sales (after refunds).'),
-  vat: zMoney.describe('VAT due (after refunds).'),
+  taxable: zSignedMoney.describe('Net sales (after refunds).'),
+  vat: zSignedMoney.describe('VAT due (after refunds).'),
 });
 
 /** `GET /admin/reports/vat`. */
@@ -33,7 +33,7 @@ export const getVatReport = defineRoute({
       to: z.string(),
       currency: z.string(),
       rows: z.array(VatRow),
-      totals: z.object({ orders: z.number().int(), taxable: zMoney, vat: zMoney }),
+      totals: z.object({ orders: z.number().int(), taxable: zSignedMoney, vat: zSignedMoney }),
     }),
   },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],

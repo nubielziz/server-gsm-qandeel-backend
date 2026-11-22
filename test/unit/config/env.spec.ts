@@ -42,6 +42,7 @@ const production = (): Record<string, string> => ({
   MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
   TYPESENSE_URL: 'http://typesense:8108/',
+  FX_API_KEY: 'fx-app-id-for-tests',
 });
 
 const issuesOf = (env: Record<string, string>) => {
@@ -450,10 +451,12 @@ describe('parseEnv in production', () => {
       'ENCRYPTION_KEYS',
       'ENCRYPTION_ACTIVE_KID',
       'METRICS_TOKEN',
+      'FX_API_KEY',
     ]) {
       expect(names).toContain(required);
     }
-    expect(issues.every((i) => i.message === 'is required in production')).toBe(true);
+    // FX_API_KEY adds how to do without it (decision 049).
+    expect(issues.every((i) => i.message.startsWith('is required in production'))).toBe(true);
   });
 
   it('puts the list in the error message', () => {
@@ -654,7 +657,11 @@ describe('FX_* (RESOLUTIONS money-9)', () => {
     const development = parseEnv({}).fx;
     expect(development).toEqual({ provider: 'manual', apiKey: undefined, timeoutMs: 5000 });
     expect(parseEnv({ NODE_ENV: 'test' }).fx.provider).toBe('manual');
-    expect(parseEnv(production()).fx).toEqual({ provider: 'openexchangerates', apiKey: undefined, timeoutMs: 5000 });
+    expect(parseEnv(production()).fx).toEqual({
+      provider: 'openexchangerates',
+      apiKey: 'fx-app-id-for-tests',
+      timeoutMs: 5000,
+    });
   });
 
   it('reads the provider, the key and the timeout', () => {
@@ -663,8 +670,26 @@ describe('FX_* (RESOLUTIONS money-9)', () => {
     expect(parseEnv({ ...production(), FX_PROVIDER: 'manual' }).fx.provider).toBe('manual');
   });
 
-  it('keeps the key optional in production (an unconfigured provider is a 502 at call time, not a boot failure)', () => {
-    expect(issuesOf({ ...production(), FX_PROVIDER: 'openexchangerates' })).toEqual([]);
+  it('refuses openexchangerates without a key in production, naming FX_API_KEY and the way out (decision 049)', () => {
+    const { FX_API_KEY: _unused, ...withoutKey } = production();
+    for (const env of [withoutKey, { ...withoutKey, FX_PROVIDER: 'openexchangerates' }]) {
+      const issues = issuesOf(env);
+      expect(issues.map((issue) => issue.variable)).toEqual(['FX_API_KEY']);
+      expect(issues[0]?.message).toContain('is required in production');
+      expect(issues[0]?.message).toContain('FX_PROVIDER=manual');
+    }
+  });
+
+  it('accepts FX_PROVIDER=manual without a key in production, and the key stays optional outside production', () => {
+    const { FX_API_KEY: _unused, ...withoutKey } = production();
+    expect(issuesOf({ ...withoutKey, FX_PROVIDER: 'manual' })).toEqual([]);
+    expect(parseEnv({ ...withoutKey, FX_PROVIDER: 'manual' }).fx).toEqual({
+      provider: 'manual',
+      apiKey: undefined,
+      timeoutMs: 5000,
+    });
+    expect(parseEnv({}).fx.provider).toBe('manual');
+    expect(issuesOf({ FX_PROVIDER: 'openexchangerates' })).toEqual([]);
   });
 
   it('refuses an unknown driver and a timeout outside 100-60000 ms, naming the variable', () => {

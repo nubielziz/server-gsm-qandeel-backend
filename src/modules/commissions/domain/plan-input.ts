@@ -53,3 +53,17 @@ export function normalisePercent(text: string): string {
 export function scopeOf(kind: CommissionPlanKind): AssignmentScope {
   return kind === 'referral' ? 'referrals' : 'own';
 }
+
+/**
+ * Tells whether a stored rate is inside the bounds a plan is saved with (0.5 to 15 percent).
+ *
+ * Why: decision 049: the column allows 0 to 100, so a seeded or older row can hold a rate the plan screens never accept; such a plan
+ * accrues nothing.
+ *
+ * @param percent the stored rate (`3.0000`)
+ * @returns true when 0.5 <= rate <= 15
+ */
+export function planRateInBounds(percent: string): boolean {
+  const rate = Money.of(percent);
+  return rate.cmp(Money.of(MIN_PLAN_PERCENT)) >= 0 && rate.cmp(Money.of(MAX_PLAN_PERCENT)) <= 0;
+}

@@ -3,17 +3,19 @@ import { describe, expect, it } from 'bun:test';
 import {
   BROADCAST_EMAIL_PER_SECOND_KEY,
   BROADCAST_TELEGRAM_PER_SECOND_KEY,
+  broadcastRateProblem,
+  CUSTOMER_WALLET_SETTING_RANGES,
+  CUSTOMER_WALLET_SETTINGS,
+  EDITABLE_SETTINGS,
+  FX_GUARD_SETTINGS,
+  imeiRetentionDaysProblem,
   INBOX_READ_RETENTION_DAYS_KEY,
   INBOX_RETENTION_DAYS_KEY,
-  LOG_RETENTION_DAYS_KEY,
-  CUSTOMER_WALLET_SETTINGS,
-  CUSTOMER_WALLET_SETTING_RANGES,
-  PRICE_CHANGE_TOLERANCE_KEY,
-  broadcastRateProblem,
-  imeiRetentionDaysProblem,
   inboxReadRetentionDaysProblem,
   inboxRetentionDaysProblem,
+  LOG_RETENTION_DAYS_KEY,
   logRetentionDaysProblem,
+  PRICE_CHANGE_TOLERANCE_KEY,
   ownerOnlySettingKeys,
   priceChangeTolerancePercentProblem,
   settingsPatchProblems,
@@ -143,15 +145,40 @@ describe('the supplier settings', () => {
   });
 });
 
-describe('owner-only settings (decision 051)', () => {
-  it('reserves suppliers.allowPlainHttp to Owners', () => {
+describe('owner-only settings (decisions 051 and 049)', () => {
+  const OWNER_ONLY = [
+    'suppliers.allowPlainHttp',
+    'fx.max_refresh_move_percent',
+    'fx.max_rate_age_hours',
+    'wallet.customer.adjust_approval_limit',
+  ];
+
+  it('reserves exactly four keys to Owners', () => {
+    expect(
+      EDITABLE_SETTINGS.filter((setting) => setting.ownerOnly === true)
+        .map((setting) => setting.key)
+        .sort(),
+    ).toEqual([...OWNER_ONLY].sort());
+    expect(FX_GUARD_SETTINGS.maxRefreshMovePercent.key).toBe('fx.max_refresh_move_percent');
+    expect(FX_GUARD_SETTINGS.maxRateAgeHours.key).toBe('fx.max_rate_age_hours');
+    expect(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit).toBe('wallet.customer.adjust_approval_limit');
+    expect(ownerOnlySettingKeys(Object.fromEntries(OWNER_ONLY.map((key) => [key, 1])))).toEqual(OWNER_ONLY);
+  });
+
+  it('names a reserved key whether it comes alone or beside ordinary keys, and none of the others', () => {
     expect(ownerOnlySettingKeys({ 'suppliers.allowPlainHttp': true, imeiRetentionDays: 30 })).toEqual([
       'suppliers.allowPlainHttp',
     ]);
+    expect(ownerOnlySettingKeys({ imeiRetentionDays: 30, 'fx.max_rate_age_hours': 72 })).toEqual([
+      'fx.max_rate_age_hours',
+    ]);
     expect(ownerOnlySettingKeys({ imeiRetentionDays: 30 })).toEqual([]);
+    expect(ownerOnlySettingKeys({ 'wallet.customer.max_topup': 500, 'fx.unknown': 1 })).toEqual([]);
     expect(ownerOnlySettingKeys({ 'not.a.setting': 1 })).toEqual([]);
-    // The validator still judges the value first: the key stays an ordinary registry entry.
+    // The validator still judges the value first: the keys stay ordinary registry entries.
     expect(settingsPatchProblems({ 'suppliers.allowPlainHttp': 'yes' })).toHaveLength(1);
+    expect(settingsPatchProblems({ 'fx.max_refresh_move_percent': 0, 'fx.max_rate_age_hours': 721 })).toHaveLength(2);
+    expect(settingsPatchProblems({ 'wallet.customer.adjust_approval_limit': 10_001 })).toHaveLength(1);
   });
 });
 
@@ -180,5 +207,23 @@ describe('customer wallet settings (feature 21)', () => {
       min: 0,
       max: 10_000,
     });
+  });
+});
+
+describe('the exchange-rate guards (decision 049)', () => {
+  it('accept the two guards within their ranges and refuse outside them', () => {
+    const move = FX_GUARD_SETTINGS.maxRefreshMovePercent.key;
+    const age = FX_GUARD_SETTINGS.maxRateAgeHours.key;
+    expect(move).toBe('fx.max_refresh_move_percent');
+    expect(age).toBe('fx.max_rate_age_hours');
+    expect(settingsPatchProblems({ [move]: 1, [age]: 1 })).toEqual([]);
+    expect(settingsPatchProblems({ [move]: 100, [age]: 720 })).toEqual([]);
+    for (const bad of [0, 101, 20.5, '20', null]) expect(settingsPatchProblems({ [move]: bad })).toHaveLength(1);
+    for (const bad of [0, 721, 1.5, true]) expect(settingsPatchProblems({ [age]: bad })).toHaveLength(1);
+  });
+
+  it('default to 20 percent and 48 hours', () => {
+    expect(FX_GUARD_SETTINGS.maxRefreshMovePercent.fallback).toBe(20);
+    expect(FX_GUARD_SETTINGS.maxRateAgeHours.fallback).toBe(48);
   });
 });

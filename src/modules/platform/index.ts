@@ -63,6 +63,7 @@ export { SettingsService } from './settings/settings.service';
 export {
   CUSTOMER_WALLET_SETTINGS,
   CUSTOMER_WALLET_SETTING_RANGES,
+  FX_GUARD_SETTINGS,
   IMEI_RETENTION_MAX_DAYS,
   imeiRetentionDaysProblem,
   INBOX_READ_RETENTION_DAYS_KEY,

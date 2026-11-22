@@ -174,7 +174,8 @@ describe('response documentation', () => {
       'x-gsm-alias': 'IsoDateTime',
     });
     expect(schema.properties.createdAt.pattern).toBeUndefined();
-    expect(schema.properties.price.pattern).toBe('^-?\\d+\\.\\d{4}$');
+    // Decision 049: Money is 0 or more with at most 14 digits before the point unless a field is signed.
+    expect(schema.properties.price.pattern).toBe('^\\d{1,14}\\.\\d{4}$');
     expect(schema.additionalProperties).toBe(false);
     expect(JSON.stringify(doc)).not.toContain('"$schema"');
   });

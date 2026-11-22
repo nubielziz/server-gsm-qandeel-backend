@@ -28,7 +28,9 @@ Disagreements are B-entries; nothing is picked silently.
 - **JSON** both ways, `camelCase` keys, `Content-Type: application/json` request bodies (the console sends no
   multipart; uploads on `/client` and `/v1` are multipart). 2xx bodies are JSON or empty: never text or HTML.
 - **Ids** are JSON numbers (decision 010). Path params are decimal ids or tokens.
-- **Money** is a string with exactly 4 decimals (`"12.4900"`), USD unless the field says otherwise. Other decimals
+- **Money** is a string with exactly 4 decimals (`"12.4900"`), USD unless the field says otherwise. A Money value is 0 or more with at
+  most 14 digits before the point, unless the field is signed (balances, ledger lines, differences, profits; decision 049): a request
+  that breaks it is `422`. Other decimals
   follow the frontend type per field: strings for pricing/tax/FX rates, numbers for health and dashboard measures and
   for fractions inside snapshots (decision 011).
 - **Times** are ISO 8601 UTC with milliseconds and `Z` (`"2026-03-01T09:30:00.000Z"`); a missing time is `null`,

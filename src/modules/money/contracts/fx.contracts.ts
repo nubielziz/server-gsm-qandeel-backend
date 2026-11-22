@@ -18,7 +18,10 @@ export const refreshFx = defineRoute({
     'Fetches the latest rates for every active non-base currency from the configured provider (decision 029) and stores them; ' +
     '`rateUpdatedAt` is now and the currencies stop being stale. A currency the provider does not offer is in `failed` with ' +
     '"Not offered by the provider" and the answer is still `200`. `502 FX_PROVIDER_DOWN` when no rate could be fetched at all ' +
-    'or no provider is configured ("No exchange-rate provider is configured."); the old rates stay. Audited.',
+    'or no provider is configured ("No exchange-rate provider is configured."); the old rates stay. Audited. A rate that moved more ' +
+    "than `fx.max_refresh_move_percent` (default 20) from the stored one is not stored: it is in `failed` with a message that names the provider's rate, " +
+    'the stored rate, the move judged (the larger rate over the smaller one, one decimal) and the bound; the currency is stale and the shop does not offer it until staff confirm a rate; a refresh that held a rate is never `502` ' +
+    '(decision 049).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

@@ -1,14 +1,15 @@
 // Integration tests of the merchant wallet routes (map stage 3, user rule 2): GET /admin/clients/:id/wallet and /statement,
-// POST /admin/clients/:id/wallet/adjust and PATCH /admin/clients/:id/credit-limit, through HTTP on the real application.
+// POST /admin/clients/:id/wallet/adjust and PATCH /admin/clients/:id/credit-limit, through HTTP on the real application. Decision 049: the
+// approval limit caps a staff member's credits over 24 hours (a debit alone, an Owner exempt), a credit limit above it needs an Owner.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { schema as s } from '@src/infra/db';
-import { adjust, deposit, order, postTransaction } from '@src/modules/money';
+import { adjust, creditLine, debitLine, deposit, order, postTransaction, reopen } from '@src/modules/money';
 import { complete } from '@src/modules/money';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertMerchant, signInStaff } from '../../support/auth';
-import { MINUTE, TestClock } from '../../support/clock';
+import { clearIdentityCaches, insertMerchant, openSession, signInStaff } from '../../support/auth';
+import { DAY, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertUsd } from '../../support/fixtures';
 import { accountFigures, fundWallet, insertWalletMerchant, ledgerTotals } from '../../support/money';
@@ -313,7 +314,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(ok.json().wallet).toMatchObject({ balance: '-100.0000', available: '0.0000' });
   });
 
-  it('asks for a second approver above the limit, with the demo $10,000 as the default', async () => {
+  it('asks an owner above the limit, with $10,000 as the default', async () => {
     const { db } = await testDb();
     const merchant = await insertWalletMerchant(db);
     const staff = await signInStaff(t, ['wallet:adjust']);
@@ -322,9 +323,129 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({
       code: 'APPROVAL_REQUIRED',
-      detail: 'Adjustments over $10,000 need a second approver. Split it or ask Finance.',
+      detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.00.',
     });
     expect((await send(staff, 'POST', url, adjustBody({ amount: '10000.0000' }))).statusCode).toBe(200);
+  });
+
+  describe("a staff member's credits over 24 hours (decision 049)", () => {
+    const credit = (staff: Staff, clientId: number, amount: string, key?: string) =>
+      send(
+        staff,
+        'POST',
+        `/admin/clients/${clientId}/wallet/adjust`,
+        adjustBody({ amount }),
+        key === undefined ? {} : { 'idempotency-key': key },
+      );
+    const debit = (staff: Staff, clientId: number, amount: string) =>
+      send(staff, 'POST', `/admin/clients/${clientId}/wallet/adjust`, adjustBody({ amount, direction: 'debit' }));
+
+    it('counts them together per staff member, judges a debit alone, and forgets them after a day', async () => {
+      const { db } = await testDb();
+      const x = await insertWalletMerchant(db, { name: 'X' });
+      const y = await insertWalletMerchant(db, { name: 'Y' });
+      const z = await insertWalletMerchant(db, { name: 'Z', creditLimit: '20000' });
+      const a = await signInStaff(t, ['wallet:adjust']);
+      const b = await signInStaff(t, ['wallet:adjust']);
+      expect((await credit(a, x.id, '6000.0000')).statusCode).toBe(200);
+      expect((await credit(a, y.id, '4000.0000')).statusCode).toBe(200);
+      const third = await credit(a, x.id, '0.0001');
+      expect(third.statusCode).toBe(409);
+      expect(third.json()).toMatchObject({
+        code: 'APPROVAL_REQUIRED',
+        detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.00.',
+      });
+      // Debits are not summed and do not lower the sum.
+      expect((await debit(a, z.id, '9000.0000')).statusCode).toBe(200);
+      expect((await credit(a, y.id, '0.0001')).json()).toMatchObject({
+        code: 'APPROVAL_REQUIRED',
+        detail: expect.stringContaining('$10,000.00'),
+      });
+      const big = await debit(a, z.id, '10000.0001');
+      expect(big.statusCode).toBe(409);
+      expect(big.json()).toMatchObject({ code: 'APPROVAL_REQUIRED', detail: 'Debits over $10,000 need an owner.' });
+      // Another staff member has a sum of their own.
+      expect((await credit(b, x.id, '5000.0000')).statusCode).toBe(200);
+      clock.advance(DAY + 1);
+      // A new session of the same staff member (the first one has timed out by now).
+      const later = { ...a, session: await openSession(t, { type: 'staff', id: a.staffId }) };
+      expect((await credit(later, x.id, '0.0001')).statusCode).toBe(200);
+      expect(await accountFigures(db, 'client_wallet', { type: 'client', id: x.id })).toMatchObject({
+        balance: '11000.0001',
+      });
+    });
+
+    it('does not limit an owner', async () => {
+      const { db } = await testDb();
+      const x = await insertWalletMerchant(db, { creditLimit: '20000' });
+      const owner = await signInStaff(t, ['*']);
+      expect((await credit(owner, x.id, '15000.0000')).statusCode).toBe(200);
+      expect((await credit(owner, x.id, '15000.0000')).statusCode).toBe(200);
+      expect((await debit(owner, x.id, '15000.0000')).statusCode).toBe(200);
+    });
+
+    it('answers a retry of an accepted adjustment instead of refusing it by the sum', async () => {
+      const { db } = await testDb();
+      const x = await insertWalletMerchant(db);
+      const a = await signInStaff(t, ['wallet:adjust']);
+      const first = await credit(a, x.id, '10000.0000', 'k-1');
+      expect(first.statusCode).toBe(200);
+      const retry = await credit(a, x.id, '10000.0000', 'k-1');
+      expect(retry.statusCode).toBe(200);
+      expect(retry.json().transactionId).toBe(first.json().transactionId);
+      expect((await ledgerTotals(db)).transactions).toBe(1);
+      expect((await credit(a, x.id, '1.0000', 'k-2')).statusCode).toBe(409);
+    });
+
+    it('judges two credits of one staff member at once one after the other', async () => {
+      const { db } = await testDb();
+      const x = await insertWalletMerchant(db);
+      const a = await signInStaff(t, ['wallet:adjust']);
+      const answers = await Promise.all([credit(a, x.id, '6000.0000', 'p-1'), credit(a, x.id, '6000.0000', 'p-2')]);
+      expect(answers.map((res) => res.statusCode).sort()).toEqual([200, 409]);
+      expect(await accountFigures(db, 'client_wallet', { type: 'client', id: x.id })).toMatchObject({
+        balance: '6000.0000',
+      });
+    });
+
+    it('never counts an order reversal the staff member posted', async () => {
+      const { db } = await testDb();
+      const x = await insertWalletMerchant(db);
+      const a = await signInStaff(t, ['wallet:adjust']);
+      expect((await credit(a, x.id, '9000.0000')).statusCode).toBe(200);
+      // A reopen (kind adjustment, about an order) and an order reversal that credits the wallet, both in the staff member's name.
+      await db.transaction(async (tx) => {
+        await postTransaction(
+          tx,
+          {
+            ...reopen({ clientId: x.id, amount: m('5000') }),
+            refId: 77,
+            idempotencyKey: 'reopen:77',
+            currency: 'USD',
+            createdBy: { type: 'staff', id: a.staffId },
+          },
+          clock.now(),
+        );
+        await postTransaction(
+          tx,
+          {
+            kind: 'adjustment',
+            refType: 'order',
+            lines: [
+              ...debitLine({ kind: 'revenue' }, m('5000')),
+              ...creditLine({ kind: 'client_wallet', ownerType: 'client', ownerId: x.id }, m('5000')),
+            ],
+            refId: 78,
+            idempotencyKey: 'reversal:78',
+            currency: 'USD',
+            createdBy: { type: 'staff', id: a.staffId },
+          },
+          clock.now(),
+        );
+      });
+      expect((await credit(a, x.id, '1000.0000')).statusCode).toBe(200);
+      expect((await credit(a, x.id, '0.0001')).statusCode).toBe(409);
+    });
   });
 
   it('reads the approval limit from the setting wallet.adjust_approval_limit', async () => {
@@ -602,6 +723,42 @@ describe('PATCH /admin/clients/:id/credit-limit (user rule 2)', () => {
     const res = await send(staff, 'PATCH', `/admin/clients/${merchantId}/credit-limit`, { creditLimit: '75.0000' });
     expect(res.json().creditLimit).toBe('75.0000');
     expect(await accountFigures(db, 'client_hold', { type: 'client', id: merchantId })).toBeDefined();
+  });
+
+  it('needs an owner to raise a limit above the approval limit; lowering does not (decision 049)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { overdraftAllowed: true });
+    const staff = await signInStaff(t, ['wallet:credit_limit']);
+    const owner = await signInStaff(t, ['*']);
+    const url = `/admin/clients/${merchant.id}/credit-limit`;
+    const refused = await send(staff, 'PATCH', url, { creditLimit: '10000.0001' });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'Only an owner can set a credit limit above $10,000.',
+    });
+    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+      overdraftLimit: '0.0000',
+    });
+    expect((await send(staff, 'PATCH', url, { creditLimit: '10000.0000' })).statusCode).toBe(200);
+    expect((await send(owner, 'PATCH', url, { creditLimit: '20000.0000' })).statusCode).toBe(200);
+    expect((await send(staff, 'PATCH', url, { creditLimit: '15000.0000' })).statusCode).toBe(200);
+    expect((await send(staff, 'PATCH', url, { creditLimit: '15000.0000' })).statusCode).toBe(200);
+    expect((await send(staff, 'PATCH', url, { creditLimit: '16000.0000' })).statusCode).toBe(403);
+    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+      overdraftLimit: '15000.0000',
+    });
+  });
+
+  it('answers 422, not 500, for an amount the column cannot hold or below zero (decision 049)', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { overdraftAllowed: true });
+    const owner = await signInStaff(t, ['*']);
+    for (const creditLimit of ['100000000000000.0000', '-1.0000']) {
+      const res = await send(owner, 'PATCH', `/admin/clients/${merchant.id}/credit-limit`, { creditLimit });
+      expect(res.statusCode, creditLimit).toBe(422);
+      expect(res.json().errors[0].field, creditLimit).toBe('creditLimit');
+    }
   });
 
   it('answers 404 for an unknown merchant and 403 without wallet:credit_limit', async () => {

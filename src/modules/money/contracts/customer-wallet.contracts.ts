@@ -1,7 +1,7 @@
 // Route contracts of the customer store balance (feature 21, plan § 7.1, routes beyond the map in scripts/map-additions/21.mjs): the
 // customer's own wallet and statement on the store, and the staff wallet view, statement, adjust, freeze, unfreeze and list.
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 import { StatementRowSchema } from './wallet.contracts';
 
 /**
@@ -42,7 +42,7 @@ export const StoreWalletSchema = z.object({
     .describe('The master switch: false hides Add Funds and Pay from balance; a balance is still shown.'),
   cardTopUps: z.boolean().describe('Whether an automatic (card) method can appear.'),
   currency: z.string().describe('Always USD.'),
-  balance: zMoney.describe('Customer side; negative only after a lost top-up chargeback.'),
+  balance: zSignedMoney.describe('Customer side; negative only after a lost top-up chargeback.'),
   reserved: zMoney.describe('Always 0.0000 for a customer (the merchant wallet shape).'),
   creditLimit: zMoney.describe('Always 0.0000 for a customer.'),
   available: zMoney.describe('What can be spent now: 0.0000 while frozen, switched off or negative, else the balance.'),
@@ -55,7 +55,7 @@ export const StoreWalletSchema = z.object({
 export const AdminWalletSchema = z.object({
   enabled: z.boolean(),
   currency: z.string(),
-  balance: zMoney,
+  balance: zSignedMoney,
   reserved: zMoney,
   creditLimit: zMoney,
   available: zMoney,
@@ -63,7 +63,7 @@ export const AdminWalletSchema = z.object({
   pendingTopUps: PendingSchema,
   openDisputes: z.number().int().min(0).describe('Open disputes of this customer’s top-ups.'),
   adjustApprovalLimit: zMoney.describe(
-    'Adjustments above this need a second approver (setting wallet.customer.adjust_approval_limit).',
+    "A staff member's credits to customer balances within 24 hours, and any single debit, above this need an owner (setting wallet.customer.adjust_approval_limit, decision 049).",
   ),
 });
 
@@ -74,15 +74,15 @@ export const StoreStatementRowSchema = z.object({
   kind: z.string().describe('deposit, b2c_payment, refund, adjustment or chargeback.'),
   memo: z.string().describe('English; a staff adjustment reads "Balance adjustment".'),
   orderId: zId.nullable().describe('The order the line is about, when it is one.'),
-  amount: zMoney.describe('Signed from the customer side: a top-up is positive, a payment negative.'),
-  balanceAfter: zMoney,
+  amount: zSignedMoney.describe('Signed from the customer side: a top-up is positive, a payment negative.'),
+  balanceAfter: zSignedMoney,
   createdAt: zIsoDateTime,
 });
 
 /** One wallet of the staff list. */
 export const WalletRowSchema = z.object({
   customer: z.object({ id: zId, name: z.string(), email: z.string(), status: z.string() }),
-  balance: zMoney,
+  balance: zSignedMoney,
   frozen: z.object({ at: zIsoDateTime, reason: z.string() }).nullable(),
   updatedAt: zIsoDateTime,
 });
@@ -242,8 +242,9 @@ export const adjustCustomerWallet = defineRoute({
   description:
     'Posts a manual adjustment (credit: Dr adjustments / Cr customer_wallet; debit: the mirror) with the reason in the memo, audits it ' +
     'and emails the customer. A credit needs a customer with an account that is not anonymized (`NO_ACCOUNT`, `ANONYMIZED`); a debit ' +
-    'never takes the balance below zero (`INSUFFICIENT_FUNDS`). Above the approval limit (setting ' +
-    '`wallet.customer.adjust_approval_limit`, default $500) it is refused with `APPROVAL_REQUIRED`. The `Idempotency-Key` header is ' +
+    "never takes the balance below zero (`INSUFFICIENT_FUNDS`). A staff member's credits to customer balances within 24 hours, this " +
+    'one included, above the approval limit (setting `wallet.customer.adjust_approval_limit`, default $500), or a single debit above ' +
+    'it, are refused with `APPROVAL_REQUIRED`; an Owner is not limited (decision 049). The `Idempotency-Key` header is ' +
     'required: a retry with the same key and body answers the first adjustment; the same key with another body is ' +
     '`IDEMPOTENCY_KEY_REUSED`. Works while the balance is switched off or frozen.',
   tags: ['customers'],

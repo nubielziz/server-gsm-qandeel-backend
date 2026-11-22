@@ -10,8 +10,8 @@ import { OpenExchangeRatesProvider } from './open-exchange-rates.provider';
  * Provides {@link FX_PROVIDER}: the driver `FX_PROVIDER` names.
  *
  * Why: decision 029. `openexchangerates` without a key behaves like `manual` (the refresh answers `502 FX_PROVIDER_DOWN`, the hourly
- * job does nothing), so a missing key never stops a process from booting. The API (`POST /admin/currencies/refresh-fx`) and the
- * worker (`fx_refresh`) both need the same choice, so it is written once here.
+ * job does nothing) outside production; production refuses `openexchangerates` without a key at start (decision 049). The API
+ * (`POST /admin/currencies/refresh-fx`) and the worker (`fx_refresh`) both need the same choice, so it is written once here.
  */
 export const FX_PROVIDER_FACTORY: FactoryProvider<FxProvider> = {
   provide: FX_PROVIDER,

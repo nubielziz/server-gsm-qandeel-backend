@@ -2,7 +2,16 @@
 // test the connection, sync, the supplier's own services and the import. Shapes match the console's `src/features/suppliers/types`
 // (docs/contract/endpoints/suppliers.md and the resolutions orders-suppliers-3 to -10, -13, -16, -20, catalog-9).
 import { z } from 'zod';
-import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import {
+  defineRoute,
+  listQuery,
+  zDecimal,
+  zId,
+  zIdParam,
+  zIsoDateTime,
+  zMoney,
+  zSignedMoney,
+} from '../../../common/contract';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../../catalog';
 import { SUPPLIER_DRIVERS, SUPPLIER_STATUSES } from '../db/schema';
 
@@ -27,7 +36,7 @@ const SupplierRow = z.object({
     .describe(
       'A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.',
     ),
-  balance: zMoney.describe('Our prepaid balance at the supplier, in its own currency.'),
+  balance: zSignedMoney.describe('Our prepaid balance at the supplier, in its own currency.'),
   balanceCheckedAt: zIsoDateTime.nullable(),
   lowBalanceAlert: zMoney,
   maxConcurrency: z.number().int(),
@@ -320,7 +329,7 @@ export const testSupplier = defineRoute({
       httpStatus: z.number().int().nullable(),
       durationMs: z.number().int().nullable(),
       accountName: z.string().nullable().optional(),
-      balance: zMoney.nullable().optional(),
+      balance: zSignedMoney.nullable().optional(),
     }),
   },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND'],
@@ -373,7 +382,7 @@ export const syncSupplier = defineRoute({
             "service made a server service with the supplier's box first, decision 042), fields the supplier requires made " +
             'required, or both; 0 when none.',
         ),
-      balance: zMoney,
+      balance: zSignedMoney,
       balanceCheckedAt: zIsoDateTime,
     }),
   },

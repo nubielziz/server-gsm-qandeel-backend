@@ -7,6 +7,7 @@ import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor, escapeLike } from '../../../infra/db';
+import { type StaffPrincipal, isOwner } from '../../identity';
 import { AuditService, SettingsReader } from '../../platform';
 import type {
   AdminWalletSchema,
@@ -24,7 +25,8 @@ import {
   customerWalletPolicy,
   roomOf,
 } from '../domain/customer-wallet-policy';
-import { needsSecondApprover } from '../domain/wallet-rules';
+import { ADJUST_WINDOW_MS, adjustmentNeedsOwner, adjustmentRefusalDetail } from '../domain/wallet-rules';
+import { lockStaffAdjustments, staffCreditsSince } from '../infra/adjustment.repository';
 import {
   type CustomerWalletRow,
   countOpenTopUpDisputes,
@@ -44,6 +46,7 @@ import {
   loadWalletCustomers,
 } from '../infra/foreign-directory.repository';
 import { findJournal } from '../infra/ledger-read.repository';
+import { findHeaderByKey } from '../infra/ledger-writer.repository';
 import { CustomerWalletMails } from './customer-wallet-mails';
 import { LedgerPoster, type PostedTransaction } from './post-transaction';
 
@@ -89,13 +92,6 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No customer with thi
 function labelOf(customer: WalletCustomer): string {
   if (customer.status === 'anonymized') return `customer ${customer.id}`;
   return customer.name.trim() || customer.email;
-}
-
-/** `$500` for a whole-dollar limit, `$500.50` otherwise. */
-function dollars(amount: Money): string {
-  const [whole = '0', cents = '00'] = amount.toWire().split('.');
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return /^0+$/.test(cents) ? `$${grouped}` : `$${grouped}.${cents.slice(0, 2)}`;
 }
 
 function parsePositiveAmount(text: string): Money {
@@ -299,27 +295,31 @@ export class CustomerWallets {
    *
    * Why: plan 21 § 5.6.2 (the merchant adjust for a customer): a credit needs a customer with an account who is not anonymized; a debit
    * may never take the balance below zero (`INSUFFICIENT_FUNDS`: customers have no credit). The key is
-   * `adjust:customer:<id>:<Idempotency-Key>`, so a retry posts once and can never collide with a merchant's `adjust:<id>:...`. Allowed
-   * while the switch is off or the wallet is frozen (P1, P6).
+   * `adjust:customer:<id>:<Idempotency-Key>`, so a retry posts once and can never collide with a merchant's `adjust:<id>:...`. Above the
+   * approval limit (setting `wallet.customer.adjust_approval_limit`) the server refuses: a staff member's credits to customer balances
+   * count together over a rolling 24 hours and a debit counts alone; an Owner is not limited, and a retry of an accepted adjustment is
+   * not judged again (decision 049). Allowed while the switch is off or the wallet is frozen (P1, P6).
    *
    * Side effects: one ledger transaction (kind `adjustment`, ref type `customer`), the wallet balance, one audit row, one `wallet.adjusted`
-   * mail (not on a replay); opens the wallet on its first credit.
+   * mail (not on a replay); opens the wallet on its first credit. Takes the staff member's adjustment lock until the commit.
    *
-   * @param staffId the staff member who adjusts
+   * @param caller the staff member who adjusts
    * @param customerId the customer
    * @param input amount, direction, reason and the idempotency key
    * @returns the journal id and the wallet after posting
-   * @throws {AppError} `VALIDATION_FAILED` on `amount`, `NOT_FOUND`, `ANONYMIZED` or `NO_ACCOUNT` (a credit), `APPROVAL_REQUIRED`,
-   *   `INSUFFICIENT_FUNDS`, `IDEMPOTENCY_KEY_REUSED`
+   * @throws {AppError} `VALIDATION_FAILED` on `amount`, `NOT_FOUND`, `ANONYMIZED` or `NO_ACCOUNT` (a credit), `APPROVAL_REQUIRED`
+   *   (409: above the limit, decision 049), `INSUFFICIENT_FUNDS`, `IDEMPOTENCY_KEY_REUSED`
    */
   async adjust(
-    staffId: number,
+    caller: StaffPrincipal,
     customerId: number,
     input: CustomerAdjustInput,
   ): Promise<{ transactionId: number; wallet: AdminWallet }> {
     const amount = parsePositiveAmount(input.amount);
     const policy = await this.policy();
     return this.db.runInTransaction(async ({ tx }) => {
+      // Lock order: this staff member's adjustment lock first, then (inside the posting) the wallet row.
+      await lockStaffAdjustments(tx, caller.staffId);
       const customer = await findWalletCustomer(tx, customerId);
       if (!customer) throw notFound();
       if (input.direction === 'credit') {
@@ -328,19 +328,26 @@ export class CustomerWallets {
           throw new AppError('NO_ACCOUNT', { detail: 'Only a customer with an account can hold a store balance.' });
         }
       }
-      if (needsSecondApprover(amount, policy.adjustApprovalLimit)) {
-        throw new AppError('APPROVAL_REQUIRED', {
-          detail: `Adjustments over ${dollars(policy.adjustApprovalLimit)} need a second approver. Split it or ask Finance.`,
-        });
+      const key = `adjust:customer:${customerId}:${input.idempotencyKey}`;
+      // A retry of an accepted adjustment replays it: it is already part of the sum it would be judged against (decision 049).
+      if (!isOwner(caller) && !(await findHeaderByKey(tx, key))) {
+        const creditedInWindow =
+          input.direction === 'credit'
+            ? await staffCreditsSince(tx, caller.staffId, 'customer', new Date(this.clock.nowMs() - ADJUST_WINDOW_MS))
+            : Money.zero();
+        const facts = { direction: input.direction, amount, creditedInWindow, limit: policy.adjustApprovalLimit };
+        if (adjustmentNeedsOwner({ ...facts, owner: false })) {
+          throw new AppError('APPROVAL_REQUIRED', { detail: adjustmentRefusalDetail(facts) });
+        }
       }
       const memo = `Manual ${input.direction}: ${input.reason}`;
       const posted = await this.poster.post(tx, {
         ...customerAdjust({ customerId, amount, direction: input.direction }),
         refId: customerId,
-        idempotencyKey: `adjust:customer:${customerId}:${input.idempotencyKey}`,
+        idempotencyKey: key,
         currency: BASE_CURRENCY,
         memo,
-        createdBy: { type: 'staff', id: staffId },
+        createdBy: { type: 'staff', id: caller.staffId },
       });
       if (posted.replayed) await this.assertSameAdjustment(tx, posted, memo, input.direction, amount);
       // The wallet row is locked by the posting until commit, so these figures are the posting's own.

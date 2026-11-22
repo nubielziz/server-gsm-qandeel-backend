@@ -222,6 +222,24 @@ Additive; the usual order applies. What staff and the owner notice:
    three succeeded runs, and `select count(*) from checkout_sessions where token is not null` (likewise `orders.public_token`,
    `support_tickets.token`) answers 0.
 
+### Release with decision 049 (manual money and exchange rates)
+
+Every command of the image refuses to start in production when `FX_PROVIDER` is `openexchangerates` (its default) and `FX_API_KEY` is not
+set. Before step 3, put the provider key in `.env.production`, or set `FX_PROVIDER=manual` to keep the rates by hand. The migration stops
+when a receipt file backs more than one pending or approved payment (see "One receipt, one payment" in section 6). Before migrating a
+database that holds real receipts, run this statement read-only (`gsmc exec postgres psql -U gsm -d gsm`, then paste it) and resolve
+what it lists; no rows means the migration does not stop on this rule:
+
+```sql
+SELECT receipt_file_id FROM payments
+WHERE receipt_file_id IS NOT NULL AND status IN ('pending', 'approved')
+GROUP BY receipt_file_id HAVING count(*) > 1
+ORDER BY receipt_file_id LIMIT 20;
+```
+
+After step 4, open the Currencies page: a rate older than 48 hours is not offered in the shop until you confirm it (enter
+the rate; the same number restarts its age), or set `fx.max_rate_age_hours` (`PATCH /admin/settings`, 1 to 720 hours; only an Owner changes it).
+
 ## 4. Backups and the restore drill
 
 What is saved, every night: a full dump of the database (`pg_dump`, custom format), encrypted with `age` for the public key
@@ -357,6 +375,42 @@ minute and at least once an hour, and lists every move and every proposal under 
 the ops recipients: `ALERTS_EMAIL_TO` for the email and `ALERTS_TELEGRAM_CHAT_ID` for Telegram. Without them the message is recorded as failed in the
 notification log with the reason, and the list in the console is the only notice.
 
+**Exchange rates** (decision 049). The worker refreshes them every hour. A provider rate that moved more than
+`fx.max_refresh_move_percent` (default 20) from the stored one is not used: the old rate stays, the currency shows as stale on the Currencies
+page and in the dashboard, the shop stops offering it (buyers see USD), and the refresh logs an error (and reports it to Sentry when it is on),
+once per hold. Check the rate; if the move is real, enter the new rate on the Currencies page: the currency is offered again at once. A rate
+older than `fx.max_rate_age_hours` (default 48) is not offered either; a shop that keeps rates by hand (`FX_PROVIDER=manual`) confirms them
+at least that often or raises the setting (`PATCH /admin/settings`, 1 to 720 hours). A checkout keeps the rate it locked. The held rate's
+line in the refresh answer (`failed`) names the provider's rate, the stored rate, the move judged and the bound. `fx.max_refresh_move_percent`,
+`fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit` are changed by an Owner only; another staff member with `settings:update`
+gets 403.
+
+**Manual money limits** (decision 049). A staff member's credits within 24 hours, per kind of wallet, and any single debit, are capped by
+the approval limit (`wallet.adjust_approval_limit` for merchants, `wallet.customer.adjust_approval_limit` for customers); above it only an
+Owner adjusts. A credit limit above the merchant limit, and approving the payment of an invoice one issued oneself, also need an Owner.
+A merchant holds at most five unpaid top-up invoices younger than 24 hours or with a receipt in review, and five receipts in review.
+Commissions never pay more than an order's margin.
+
+**One receipt, one payment** (decision 049). A receipt file, or a copy with the same content, backs one pending or approved top-up. If the
+migration of decision 049 stops on this rule it names the files (the statement of the release note lists the same ones before you migrate):
+for each, look at the payments in the console (Finance, Payments) and decide which of them the transfer backs.
+
+- A pending payment that the transfer does not back is rejected in the console, with a reason. A rejected payment releases its receipt.
+- If the transfer backs the pending payment and not an approved one, take back the approved credit with a debit adjustment, clear the
+  approved payment's link as shown below, then approve the pending payment.
+- If two payments are approved, check the bank statement and take back what was credited twice with a debit adjustment. Then, for the
+  payment that loses the link, first write the file id into its review note, and only then clear its `receipt_file_id`:
+
+  ```bash
+  gsmc exec postgres psql -U gsm -d gsm -c "update payments set review_note = concat_ws(' ', nullif(review_note, ''), 'Receipt file <file id> was also attached to payment <other payment id>; the link was removed at the release of decision 049.') where id = <payment id>;"
+  gsmc exec postgres psql -U gsm -d gsm -c "update payments set receipt_file_id = null where id = <payment id> and receipt_file_id = <file id> and review_note like '%Receipt file <file id> was%';"
+  ```
+
+  Each command must answer `UPDATE 1`. If the second answers `UPDATE 0`, the note is missing: do not clear the link. A proof is never
+  removed from an approved payment without that note, because the note is what keeps the trail of what backed the credit.
+
+Then migrate again.
+
 **Search engine** (feature 29, decision 038). The English search of the shop header and the results page runs on one Typesense node
 (`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the network `gsm` only: no published port, no Caddy route, never
 reachable from a browser). Postgres is the truth; the index holds only public, English, price-free documents and can be rebuilt at any
@@ -479,7 +533,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Cloudflare Turnstile: a widget for `SHOP_HOST`; the secret in `TURNSTILE_SECRET_KEY`, the site key given to the storefront, which
       shows it on the shop forms and on the merchant sign-in and forgot-password forms (`TURNSTILE_MERCHANT_AUTH` is on by default in
       production, decision 052; `false` switches the merchant forms' check off).
-- [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`), or the rates are kept by hand.
+- [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`, required in production), or `FX_PROVIDER=manual` and the
+  rates entered by hand at least every 48 hours (decision 049).
 - [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`, then run `scripts/telegram-webhook.ts` (section 6).
 - [ ] Object storage for backups on another provider, its keys in `deploy/.env`, and the two key holders named.
 - [ ] A Sentry project (optional) and its DSN.

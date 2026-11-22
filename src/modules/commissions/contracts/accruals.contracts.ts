@@ -21,7 +21,10 @@ const AccrualRow = z.object({
   period: z.string().describe('The completion month, `YYYY-MM`.'),
   basisAmount: zMoney.describe("The order's revenue."),
   percent: zDecimal.describe("The plan's rate when the order completed; a later rate change never touches it."),
-  amount: zMoney.describe('`basisAmount x percent / 100`, 4 decimals.'),
+  amount: zMoney.describe(
+    '`basisAmount x percent / 100`, 4 decimals, capped so that the commissions of one order never exceed its margin (revenue minus ' +
+      'cost; decision 049).',
+  ),
   status: Status.describe(
     "`accrued` (earned, waiting), `approved` (paid into the agent's wallet) or `reversed` (the order was refunded or reopened before approval).",
   ),

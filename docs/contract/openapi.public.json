@@ -110,11 +110,11 @@
                           "properties": {
                             "credit": {
                               "type": "string",
-                              "pattern": "^-?\\d+\\.\\d{4}$",
+                              "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                               "x-gsm-alias": "Money",
                               "description": "What the merchant may spend now: balance plus credit limit.",
                               "examples": [
-                                "12.4900"
+                                "-12.4900"
                               ]
                             },
                             "mail": {
@@ -229,7 +229,7 @@
                                     },
                                     "CREDIT": {
                                       "type": "string",
-                                      "pattern": "^-?\\d+\\.\\d{4}$",
+                                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                                       "x-gsm-alias": "Money",
                                       "description": "The merchant's price.",
                                       "examples": [
@@ -1280,16 +1280,16 @@
                   "properties": {
                     "balance": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
                       "description": "The wallet balance; positive is the merchant money, negative while credit is in use.",
                       "examples": [
-                        "12.4900"
+                        "-12.4900"
                       ]
                     },
                     "reserved": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
                       "description": "Held for open orders.",
                       "examples": [
@@ -1298,7 +1298,7 @@
                     },
                     "creditLimit": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
                       "description": "How far the balance may go below zero.",
                       "examples": [
@@ -1307,11 +1307,11 @@
                     },
                     "available": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
                       "description": "Spendable now: balance plus credit limit.",
                       "examples": [
-                        "12.4900"
+                        "-12.4900"
                       ]
                     },
                     "currency": {
@@ -3577,18 +3577,18 @@
                           },
                           "unitPrice": {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
-                            "description": "Decimal string with exactly 4 fraction digits.",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                             "examples": [
                               "12.4900"
                             ]
                           },
                           "totalPrice": {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
-                            "description": "Decimal string with exactly 4 fraction digits.",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                             "examples": [
                               "12.4900"
                             ]
@@ -4487,18 +4487,18 @@
                     },
                     "unitPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
                     },
                     "totalPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
@@ -5923,18 +5923,18 @@
                                   },
                                   "unitPrice": {
                                     "type": "string",
-                                    "pattern": "^-?\\d+\\.\\d{4}$",
+                                    "pattern": "^\\d{1,14}\\.\\d{4}$",
                                     "x-gsm-alias": "Money",
-                                    "description": "Decimal string with exactly 4 fraction digits.",
+                                    "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                                     "examples": [
                                       "12.4900"
                                     ]
                                   },
                                   "totalPrice": {
                                     "type": "string",
-                                    "pattern": "^-?\\d+\\.\\d{4}$",
+                                    "pattern": "^\\d{1,14}\\.\\d{4}$",
                                     "x-gsm-alias": "Money",
-                                    "description": "Decimal string with exactly 4 fraction digits.",
+                                    "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                                     "examples": [
                                       "12.4900"
                                     ]
@@ -6187,7 +6187,7 @@
                                   "listedPrice": {
                                     "description": "`PRICE_CHANGED`: the price last listed.",
                                     "type": "string",
-                                    "pattern": "^-?\\d+\\.\\d{4}$",
+                                    "pattern": "^\\d{1,14}\\.\\d{4}$",
                                     "x-gsm-alias": "Money",
                                     "examples": [
                                       "12.4900"
@@ -6196,7 +6196,7 @@
                                   "currentPrice": {
                                     "description": "`PRICE_CHANGED`: the price now.",
                                     "type": "string",
-                                    "pattern": "^-?\\d+\\.\\d{4}$",
+                                    "pattern": "^\\d{1,14}\\.\\d{4}$",
                                     "x-gsm-alias": "Money",
                                     "examples": [
                                       "12.4900"
@@ -7115,18 +7115,18 @@
                     },
                     "unitPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
                     },
                     "totalPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
@@ -8049,18 +8049,18 @@
                     },
                     "unitPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
                     },
                     "totalPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
@@ -9118,18 +9118,18 @@
                     },
                     "unitPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
                     },
                     "totalPrice": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
-                      "description": "Decimal string with exactly 4 fraction digits.",
+                      "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                       "examples": [
                         "12.4900"
                       ]
@@ -10240,7 +10240,7 @@
                           },
                           "price": {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
                             "description": "What this merchant pays: its client price, group price or the base price after rules, discount, rounding and floor.",
                             "examples": [
@@ -10964,7 +10964,7 @@
                     },
                     "price": {
                       "type": "string",
-                      "pattern": "^-?\\d+\\.\\d{4}$",
+                      "pattern": "^\\d{1,14}\\.\\d{4}$",
                       "x-gsm-alias": "Money",
                       "description": "What this merchant pays: its client price, group price or the base price after rules, discount, rounding and floor.",
                       "examples": [
@@ -11874,20 +11874,20 @@
                           },
                           "amount": {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
                             "description": "Signed from the merchant side: a deposit is positive, an order hold negative.",
                             "examples": [
-                              "12.4900"
+                              "-12.4900"
                             ]
                           },
                           "balanceAfter": {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
                             "description": "The wallet balance right after the line, merchant side.",
                             "examples": [
-                              "12.4900"
+                              "-12.4900"
                             ]
                           },
                           "createdAt": {
@@ -12560,9 +12560,9 @@
                       },
                       "amount": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                         "examples": [
                           "12.4900"
                         ]
@@ -12736,18 +12736,18 @@
                       },
                       "unitPrice": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                         "examples": [
                           "12.4900"
                         ]
                       },
                       "totalPrice": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                         "examples": [
                           "12.4900"
                         ]
@@ -12930,9 +12930,9 @@
                         "anyOf": [
                           {
                             "type": "string",
-                            "pattern": "^-?\\d+\\.\\d{4}$",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
                             "x-gsm-alias": "Money",
-                            "description": "Decimal string with exactly 4 fraction digits.",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                             "examples": [
                               "12.4900"
                             ]
@@ -12944,9 +12944,9 @@
                       },
                       "price": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                         "examples": [
                           "12.4900"
                         ]
@@ -13062,18 +13062,18 @@
                       },
                       "available": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^-?\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits; may be negative.",
                         "examples": [
-                          "12.4900"
+                          "-12.4900"
                         ]
                       },
                       "threshold": {
                         "type": "string",
-                        "pattern": "^-?\\d+\\.\\d{4}$",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
                         "x-gsm-alias": "Money",
-                        "description": "Decimal string with exactly 4 fraction digits.",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
                         "examples": [
                           "12.4900"
                         ]

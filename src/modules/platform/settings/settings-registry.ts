@@ -7,7 +7,7 @@ export interface EditableSetting {
   readonly key: string;
   /** Checks a value; returns the sentence for the field, or `undefined` when the value is acceptable. */
   validate(value: unknown): string | undefined;
-  /** Only an Owner may change it (decision 051): `PATCH /admin/settings` answers 403 to any other caller. */
+  /** Only an Owner may change it (decisions 051 and 049): `PATCH /admin/settings` answers 403 to any other caller. */
   readonly ownerOnly?: boolean;
 }
 
@@ -225,6 +225,18 @@ export const CUSTOMER_WALLET_SETTING_RANGES: Readonly<Record<string, { min: numb
 };
 
 /**
+ * The exchange-rate guards (decision 049) with their defaults and accepted ranges: how far a refreshed rate may move from the stored one
+ * before it is held for staff (whole percent), and how old a rate may be for the shop to charge in its currency (whole hours).
+ *
+ * Why: the owner tunes them without a release; the money module reads the same keys with `SettingsReader.integer` and falls back to the
+ * default outside these ranges, so both guards can be loosened but never switched off.
+ */
+export const FX_GUARD_SETTINGS = {
+  maxRefreshMovePercent: { key: 'fx.max_refresh_move_percent', fallback: 20, min: 1, max: 100 },
+  maxRateAgeHours: { key: 'fx.max_rate_age_hours', fallback: 48, min: 1, max: 720 },
+} as const;
+
+/**
  * Builds the validator of a whole-number setting.
  *
  * @param min the smallest accepted value
@@ -272,7 +284,8 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   walletRange(CUSTOMER_WALLET_SETTINGS.maxBalance, 'dollars'),
   walletRange(CUSTOMER_WALLET_SETTINGS.topUpsPerDay, 'top-ups'),
   walletRange(CUSTOMER_WALLET_SETTINGS.topUpAmountPerDay, 'dollars'),
-  walletRange(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit, 'dollars'),
+  // Decision 049: it sets how much one staff member may credit to customers without a second person, so an Owner changes it.
+  { ...walletRange(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit, 'dollars'), ownerOnly: true },
   {
     key: SUPPORT_SETTINGS.replyEmailDelayMinutes.key,
     validate: wholeNumberProblem(
@@ -288,6 +301,21 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
       SUPPORT_SETTINGS.attachmentRetentionDays.max,
       'days',
     ),
+  },
+  // Decision 049: the two exchange-rate guards decide which rates the shop charges at, so an Owner changes them.
+  {
+    key: FX_GUARD_SETTINGS.maxRefreshMovePercent.key,
+    validate: wholeNumberProblem(
+      FX_GUARD_SETTINGS.maxRefreshMovePercent.min,
+      FX_GUARD_SETTINGS.maxRefreshMovePercent.max,
+      'percent',
+    ),
+    ownerOnly: true,
+  },
+  {
+    key: FX_GUARD_SETTINGS.maxRateAgeHours.key,
+    validate: wholeNumberProblem(FX_GUARD_SETTINGS.maxRateAgeHours.min, FX_GUARD_SETTINGS.maxRateAgeHours.max, 'hours'),
+    ownerOnly: true,
   },
 ];
 
@@ -320,7 +348,8 @@ export function settingsPatchProblems(patch: Readonly<Record<string, unknown>>):
 /**
  * The keys of a settings patch that only an Owner may change.
  *
- * Why: decision 051: a setting that lowers the protection of supplier calls (`suppliers.allowPlainHttp`) is an Owner's decision, while the
+ * Why: decisions 051 and 049: a setting that lowers the protection of supplier calls (`suppliers.allowPlainHttp`) or sets a limit on money
+ * (`fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit`) is an Owner's decision, while the
  * route itself keeps `settings:update` (the console reads that permission).
  *
  * @param patch the flat object the client sent

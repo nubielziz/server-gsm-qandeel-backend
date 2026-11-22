@@ -8,8 +8,15 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type TransactionContext, isUniqueViolation } from '../../../infra/db';
 import { ClientGroupDirectory, RETAIL_GROUP_KIND } from '../../catalog';
-import { MerchantAccounts, MerchantWallets } from '../../money';
-import { AuditService } from '../../platform';
+import {
+  ADJUST_APPROVAL_LIMIT_KEY,
+  MerchantAccounts,
+  MerchantWallets,
+  approvalLimitOf,
+  creditLimitNeedsOwner,
+  creditLimitOwnerDetail,
+} from '../../money';
+import { AuditService, SettingsReader } from '../../platform';
 import type { Client, ClientStatus } from '../db/schema';
 import { type ClientChangeInput, kindOfClientChange } from '../domain/client-details';
 import {
@@ -29,7 +36,7 @@ import {
   updateClientRow,
   usernameTaken,
 } from '../infra/client-admin.repository';
-import { requirePermission } from '../security/principal';
+import { requireOwner, requirePermission } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { SessionService } from '../security/session.service';
@@ -78,7 +85,8 @@ const MAX_CREATE_ATTEMPTS = 4;
  *
  * Second permissions (decision 046, checked here, not by the route's guard): a credit limit above zero at invitation needs
  * `wallet:credit_limit`; a group other than the default one at invitation, and a group move, need `groups:update`; suspending,
- * declining and reactivating need `clients:security`.
+ * declining and reactivating need `clients:security`. A credit limit above the approval limit of adjustments at invitation needs an
+ * Owner (decision 049).
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/clients` sections)
  */
@@ -93,6 +101,7 @@ export class ClientAdminService {
     private readonly sessions: SessionService,
     private readonly apiKeys: ApiKeyDirectory,
     private readonly audit: AuditService,
+    private readonly settings: SettingsReader,
     private readonly mail: MerchantMailOutbox,
     private readonly views: ClientViews,
     private readonly lifecycleMails: MerchantLifecycleMails,
@@ -136,12 +145,18 @@ export class ClientAdminService {
    * @throws {AppError} `VALIDATION_FAILED` (422 on `groupId` for an unknown group, the retail group or no default group, on
    *   `creditLimit` for a negative limit or a group without credit), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a `creditLimit` above
    *   zero needs `wallet:credit_limit`; a `groupId` other than the default group needs `groups:update`, checked after the group is
-   *   found and before any write, decision 046)
+   *   found and before any write, decision 046; a `creditLimit` above the approval limit of adjustments needs an Owner, before any
+   *   write, decision 049)
    */
   async create(caller: StaffPrincipal, input: CreateClientInput): Promise<ClientView> {
-    // Decision 046: credit at invitation is a credit-limit decision, as on the credit-limit route.
+    // Decision 046: credit at invitation is a credit-limit decision, as on the credit-limit route. Decision 049: above the approval limit
+    // of adjustments it is an Owner's decision. Both before anything is written.
     if (input.creditLimit !== undefined && Money.of(input.creditLimit).isPositive()) {
       requirePermission(caller, 'wallet:credit_limit');
+      const ceiling = approvalLimitOf(await this.settings.get(ADJUST_APPROVAL_LIMIT_KEY));
+      if (creditLimitNeedsOwner(Money.of(input.creditLimit), Money.zero(), ceiling)) {
+        requireOwner(caller, creditLimitOwnerDetail(ceiling));
+      }
     }
     for (let attempt = 1; ; attempt++) {
       try {

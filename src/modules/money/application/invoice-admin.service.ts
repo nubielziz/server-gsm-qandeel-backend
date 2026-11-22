@@ -4,6 +4,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { type DbExecutor, DbService } from '../../../infra/db';
+import type { StaffPrincipal } from '../../identity';
 import { AuditService, SettingsReader } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
 import {
@@ -87,11 +88,17 @@ export class InvoiceAdminService {
   /**
    * Issues a manual invoice to a merchant.
    *
+   * Why: user rule 3; the invoice records its issuer, whose own approval of the payment is refused unless they are an Owner
+   * (decision 049).
+   *
+   * Side effects: inserts an `invoices` row (with `issued_by`) and an audit row; renders the PDF after the commit.
+   *
+   * @param caller the staff member who issues it
    * @param input the merchant, the amount and what it is for
    * @returns the new invoice
    * @throws {AppError} `VALIDATION_FAILED` on `clientId` (unknown merchant, or no billing country), `amount` or `description`
    */
-  async issue(input: IssueInvoiceInput): Promise<WireInvoice> {
+  async issue(caller: StaffPrincipal, input: IssueInvoiceInput): Promise<WireInvoice> {
     const errors = [];
     const parsed = parseAmount(input.amount);
     if ('problem' in parsed) errors.push(parsed.problem);
@@ -129,6 +136,7 @@ export class InvoiceAdminService {
         status: 'open',
         description: input.description,
         dueAt: dueAtOf(now, dueDays),
+        issuedBy: caller.staffId,
         createdAt: now,
         updatedAt: now,
       });

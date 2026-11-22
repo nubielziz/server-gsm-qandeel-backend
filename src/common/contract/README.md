@@ -145,7 +145,8 @@ Nest 12 writes the route status after the handler returns, so a handler cannot c
 
 ## Shared types
 
-`zMoney` (4-decimal string), `zDecimal`, `zIsoDateTime` (UTC, milliseconds, `Z`), `zId`/`zIdParam` (positive integer
+`zMoney` (4-decimal string, 0 or more, at most 14 digits before the point), `zSignedMoney` (the same with a minus sign, for
+balances, ledger lines and differences; decision 049), `zDecimal`, `zIsoDateTime` (UTC, milliseconds, `Z`), `zId`/`zIdParam` (positive integer
 up to 2^53 - 1; text in a path), `zDateOnly`, `zJsonObject`. Each carries the JSON Schema extension `x-gsm-alias`
 (`Money`, `Decimal`, `IsoDateTime`, `Id`, `DateOnly`, `JsonObject`). Calculate with `Money` (`src/common/money.ts`),
 never with numbers.

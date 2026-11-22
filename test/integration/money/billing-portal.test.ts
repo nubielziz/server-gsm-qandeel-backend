@@ -1,8 +1,9 @@
 // Integration tests of the merchant portal's billing routes (map stage 8, MISMATCHES B162 and B163): the payment methods open to the
 // merchant's group, top-up invoices through a manual and an automatic gateway (a local server plays the gateway), the limits of
-// catalog-17, the receipt upload with its refusals, and what a merchant never sees of another merchant.
+// catalog-17, the receipt upload with its refusals, and what a merchant never sees of another merchant. Decision 049: one receipt backs one
+// live payment (by file and by content), five live unpaid top-ups and five receipts in review per merchant, 3-D Secure on card top-ups.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -16,6 +17,8 @@ import {
   insertProofFile,
 } from '../../support/billing';
 import { DAY, TestClock } from '../../support/clock';
+import { OPEN_TOPUPS_DETAIL, PENDING_RECEIPTS_DETAIL } from '@src/modules/money/domain/invoice-rules';
+import { pgErrorInfo } from '@src/infra/db';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertWalletMerchant } from '../../support/money';
 import { portalFor } from '../../support/webhooks';
@@ -41,6 +44,14 @@ beforeEach(async () => {
   await resetDb();
   await clearIdentityCaches(t);
 });
+
+/** The pending or approved payments whose receipt file holds these bytes, whoever uploaded it. */
+const livePaymentsOnContent = (sha256: string) =>
+  db
+    .select({ id: s.payments.id })
+    .from(s.payments)
+    .innerJoin(s.files, eq(s.files.id, s.payments.receiptFileId))
+    .where(and(eq(s.files.sha256, sha256), inArray(s.payments.status, ['pending', 'approved'])));
 
 /** A merchant with a portal session, its group limit per deposit and a country. */
 async function merchant(depositLimit = '0') {
@@ -183,14 +194,82 @@ describe('POST /client/invoices', () => {
     expect(detail.body.paymentUrl).toBe(res.body.paymentUrl);
   });
 
-  it('writes nothing when the gateway fails', async () => {
+  it('voids the invoice it reserved when the gateway fails, so it neither counts nor can be paid (decision 049)', async () => {
     const { portal } = await merchant();
     const gatewayId = await card();
     fake.failWith = 500;
     const res = await portal.call('POST', '/client/invoices', { amount: '100', gatewayId });
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('GATEWAY_ERROR');
-    expect(await db.select().from(s.invoices)).toHaveLength(0);
+    const rows = await db.select().from(s.invoices);
+    expect(rows.map((row) => [row.status, row.checkoutUrl])).toEqual([['void', null]]);
+  });
+
+  it('allows five live unpaid top-up invoices, then refuses with 409 before any page is opened (decision 049)', async () => {
+    const { portal, id } = await merchant();
+    const gatewayId = await bank();
+    const cardId = await card();
+    const created: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const res = await portal.call('POST', '/client/invoices', { amount: '100', gatewayId });
+      expect(res.status, `invoice ${i + 1}`).toBe(201);
+      created.push(res.body.invoice.id);
+    }
+    // A receipt in review keeps the first one counting after 24 hours.
+    const fileId = await insertProofFile(db, id);
+    expect((await portal.call('POST', `/client/invoices/${created[0]}/receipt`, { fileId })).status).toBe(201);
+    const sixth = await portal.call('POST', '/client/invoices', { amount: '100', gatewayId });
+    expect(sixth.status).toBe(409);
+    expect(sixth.body).toMatchObject({ code: 'CONFLICT', detail: OPEN_TOPUPS_DETAIL });
+    const online = await portal.call('POST', '/client/invoices', { amount: '100', gatewayId: cardId });
+    expect(online.status).toBe(409);
+    expect(fake.requests.filter((request) => request.path === '/v1/checkout/sessions')).toHaveLength(0);
+    expect(await db.select().from(s.invoices)).toHaveLength(5);
+
+    clock.advance(DAY + 1);
+    for (let i = 0; i < 4; i += 1) {
+      const res = await portal.call('POST', '/client/invoices', { amount: '100', gatewayId });
+      expect(res.status, `after a day, invoice ${i + 1}`).toBe(201);
+    }
+    // 1 older invoice with a receipt in review + 4 new ones = 5.
+    expect((await portal.call('POST', '/client/invoices', { amount: '100', gatewayId })).status).toBe(409);
+    // The older unpaid invoices that stopped counting stay payable.
+    const older = await insertProofFile(db, id);
+    expect((await portal.call('POST', `/client/invoices/${created[1]}/receipt`, { fileId: older })).status).toBe(201);
+  });
+
+  it('holds the five-invoice cap under parallel requests through an automatic method (decision 049)', async () => {
+    const { portal } = await merchant();
+    const gatewayId = await card();
+    const answers = await Promise.all(
+      Array.from({ length: 8 }, () => portal.call('POST', '/client/invoices', { amount: '100', gatewayId })),
+    );
+    expect(answers.map((res) => res.status).sort()).toEqual([201, 201, 201, 201, 201, 409, 409, 409]);
+    expect(fake.requests.filter((request) => request.path === '/v1/checkout/sessions')).toHaveLength(5);
+    const live = (await db.select().from(s.invoices)).filter((row) => row.status === 'open');
+    expect(live).toHaveLength(5);
+    expect(live.every((row) => row.checkoutUrl !== null)).toBe(true);
+  });
+
+  it("asks for 3-D Secure on a card top-up while the shop's policy is on (decision 049)", async () => {
+    const { portal } = await merchant();
+    const secure = await card({ supports3ds: true });
+    const plain = await card({ code: 'card-plain', supports3ds: false });
+    const threeDs = () => {
+      const checkouts = fake.requests.filter((request) => request.path === '/v1/checkout/sessions');
+      return new URLSearchParams(checkouts.at(-1)!.body).get('payment_method_options[card][request_three_d_secure]');
+    };
+    expect((await portal.call('POST', '/client/invoices', { amount: '100', gatewayId: secure })).status).toBe(201);
+    expect(threeDs()).toBe('any');
+    expect((await portal.call('POST', '/client/invoices', { amount: '100', gatewayId: plain })).status).toBe(201);
+    expect(threeDs()).toBeNull();
+    await db
+      .insert(s.settings)
+      .values({ key: 'require3ds', value: false })
+      .onConflictDoUpdate({ target: s.settings.key, set: { value: false } });
+    await clearIdentityCaches(t);
+    expect((await portal.call('POST', '/client/invoices', { amount: '100', gatewayId: secure })).status).toBe(201);
+    expect(threeDs()).toBeNull();
   });
 
   it('refuses a method the merchant may not use and each amount problem on amount', async () => {
@@ -339,6 +418,130 @@ describe('POST /client/invoices/:id/receipt', () => {
     const taken = await portal.call('POST', `/client/invoices/${later.id}/receipt`, { fileId, reference: 'SAME' });
     expect(taken.status).toBe(422);
     expect(taken.body.errors[0].field).toBe('reference');
+  });
+
+  it('refuses a receipt that already backs another live payment, by file and by content (decision 049)', async () => {
+    const { portal, id } = await merchant();
+    const other = await merchant();
+    const gatewayId = await bank();
+    const a = await insertInvoiceRow(db, id, { gatewayId });
+    const b = await insertInvoiceRow(db, id, { gatewayId });
+    const f = await insertProofFile(db, id);
+    const [stored] = await db.select().from(s.files).where(eq(s.files.id, f));
+    const first = await portal.call('POST', `/client/invoices/${a.id}/receipt`, { fileId: f });
+    expect(first.status).toBe(201);
+    const again = await portal.call('POST', `/client/invoices/${b.id}/receipt`, { fileId: f });
+    expect(again.status).toBe(422);
+    expect(again.body.errors[0]).toMatchObject({ field: 'fileId', code: 'taken' });
+    // The same bytes uploaded again under a new id, by this merchant or by anyone else, are the same receipt.
+    const copy = await insertProofFile(db, id, { sha256: stored!.sha256 });
+    expect(
+      (await portal.call('POST', `/client/invoices/${b.id}/receipt`, { fileId: copy })).body.errors[0],
+    ).toMatchObject({
+      field: 'fileId',
+      code: 'taken',
+    });
+    const theirs = await insertProofFile(db, other.id, { sha256: stored!.sha256 });
+    const theirInvoice = await insertInvoiceRow(db, other.id, { gatewayId });
+    const foreign = await other.portal.call('POST', `/client/invoices/${theirInvoice.id}/receipt`, { fileId: theirs });
+    expect(foreign.body.errors[0]).toMatchObject({ field: 'fileId', code: 'taken' });
+    // A rejected payment releases its receipt.
+    const admin = await adminWith(t, ['payments:approve', 'payments:read']);
+    expect(
+      (await admin.post(`/admin/payments/${first.body.id}/reject`, { reason: 'The money has not arrived.' })).status,
+    ).toBe(200);
+    expect((await portal.call('POST', `/client/invoices/${b.id}/receipt`, { fileId: f })).status).toBe(201);
+    const payments = await db.select().from(s.payments).where(eq(s.payments.receiptFileId, f));
+    expect(payments.map((payment) => payment.status).sort()).toEqual(['pending', 'rejected']);
+  });
+
+  it('judges two uploads of the same content at once one after the other (decision 049)', async () => {
+    const { portal, id } = await merchant();
+    const gatewayId = await bank();
+    const a = await insertInvoiceRow(db, id, { gatewayId });
+    const b = await insertInvoiceRow(db, id, { gatewayId });
+    const f = await insertProofFile(db, id);
+    const [stored] = await db.select().from(s.files).where(eq(s.files.id, f));
+    const g = await insertProofFile(db, id, { sha256: stored!.sha256 });
+    const answers = await Promise.all([
+      portal.call('POST', `/client/invoices/${a.id}/receipt`, { fileId: f }),
+      portal.call('POST', `/client/invoices/${b.id}/receipt`, { fileId: g }),
+    ]);
+    expect(answers.map((res) => res.status).sort()).toEqual([201, 422]);
+    expect(answers.find((res) => res.status === 422)!.body.errors[0]).toMatchObject({ field: 'fileId', code: 'taken' });
+    expect(await db.select().from(s.payments)).toHaveLength(1);
+  });
+
+  it('judges the same bytes attached by two different merchants at the same moment one after the other (decision 049)', async () => {
+    const gatewayId = await bank();
+    // Each merchant holds its own top-up lock, so only the content lock makes the two uploads wait for each other. Several rounds,
+    // each with new merchants and a new content, so one lucky interleaving cannot pass the test.
+    for (let round = 0; round < 6; round += 1) {
+      const first = await merchant();
+      const second = await merchant();
+      const a = await insertInvoiceRow(db, first.id, { gatewayId });
+      const b = await insertInvoiceRow(db, second.id, { gatewayId });
+      const f = await insertProofFile(db, first.id);
+      const [stored] = await db.select().from(s.files).where(eq(s.files.id, f));
+      const g = await insertProofFile(db, second.id, { sha256: stored!.sha256 });
+      const answers = await Promise.all([
+        first.portal.call('POST', `/client/invoices/${a.id}/receipt`, { fileId: f }),
+        second.portal.call('POST', `/client/invoices/${b.id}/receipt`, { fileId: g }),
+      ]);
+      expect(answers.map((res) => res.status).sort()).toEqual([201, 422]);
+      expect(answers.find((res) => res.status === 422)!.body.errors[0]).toMatchObject({
+        field: 'fileId',
+        code: 'taken',
+      });
+      expect(await livePaymentsOnContent(stored!.sha256)).toHaveLength(1);
+    }
+  });
+
+  it('the database holds one live payment per receipt file (decision 049)', async () => {
+    const { id } = await merchant();
+    const gatewayId = await bank();
+    const a = await insertInvoiceRow(db, id, { gatewayId });
+    const b = await insertInvoiceRow(db, id, { gatewayId });
+    const f = await insertProofFile(db, id);
+    const first = await insertPendingPayment(db, a, gatewayId, { receiptFileId: f });
+    const refused = await insertPendingPayment(db, b, gatewayId, { receiptFileId: f }).then(
+      () => undefined,
+      (error: unknown) => pgErrorInfo(error),
+    );
+    expect(refused).toMatchObject({ code: '23505', constraint: 'payments_receipt_live_uq' });
+    await db.update(s.payments).set({ status: 'rejected' }).where(eq(s.payments.id, first.id));
+    expect((await insertPendingPayment(db, b, gatewayId, { receiptFileId: f })).status).toBe('pending');
+  });
+
+  it('refuses a sixth top-up receipt in review, and takes it once one is reviewed (decision 049)', async () => {
+    const { portal, id } = await merchant();
+    const gatewayId = await bank();
+    const invoices: Array<Awaited<ReturnType<typeof insertInvoiceRow>>> = [];
+    for (let i = 0; i < 7; i += 1) invoices.push(await insertInvoiceRow(db, id, { gatewayId }));
+    const sent: number[] = [];
+    for (const invoice of invoices.slice(0, 5)) {
+      const res = await portal.call('POST', `/client/invoices/${invoice.id}/receipt`, {
+        fileId: await insertProofFile(db, id),
+      });
+      expect(res.status).toBe(201);
+      sent.push(res.body.id);
+    }
+    const sixth = await portal.call('POST', `/client/invoices/${invoices[5]!.id}/receipt`, {
+      fileId: await insertProofFile(db, id),
+    });
+    expect(sixth.status).toBe(409);
+    expect(sixth.body).toMatchObject({ code: 'CONFLICT', detail: PENDING_RECEIPTS_DETAIL });
+    const admin = await adminWith(t, ['payments:approve', 'payments:read']);
+    expect((await admin.post(`/admin/payments/${sent[0]}/reject`, { reason: 'Not received.' })).status).toBe(200);
+    const accepted = await portal.call('POST', `/client/invoices/${invoices[5]!.id}/receipt`, {
+      fileId: await insertProofFile(db, id),
+    });
+    expect(accepted.status).toBe(201);
+    const seventhFile = await insertProofFile(db, id);
+    const seventh = () => portal.call('POST', `/client/invoices/${invoices[6]!.id}/receipt`, { fileId: seventhFile });
+    expect((await seventh()).status).toBe(409);
+    expect((await admin.post(`/admin/payments/${sent[1]}/approve`)).status).toBe(200);
+    expect((await seventh()).status).toBe(201);
   });
 });
 

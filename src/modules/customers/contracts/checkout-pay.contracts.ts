@@ -1,7 +1,7 @@
 // Route contract of paying a storefront checkout (map domain I, stage 16): POST /store/v1/checkout-sessions/:token/pay. The console has no screen
 // for it (the storefront is another frontend): the shape follows ALIGNMENT § 7 (`Idempotency-Key` required) and is written up in the module README.
 import { z } from 'zod';
-import { defineRoute, zId, zMoney } from '../../../common/contract';
+import { defineRoute, zId, zMoney, zSignedMoney } from '../../../common/contract';
 
 const IdempotencyHeaders = z.object({
   'idempotency-key': z
@@ -121,7 +121,7 @@ export const payCheckoutFromBalance = defineRoute({
         trackingToken: z.string().describe('The public tracking token of the new order.'),
       }),
       wallet: z.object({
-        balance: zMoney.describe('The store balance after the payment (USD).'),
+        balance: zSignedMoney.describe('The store balance after the payment (USD).'),
         available: zMoney.describe('What can be spent now: `0.0000` while on hold or switched off.'),
       }),
     }),

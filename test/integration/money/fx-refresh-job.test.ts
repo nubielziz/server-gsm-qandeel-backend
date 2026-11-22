@@ -1,15 +1,19 @@
 // Integration tests of the hourly fx_refresh maintenance job (feature 14b, decision 029): the processor on the real database with the
 // manual driver (nothing asked, nothing changed, a succeeded run that says why) and with a stand-in provider (the same refresh as the admin
 // route, written by the system actor and recorded in job_runs; no audit row when there is no currency to refresh), and its hourly schedule.
+// Decision 049: a rate that moved too far is held, counted in the run, and reported once, whoever made the hold.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
+import { ErrorReporter } from '@src/infra/observability';
 import { JobSchedulerRegistry } from '@src/infra/queues';
 import { JobRunsService } from '@src/modules/health';
 import { FX_REFRESH_JOB, FX_REFRESH_SCHEDULER, FxRefreshJobModule } from '@src/modules/money';
 import { FxRefreshProcessor } from '@src/modules/money/jobs/fx-refresh.processor';
 import { FX_PROVIDER, FxProviderUnavailableError, type FxProvider } from '@src/modules/money/domain/fx-provider';
+import { OpenExchangeRatesProvider } from '@src/modules/money/infra/open-exchange-rates.provider';
 import { type TestApp, createTestApp } from '../../support/app';
+import { clearIdentityCaches, signInStaff } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { rejectionOf } from '../../support/rejection';
@@ -70,7 +74,7 @@ describe('the fx_refresh job with the manual provider', () => {
     const before = await ratesNow();
     const fetchRates = spyOn(providerOf(manual), 'fetchRates');
 
-    expect(await tick(manual)).toEqual({ skipped: true, refreshed: 0, failed: 0 });
+    expect(await tick(manual)).toEqual({ skipped: true, refreshed: 0, failed: 0, held: 0 });
     expect(fetchRates).not.toHaveBeenCalled();
     expect(await ratesNow()).toEqual(before);
     const { db } = await testDb();
@@ -100,7 +104,7 @@ describe('the fx_refresh job with the manual provider', () => {
       await insertCurrencies();
       const before = await ratesNow();
       expect(providerOf(keyless).configured).toBe(false);
-      expect(await tick(keyless)).toEqual({ skipped: true, refreshed: 0, failed: 0 });
+      expect(await tick(keyless)).toEqual({ skipped: true, refreshed: 0, failed: 0, held: 0 });
       expect(await ratesNow()).toEqual(before);
       const { db } = await testDb();
       expect(await db.select().from(s.jobRuns)).toMatchObject([{ status: 'succeeded' }]);
@@ -121,7 +125,7 @@ describe('the fx_refresh job with a provider that returns rates', () => {
       ]),
     });
 
-    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 2, failed: 1 });
+    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 2, failed: 1, held: 0 });
     // The base currency and a switched-off currency are never asked for.
     expect(fetchRates).toHaveBeenCalledWith(['AED', 'EUR', 'GBP']);
     expect(await ratesNow()).toMatchObject({
@@ -146,7 +150,7 @@ describe('the fx_refresh job with a provider that returns rates', () => {
     });
     const [run] = await db.select().from(s.jobRuns);
     expect(run).toMatchObject({ job: 'fx_refresh', trigger: 'schedule', status: 'succeeded', processed: 2 });
-    expect(run!.result).toEqual({ source: 'openexchangerates', refreshed: 2, failed: 1 });
+    expect(run!.result).toEqual({ source: 'openexchangerates', refreshed: 2, failed: 1, held: 0 });
   });
 
   it('ends without a call and without an audit row when no active non-base currency exists, and the run succeeded', async () => {
@@ -159,13 +163,13 @@ describe('the fx_refresh job with a provider that returns rates', () => {
     const before = await ratesNow();
     const fetchRates = spyOn(providerOf(configured), 'fetchRates');
 
-    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 0, failed: 0 });
+    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 0, failed: 0, held: 0 });
     expect(fetchRates).not.toHaveBeenCalled();
     expect(await ratesNow()).toEqual(before);
     expect(await db.select().from(s.auditLogs)).toHaveLength(0);
     const [run] = await db.select().from(s.jobRuns);
     expect(run).toMatchObject({ job: 'fx_refresh', status: 'succeeded', processed: 0 });
-    expect(run!.result).toEqual({ source: 'openexchangerates', refreshed: 0, failed: 0 });
+    expect(run!.result).toEqual({ source: 'openexchangerates', refreshed: 0, failed: 0, held: 0 });
   });
 
   it('fails the run and keeps the old rates when the configured provider cannot answer', async () => {
@@ -182,6 +186,70 @@ describe('the fx_refresh job with a provider that returns rates', () => {
     const [run] = await db.select().from(s.jobRuns);
     expect(run).toMatchObject({ job: 'fx_refresh', status: 'failed', processed: 0 });
     expect(run!.error).toContain('did not answer in time');
+  });
+});
+
+describe('the fx_refresh job and a rate that moved too far (decision 049)', () => {
+  it('counts a held rate in its run and reports it once, not again while it stays held', async () => {
+    await insertCurrencies();
+    const capture = spyOn(configured.app.get(ErrorReporter), 'capture');
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue({
+      rates: new Map([
+        ['GBP', '0.79120000'],
+        ['EUR', '1.20000000'],
+        ['AED', '3.67000000'],
+      ]),
+    });
+    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 2, failed: 1, held: 1 });
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect((capture.mock.calls[0]![0] as Error).message).toBe(
+      'Exchange rates held for staff: EUR 0.9200 -> 1.2000. Confirm a rate on the Currencies page.',
+    );
+    expect(capture.mock.calls[0]![1]).toEqual({ process: 'worker', queue: 'maintenance', job: 'fx_refresh' });
+    const { db } = await testDb();
+    const [run] = await db.select().from(s.jobRuns);
+    expect(run).toMatchObject({ status: 'succeeded', processed: 2 });
+    expect(run!.result).toEqual({ source: 'openexchangerates', refreshed: 2, failed: 1, held: 1 });
+
+    // The next tick with the same answer counts it again and reports nothing new.
+    clock.advance(60 * 60 * 1000);
+    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 2, failed: 1, held: 1 });
+    expect(capture).toHaveBeenCalledTimes(1);
+    const [eur] = await db.select().from(s.currencies).where(eq(s.currencies.code, 'EUR'));
+    expect(eur).toMatchObject({ rateToBase: '0.92000000', rateHeldAt: new Date('2026-11-07T10:00:00.000Z') });
+  });
+
+  it('reports a hold the admin route made once, from the route, and the next tick does not report it again', async () => {
+    await insertCurrencies();
+    await clearIdentityCaches(configured);
+    const capture = spyOn(configured.app.get(ErrorReporter), 'capture');
+    // The route and the job each build their own provider: both answer the same.
+    const quote = {
+      rates: new Map([
+        ['GBP', '0.79120000'],
+        ['EUR', '1.20000000'],
+        ['AED', '3.67000000'],
+      ]),
+    };
+    spyOn(OpenExchangeRatesProvider.prototype, 'fetchRates').mockResolvedValue(quote);
+    spyOn(providerOf(configured), 'fetchRates').mockResolvedValue(quote);
+    const staff = await signInStaff(configured, ['currencies:update']);
+    const res = await configured.app.inject({
+      method: 'POST',
+      url: '/admin/currencies/refresh-fx',
+      headers: staff.session.mutationHeaders,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture.mock.calls[0]![1]).toEqual({
+      process: 'api',
+      method: 'POST',
+      route: '/admin/currencies/refresh-fx',
+    });
+
+    clock.advance(60 * 60 * 1000);
+    expect(await tick(configured)).toEqual({ skipped: false, refreshed: 2, failed: 1, held: 1 });
+    expect(capture).toHaveBeenCalledTimes(1);
   });
 });
 

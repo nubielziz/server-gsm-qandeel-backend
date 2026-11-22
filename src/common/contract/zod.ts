@@ -25,16 +25,39 @@ export type JsonValue = string | number | boolean | null | JsonValue[] | { [key:
 export type JsonObject = { [key: string]: JsonValue };
 
 /**
- * Money on the wire: a decimal string with exactly 4 fraction digits, e.g. `"12.4900"` (decision 011).
- * Why: the console and the ledger agree on text, never floats. Parse with `Money.fromWire` to calculate.
+ * Money on the wire: a decimal string with exactly 4 fraction digits, 0 or more, at most 14 digits before the point (`numeric(18,4)`),
+ * e.g. `"12.4900"` (decisions 011, 049).
+ * Why: the console and the ledger agree on text, never floats; a value the column cannot hold is a 422 here, never a 500 later. A field
+ * that carries a signed amount uses {@link zSignedMoney}. Parse with `Money.fromWire` to calculate.
  */
 export const zMoney = z
   .string()
-  .regex(/^-?\d+\.\d{4}$/, 'Must be a decimal amount with exactly 4 decimals, like 12.4900.')
+  // `abort`: a value that is not an amount gets this one message, never a second one from a refinement of the field.
+  .regex(/^\d{1,14}\.\d{4}$/, {
+    error:
+      'Must be an amount of 0 or more with exactly 4 decimals and at most 14 digits before the point, like 12.4900.',
+    abort: true,
+  })
   .meta({
     'x-gsm-alias': 'Money',
-    description: 'Decimal string with exactly 4 fraction digits.',
+    description: 'Decimal string with exactly 4 fraction digits, 0 or more.',
     examples: ['12.4900'],
+  });
+
+/**
+ * Signed money on the wire: like {@link zMoney}, with an optional minus sign, e.g. `"-12.4900"` (decision 049).
+ * Why: balances, ledger lines, differences and profits are negative in normal operation; only these fields declare it.
+ */
+export const zSignedMoney = z
+  .string()
+  .regex(/^-?\d{1,14}\.\d{4}$/, {
+    error: 'Must be an amount with exactly 4 decimals and at most 14 digits before the point, like 12.4900 or -3.5000.',
+    abort: true,
+  })
+  .meta({
+    'x-gsm-alias': 'Money',
+    description: 'Decimal string with exactly 4 fraction digits; may be negative.',
+    examples: ['-12.4900'],
   });
 
 /**

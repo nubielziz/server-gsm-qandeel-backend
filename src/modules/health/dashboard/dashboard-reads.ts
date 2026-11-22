@@ -345,11 +345,19 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       select count(*)::int as n, (array_agg(id order by created_at, id))[1] as id, (array_agg(reason order by created_at, id))[1] as reason
       from refunds where status = 'failed'`),
       // Active currencies only (a switched-off one needs no refresh); money's rule decides which are stale.
-      db.execute<{ code: string; updated: Date }>(sql`
-      select code, rate_updated_at as updated from currencies where is_active order by rate_updated_at, code`),
+      db.execute<{ code: string; updated: Date; held: Date | null }>(sql`
+      select code, rate_updated_at as updated, rate_held_at as held from currencies where is_active order by rate_updated_at, code`),
     ]);
-  // The 24 h rule of the currencies page (`isStale`), so the item and the page never disagree (M166); oldest first.
-  const staleRates = fx.rows.filter((row) => isRateStale(row.code, new Date(row.updated).getTime(), now.getTime()));
+  // The 24 h rule and a held refresh (decision 049), as the currencies page (`isStale`), so the item and the page never disagree
+  // (M166); oldest first.
+  const staleRates = fx.rows.filter((row) =>
+    isRateStale(
+      row.code,
+      new Date(row.updated).getTime(),
+      now.getTime(),
+      row.held === null ? null : new Date(row.held).getTime(),
+    ),
+  );
   return {
     depositsPending: {
       count: deposits.n,

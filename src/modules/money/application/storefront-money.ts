@@ -1,8 +1,11 @@
 // StorefrontMoney: the read-only money facts the storefront needs (feature 14a): the currencies it offers, the tax rate in force
 // for a buyer's country and the B2C payment methods that are on. The shop prices and locks; this file only reads.
-import { Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import type { DbExecutor } from '../../../infra/db';
-import { PublicImages } from '../../platform';
+import { FX_GUARD_SETTINGS, PublicImages, SettingsReader } from '../../platform';
+import type { Currency } from '../db/schema';
+import { isRateOffered } from '../domain/currency-rules';
 import {
   findCurrencyByCode,
   findOfferedCurrencies,
@@ -52,27 +55,35 @@ export interface StorefrontPaymentMethod {
  *
  * Why: the map's `GET /store/v1/config` lists "countries, currencies, tax and enabled payment methods", and a checkout locks the
  * tax rate and the exchange rate it reads here. The money module owns `currencies`, `tax_rates` and `payment_gateways`, so the
- * storefront and the checkout ask this class (decision 016) instead of reading those tables.
+ * storefront and the checkout ask this class (decision 016) instead of reading those tables. Decision 049: a currency whose rate is held
+ * or older than `fx.max_rate_age_hours` is not offered; a session that locked a rate keeps it (`byCode`).
  *
  * Side effects: none (reads only).
  */
 @Injectable()
 export class StorefrontMoney {
   /**
+   * @param clock the clock the age of a rate is measured with (decision 031)
    * @param images the public pictures, to turn a method's uploaded logo into its public path. Optional because this class lives in the
    *   global `MoneyModule`, which an app built without a database also loads (its `FilesModule` is left out there); no route reads
    *   `paymentMethods` in such an app.
+   * @param settings the settings reader, for `fx.max_rate_age_hours`; optional for the same reason as `images`: without it the default
+   *   age bound applies
    */
-  constructor(@Optional() private readonly images?: PublicImages) {}
+  constructor(
+    @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() private readonly images?: PublicImages,
+    @Optional() private readonly settings?: SettingsReader,
+  ) {}
 
   /**
-   * Lists the currencies the storefront offers.
+   * Lists the currencies the storefront offers now.
    *
    * @param db the database or a transaction
-   * @returns the offered currencies by code
+   * @returns the offered currencies by code (a held or too old rate is left out, decision 049)
    */
   async currencies(db: DbExecutor): Promise<StorefrontCurrency[]> {
-    return (await findOfferedCurrencies(db)).map(toCurrency);
+    return (await this.offeredNow(db)).map(toCurrency);
   }
 
   /**
@@ -80,11 +91,11 @@ export class StorefrontMoney {
    *
    * @param db the database or a transaction
    * @param code the ISO code (any case)
-   * @returns the currency, or `undefined` when it is unknown or not offered
+   * @returns the currency, or `undefined` when it is unknown, not offered, or its rate is held or too old (decision 049)
    */
   async offered(db: DbExecutor, code: string): Promise<StorefrontCurrency | undefined> {
     const upper = code.toUpperCase();
-    return (await findOfferedCurrencies(db)).map(toCurrency).find((currency) => currency.code === upper);
+    return (await this.offeredNow(db)).map(toCurrency).find((currency) => currency.code === upper);
   }
 
   /**
@@ -110,7 +121,7 @@ export class StorefrontMoney {
    * @returns the default currency, or `undefined` when no currency table row exists at all
    */
   async defaultCurrency(db: DbExecutor): Promise<StorefrontCurrency | undefined> {
-    const offered = (await findOfferedCurrencies(db)).map(toCurrency);
+    const offered = (await this.offeredNow(db)).map(toCurrency);
     const base = offered.find((currency) => currency.code === BASE_CURRENCY);
     if (base) return base;
     if (offered[0]) return offered[0];
@@ -188,6 +199,16 @@ export class StorefrontMoney {
       preset: gateway.preset,
       logoUrl: logos.get(gateway.logoFileId ?? 0) ?? null,
     }));
+  }
+
+  /** The currencies the shop may charge in now: offered by staff, with a rate that is not held and not older than the bound (decision 049). */
+  private async offeredNow(db: DbExecutor): Promise<Currency[]> {
+    const spec = FX_GUARD_SETTINGS.maxRateAgeHours;
+    const maxAge = this.settings ? await this.settings.integer(spec.key, spec.fallback, spec) : spec.fallback;
+    const nowMs = this.clock.nowMs();
+    return (await findOfferedCurrencies(db)).filter((row) =>
+      isRateOffered(row.code, row.rateUpdatedAt.getTime(), row.rateHeldAt?.getTime() ?? null, nowMs, maxAge),
+    );
   }
 }
 

@@ -11,32 +11,41 @@ import { OutboundHttp } from '../../../infra/http';
 import { ClientGroupDirectory } from '../../catalog';
 import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
 import { BASE_CURRENCY } from '../domain/accounts';
-import { checkDepositAmount, depositFee, topupMethodOf } from '../domain/gateway-rules';
+import { REQUIRE_3DS_KEY, asks3ds, checkDepositAmount, depositFee, topupMethodOf } from '../domain/gateway-rules';
 import {
   B2B_VAT_RATE_KEY,
   DEFAULT_INVOICE_DUE_DAYS,
   INVOICE_DUE_DAYS_BOUNDS,
   INVOICE_DUE_DAYS_KEY,
+  MERCHANT_OPEN_TOPUPS,
+  OPEN_TOPUPS_DETAIL,
+  PENDING_RECEIPTS_DETAIL,
   dueAtOf,
   invoiceNumber,
   parseAmount,
+  tooManyOpenTopUps,
+  tooManyPendingReceipts,
   topupInvoiceTotals,
   vatRateFrom,
 } from '../domain/invoice-rules';
-import type { Invoice, InvoiceKind, PaymentGateway } from '../db/schema';
+import { type Invoice, type InvoiceKind, type PaymentGateway, RECEIPT_LIVE_INDEX } from '../db/schema';
+import { storeTopUpCheckoutUrl, voidUnpaidTopUp } from '../infra/customer-topup.repository';
 import { loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy } from '../infra/gateway-drivers/driver';
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway, findGatewaysByIds, listGatewaysForGroup } from '../infra/gateway.repository';
 import {
   type InvoiceSortField,
+  countLiveMerchantTopUps,
   findInvoiceOfClient,
   insertInvoice,
   listInvoiceRows,
+  lockMerchantTopUps,
   reserveInvoiceId,
   updateInvoice,
 } from '../infra/invoice.repository';
 import {
+  countPendingTopUpReceipts,
   findPaymentByReference,
   insertPayment,
   listPaymentsOfInvoice,
@@ -52,6 +61,7 @@ import {
 } from './billing-wire';
 import { GatewayCredentialsVault } from './gateway-credentials';
 import { InvoiceDocuments } from './invoice-documents';
+import { assertReceiptUnused, receiptTaken } from './receipt-proofs';
 
 /** The kinds a merchant sees: storefront receipts belong to customers and never show (B163). */
 const MERCHANT_KINDS: readonly InvoiceKind[] = ['topup', 'manual', 'statement'];
@@ -80,9 +90,11 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No invoice has this 
  * `maxAmount`), asks for a top-up invoice, and either pays online (an automatic gateway opens a checkout, and its signed
  * confirmation creates the payment, money-3) or sends a bank transfer receipt that staff review (user rule 4). A merchant never
  * reads another merchant's invoice (404). The wallet is credited only when staff approve or the automatic credit job runs.
+ * Decision 049: a merchant holds at most five live unpaid top-up invoices and five receipts in review, one receipt (or a copy of
+ * its bytes) backs one live payment, and a card page asks for 3-D Secure under the shop's `require3ds` policy.
  *
- * Side effects: `createInvoice` may call a gateway's API and inserts an `invoices` row; `uploadReceipt` inserts a `payments` row
- * and may set the invoice's gateway.
+ * Side effects: `createInvoice` inserts an `invoices` row and may call a gateway's API (then stores its page, or voids the invoice
+ * when the gateway fails); `uploadReceipt` inserts a `payments` row and may set the invoice's gateway.
  *
  * @see docs/contract/MISMATCHES.md (B162, B163)
  */
@@ -164,10 +176,19 @@ export class MerchantBillingService {
   /**
    * Writes a top-up invoice through a payment method.
    *
+   * Why: B162 and decision 049. The invoice is reserved first: one transaction under the merchant's top-up lock counts the live unpaid
+   * top-ups and inserts the open invoice, so parallel requests cannot pass the limit of five. An automatic method's page is opened after
+   * that commit (no network call under a lock); its address is stored, or the invoice is voided when the gateway fails. A card page asks
+   * for 3-D Secure while the shop's `require3ds` policy is on.
+   *
+   * Side effects: inserts one `invoices` row (its PDF is rendered after the commit; for an automatic method once its page is stored);
+   * an automatic method's API is called, then the page is stored or the invoice voided.
+   *
    * @param clientId the signed-in merchant
    * @param input the amount and the gateway
    * @returns the invoice with the transfer instructions (manual) or the checkout address (automatic)
-   * @throws {AppError} `VALIDATION_FAILED` on `gatewayId` or `amount`; `GATEWAY_ERROR` (502) when the gateway fails: nothing is written
+   * @throws {AppError} `VALIDATION_FAILED` on `gatewayId` or `amount`; `CONFLICT` (409) when the merchant has five live unpaid
+   *   top-up invoices (decision 049), before any gateway is asked; `GATEWAY_ERROR` (502) when the gateway fails: the invoice is voided
    */
   async createInvoice(clientId: number, input: { amount: string; gatewayId: number }): Promise<CreatedInvoice> {
     const { merchant, gateways, depositLimit } = await this.methodsOf(this.db.db, clientId);
@@ -185,42 +206,30 @@ export class MerchantBillingService {
     if (problem) throw new AppError('VALIDATION_FAILED', { errors: [problem] });
 
     const now = this.clock.now();
+    const since = new Date(now.getTime() - MERCHANT_OPEN_TOPUPS.liveHours * 3_600_000);
     const vatRate = vatRateFrom(await this.settings.get(B2B_VAT_RATE_KEY));
     const dueDays = await this.settings.integer(
       INVOICE_DUE_DAYS_KEY,
       DEFAULT_INVOICE_DUE_DAYS,
       INVOICE_DUE_DAYS_BOUNDS,
     );
+    const require3ds = asks3ds(await this.settings.get(REQUIRE_3DS_KEY), gateway.supports3ds);
     const totals = topupInvoiceTotals(
       parsed.amount,
       depositFee(parsed.amount, gateway.feePercent, gateway.feeFixed),
       vatRate,
     );
-    const id = await reserveInvoiceId(this.db.db);
-    const number = invoiceNumber(now.getUTCFullYear(), id);
-
-    // The gateway is asked before anything is written: a failing gateway leaves no invoice (only a gap in the numbers).
-    let paymentUrl: string | undefined;
-    if (!gateway.isManual) {
-      const driver = driverFor(gateway.driver);
-      if (!driver)
-        throw new AppError('GATEWAY_ERROR', { detail: `${gateway.name} has no driver that can open a checkout.` });
-      ({ paymentUrl } = await driver.createCheckout(
-        { http: this.http, policy: this.policy },
-        this.vault.read(gateway),
-        {
-          invoiceNumber: number,
-          amount: totals.amount,
-          currency: BASE_CURRENCY,
-          description: `Wallet top-up ${number}`,
-          returnUrl: `${this.config.http.portalBaseUrl}/wallet`,
-        },
-      ));
-    }
     const row = await this.db.runInTransaction(async (work) => {
+      // Decision 049: the count and the insert run under the merchant's lock, so two requests at once cannot both pass the limit;
+      // the refusal comes before the number is reserved and before any gateway page is opened.
+      await lockMerchantTopUps(work.tx, merchant.id);
+      if (tooManyOpenTopUps(await countLiveMerchantTopUps(work.tx, merchant.id, since))) {
+        throw new AppError('CONFLICT', { detail: OPEN_TOPUPS_DETAIL });
+      }
+      const id = await reserveInvoiceId(work.tx);
       const created = await insertInvoice(work.tx, {
         id,
-        number,
+        number: invoiceNumber(now.getUTCFullYear(), id),
         clientId: merchant.id,
         kind: 'topup',
         amount: totals.amount.toWire(),
@@ -233,29 +242,36 @@ export class MerchantBillingService {
         currency: BASE_CURRENCY,
         status: 'open',
         gatewayId: gateway.id,
-        checkoutUrl: paymentUrl ?? null,
+        checkoutUrl: null,
         dueAt: dueAtOf(now, dueDays),
         createdAt: now,
         updatedAt: now,
       });
-      work.afterCommit(() => this.documents.render(created.id));
+      if (gateway.isManual) work.afterCommit(() => this.documents.render(created.id));
       return created;
     });
-    const invoice = merchantInvoiceToWire(row, gatewayRef(gateway));
-    return gateway.isManual
-      ? { invoice, instructions: gateway.instructions }
-      : { invoice, ...(paymentUrl ? { paymentUrl } : {}) };
+    if (gateway.isManual) {
+      return { invoice: merchantInvoiceToWire(row, gatewayRef(gateway)), instructions: gateway.instructions };
+    }
+    return this.openCheckout(row, gateway, require3ds);
   }
 
   /**
    * Attaches a bank transfer receipt to an open invoice and queues the payment for staff review.
    *
+   * Why: B163 and decision 049: one receipt, or a copy of its bytes, backs one pending or approved payment, whoever uploaded it; a
+   * merchant has at most five receipts on top-up invoices waiting for review (checked under the merchant's top-up lock).
+   *
+   * Side effects: inserts one `payments` row; may set the invoice's gateway; takes the merchant's top-up lock and the receipt
+   * content's lock until the commit.
+   *
    * @param clientId the signed-in merchant
    * @param invoiceId the invoice
    * @param input the receipt file, the bank reference and, for a staff-issued invoice, the manual method used
    * @returns the new pending payment
-   * @throws {AppError} `NOT_FOUND`; `CONFLICT` when the invoice is not open, is paid online, or has a receipt waiting;
-   *   `VALIDATION_FAILED` on `fileId`, `reference` or `gatewayId`
+   * @throws {AppError} `NOT_FOUND`; `CONFLICT` when the invoice is not open, is paid online, or has a receipt waiting, or the
+   *   merchant has five top-up receipts in review (decision 049); `VALIDATION_FAILED` on `fileId` (`invalid`; `taken`: the receipt,
+   *   or a copy of it, backs a pending or approved payment, decision 049), `reference` or `gatewayId`
    */
   async uploadReceipt(
     clientId: number,
@@ -279,6 +295,13 @@ export class MerchantBillingService {
         if ((await pendingPaymentsOfInvoice(tx, invoice.id)).length > 0) {
           throw new AppError('CONFLICT', { detail: 'A receipt for this invoice is waiting for review.' });
         }
+        if (invoice.kind === 'topup') {
+          // Decision 049: lock order invoice row, merchant top-up lock, receipt content lock.
+          await lockMerchantTopUps(tx, clientId);
+          if (tooManyPendingReceipts(await countPendingTopUpReceipts(tx, clientId))) {
+            throw new AppError('CONFLICT', { detail: PENDING_RECEIPTS_DETAIL });
+          }
+        }
         const file = await this.files.findOwned(tx, input.fileId, { type: 'client', id: clientId });
         if (!file || !PROOF_MIME_TYPES.includes(file.mime)) {
           throw fieldError('fileId', 'invalid', 'Upload the receipt as a PDF, JPEG or PNG file first.');
@@ -286,6 +309,7 @@ export class MerchantBillingService {
         if (reference !== '' && (await findPaymentByReference(tx, gateway.id, reference))) {
           throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
         }
+        await assertReceiptUnused(tx, this.files, file.id);
         const now = this.clock.now();
         if (invoice.gatewayId === null) await updateInvoice(tx, invoice.id, { gatewayId: gateway.id, updatedAt: now });
         return insertPayment(tx, {
@@ -305,11 +329,44 @@ export class MerchantBillingService {
       });
       return merchantPaymentToWire(payment);
     } catch (error) {
-      // Two receipts with the same bank reference passed the check together: the unique index decides.
+      // Two receipts passed the checks together: the unique indexes decide (the receipt file first, then the bank reference).
+      if (isUniqueViolation(error, RECEIPT_LIVE_INDEX)) throw receiptTaken();
       if (isUniqueViolation(error))
         throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
       throw error;
     }
+  }
+
+  /** Asks an automatic gateway for its page and stores it on the reserved invoice; a failure voids the invoice. */
+  private async openCheckout(invoice: Invoice, gateway: PaymentGateway, require3ds: boolean): Promise<CreatedInvoice> {
+    let paymentUrl: string;
+    try {
+      const driver = driverFor(gateway.driver);
+      if (!driver)
+        throw new AppError('GATEWAY_ERROR', { detail: `${gateway.name} has no driver that can open a checkout.` });
+      ({ paymentUrl } = await driver.createCheckout(
+        { http: this.http, policy: this.policy },
+        this.vault.read(gateway),
+        {
+          invoiceNumber: invoice.number,
+          amount: Money.of(invoice.amount),
+          currency: BASE_CURRENCY,
+          description: `Wallet top-up ${invoice.number}`,
+          returnUrl: `${this.config.http.portalBaseUrl}/wallet`,
+          require3ds,
+        },
+      ));
+    } catch (error) {
+      // The invoice was reserved before the call: a gateway that failed leaves it void, so it neither counts nor can be paid.
+      await this.db.runInTransaction(({ tx }) => voidUnpaidTopUp(tx, invoice.id, this.clock.now()));
+      throw error;
+    }
+    const stored = await this.db.runInTransaction(async (work) => {
+      const updated = await storeTopUpCheckoutUrl(work.tx, invoice.id, paymentUrl, this.clock.now());
+      work.afterCommit(() => this.documents.render(invoice.id));
+      return updated;
+    });
+    return { invoice: merchantInvoiceToWire(stored ?? invoice, gatewayRef(gateway)), paymentUrl };
   }
 
   /** The manual gateway a receipt belongs to: the invoice's own, or the one the merchant names for a staff-issued invoice. */

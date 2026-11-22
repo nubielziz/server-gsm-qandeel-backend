@@ -104,7 +104,8 @@ export const createInvoice = defineRoute({
   description:
     'Issues a manual invoice to a merchant: kind manual, status open, no fee, tax at the B2B VAT rate (setting, 0 for now), due in ' +
     '14 days, in the base currency. It is a top-up invoice: when it is paid the wallet is credited and `invoice.paid` is sent. No ' +
-    'ledger entry at issue. A merchant without a billing country is 422 on `clientId`. Audited.',
+    'ledger entry at issue. A merchant without a billing country is 422 on `clientId`. Audited. The invoice records who issued it: ' +
+    'that staff member cannot approve its payment unless they are an Owner (decision 049).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',

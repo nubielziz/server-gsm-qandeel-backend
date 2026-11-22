@@ -62,6 +62,7 @@ function snapshotOf(row: Currency): Record<string, unknown> {
     isStorefront: row.isStorefront,
     decimals: row.decimals,
     isActive: row.isActive,
+    held: row.rateHeldAt !== null,
   };
 }
 
@@ -170,6 +171,9 @@ export class CurrencyService {
   /**
    * Changes a currency.
    *
+   * Why: a sent `rateToBase` (even the same number) is staff's confirmation: it restarts the rate's age and ends a hold of the
+   * refresh, so the shop offers the currency again (decision 049).
+   *
    * @param caller the signed-in staff member (`rateToBase` and `markupPercent` also need `currencies:update`, decision 046)
    * @param id the currency id
    * @param input the fields to change
@@ -206,6 +210,8 @@ export class CurrencyService {
           changes.rateToBase = input.rateToBase;
           // Sending a rate sets it: the stale clock restarts even when staff confirm the same number.
           changes.rateUpdatedAt = now;
+          // Decision 049: a typed rate is staff's confirmation: it ends a hold of the refresh.
+          changes.rateHeldAt = null;
         }
       }
       if (input.markupPercent !== undefined) {
@@ -255,7 +261,7 @@ export class CurrencyService {
       isActive: row.isActive,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
-      isStale: isRateStale(row.code, row.rateUpdatedAt.getTime(), nowMs),
+      isStale: isRateStale(row.code, row.rateUpdatedAt.getTime(), nowMs, row.rateHeldAt?.getTime() ?? null),
     };
   }
 }

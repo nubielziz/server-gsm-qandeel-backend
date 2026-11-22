@@ -117,7 +117,13 @@ export { RefundSender } from './jobs/refund-sender';
 export type { RefundSendResult } from './jobs/refund-sender';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
 export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';
-export { topupMethodOf } from './domain/gateway-rules';
+export { REQUIRE_3DS_KEY, asks3ds, topupMethodOf } from './domain/gateway-rules';
+export {
+  ADJUST_APPROVAL_LIMIT_KEY,
+  approvalLimitOf,
+  creditLimitNeedsOwner,
+  creditLimitOwnerDetail,
+} from './domain/wallet-rules';
 export {
   WALLET_EVENT_IDS,
   WALLET_EVENT_KINDS,

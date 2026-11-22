@@ -2,14 +2,16 @@
 import { describe, expect, it } from 'bun:test';
 import { Money } from '@src/common/money';
 import {
-  type GatewayFields,
+  asks3ds,
   changesAutomaticSetup,
   changesCredentials,
   checkDepositAmount,
   checkGatewayFields,
   depositFee,
   effectiveMaxAmount,
+  type GatewayFields,
   nextWebhookSecrets,
+  REQUIRE_3DS_KEY,
   secretHintOf,
   topupMethodOf,
 } from '@src/modules/money/domain/gateway-rules';
@@ -187,5 +189,16 @@ describe('changesAutomaticSetup', () => {
     expect(changesAutomaticSetup(manual, { ...manual, driver: 'cash' })).toBe(false);
     expect(changesAutomaticSetup(manual, manual)).toBe(false);
     expect(changesAutomaticSetup(automatic, automatic)).toBe(false);
+  });
+});
+
+describe('asks3ds (decision 049)', () => {
+  it('follows the policy, on by default, and only through a method that supports it', () => {
+    expect(REQUIRE_3DS_KEY).toBe('require3ds');
+    expect(asks3ds(undefined, true)).toBe(true);
+    expect(asks3ds(true, true)).toBe(true);
+    expect(asks3ds(false, true)).toBe(false);
+    expect(asks3ds(undefined, false)).toBe(false);
+    expect(asks3ds(true, false)).toBe(false);
   });
 });

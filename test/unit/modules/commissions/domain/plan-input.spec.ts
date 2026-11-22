@@ -1,6 +1,11 @@
 // Unit tests of the plan input rules (feature 11): the rate range of 0.5 to 15 percent and its format, and the scope of a kind.
 import { describe, expect, it } from 'bun:test';
-import { normalisePercent, planRateProblem, scopeOf } from '@src/modules/commissions/domain/plan-input';
+import {
+  normalisePercent,
+  planRateInBounds,
+  planRateProblem,
+  scopeOf,
+} from '@src/modules/commissions/domain/plan-input';
 
 describe('planRateProblem', () => {
   it('accepts the limits and the values between them, with up to 4 decimals', () => {
@@ -31,5 +36,12 @@ describe('normalisePercent and scopeOf', () => {
   it('gives a referral plan the referrals scope and a rebate plan the own scope', () => {
     expect(scopeOf('referral')).toBe('referrals');
     expect(scopeOf('rebate')).toBe('own');
+  });
+});
+
+describe('planRateInBounds (decision 049)', () => {
+  it('accepts the stored rates a plan can be saved with and nothing else', () => {
+    for (const rate of ['0.5000', '3.0000', '15.0000']) expect(planRateInBounds(rate)).toBe(true);
+    for (const rate of ['0.4999', '15.0001', '0.0000', '100.0000']) expect(planRateInBounds(rate)).toBe(false);
   });
 });

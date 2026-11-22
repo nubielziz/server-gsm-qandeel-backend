@@ -1616,7 +1616,11 @@ describe('PATCH /admin/publish-runs/:id/items/:itemId', () => {
     expect(errorsOf(zero)).toEqual([
       { field: 'retailPrice', code: 'invalid', message: 'Enter a price greater than zero.' },
     ]);
-    expect(errorsOf(await patchItem(run, a, { retailPrice: '-3.0000' }))[0]).toMatchObject({ code: 'invalid' });
+    // Decision 049: a negative amount is refused by the Money contract itself, on the same field.
+    expect(errorsOf(await patchItem(run, a, { retailPrice: '-3.0000' }))[0]).toMatchObject({
+      field: 'retailPrice',
+      code: 'invalid_format',
+    });
     const low = await patchItem(run, a, { retailPrice: '11.0000' });
     expect(low.status).toBe(422);
     expect(errorsOf(low)).toEqual([

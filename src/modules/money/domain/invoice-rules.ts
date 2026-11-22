@@ -1,7 +1,9 @@
 // Rules of the merchant invoices (map routes /admin/invoices, /client/invoices, stage 8): the number, the due date, the tax and
-// the totals of a manual and of a top-up invoice, and the checks on what staff and merchants type. Pure.
+// the totals of a manual and of a top-up invoice, the checks on what staff and merchants type, and the limits of decision 049
+// (open top-ups, receipts in review, the issuer's own approval). Pure.
 import type { FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
+import type { InvoiceKind } from '../db/schema';
 
 /** Setting key of the B2B VAT rate in percent (user rule 3: the rate stays a setting, default 0). */
 export const B2B_VAT_RATE_KEY = 'billing.b2b_vat_rate_percent';
@@ -141,3 +143,57 @@ export function checkDescription(description: string): FieldError | undefined {
   }
   return undefined;
 }
+
+/** How many unpaid top-up invoices a merchant may hold, and how long an unpaid one counts (decision 049). */
+export const MERCHANT_OPEN_TOPUPS = { max: 5, liveHours: 24 } as const;
+
+/**
+ * Tells whether a merchant may not open another top-up invoice.
+ *
+ * Why: decision 049: at most five unpaid top-up invoices that are less than 24 hours old or have a receipt in review. A merchant cannot
+ * cancel a top-up, so an older unpaid invoice stops counting (it stays payable).
+ *
+ * @param liveOpen the merchant's live unpaid top-up invoices
+ * @returns true when the next one is refused
+ */
+export function tooManyOpenTopUps(liveOpen: number): boolean {
+  return liveOpen >= MERCHANT_OPEN_TOPUPS.max;
+}
+
+/** The refusal of a sixth live top-up invoice (`409 CONFLICT`, decision 049). */
+export const OPEN_TOPUPS_DETAIL = `You have ${MERCHANT_OPEN_TOPUPS.max} unpaid top-up invoices. Pay one of them first, or try again later.`;
+
+/**
+ * Tells whether a merchant may not send another top-up receipt for review.
+ *
+ * Why: decision 049: an unpaid top-up older than 24 hours stops counting towards the five open invoices but stays payable, so the
+ * receipts waiting for review are capped as well: at most five per merchant.
+ *
+ * @param pendingReceipts the merchant's receipts on top-up invoices that wait for review
+ * @returns true when the next receipt is refused
+ */
+export function tooManyPendingReceipts(pendingReceipts: number): boolean {
+  return pendingReceipts >= MERCHANT_OPEN_TOPUPS.max;
+}
+
+/** The refusal of a sixth receipt in review (`409 CONFLICT`, decision 049). */
+export const PENDING_RECEIPTS_DETAIL = `You have ${MERCHANT_OPEN_TOPUPS.max} top-up receipts waiting for review. Wait until one of them is reviewed, then send this one.`;
+
+/**
+ * Tells whether an invoice is a manual invoice the given staff member issued.
+ *
+ * Why: decision 049: the payment of a staff-issued invoice is approved by someone else, or by an Owner.
+ *
+ * @param invoice the invoice (kind and issuer)
+ * @param staffId the staff member who approves
+ * @returns true when that staff member issued it
+ */
+export function isIssuedBy(
+  invoice: { readonly kind: InvoiceKind; readonly issuedBy: number | null },
+  staffId: number,
+): boolean {
+  return invoice.kind === 'manual' && invoice.issuedBy !== null && invoice.issuedBy === staffId;
+}
+
+/** The refusal of the issuer's own approval (`403 FORBIDDEN`, decision 049). */
+export const SELF_APPROVAL_DETAIL = 'You issued this invoice: another staff member, or an owner, approves its payment.';

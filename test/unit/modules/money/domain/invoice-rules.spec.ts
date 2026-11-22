@@ -5,9 +5,14 @@ import {
   checkDescription,
   dueAtOf,
   invoiceNumber,
+  isIssuedBy,
   manualInvoiceTotals,
+  MERCHANT_OPEN_TOPUPS,
+  OPEN_TOPUPS_DETAIL,
   parseAmount,
   paymentRef,
+  tooManyOpenTopUps,
+  tooManyPendingReceipts,
   topupInvoiceTotals,
   vatRateFrom,
 } from '@src/modules/money/domain/invoice-rules';
@@ -73,5 +78,23 @@ describe('parseAmount and checkDescription', () => {
     expect(checkDescription('Annual fee')).toBeUndefined();
     expect(checkDescription('')?.code).toBe('required');
     expect(checkDescription('x'.repeat(501))?.code).toBe('length');
+  });
+});
+
+describe('the limits of decision 049', () => {
+  it('refuses the sixth live top-up invoice and the sixth receipt in review', () => {
+    expect(MERCHANT_OPEN_TOPUPS).toEqual({ max: 5, liveHours: 24 });
+    expect(tooManyOpenTopUps(4)).toBe(false);
+    expect(tooManyOpenTopUps(5)).toBe(true);
+    expect(tooManyPendingReceipts(4)).toBe(false);
+    expect(tooManyPendingReceipts(5)).toBe(true);
+    expect(OPEN_TOPUPS_DETAIL).toBe('You have 5 unpaid top-up invoices. Pay one of them first, or try again later.');
+  });
+
+  it('isIssuedBy is true only for a manual invoice of that staff member', () => {
+    expect(isIssuedBy({ kind: 'manual', issuedBy: 7 }, 7)).toBe(true);
+    expect(isIssuedBy({ kind: 'manual', issuedBy: 7 }, 8)).toBe(false);
+    expect(isIssuedBy({ kind: 'manual', issuedBy: null }, 7)).toBe(false);
+    expect(isIssuedBy({ kind: 'topup', issuedBy: 7 }, 7)).toBe(false);
   });
 });

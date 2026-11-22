@@ -9,6 +9,7 @@ import { DbService, type DbExecutor } from '../../../infra/db';
 import type { Order } from '../../orders';
 import type { Invoice, Payment, PaymentGateway } from '../db/schema';
 import { b2cPaymentMethod, fromUsd, gatewayFeeUsd, paymentFacts, payRequestFingerprint } from '../domain/b2c-money';
+import { asks3ds } from '../domain/gateway-rules';
 import { invoiceNumber } from '../domain/invoice-rules';
 import { b2cFee, b2cPay } from '../domain/money-events';
 import { GATEWAY_HTTP_POLICY, type GatewayHttpPolicy, type PaymentEvent } from '../infra/gateway-drivers/driver';
@@ -58,8 +59,11 @@ export interface StartPaymentInput {
   readonly grossUsd: Money;
   /** The text of the hosted page. */
   readonly description: string;
-  /** Whether the shop asks for 3-D Secure. */
-  readonly require3ds: boolean;
+  /**
+   * The stored value of the shop's `require3ds` policy (`REQUIRE_3DS_KEY`), `undefined` when never set: the payment asks for
+   * 3-D Secure through {@link asks3ds} (decision 049: one rule for shop card payments and card top-ups).
+   */
+  readonly threeDsPolicy: unknown;
 }
 
 /** The payment a pay call opened, as the route answers (and answers again on a replay). */
@@ -189,7 +193,7 @@ export class StorefrontPayments {
         currency: input.currency,
         description: input.description,
         returnUrl: input.returnUrl,
-        require3ds: input.require3ds && gateway.supports3ds,
+        require3ds: asks3ds(input.threeDsPolicy, gateway.supports3ds),
         // The payment's own reference: a retried call for this payment never opens a second page at the gateway.
         idempotencyKey: paymentRef(id),
       }));

@@ -1,14 +1,16 @@
 // Route contracts of merchant wallets (map domain E, stage 3): the admin console's wallet, statement, manual adjustment and
 // credit limit, and the merchant portal's own wallet and statement. Shapes match the console (docs/contract/endpoints/money.md).
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney, zSignedMoney } from '../../../common/contract';
 
 /** The four wallet figures (all `Money`, merchant side). */
 export const WalletViewSchema = z.object({
-  balance: zMoney.describe('The wallet balance; positive is the merchant money, negative while credit is in use.'),
+  balance: zSignedMoney.describe(
+    'The wallet balance; positive is the merchant money, negative while credit is in use.',
+  ),
   reserved: zMoney.describe('Held for open orders.'),
   creditLimit: zMoney.describe('How far the balance may go below zero.'),
-  available: zMoney.describe('Spendable now: balance plus credit limit.'),
+  available: zSignedMoney.describe('Spendable now: balance plus credit limit.'),
 });
 
 /** One line of a merchant statement. */
@@ -17,8 +19,8 @@ export const StatementRowSchema = z.object({
   transactionId: zId.describe('The journal (`GET /admin/ledger/transactions/:id`).'),
   kind: z.string().describe('The entry kind: deposit, order_hold, order_release, adjustment, commission, ...'),
   memo: z.string(),
-  amount: zMoney.describe('Signed from the merchant side: a deposit is positive, an order hold negative.'),
-  balanceAfter: zMoney.describe('The wallet balance right after the line, merchant side.'),
+  amount: zSignedMoney.describe('Signed from the merchant side: a deposit is positive, an order hold negative.'),
+  balanceAfter: zSignedMoney.describe('The wallet balance right after the line, merchant side.'),
   createdAt: zIsoDateTime,
 });
 
@@ -92,8 +94,10 @@ export const adjustClientWallet = defineRoute({
   summary: 'Add to or deduct from a merchant wallet',
   description:
     'Posts the map money event `adjust` (credit: Dr adjustments / Cr client_wallet; debit: the mirror) with the reason in the ' +
-    'memo, and audits it. An amount above the single-approver limit (setting `wallet.adjust_approval_limit`, default $10,000) ' +
-    'is refused with `APPROVAL_REQUIRED`; a debit below the credit limit with `CREDIT_LIMIT_EXCEEDED`. The optional ' +
+    "memo, and audits it. A staff member's credits to merchant wallets within 24 hours, this one included, above the approval " +
+    'limit (setting `wallet.adjust_approval_limit`, default $10,000), or a single debit above it, are refused with ' +
+    '`409 APPROVAL_REQUIRED`; an Owner is not limited and a retry of an accepted adjustment is answered as before (decision 049). ' +
+    'A debit below the credit limit is refused with `CREDIT_LIMIT_EXCEEDED`. The optional ' +
     '`Idempotency-Key` header makes a retry post once; without it each request posts.',
   tags: ['clients'],
   surface: 'admin',
@@ -126,7 +130,8 @@ export const setClientCreditLimit = defineRoute({
   description:
     'Sets the overdraft limit of the merchant wallet; `0.0000` removes the credit. A limit above zero needs a merchant group ' +
     'that allows credit (`422` on `creditLimit` otherwise). Lowering the limit below the credit in use is allowed: new orders ' +
-    'are refused until a top-up. No ledger entry; audited.',
+    'are refused until a top-up. Raising the limit above the approval limit of adjustments (`wallet.adjust_approval_limit`, ' +
+    'default $10,000) needs an Owner (`403 FORBIDDEN`, decision 049); lowering it never does. No ledger entry; audited.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

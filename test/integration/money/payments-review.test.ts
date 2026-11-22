@@ -1,6 +1,6 @@
 // Integration tests of the staff routes on wallet top-ups (map stage 8): the list and read, approving (the deposit journal with the
 // source account of user rule 4, the invoice, `invoice.paid`, the audit row), rejecting, the guards of an automatic gateway, and the
-// race between two decisions.
+// race between two decisions. Decision 049: the issuer of a manual invoice does not approve its payment unless an Owner.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -20,6 +20,7 @@ import {
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { accountFigures, insertWalletMerchant } from '../../support/money';
+import { SELF_APPROVAL_DETAIL } from '@src/modules/money/domain/invoice-rules';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -194,6 +195,46 @@ async function confirmedThroughWebhook(reported: { amount?: number; currency?: s
   const [payment] = await db.select().from(s.payments);
   return { db, merchant, gatewayId, invoice, payment: payment! };
 }
+
+describe('POST /admin/payments/:id/approve (the issuer of a manual invoice, decision 049)', () => {
+  it('refuses the issuer of a manual invoice; another staff member or an owner approves', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    await db.update(s.clients).set({ country: 'JO' }).where(eq(s.clients.id, merchant.id));
+    const bank = await insertGateway(t, db, { name: 'Bank transfer', isManual: true });
+    const issuer = await adminWith(t, ['invoices:create', 'payments:approve', 'payments:read']);
+    const colleague = await adminWith(t, ['payments:approve', 'payments:read']);
+    const owner = await adminWith(t, ['*']);
+    const issueBy = async (api: typeof issuer) => {
+      const res = await api.post('/admin/invoices', { clientId: merchant.id, amount: '50', description: 'Support' });
+      expect(res.status).toBe(201);
+      const [invoice] = await db.select().from(s.invoices).where(eq(s.invoices.id, res.body.id));
+      const receiptFileId = await insertProofFile(db, merchant.id);
+      return { invoice: invoice!, payment: await insertPendingPayment(db, invoice!, bank, { receiptFileId }) };
+    };
+
+    const mine = await issueBy(issuer);
+    expect(mine.invoice.issuedBy).toBe(issuer.staffId);
+    const refused = await issuer.post(`/admin/payments/${mine.payment.id}/approve`);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: 'FORBIDDEN', detail: SELF_APPROVAL_DETAIL });
+    const [still] = await db.select().from(s.payments).where(eq(s.payments.id, mine.payment.id));
+    expect(still!.status).toBe('pending');
+    expect(await db.select().from(s.ledgerTransactions)).toHaveLength(0);
+    expect((await colleague.post(`/admin/payments/${mine.payment.id}/approve`)).status).toBe(200);
+
+    const owners = await issueBy(owner);
+    expect(owners.invoice.issuedBy).toBe(owner.staffId);
+    expect((await owner.post(`/admin/payments/${owners.payment.id}/approve`)).status).toBe(200);
+
+    // A merchant's own top-up invoice has no issuer: anyone with the permission approves it.
+    const topup = await insertInvoiceRow(db, merchant.id, { gatewayId: bank });
+    const payment = await insertPendingPayment(db, topup, bank, {
+      receiptFileId: await insertProofFile(db, merchant.id),
+    });
+    expect((await issuer.post(`/admin/payments/${payment.id}/approve`)).status).toBe(200);
+  });
+});
 
 describe('POST /admin/payments/:id/approve (a confirmation that does not match its invoice)', () => {
   /** Approving is refused with 409, nothing is credited, and staff can still reject (which voids the invoice). */

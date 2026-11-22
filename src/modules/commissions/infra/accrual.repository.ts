@@ -187,3 +187,28 @@ export async function markPaidBack(db: DbExecutor, id: number, reversedAt: Date)
     .returning({ id: commissionAccruals.id });
   return rows.length > 0;
 }
+
+/**
+ * Sums the commissions an order still holds: its accruals that are `accrued`, or `approved` and not paid back.
+ *
+ * Why: decision 049: what an order already pays counts against its margin. A plain read, no lock: the completion holds the order and
+ * the unique index decides duplicates; reading the accruals after the wallets were locked must not take a row lock, or the approval's
+ * lock order could be crossed.
+ *
+ * @param db the completion's transaction
+ * @param orderId the order
+ * @returns the sum, zero when none
+ */
+export async function liveAccrualTotalOfOrder(db: DbExecutor, orderId: number): Promise<Money> {
+  const [row] = await db
+    .select({ total: sql<string>`coalesce(sum(${commissionAccruals.amount}), 0)::text` })
+    .from(commissionAccruals)
+    .where(
+      and(
+        eq(commissionAccruals.orderId, orderId),
+        inArray(commissionAccruals.status, ['accrued', 'approved']),
+        isNull(commissionAccruals.reversedAt),
+      ),
+    );
+  return Money.of(row?.total ?? '0');
+}

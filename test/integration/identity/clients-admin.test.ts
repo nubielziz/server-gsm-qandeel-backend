@@ -322,6 +322,28 @@ describe('POST /admin/clients', () => {
     expect(await clientRows()).toHaveLength(0);
   });
 
+  it('needs an owner for a credit limit above the approval limit at invitation (decision 049)', async () => {
+    const { vip } = await groups();
+    const creator = await adminWith(t, ['clients:create', 'wallet:credit_limit', 'groups:update'], { ip: CALLER_IP });
+    const refused = await invite(creator, { groupId: vip, creditLimit: '10000.0001' });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'Only an owner can set a credit limit above $10,000.',
+    });
+    expect(await clientRows()).toHaveLength(0);
+    const { db } = await testDb();
+    expect(await db.select().from(s.ledgerAccounts).where(eq(s.ledgerAccounts.ownerType, 'client'))).toHaveLength(0);
+    expect(await db.select().from(s.authTokens)).toHaveLength(0);
+    expect(await outboxRows()).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+    expect((await invite(creator, { groupId: vip, creditLimit: '10000.0000' })).status).toBe(201);
+    const rami = await owner();
+    const large = await invite(rami, { groupId: vip, creditLimit: '25000.0000', email: 'big@example.com' });
+    expect(large.status).toBe(201);
+    expect(large.body.wallet.creditLimit).toBe('25000.0000');
+  });
+
   it('needs clients:create and a CSRF token, and sends the wallet and stats only to staff who hold wallet:read', async () => {
     await groups();
     const reader = await adminWith(t, ['clients:read'], { ip: CALLER_IP });

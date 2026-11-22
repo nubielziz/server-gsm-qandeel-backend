@@ -22,7 +22,9 @@ it, because an order completes in either process) and `CommissionsModule` (impor
   only if the completion committed. A completion is a staff reply, a supplier's result (the worker) or a stock delivery at placement.
   Every beneficiary with a current, active assignment accrues: a `referral` plan pays the merchant in `clients.referred_by_id` of the order's
   merchant, a `rebate` plan pays the order's own merchant. `basis_amount` is the order's `total_price` (revenue), `percent` the plan's rate at
-  that moment (a later rate change never touches it), `amount = basis x percent / 100` (4 decimals, half up), `period` the completion
+  that moment (a later rate change never touches it), `amount = basis x percent / 100` (4 decimals, half up), and the commissions of one
+  order together never exceed its margin (`total_price - total_cost`), the merchant's rebate first, then the referral; a plan stored
+  outside 0.5 to 15 percent accrues nothing and logs a warning (decision 049); `period` the completion
   month (`YYYY-MM`, UTC: no business time-zone setting exists yet), status `accrued`, no ledger entry. An amount that rounds to zero accrues
   nothing; a storefront order has no merchant and accrues nothing. An order accrues once per beneficiary: the partial unique index
   `commission_accruals_order_beneficiary_uq` (live accruals only) decides and `ON CONFLICT DO NOTHING` skips the loser.

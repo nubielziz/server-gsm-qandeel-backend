@@ -1,6 +1,6 @@
 // CommissionAccruals: the commission engine. It listens to order completions and reversals (the completion hook of orders) and, in the
 // completion's own transaction, creates the accruals a completed order earns and reverses them when it is reopened or refunded.
-import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
@@ -13,8 +13,15 @@ import {
   type OrderReversalReason,
 } from '../../orders';
 import { accruingPlans } from '../domain/accrual-rules';
-import { accrualAmount, periodOf } from '../domain/commission-math';
-import { insertAccrualOnce, lockLiveAccrualsOfOrder, markPaidBack, markReversed } from '../infra/accrual.repository';
+import { cappedAccruals, commissionRoom, periodOf } from '../domain/commission-math';
+import { MAX_PLAN_PERCENT, MIN_PLAN_PERCENT } from '../domain/plan-input';
+import {
+  insertAccrualOnce,
+  liveAccrualTotalOfOrder,
+  lockLiveAccrualsOfOrder,
+  markPaidBack,
+  markReversed,
+} from '../infra/accrual.repository';
 import { currentPlansOf } from '../infra/assignment.repository';
 import { findMerchants } from '../infra/foreign-reads.repository';
 
@@ -24,9 +31,10 @@ import { findMerchants } from '../infra/foreign-reads.repository';
  * Why: RULES commissions 1 and user rule 5 (ANSWERS commissions Q8). When a merchant order completes (a staff reply, a supplier's
  * result, a stock delivery at placement) every beneficiary with a current, active plan accrues: a `referral` plan pays the merchant
  * in `clients.referred_by_id` of the order's merchant, a `rebate` plan pays the order's own merchant. The accrual keeps the order's
- * `total_price` as its basis, the plan's rate at that moment and `amount = basis x percent / 100` (4 decimals, half up); an order
- * accrues once per beneficiary (the unique index), a storefront order (no merchant) accrues nothing, and an amount that rounds to
- * zero is not worth an accrual. When the order is reopened or refunded, an accrual not yet approved becomes `reversed`; an approved
+ * `total_price` as its basis, the plan's rate at that moment and `amount = basis x percent / 100` (4 decimals, half up), and together
+ * never more than the order's margin, the merchant's rebate first; a plan stored outside 0.5 to 15 percent accrues nothing (decision
+ * 049). An order accrues once per beneficiary (the unique index), a storefront order (no merchant) accrues nothing, and an amount that
+ * rounds to zero is not worth an accrual. When the order is reopened or refunded, an accrual not yet approved becomes `reversed`; an approved
  * one stays `approved` and the agent's wallet gives the commission back with a reversing entry (key `reverse:accrual:<id>`), which
  * may take the wallet below its credit limit (`allowBelowCreditLimit`, the one place that uses it). Both run inside the order's
  * transaction, so a commission exists if and only if the completion committed.
@@ -39,6 +47,8 @@ import { findMerchants } from '../infra/foreign-reads.repository';
  */
 @Injectable()
 export class CommissionAccruals implements OrderCompletionListener, OnModuleInit {
+  private readonly logger = new Logger(CommissionAccruals.name);
+
   constructor(
     private readonly listeners: OrderCompletionListeners,
     private readonly poster: LedgerPoster,
@@ -67,11 +77,17 @@ export class CommissionAccruals implements OrderCompletionListener, OnModuleInit
     const plans = accruingPlans(order.clientId, referrerId, await currentPlansOf(tx, beneficiaries));
     if (plans.length === 0) return;
 
+    // Decision 049: the commissions of an order never exceed its margin.
+    const room = commissionRoom(basis, Money.of(order.totalCost), await liveAccrualTotalOfOrder(tx, order.id));
+    const { accruals, outOfBounds } = cappedAccruals(basis, room, plans);
+    for (const plan of outOfBounds) {
+      this.logger.warn(
+        `Commission plan ${plan.planId} is stored at ${plan.percent} percent, outside ${MIN_PLAN_PERCENT} to ${MAX_PLAN_PERCENT}: it accrued nothing on order ${order.id}.`,
+      );
+    }
     const now = this.clock.now();
     const period = periodOf(order.completedAt ?? now);
-    for (const plan of plans) {
-      const amount = accrualAmount(basis, plan.percent);
-      if (!amount.isPositive()) continue;
+    for (const { plan, amount } of accruals) {
       await insertAccrualOnce(tx, {
         planId: plan.planId,
         beneficiaryId: plan.beneficiaryId,

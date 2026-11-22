@@ -1,7 +1,8 @@
 // The commission engine of feature 11 (RULES commissions 1 and 4, user rule 5): a completed merchant order accrues for the referrer's
 // referral plan and for the merchant's own rebate plan, once per beneficiary, with the rate of that moment; a reopen or a refund
 // reverses the accrual (before approval: status `reversed`; after approval: the wallet gives the commission back with a reversing
-// entry, even below the credit limit); a storefront order accrues nothing. Everything runs inside the order's own transaction.
+// entry, even below the credit limit); a storefront order accrues nothing. Everything runs inside the order's own transaction. Decision 049:
+// the commissions of an order never exceed its margin (the rebate first), and a plan stored outside 0.5 to 15 percent accrues nothing.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
@@ -206,6 +207,52 @@ describe('an order completes', () => {
     });
     expect(written).toBeUndefined();
     expect(await db.select().from(s.commissionAccruals)).toEqual([]);
+  });
+});
+
+describe('the margin cap (decision 049)', () => {
+  const open = (price: string, cost: string) =>
+    insertOrderRow(world.db, {
+      clientId: world.merchant.id,
+      serviceId: world.auto.serviceId,
+      status: 'processing',
+      dispatchState: 'operator',
+      unitPrice: price,
+      totalPrice: price,
+      unitCost: cost,
+      totalCost: cost,
+    });
+
+  it("never accrues more than the order's margin, the merchant's rebate first", async () => {
+    const { db, agent, plans, merchant } = world;
+    await assignPlan(db, agent.id, plans.referral);
+    await assignPlan(db, merchant.id, plans.rebate);
+    await db.update(s.commissionPlans).set({ percent: '15.0000' }).where(eq(s.commissionPlans.id, plans.rebate));
+    const thin = await open('10.0000', '9.8000');
+    expect((await reply(thin.id)).status).toBe(204);
+    const rows = await accrualsOfOrder(db, thin.id);
+    // 15 % of 10 would be 1.5000 and 3 % 0.3000; the margin is 0.2000.
+    expect(rows.map((row) => [row.beneficiaryId, row.amount, row.basisAmount, row.percent])).toEqual([
+      [merchant.id, '0.2000', '10.0000', '15.0000'],
+    ]);
+  });
+
+  it('pays every plan in full while the margin covers them', async () => {
+    const { db, agent, plans, merchant } = world;
+    await assignPlan(db, agent.id, plans.referral);
+    await assignPlan(db, merchant.id, plans.rebate);
+    const wide = await open('17.2800', '13.5000');
+    expect((await reply(wide.id)).status).toBe(204);
+    expect((await accrualsOfOrder(db, wide.id)).map((row) => row.amount)).toEqual(['0.2592', '0.5184']);
+  });
+
+  it('accrues nothing for a plan stored outside 0.5 to 15 percent', async () => {
+    const { db, agent, plans } = world;
+    await assignPlan(db, agent.id, plans.referral);
+    await db.update(s.commissionPlans).set({ percent: '20.0000' }).where(eq(s.commissionPlans.id, plans.referral));
+    const order = await open('17.2800', '13.5000');
+    expect((await reply(order.id)).status).toBe(204);
+    expect(await accrualsOfOrder(db, order.id)).toEqual([]);
   });
 });
 

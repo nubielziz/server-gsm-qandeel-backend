@@ -1,5 +1,6 @@
 // Integration tests of GET /admin/pricing/resolve and the resolver's loader (feature 4b): the demo's examples against real
-// rows, the rule window on the clock's time, the floor with rules and groups, otherGroups, 404s and permissions.
+// rows, the rule window on the clock's time, the floor with rules and groups, otherGroups, 404s and permissions. Decision 049: the price
+// before the floor is signed money on the wire.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { PriceResolver } from '@src/modules/catalog';
 import { type AdminApi, adminWith } from '../../support/admin-api';
@@ -115,6 +116,19 @@ describe('GET /admin/pricing/resolve', () => {
     expect(inside.body.steps[3]).toMatchObject({ state: 'apply', note: 'Carrier unlock promo -10%' });
     clock.advance(MINUTE);
     expect((await resolve(serviceId, merchant)).body.price).toBe('17.2800');
+  });
+
+  it('answers a raw price below zero when a fixed promo is larger than the price, and clamps to the floor (decision 049)', async () => {
+    const { db } = await testDb();
+    const groups = await insertDemoGroups(db);
+    const { categoryId, serviceId } = await insertAtt(db);
+    const merchant = await insertMerchantIn(db, groups.standard);
+    await insertRule(db, { scope: 'category', targetId: categoryId, kind: 'promo', percent: '0', fixed: '100.0000' });
+    const res = await resolve(serviceId, merchant);
+    expect(res.status).toBe(200);
+    expect(res.body.rawPrice.startsWith('-')).toBe(true);
+    expect(res.body.price).toBe(res.body.floor);
+    expect(res.body.clamped).toBe(true);
   });
 
   it('adds the rounding step and takes the minimum profit of the first matching rule', async () => {

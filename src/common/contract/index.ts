@@ -87,5 +87,16 @@ export {
   validateInputs,
   validationFailed,
 } from './validation.pipe';
-export { MAX_ID, zDateOnly, zDecimal, zId, zIdParam, zIsoDateTime, zJsonObject, zMoney, zUploadedFile } from './zod';
+export {
+  MAX_ID,
+  zDateOnly,
+  zDecimal,
+  zId,
+  zIdParam,
+  zIsoDateTime,
+  zJsonObject,
+  zMoney,
+  zSignedMoney,
+  zUploadedFile,
+} from './zod';
 export type { JsonObject, JsonValue } from './zod';

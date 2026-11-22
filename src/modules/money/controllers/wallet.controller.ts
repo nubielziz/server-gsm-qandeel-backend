@@ -93,12 +93,13 @@ export class WalletController {
     @ContractHeaders() headers: HeadersOf<typeof adjustClientWallet>,
   ): Promise<ResultOf<typeof adjustClientWallet>> {
     const idempotencyKey = headers['idempotency-key'];
-    return this.wallets.adjust(staff.staffId, params.id, { ...body, ...(idempotencyKey ? { idempotencyKey } : {}) });
+    return this.wallets.adjust(staff, params.id, { ...body, ...(idempotencyKey ? { idempotencyKey } : {}) });
   }
 
   /**
    * Sets a merchant's credit limit.
    *
+   * @param staff the signed-in staff member (a raise above the approval limit needs an Owner, decision 049)
    * @param params the merchant id
    * @param body the new limit
    * @returns the wallet after the change
@@ -106,10 +107,11 @@ export class WalletController {
    */
   @Route(setClientCreditLimit)
   setCreditLimit(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof setClientCreditLimit>,
     @Body() body: BodyOf<typeof setClientCreditLimit>,
   ): Promise<ResultOf<typeof setClientCreditLimit>> {
-    return this.wallets.setCreditLimit(params.id, body.creditLimit);
+    return this.wallets.setCreditLimit(staff, params.id, body.creditLimit);
   }
 
   /**

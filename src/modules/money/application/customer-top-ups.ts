@@ -12,10 +12,10 @@ import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService } from '../../../infra/rate-limit';
 import { PROOF_MIME_TYPES, PublicImages, SettingsReader, StoredFiles } from '../../platform';
 import type { TopUpDetailSchema } from '../contracts/customer-topups.contracts';
-import type { Invoice, Payment, PaymentGateway } from '../db/schema';
+import { type Invoice, type Payment, type PaymentGateway, RECEIPT_LIVE_INDEX } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { type CustomerWalletPolicy, checkTopUp, topUpStatusOf } from '../domain/customer-wallet-policy';
-import { depositFee, topupMethodOf } from '../domain/gateway-rules';
+import { REQUIRE_3DS_KEY, asks3ds, depositFee, topupMethodOf } from '../domain/gateway-rules';
 import {
   DEFAULT_INVOICE_DUE_DAYS,
   INVOICE_DUE_DAYS_BOUNDS,
@@ -45,6 +45,7 @@ import { findPaymentByReference, insertPayment, pendingPaymentsOfInvoice } from 
 import { type WirePaymentMethod, paymentMethodToWire } from './billing-wire';
 import { CustomerWallets } from './customer-wallets';
 import { GatewayCredentialsVault } from './gateway-credentials';
+import { assertReceiptUnused, receiptTaken } from './receipt-proofs';
 import { TopUpScreeningHooks } from './top-up-screening-hooks';
 
 /** A top-up on the store wire, with how to pay it while it awaits payment. */
@@ -125,7 +126,8 @@ function topUpToWire(invoice: Invoice, gateway: PaymentGateway | undefined, paym
  * cards behind a second switch, within the owner's limits. A top-up is a `topup` invoice of the customer; the customer's receipt or the
  * gateway's confirmation creates the payment that staff (or the automatic credit) turn into a credit, exactly like a merchant's deposit.
  * Every customer id comes from the session (plan § 5.1 invariant 5). The limits are checked under a per-customer advisory lock; the Redis
- * limiter is only a hint.
+ * limiter is only a hint. Decision 049: one receipt, or a copy of its bytes, backs one pending or approved payment, whoever uploaded it,
+ * and a card page asks for 3-D Secure under the shop's `require3ds` policy.
  *
  * Side effects: `create` inserts an `invoices` row (and may call a gateway's API, then store its page); `attachReceipt` inserts a
  * `payments` row; `cancel` voids an invoice.
@@ -331,17 +333,18 @@ export class CustomerTopUps {
    * Attaches the receipt of a manual transfer and queues the top-up for staff review.
    *
    * Why: plan 21 § 5.6.4: the merchant receipt flow for a customer. The file must be the customer's own upload; a bank reference is unique
-   * per gateway. Sending the same receipt again is a retry and answers the top-up. Manual top-ups always wait for staff; a risk hit only
+   * per gateway; the receipt, or a copy of its bytes, must not back another pending or approved payment (decision 049). Sending the same
+   * receipt again is a retry and answers the top-up. Manual top-ups always wait for staff; a risk hit only
    * writes its reason as a hint. Allowed while the balance is switched off (the money may already be on its way, P6).
    *
-   * Side effects: inserts one `payments` row (`pending`).
+   * Side effects: inserts one `payments` row (`pending`); takes the receipt content's lock until the commit.
    *
    * @param customerId the authenticated customer
    * @param id the top-up
    * @param input the receipt file and the optional bank reference
    * @returns the top-up, now in review
-   * @throws {AppError} `NOT_FOUND`; `CONFLICT` (not open, online, another receipt in review); `VALIDATION_FAILED` on `fileId` (`invalid`)
-   *   or `reference` (`length`, `taken`)
+   * @throws {AppError} `NOT_FOUND`; `CONFLICT` (not open, online, another receipt in review); `VALIDATION_FAILED` on `fileId` (`invalid`,
+   *   `taken`: decision 049) or `reference` (`length`, `taken`)
    */
   async attachReceipt(
     customerId: number,
@@ -376,6 +379,7 @@ export class CustomerTopUps {
         if (reference !== '' && (await findPaymentByReference(tx, gateway.id, reference))) {
           throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
         }
+        await assertReceiptUnused(tx, this.files, file.id);
         const customer = await findWalletCustomer(tx, customerId);
         const verdict = await this.screening.screen(tx, { email: customer?.email ?? null, cardFingerprint: null });
         const now = this.clock.now();
@@ -398,7 +402,8 @@ export class CustomerTopUps {
         return this.wireOf(tx, invoice);
       });
     } catch (error) {
-      // Two receipts with the same bank reference passed the check together: the unique index decides.
+      // Two receipts passed the checks together: the unique indexes decide (the receipt file first, then the bank reference).
+      if (isUniqueViolation(error, RECEIPT_LIVE_INDEX)) throw receiptTaken();
       if (isUniqueViolation(error)) {
         throw fieldError('reference', 'taken', 'This reference was already used for this payment method.');
       }
@@ -440,6 +445,8 @@ export class CustomerTopUps {
   private async openCheckout(invoice: Invoice, gateway: PaymentGateway): Promise<TopUpDetail> {
     const driver = driverFor(gateway.driver);
     try {
+      // Decision 049: a card top-up asks for 3-D Secure under the same policy as a shop card payment.
+      const require3ds = asks3ds(await this.settings.get(REQUIRE_3DS_KEY), gateway.supports3ds);
       if (!driver)
         throw new AppError('GATEWAY_ERROR', { detail: `${gateway.name} has no driver that can open a checkout.` });
       const { paymentUrl } = await driver.createCheckout(
@@ -452,6 +459,7 @@ export class CustomerTopUps {
           description: `Store balance top-up ${invoice.number}`,
           returnUrl: `${this.config.http.storeBaseUrl}/account/wallet?topUp=${invoice.id}`,
           idempotencyKey: invoice.number,
+          require3ds,
         },
       );
       const stored = await this.db.runInTransaction(({ tx }) =>

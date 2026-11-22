@@ -31,15 +31,19 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   that no `reverse:<id>` transaction has reversed, so the orders module posts a reversal under that key.
 - **Wallets.** `MerchantAccounts.open` opens `client_wallet` and `client_hold` with the merchant (resolution ip-1; user rule
   2 checked there and by the credit-limit route); `WalletService` serves the wallet view, the statement (JSON or CSV), manual
-  adjustments (`adjust` event, ref type `client`, reason in the memo, `APPROVAL_REQUIRED` above the single-approver setting,
-  `CREDIT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`) and the credit limit.
+  adjustments (`adjust` event, ref type `client`, reason in the memo, `APPROVAL_REQUIRED` when a staff member's credits to merchant
+  wallets within 24 hours, or a single debit, exceed `wallet.adjust_approval_limit` (an Owner is not limited; the sum is read under the
+  staff member's advisory lock, `infra/adjustment.repository.ts`), `CREDIT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`) and the credit
+  limit (a limit above that approval limit needs an Owner when it is a raise, decision 049).
 - **Ledger screens.** `LedgerReadService` lists journals (wire `refType` through `toWireRefType`: stored `client` goes out as
   `system`, resolutions money-1/6; numeric and text `q`, money-15) and accounts with their owners' names.
 - **Reconciliation.** `ReconcileService.run` compares every stored balance with the sum of its entries in one repeatable-read
   snapshot, records a `job_runs` row of job `ledger_reconcile` (`RECONCILE_RUNNING` while one runs) and audits the run. It is
   synchronous (ANSWERS finance Q4) and never corrects anything.
 - **Currencies.** `CurrencyService`: CRUD with `decimals` 0 to 4 and `isStale` for a non-base rate older than 24 h
-  (money-13). Adding a currency, or changing a rate or markup, also needs `currencies:update` (decision 046).
+  (money-13), and also while a refresh holds the rate (`rate_held_at`; a typed `rateToBase` ends the hold). Adding a currency, or
+  changing a rate or markup, also needs `currencies:update` (decision 046). `StorefrontMoney` offers only currencies whose rate is not
+  held and not older than `fx.max_rate_age_hours` (decision 049); `byCode` (a locked session) still finds every row.
 - **Exchange-rate refresh** (feature 14b, decision 029, resolution money-9): `FxRefreshService` (`application/fx-refresh.service.ts`) asks the
   driver behind the token `FX_PROVIDER` for every active non-base currency, stores the rates it gets (`rate_updated_at` from the clock, so
   `isStale` is false), and answers `{ refreshed, failed, source }`. A currency the provider does not offer, or sends an unusable rate for, is in
@@ -53,6 +57,11 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   driver from `FX_PROVIDER`/`FX_API_KEY`. The hourly `fx_refresh` maintenance job of decision 029 (`jobs/fx-refresh.module.ts`, `FxRefreshJobModule` in the worker; scheduler `fx-refresh`, `0 * * * *`, queue `maintenance`) runs the same
   `FxRefreshService.refresh()` with no request behind it, so the audit actor is the system, and records a `job_runs` row (`processed` = rates refreshed). With the `manual` driver, or
   `openexchangerates` without a key, it asks nothing, changes nothing and is recorded as `succeeded` with the reason in `result` (no error, no retry; `skipped` would show a warning every hour); with a provider but no active non-base currency it ends without a call and without an audit row (`refresh({ auditEmpty: false })`; the admin route audits its empty refresh as before); a configured provider that cannot answer fails the run and the queue's retry policy applies.
+  A provider rate that moved more than `fx.max_refresh_move_percent` (default 20; the ratio of the larger rate to the smaller, so a fall
+  counts like a rise) from the stored one is held: not stored, listed in `failed` ("Held: ..."; the message names both rates, the judged move and the bound), `rate_held_at` set the first time, the
+  audit row's `after.held`; a refresh that held a rate is never `502`. The refresh reports a newly held currency once, after the commit
+  (an error log line and `ErrorReporter`), whether the route or the job ran it; the job counts `held` in its run. Production refuses
+  `openexchangerates` without `FX_API_KEY` at start (decision 049).
 - **Tax rates** (stage 14, built ahead of feature 14b by the lead): `TaxRateService` lists, reads, adds and changes the
   windows of `tax_rates` (`/admin/tax-rates`, permissions `tax:read|create|update`): country two capital letters, rate 0 to
   100 with four decimals, `taxType` vat | gst | sales_tax | none, `validTo` after `validFrom` (exclusive end), and one window
@@ -106,10 +115,16 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   `application/`: `PaymentGatewayService` (CRUD, secrets encrypted by `GatewayCredentialsVault`, audit `added|changed|removed payment method`, and `turned on|turned off payment method` when a change only moves the switch, the demo's phrases; only an Owner adds an automatic method, changes `isManual` or the driver of a method that is automatic before or after the change, or sets, replaces or removes a method's secrets, decision 046; the plain fields of an automatic method, and a `secondaryWebhookSecret: null` for a method without a second secret, keep the route's own permission), `InvoiceAdminService` (list, read, issue a manual invoice, audit `issued invoice for`),
   `PaymentReviewService` (list, read, approve, reject; audit `approved|rejected deposit of`) with `PaymentViews` (the wire around a page: merchant, group, wallet, gateway, reviewer, hints) and `PaymentCrediting` (the one place that credits a top-up),
   `MerchantBillingService` (the portal: payment methods, invoices, a new top-up invoice, the receipt), `PaymentWebhookService` and `PaymentWebhookVerifier` (the incoming confirmation), `InvoiceDocuments` (PDF) and `InvoiceOutbox` (`invoice.paid`).
+  - **Limits (decision 049).** A receipt's file, or a copy with the same SHA-256, backs at most one pending or approved payment
+    (`application/receipt-proofs.ts`, the partial unique index `payments_receipt_live_uq`; lock order invoice row, merchant top-up lock,
+    receipt content lock); a merchant holds at most five live unpaid top-up invoices and five top-up receipts in review
+    (`MERCHANT_OPEN_TOPUPS`, counted under `lockMerchantTopUps`; the invoice is reserved before an automatic method's page is opened and
+    voided when the gateway fails); a staff-issued invoice records `issued_by` and its issuer cannot approve its payment unless an Owner;
+    card top-ups ask for 3-D Secure under `require3ds` (`asks3ds`, also used by shop card payments).
   - **Money rules.** A deposit posts the map event `deposit` (Dr `bank` for a manual gateway or `gateway_clearing` for an automatic one, Cr `client_wallet` net, Cr `fee_income` fee) with ref `payment`, key `deposit:payment:<id>`, memo
     `Deposit PAY-<id> (<method>)`. Lock order everywhere: the payment row, then its invoice, then the ledger accounts. Approve and reject re-check under the lock: not pending → `409 PAYMENT_ALREADY_REVIEWED`; an automatic gateway
     whose payment was not sent to review → `409 PAYMENT_AUTO_CREDIT_PENDING` (user rule 6). Reject voids a top-up invoice and leaves a staff-issued manual invoice open.
-  - **Invoices.** `INV-<year>-<id padded to 4>` (the id is reserved first, so a gateway checkout can carry the number; a failed checkout leaves a gap), due in 14 days (setting `billing.invoice_due_days`), tax at the B2B VAT rate
+  - **Invoices.** `INV-<year>-<id padded to 4>` (a top-up invoice is written before an automatic gateway's checkout is opened, so the checkout carries its number; a failed checkout leaves the invoice void, decision 049), due in 14 days (setting `billing.invoice_due_days`), tax at the B2B VAT rate
     (setting `billing.b2b_vat_rate_percent`, default 0, a bad value reads as 0), base currency, `kind` manual or topup. A top-up invoice: `fee = amount × percent + fixed`, `net = amount − fee`, `total = amount`; a manual one: no fee, `total = net + tax`.
     The PDF (decision 030, the platform's `PdfRenderer`) is rendered after the commit of an issue and again after the payment, stored through `StoredFiles` as the merchant's file, and a failure only logs (the money never waits for a document).
   - **Drivers** (`infra/gateway-drivers/`): `payment_gateways.driver` names the code behind a gateway: `card` / `stripe` (Stripe Checkout protocol: form-encoded calls with a bearer key, webhooks `t=<unix>,v1=<hmac>` in `stripe-signature`, signed with
@@ -159,7 +174,9 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
   only) and reports each account's `frozen` read under its lock; the deferred trigger `ledger_accounts_negative_customer_wallet_frozen`
   refuses a commit that leaves a customer wallet below zero and not frozen. Lock order: a transaction that posts never locks a wallet row
   before the posting; a freeze after a posting reuses its lock. Services: `CustomerWallets` (views, statement with staff reasons masked
-  for the customer, list, adjust with approval limit and replay check, freeze/unfreeze, the anonymize guard and the export part),
+  for the customer, list, adjust with approval limit and replay check, freeze/unfreeze, the anonymize guard and the export part; the
+  approval limit `wallet.customer.adjust_approval_limit` caps a staff member's credits to customer balances over 24 hours and any single
+  debit, an Owner is not limited, decision 049),
   `CustomerTopUps` (create under a per-customer advisory lock with SQL velocity limits, receipt, cancel), `CustomerWalletPayments` (records a
   balance payment inside the customers module's checkout transaction: `payments.method_type 'balance'`, no gateway, one per checkout),
   `CustomerWalletMails` (five customer events). Refunds of a balance payment go back to the balance and complete at once
@@ -249,11 +266,11 @@ Only this module reads and writes these 11 tables (`scripts/module-map.mjs`); ot
 
 | Table | What it holds |
 |---|---|
-| `currencies` | Currencies and exchange rates, with a markup and psychological (charm) rounding for the storefront display. |
+| `currencies` | Currencies and exchange rates, with a markup and psychological (charm) rounding for the storefront display; `rate_held_at` marks a rate a refresh held (decision 049). |
 | `ledger_accounts` | Accounts: wallet, hold, revenue, customer funds and tax payable. |
 | `ledger_transactions` | The journal entry header, with an idempotency key. |
 | `ledger_entries` | Journal entry lines; they always sum to zero. |
-| `invoices` | Top-up invoices and statements, and B2C tax receipts with a PDF copy. |
+| `invoices` | Top-up invoices and statements, and B2C tax receipts with a PDF copy; `issued_by` names the staff member who issued a manual invoice (decision 049). |
 | `payment_gateways` | Payment gateways with their fees and limits, split by audience (B2B or B2C). |
 | `payments` | Payments and their confirmation: a wallet top-up or a B2C order payment. |
 | `withdrawal_requests` | Withdrawal requests, for a later phase. |

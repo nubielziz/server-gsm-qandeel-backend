@@ -1,18 +1,27 @@
 // Route contracts of merchant management (map domain A, routes /admin/clients, stage 2): list, show, create by invitation,
 // approve, suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
 import { z } from 'zod';
-import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
+import {
+  defineRoute,
+  listQuery,
+  zDecimal,
+  zId,
+  zIdParam,
+  zIsoDateTime,
+  zMoney,
+  zSignedMoney,
+} from '../../../common/contract';
 import { MerchantCountry } from './merchant-auth.contracts';
 import { EmailField, NameField, PersonRef } from './shared';
 
 /** Wallet figures; only for staff who hold `wallet:read`. */
-const Wallet = z.object({ balance: zMoney, reserved: zMoney, creditLimit: zMoney, available: zMoney });
+const Wallet = z.object({ balance: zSignedMoney, reserved: zMoney, creditLimit: zMoney, available: zSignedMoney });
 
 /** The last 30 days of orders; only for staff who hold `wallet:read`. */
 const Stats = z.object({
   orders: z.number().int().min(0),
   spend: zMoney,
-  profit: zMoney,
+  profit: zSignedMoney,
   margin: zDecimal.nullable(),
   successRate: z.number().nullable(),
   lastOrderAt: zIsoDateTime.nullable(),
@@ -153,7 +162,8 @@ export const createClient = defineRoute({
     '`POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a ' +
     'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. ' +
     'A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` ' +
-    '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046).',
+    '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval ' +
+    'limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049).',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

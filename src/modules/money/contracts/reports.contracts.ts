@@ -2,7 +2,7 @@
 // client-statement, stage 11). Shapes match the console's report types (docs/contract/endpoints/money.md, suppliers.md and orders.md,
 // RULES money, MISMATCHES B88).
 import { z } from 'zod';
-import { defineRoute, zDateOnly, zId, zIdParam, zMoney } from '../../../common/contract';
+import { defineRoute, zDateOnly, zId, zIdParam, zMoney, zSignedMoney } from '../../../common/contract';
 import { PROFIT_GROUPS } from '../domain/report-figures';
 
 const ProfitRow = z.object({
@@ -15,7 +15,7 @@ const ProfitRow = z.object({
   orders: z.number().int().min(0),
   revenue: zMoney.describe('Selling price without VAT.'),
   cost: zMoney.describe('Supplier cost.'),
-  profit: zMoney.describe('Revenue minus cost; negative when the supplier cost more than the price.'),
+  profit: zSignedMoney.describe('Revenue minus cost; negative when the supplier cost more than the price.'),
 });
 
 const PROFIT_EXAMPLE = {
@@ -56,7 +56,7 @@ export const getProfitReport = defineRoute({
       to: zDateOnly,
       currency: z.string(),
       rows: z.array(ProfitRow),
-      totals: z.object({ orders: z.number().int().min(0), revenue: zMoney, cost: zMoney, profit: zMoney }),
+      totals: z.object({ orders: z.number().int().min(0), revenue: zMoney, cost: zMoney, profit: zSignedMoney }),
     }),
   },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'VALIDATION_FAILED'],
@@ -81,7 +81,7 @@ export const getWalletExposure = defineRoute({
       currency: z.string(),
       totals: z.object({
         clients: z.number().int().min(0),
-        balance: zMoney,
+        balance: zSignedMoney,
         reserved: zMoney,
         overdraftLimit: zMoney,
         overdraftUsed: zMoney,
@@ -91,7 +91,7 @@ export const getWalletExposure = defineRoute({
         z.object({
           clientId: zId,
           name: z.string(),
-          balance: zMoney,
+          balance: zSignedMoney,
           reserved: zMoney,
           overdraftLimit: zMoney,
           overdraftUsed: zMoney,
@@ -222,8 +222,8 @@ export const getTopClients = defineRoute({
         country: z.string(),
         orders: z.number().int().min(0),
         spend: zMoney,
-        profit: zMoney,
-        walletBalance: zMoney,
+        profit: zSignedMoney,
+        walletBalance: zSignedMoney,
       }),
     ),
   },
