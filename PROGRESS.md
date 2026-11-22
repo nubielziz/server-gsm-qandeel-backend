@@ -92,6 +92,8 @@ state each rule and its reason.
 | 39 manual money and exchange rates | `ddea7c4` | 049 | 0051 | A transfer receipt backs one payment (by file and by content); a staff member's manual credits are capped over 24 hours; a manual invoice is not approved by its issuer; money on the wire is bounded and signed only where it can be; a refreshed exchange rate that moves beyond a bound is held, and an old rate is not offered |
 | 45a infrastructure, inside the application | `e02e478` | 055 (part A) | none | Cache entries are sealed and checked before they are trusted; database statements, lock waits and idle transactions end at a limit and answer 503; work whose queue job was lost is asked for again (`lost_work_reconcile`); handed-over outbox rows are purged after 45 days |
 | 38 payments integrity | `9a3aa04` | 048 | 0052 | A payment confirmation counts only when the gateway's own record says paid, for the quoted amount and currency, for this payment; what cannot be captured as quoted is held, sent back where the gateway can, and closed by staff; a late payment is refunded; a card top-up is credited only against the gateway's record; a refund of a disputed payment is not sent, and an unsent one is reversed at a chargeback |
+| 40 risk inputs | `8abc73e` | 050 | 0053 | The card's issuing country and funding and the visitor's country are read and used; a rule without an input source does not apply and is named at boot; while a tax window is in force a country without one is refused and a payment whose card or visitor country differs from the declared one is held; a guest checkout is judged as a first order; a block from a guest order can be limited to guest checkouts; order counts see checkouts still being paid; a top-up without a risk screening goes to staff |
+| 45b infrastructure, the production stack | `6ba0a4d` | 055 (part B) | none | Five networks with fixed proxy addresses; the application's own database role, checked at a production start; passwords on both Redis instances; application and backup users for the file store and a files host for signed reads only; a production start refuses template, development and weak values; encrypted, append-only backups |
 
 Checks: the whole `bun run check` on the tree of `8065e0c` (main with 34, 35, 36): 8290 pass, 1 skip, 0 fail; on the tree of `745c9ce`
 (with 42): 8393 pass, 1 skip, 0 fail; on the tree of `50b8517` (with 41): 8456 pass, 1 skip, 2 fail, both Redis command timeouts under load in
@@ -100,13 +102,25 @@ pending in a test database migrated before the renumbering, green on a fresh one
 parallel shards (same batches, isolated databases; a failed batch is run again alone): the tree of `ddea7c4` (with 39): typecheck, lint and
 generators pass, 8631 pass, 1 skip, 1 fail (the 15-second limit of one openapi-generator test under load; its batch alone 179 pass); the tree
 of `e02e478` (with 45a): 8706 pass, 1 skip, the same single limit, its batch alone 317 pass; the tree of `9a3aa04` (with 38, after the
-generator tests got a time limit that fits, `c4f647a`): 8808 pass, 1 skip, 0 fail. Dev DB `gsm` migrated to 0052 after a dump before each step (the worker's one-off review of stored field
+generator tests got a time limit that fits, `c4f647a`): 8808 pass, 1 skip, 0 fail; the tree of `8abc73e` (with 40, after the test helper
+learned to clear the cached IP rules, `bab76b7`): 8863 pass, 1 skip, 0 fail; the tree of `6ba0a4d` (with 45b): 8978 pass, 1 skip, 0 fail.
+Dev DB `gsm` migrated to 0053 after a dump before each step (the worker's one-off review of stored field
 patterns clears nothing there: all 458 are in the import's length form). **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
 `CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
 helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
 
-Next (2026-11-22, night): 37 staff data access (decision 047) and 45b the production stack (055, part B) passed both reviews and are being
-merged with main; 40 risk inputs (050) is in its fix round; 43 public abuse limits (053) is in review. **For the owner after decision 054:** production needs `LOOKUP_HASH_KEY` (an
+Next (2026-11-22, night): 37 staff data access (decision 047) passed both reviews, is merged with main and in a last round of small
+points; 43 public abuse limits (053) passed its reviews after one fix round and is being merged with main. Then the list of places worth
+another review and the notes for the console and the shop.
+
+**For the owner after decision 050:** create a tax window for every country the shop sells to before the first window goes live (0 % with
+the type "no tax" where none is due): from then on a country without one is refused at checkout. `GEOIP_COUNTRY_HEADER` stays unset
+until a CDN in front of the edge writes the visitor's country.
+
+**For the owner after decision 055 (part B):** nothing changes for development. The first production release with it recreates every
+container: follow "Release with decision 055" in docs/OPERATIONS.md in its order.
+
+**For the owner after decision 054:** production needs `LOOKUP_HASH_KEY` (an
 installation with data sets it to its `TOKEN_PEPPER`); a Telegram bot's webhook needs a new secret and a new registration
 (`scripts/telegram-webhook.ts`); the worker converts the stored link tokens once when it starts. **After decision 049:** a currency whose rate
 was not saved or refreshed for 48 hours is not offered until its rate is saved again; production needs `FX_API_KEY` or `FX_PROVIDER=manual`.
