@@ -17,3 +17,5 @@ variables (defaults: `gsm_test`, Redis DB 1, `gsm-files-test`); the normal varia
 Amended by decision 055: the three database time limits `DATABASE_STATEMENT_TIMEOUT_MS`, `DATABASE_LOCK_TIMEOUT_MS` and
 `DATABASE_IDLE_IN_TRANSACTION_TIMEOUT_MS` (defaults 15 s, 5 s and 60 s; 0 means none; none under `NODE_ENV=test`; a value from 1 to 999 ms
 is refused) are settings of each process; the production compose file gives the worker its own.
+
+**Amended by decision 055:** a process whose `NODE_ENV` is unset refuses to start unless every database host of `DATABASE_URL` is this machine or a socket; production refuses the templates' `CHANGE_ME` placeholders in any variable, secrets under their minimum length, short passwords of services on another machine, the development values of the database, Redis, S3 and mail settings, an unset `TRUST_PROXY` and argon2 below the OWASP minimum; production sends mail over TLS only. New settings: `DATABASE_OWNER_URL` (the owner role, for `db:migrate` and `setup`; ignored under test) and `S3_PUBLIC_ENDPOINT` (the address file links are signed for).

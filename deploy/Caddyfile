@@ -1,10 +1,13 @@
-# Reverse proxy of the production stack (feature 24D, decision 036, docs/OPERATIONS.md). One browser origin per audience:
+# Reverse proxy of the production stack (feature 24D, decisions 036 and 055, docs/OPERATIONS.md). One browser origin per audience:
 #   SHOP_HOST   the storefront (container `site`); /client/* and /store/v1/* go straight to the API, so there is no CORS
 #   ADMIN_HOST  the console (container `console`); /admin/*, /health, the internal reference and the pictures under /store/v1/media/*
 #               (the console's listing pictures and payment logos load on its own origin) go to the API
 #   API_HOST    machine clients only: Dhru, REST v1, incoming webhooks and the public docs; every other path is a 404
+#   FILES_HOST  signed file downloads only: reads of the files bucket that carry a signature go to MinIO, everything else is a 404
+#               (decision 055)
 # /metrics matches no route on any host. Caddy sets X-Forwarded-For itself (it drops a client-sent value), and the API trusts
-# exactly the compose subnet (TRUST_PROXY=172.30.0.0/24). Do not add `trusted_proxies` unless a CDN is placed in front.
+# exactly Caddy's and the site's fixed addresses (TRUST_PROXY=172.30.1.2,172.30.1.3, decision 055). Do not add `trusted_proxies`
+# unless a CDN is placed in front.
 # The console's and the shop's pages get the anti-framing, nosniff and referrer headers of decision 045; the API's answers keep the
 # API's own headers.
 # Every host removes the visitor-country header (GEOIP_COUNTRY_HEADER) before the API: this edge writes no country, so no visitor can
@@ -13,6 +16,15 @@
 # tokens, searches and IMEIs in the query, and credential headers are not written.
 {
 	email {$ACME_EMAIL}
+	# Decision 055: a client that is slow to send its headers or that stalls an upload is cut; the live streams write at least every 15 s.
+	servers {
+		timeouts {
+			read_header 10s
+			read_body_idle 30s
+			write_idle 1m
+			idle 2m
+		}
+	}
 }
 
 (common) {
@@ -35,7 +47,8 @@
 # credential are not written (Caddy itself hides Cookie, Set-Cookie, Authorization and Proxy-Authorization), nor the two headers in which
 # the shop's pages send their own address with every prefetch, refresh and navigation (Next-Url, Next-Router-State-Tree). A redirect's
 # Location gets the same path rules and loses its whole query string (a signed download link). One multi_regexp per field holds every
-# rule, one regexp line each. The API logs route templates only. Every site block imports this snippet.
+# rule, one regexp line each. The API logs route templates only. Every site block imports this snippet. The signature parameters of a
+# file link (X-Amz-...) are replaced in the address and in the Referer too (decision 055).
 (access_log) {
 	log {
 		output stdout
@@ -50,6 +63,7 @@
 				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
 				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
 				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
+				regexp "([?&])(X-Amz-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
 			}
 			request>headers>Referer multi_regexp {
 				regexp "/store/v1/orders/[^/?#]+" "/store/v1/orders/[token]"
@@ -60,6 +74,7 @@
 				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
 				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
 				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
+				regexp "([?&])(X-Amz-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
 			}
 			request>headers>X-Csrf-Token delete
 			request>headers>X-Turnstile-Token delete
@@ -149,6 +164,40 @@
 	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
 	handle @api {
 		reverse_proxy api:3000
+	}
+	handle {
+		respond 404
+	}
+}
+
+# Signed file downloads (decision 055): the API's file routes answer 302 to a short-lived link of this host. Only reads of one object of
+# the files bucket that carry a signature reach MinIO, with the Host unchanged (the signature covers it); the bucket itself, a listing
+# and every other method or path are a 404. The path is what a stored object's name can be: the storage layer's own rule for a key
+# (src/infra/storage/storage-names.ts), where every segment starts with a letter or a digit. Caddy resolves `.` and `..` segments
+# before `path_regexp` sees a path and passes the path on as it was sent, so the same rule is checked a second time against the path as
+# it was sent, after its percent escapes are decoded (`vars_regexp`): a path with a `.` or `..` segment is not passed on. The answers
+# are attachments, and the policy below keeps any content from running on this host.
+{$FILES_HOST} {
+	import common
+	import access_log
+	@signed_read {
+		method GET HEAD
+		path_regexp ^/gsm-files/[A-Za-z0-9][A-Za-z0-9._=+-]*(/[A-Za-z0-9][A-Za-z0-9._=+-]*)*$
+		vars_regexp raw_path {http.request.uri.path} ^/gsm-files/[A-Za-z0-9][A-Za-z0-9._=+-]*(/[A-Za-z0-9][A-Za-z0-9._=+-]*)*$
+		query X-Amz-Signature=*
+		query response-content-disposition=*
+	}
+	handle @signed_read {
+		header {
+			Content-Security-Policy "default-src 'none'; sandbox"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "no-referrer"
+			defer
+		}
+		reverse_proxy minio:9000 {
+			header_up Host {hostport}
+		}
 	}
 	handle {
 		respond 404

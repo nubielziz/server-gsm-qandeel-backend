@@ -33,3 +33,5 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** DB types, wire types and frontend types follow one naming rule set; a column the rules get wrong
 gets an explicit override next to its definition.
+
+**Amended by decision 055:** in production the API and the worker connect as the application's own role, which is neither a superuser nor an owner of a table; `db:migrate` and `setup` connect as the owner (`DATABASE_OWNER_URL`) and then set that role's privileges (no `UPDATE`, `DELETE` or `TRUNCATE` on the append-only tables). Tests and development keep one role.

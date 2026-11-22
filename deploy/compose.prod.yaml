@@ -1,9 +1,28 @@
-# Production stack of the GSM backend on one host (feature 24D, decision 036, docs/OPERATIONS.md).
+# Production stack of the GSM backend on one host (feature 24D, decisions 036 and 055, docs/OPERATIONS.md).
 # Run from the repository root:  docker compose -f deploy/compose.prod.yaml --env-file deploy/.env <command>
 # Compose-level values (hosts, image names, passwords, backup target) come from deploy/.env (template: deploy/.env.example);
 # the application's own variables come from .env.production (template: .env.production.example), read by api, worker and migrate.
-# Only Caddy publishes ports. Postgres, both Redis roles, MinIO, Typesense and Prometheus are reachable inside the network `gsm` only.
+# Only Caddy publishes ports. Five networks (decision 055): `edge` (Caddy, api, console, site), `data` (internal: api, worker, migrate,
+# backup, Postgres, both Redis, MinIO, Typesense), `files` (internal: Caddy and MinIO, for the signed file links), `monitoring` (internal:
+# Prometheus, api, worker) and `egress` (worker and backup, which call the internet). Caddy and the site have fixed addresses, the ones
+# TRUST_PROXY names. Every service drops capabilities (see x-hardening): all of them, or NET_RAW alone, or all but NET_BIND_SERVICE (Caddy).
 name: gsm
+
+# Decision 055: bounded logs on the host (the local driver rotates them).
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+# Decision 055: no service gains privileges through a setuid program, and none can fork without bound. Capabilities are dropped per
+# service: every image that runs as an unprivileged user drops all of them; the services that only answer on the internal networks
+# (Postgres, both Redis, MinIO, the search engine, the console) drop NET_RAW and keep their other defaults, because their entry points
+# start as root and hand over to their own user; Caddy keeps the one capability that binds ports 80 and 443.
+x-hardening: &hardening
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 1024
+  logging: *logging
 
 x-app: &app
   image: ${BACKEND_IMAGE:?set BACKEND_IMAGE in deploy/.env}
@@ -12,10 +31,15 @@ x-app: &app
     # the configuration check refuses production without its required variables (decision 013).
     - path: ../.env.production
       required: false
-  networks: [gsm]
+  security_opt: ["no-new-privileges:true"]
+  # The image runs as the `bun` user and needs no Linux capability.
+  cap_drop: [ALL]
+  pids_limit: 1024
+  logging: *logging
 
 services:
   caddy:
+    <<: *hardening
     image: caddy:2.11-alpine
     restart: unless-stopped
     init: true
@@ -27,6 +51,7 @@ services:
       SHOP_HOST: ${SHOP_HOST:?}
       ADMIN_HOST: ${ADMIN_HOST:?}
       API_HOST: ${API_HOST:?}
+      FILES_HOST: ${FILES_HOST:?}
       ACME_EMAIL: ${ACME_EMAIL:?}
       # Decision 050: the header Caddy removes from every request before the API; the placeholder keeps the Caddyfile line valid while nothing is set.
       GEOIP_COUNTRY_HEADER: ${GEOIP_COUNTRY_HEADER:-X-Visitor-Country}
@@ -39,10 +64,16 @@ services:
       nofile:
         soft: 65536
         hard: 65536
+    # Binds 80 and 443, nothing else.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     depends_on:
       api:
         condition: service_healthy
-    networks: [gsm]
+    networks:
+      edge:
+        ipv4_address: 172.30.1.2
+      files: {}
 
   api:
     <<: *app
@@ -77,6 +108,7 @@ services:
       typesense:
         condition: service_started
     stop_grace_period: 15s
+    networks: [edge, data, monitoring]
 
   worker:
     <<: *app
@@ -111,24 +143,36 @@ services:
         condition: service_started
     # The worker drains in-flight jobs for up to 25 s (queue-workers.service.ts); the container must outlive that.
     stop_grace_period: 30s
+    # `egress`: the worker calls suppliers, payment gateways, the mail provider and the exchange-rate provider.
+    networks: [data, monitoring, egress]
 
-  # One-off: applies the pending migrations. The API never migrates on boot (decision 027).
+  # One-off: applies the pending migrations and sets the application role's privileges; `setup` runs here too. The API never migrates on
+  # boot (decision 027).
   #   docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm migrate
   migrate:
     <<: *app
     profiles: ["tools"]
     command: ["bun", "scripts/db-migrate.ts"]
     restart: "no"
+    # Decision 055: only migrate (and setup, run in this service) holds the owner role; the API and the worker connect with
+    # DATABASE_URL, the application's role.
+    environment:
+      DATABASE_OWNER_URL: "postgres://gsm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/gsm"
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [data]
 
   postgres:
+    <<: *hardening
     image: postgres:18.6-trixie
     restart: unless-stopped
     init: true
     command: ["postgres", "-c", "max_connections=200"]
+    # Answers on the internal network only: no raw sockets (the entry point still starts as root and hands over to postgres).
+    cap_drop: [NET_RAW]
     environment:
+      # The owner role: migrate, setup, the backups and the operator; the application has its own role (decision 055).
       POSTGRES_USER: gsm
       POSTGRES_DB: gsm
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
@@ -140,10 +184,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
-    networks: [gsm]
+    networks: [data]
 
-  # Queue role (decision 006): BullMQ only. Nothing may be evicted, and the append-only file survives a restart.
+  # Queue role (decision 006): BullMQ only. Nothing may be evicted, and the append-only file survives a restart. A full instance refuses
+  # new jobs (noeviction) and the outbox keeps the work in Postgres (decision 055). The password is on the command line of the
+  # process, which a user of the host can read, like the deploy env files it comes from.
   redis-queue:
+    <<: *hardening
     image: redis:8.10.3-alpine
     restart: unless-stopped
     init: true
@@ -155,17 +202,26 @@ services:
       - everysec
       - --maxmemory-policy
       - noeviction
+      - --maxmemory
+      - ${REDIS_QUEUE_MAXMEMORY:-512mb}
+      - --requirepass
+      - ${REDIS_QUEUE_PASSWORD:?set REDIS_QUEUE_PASSWORD in deploy/.env}
+    mem_limit: ${REDIS_QUEUE_MEM_LIMIT:-1g}
+    # Answers on the internal network only: no raw sockets.
+    cap_drop: [NET_RAW]
     volumes:
       - redis-queue-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # NOAUTH proves the server answers; the check needs no password.
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'"]
       interval: 5s
       timeout: 3s
       retries: 30
-    networks: [gsm]
+    networks: [data]
 
   # Cache role (decision 006): cache, rate limits and locks. Eviction is wanted, persistence is not.
   redis-cache:
+    <<: *hardening
     image: redis:8.10.3-alpine
     restart: unless-stopped
     init: true
@@ -179,29 +235,36 @@ services:
       - 256mb
       - --maxmemory-policy
       - allkeys-lru
+      - --requirepass
+      - ${REDIS_CACHE_PASSWORD:?set REDIS_CACHE_PASSWORD in deploy/.env}
+    # Answers on the internal network only: no raw sockets.
+    cap_drop: [NET_RAW]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # NOAUTH proves the server answers; the check needs no password.
+      test: ["CMD-SHELL", "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'"]
       interval: 5s
       timeout: 3s
       retries: 30
-    networks: [gsm]
+    networks: [data]
 
   # Search engine (feature 29, decision 038): derived, public, price-free documents of the English storefront search; Postgres stays the
   # truth. No ports and no Caddy route: only api and worker reach it, each with its own key (docs/OPERATIONS.md section 6). The image is
-  # pinned by digest. Writes stop at 85 % disk (the disk Postgres shares); `--memory-used-max-percentage` is not used: under a cgroup
-  # limit it never refused a write (step 0), so `mem_limit`, the restart and the memory alert carry that rule. Compaction is daily
-  # because the nightly rebuild drops and recreates collections. The data volume is not backed up (derived data): after a wipe or an
-  # upgrade run `bun scripts/search-keys.ts` before api and worker start (section 6). No slow-request or slow-search log: Typesense
-  # logs a slow multi_search with its body, which holds the typed query (an email, a phone or an IMEI); latency is
-  # `search_engine_seconds`, so `--log-slow-searches-time-ms -1` switches off the one slow log that is on by default.
+  # pinned by digest. Its admin key comes from the environment, not the command line (decision 055). Writes stop at 85 % disk (the disk
+  # Postgres shares); `--memory-used-max-percentage` is not used: under a cgroup limit it never refused a write (step 0), so
+  # `mem_limit`, the restart and the memory alert carry that rule. Compaction is daily because the nightly rebuild drops and recreates
+  # collections. The data volume is not backed up (derived data): after a wipe or an upgrade run `bun scripts/search-keys.ts` before api
+  # and worker start (section 6). No slow-request or slow-search log: Typesense logs a slow multi_search with its body, which holds the
+  # typed query (an email, a phone or an IMEI); latency is `search_engine_seconds`, so `--log-slow-searches-time-ms -1` switches off the
+  # one slow log that is on by default.
   typesense:
+    <<: *hardening
     image: typesense/typesense:30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110
     restart: unless-stopped
+    environment:
+      TYPESENSE_API_KEY: ${TYPESENSE_BOOTSTRAP_KEY:?set it in deploy/.env}
     command:
       - --data-dir
       - /data
-      - --api-key
-      - ${TYPESENSE_BOOTSTRAP_KEY:?set it in deploy/.env}
       - --log-slow-searches-time-ms
       - "-1"
       - --disk-used-max-percentage
@@ -211,6 +274,8 @@ services:
     volumes:
       - typesense-data:/data
     mem_limit: ${TYPESENSE_MEM_LIMIT:-1536m}
+    # Answers on the internal network only: no raw sockets.
+    cap_drop: [NET_RAW]
     # The image has no curl or wget (step 0): the check is a plain TCP request to /health.
     healthcheck:
       test:
@@ -219,27 +284,32 @@ services:
       interval: 10s
       timeout: 3s
       retries: 30
-    networks: [gsm]
+    networks: [data]
 
-  # Object storage for uploaded files (decision 004). To use an external S3 instead, delete `minio` and `minio-init` and point the
-  # S3_* variables of .env.production at it (docs/OPERATIONS.md). Pinned by digest, like the development stack.
+  # Object storage for uploaded files (decision 004). To use an external S3 instead, delete `minio`, `minio-init` and `minio-admin` and point
+  # the S3_* variables of .env.production at it (docs/OPERATIONS.md). Pinned by digest, like the development stack.
   minio:
+    <<: *hardening
     image: cgr.dev/chainguard/minio@sha256:3b6e40c30ecd5cea627e382ff0b82ca841f58c52294578787043ee80c8ef7c82
     restart: unless-stopped
     init: true
     command: ["server", "/data"]
-    # The image runs as uid 65532 and a fresh named volume is root-owned, so it runs as root (as in the development stack).
+    # The image runs as uid 65532 and a fresh named volume is root-owned, so it runs as root (as in the development stack; decision 055:
+    # kept, the image has no shell to hand the volume to its own user).
     user: "0:0"
+    # Answers on the data and files networks only: no raw sockets (it keeps its other defaults as root, see above).
+    cap_drop: [NET_RAW]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in deploy/.env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in deploy/.env}
     volumes:
       - minio-data:/data
-    networks: [gsm]
+    networks: [data, files]
 
   # One-shot: creates the private bucket the application writes to (idempotent). The image has no shell, so the alias comes from
   # MC_HOST_local (the root user and password must therefore contain only letters and digits).
   minio-init:
+    <<: *hardening
     image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
     depends_on:
       - minio
@@ -247,13 +317,33 @@ services:
       MC_HOST_local: http://${MINIO_ROOT_USER:?}:${MINIO_ROOT_PASSWORD:?}@minio:9000
     command: ["mb", "--ignore-existing", "local/gsm-files"]
     restart: on-failure
-    networks: [gsm]
+    cap_drop: [ALL]
+    networks: [data]
+
+  # One-off MinIO administration (decision 055): creates the application's and the backups' users and their policies once per MinIO
+  # volume (docs/OPERATIONS.md section 2). The only service besides minio and minio-init that holds the root account.
+  #   gsmc run --rm minio-admin admin policy create local gsm-app /etc/gsm/minio/gsm-app-policy.json
+  minio-admin:
+    <<: *hardening
+    image: cgr.dev/chainguard/minio-client@sha256:5b759d9e248ad9f1ab8455f8168b86a47acb1e08207d38603b504bdc5a555d7a
+    profiles: ["tools"]
+    restart: "no"
+    cap_drop: [ALL]
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:?}:${MINIO_ROOT_PASSWORD:?}@minio:9000
+    volumes:
+      - ./minio:/etc/gsm/minio:ro
+    depends_on:
+      - minio
+    networks: [data]
 
   # Scrapes the API and the worker with the METRICS_TOKEN (the System health pages query it through PROMETHEUS_URL=http://prometheus:9090).
   prometheus:
+    <<: *hardening
     image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     restart: unless-stopped
     init: true
+    cap_drop: [ALL]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -268,57 +358,105 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
-    networks: [gsm]
+    networks: [monitoring]
 
   # The admin console (static bundle served by nginx), built from frontend-admin/Dockerfile with VITE_API_BASE_URL="" (same origin).
   console:
+    <<: *hardening
     image: ${CONSOLE_IMAGE:?set CONSOLE_IMAGE in deploy/.env}
     restart: unless-stopped
     init: true
-    networks: [gsm]
+    # Serves static files to Caddy only: no raw sockets (nginx starts as root and hands over to its own user).
+    cap_drop: [NET_RAW]
+    networks: [edge]
 
   # The storefront (Next server on port 3000). Its image is the storefront session's to ship; until then it stays behind the
   # profile `site` (enable with `--profile site`). The site reads the API address from GSM_API_ORIGIN (storefront lib/api/server.ts).
+  # It has a fixed address on `edge`: TRUST_PROXY names it, because its server-side calls forward the visitor's address.
   site:
+    <<: *hardening
     image: ${SITE_IMAGE:?set SITE_IMAGE in deploy/.env}
     profiles: ["site"]
     restart: unless-stopped
     init: true
+    cap_drop: [ALL]
     environment:
       GSM_API_ORIGIN: http://api:3000
-    networks: [gsm]
+    networks:
+      edge:
+        ipv4_address: 172.30.1.3
 
   # Backup tools, started by the host's cron or systemd timer (docs/OPERATIONS.md), never a long-running container:
   #   docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm backup pg-backup.sh
   backup:
+    <<: *hardening
     build:
       context: ..
       dockerfile: deploy/backup/Dockerfile
     image: gsm-backup:local
     profiles: ["tools"]
     restart: "no"
-    env_file:
-      # BACKUP_* and the files bucket (S3_*) are read from the same files as the stack; DATABASE_URL comes from .env.production.
-      - path: ./.env
-        required: false
-      - path: ../.env.production
-        required: false
+    cap_drop: [ALL]
+    # Decision 055: only what the backup scripts read; never .env.production. The backups use the owner role. With an external S3 for the
+    # files, the S3_* lines below name that store and a read-only key (docs/OPERATIONS.md section 4).
+    environment:
+      DATABASE_URL: "postgres://gsm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/gsm"
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-}
+      BACKUP_S3_PROVIDER: ${BACKUP_S3_PROVIDER:-Other}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_ALLOW_PLAINTEXT: ${BACKUP_ALLOW_PLAINTEXT:-0}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_MONTHLY_KEEP: ${BACKUP_MONTHLY_KEEP:-12}
+      BACKUP_PRUNE: ${BACKUP_PRUNE:-0}
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: gsm-files
+      S3_REGION: us-east-1
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ACCESS_KEY_ID: ${MINIO_BACKUP_USER:-}
+      S3_SECRET_ACCESS_KEY: ${MINIO_BACKUP_PASSWORD:-}
     volumes:
       # The migration files, for the restore drill's migration count.
       - ../drizzle:/drizzle:ro
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [gsm]
+    networks: [data, egress]
 
 networks:
-  gsm:
+  # Explicit subnets, none of them the old network's (172.30.0.0/24), so the new networks can be created while it still exists.
+  edge:
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        # Caddy is .2 and the site .3 (TRUST_PROXY); every other container gets an address from .128 up, so the two never collide.
+        - subnet: 172.30.1.0/24
+          ip_range: 172.30.1.128/25
+  data:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.2.0/24
+  files:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.3.0/24
+  monitoring:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.4.0/24
+  egress:
+    ipam:
+      config:
+        - subnet: 172.30.5.0/24
 
 secrets:
-  # Write the same value as METRICS_TOKEN of .env.production, with no trailing newline: printf '%s' "$TOKEN" > deploy/secrets/metrics_token
+  # Write the same value as METRICS_TOKEN of .env.production, with no trailing newline, readable by the Prometheus user only:
+  #   printf '%s' "$TOKEN" > deploy/secrets/metrics_token && sudo chown 65534:65534 deploy/secrets/metrics_token && sudo chmod 0400 deploy/secrets/metrics_token
   metrics_token:
     file: ./secrets/metrics_token
 

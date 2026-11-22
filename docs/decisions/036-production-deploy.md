@@ -40,3 +40,5 @@ backups somebody can restore, and an operations document. Nothing here changes a
 Caddyfile and the backup scripts are verified by `docker compose config`, parsing and dry runs; the first real deploy by the owner,
 following `docs/OPERATIONS.md`, is the end-to-end test. Out of scope: CI/CD pipelines, a CDN, webhook-delivery hardening, gateway
 health checks (B168), the storefront's own image.
+
+**Amended by decision 055:** the stack has five networks (`edge`, `data`, `files`, `monitoring`, `egress`) instead of one; Caddy and the site have fixed addresses and `TRUST_PROXY` names exactly those two; both Redis instances have passwords; Caddy serves a fourth host, `FILES_HOST`, for signed file downloads; the application connects to Postgres and MinIO with roles of its own; the backups write and never delete, and the files copy is encrypted (docs/OPERATIONS.md section 4).

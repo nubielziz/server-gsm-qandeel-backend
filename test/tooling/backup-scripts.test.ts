@@ -1,6 +1,6 @@
-// Tests of the backup scripts (feature 24D, decision 036) without a database, a bucket or a network: BACKUP_DRY_RUN=1 prints the
-// commands, and for the checks that need command output stub binaries (pg_dump, age, rclone, pg_restore, psql) stand in on PATH.
-import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+// Tests of the backup scripts (feature 24D, decisions 036 and 055) without a database, a bucket or a network: BACKUP_DRY_RUN=1 prints
+// the commands, and for the checks that need command output stub binaries (pg_dump, age, rclone, pg_restore, psql) stand in on PATH.
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,21 +13,32 @@ let log: string;
 
 /** A stub that records its arguments in STUB_LOG and behaves like the real tool closely enough for the scripts. */
 const STUBS: Record<string, string> = {
-  pg_dump: `echo "pg_dump $*" >> "$STUB_LOG"; echo DUMP`,
+  pg_dump: `echo "pg_dump $*" >> "$STUB_LOG"; [ "\${STUB_PG_DUMP_FAIL:-0}" = 1 ] && exit 3; echo DUMP`,
   age: `echo "age $*" >> "$STUB_LOG"; cat`,
   pg_restore: `echo "pg_restore $*" >> "$STUB_LOG"; cat > /dev/null`,
   rclone: `
 echo "rclone $*" >> "$STUB_LOG"
+echo "\${RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID:-}" >> "$STUB_DIR/keys.log"
 case "$1" in
   rcat) cat > /dev/null ;;
-  cat) echo DUMP ;;
+  cat) [ "\${STUB_CAT_FAIL:-0}" = 1 ] && exit 4; echo DUMP ;;
   lsf)
-    key="\${@: -1}"; key="\${key//[^A-Za-z0-9]/_}"
+    key="\${@: -1}"
+    # STUB_LSF_FAIL names a part of the listed path that makes the listing fail, with the exit code STUB_LSF_FAIL_CODE (default 2).
+    if [ -n "\${STUB_LSF_FAIL:-}" ] && [[ "$key" == *"$STUB_LSF_FAIL"* ]]; then
+      echo "ERROR : listing failed (stub)" >&2
+      exit "\${STUB_LSF_FAIL_CODE:-2}"
+    fi
+    key="\${key//[^A-Za-z0-9]/_}"
     [ -f "$STUB_DIR/lsf_$key" ] && cat "$STUB_DIR/lsf_$key" || true ;;
 esac`,
+  // A statement sent on standard input (the restore drill's role) is recorded on its own line, as the real psql would read it.
   psql: `
 echo "psql $*" >> "$STUB_LOG"
+statement=$(cat)
+[ -n "$statement" ] && echo "psql-stdin $statement" >> "$STUB_LOG"
 case "$*" in
+  *rolsuper*) echo "\${STUB_SUPERUSER:-f}" ;;
   *information_schema*) echo "\${STUB_TABLES:-0}" ;;
   *"sum(amount)"*) echo "\${STUB_LEDGER:-t}" ;;
   *__drizzle_migrations*) echo "\${STUB_MIGRATIONS:-3}" ;;
@@ -53,6 +64,11 @@ afterAll(() => {
   rmSync(work, { recursive: true, force: true });
 });
 
+// Every test writes the listings it needs: none survives from another test.
+beforeEach(() => {
+  for (const name of readdirSync(work)) if (name.startsWith('lsf_')) rmSync(join(work, name));
+});
+
 const BASE_ENV: Record<string, string> = {
   DATABASE_URL: 'postgres://gsm:topsecretpw@postgres:5432/gsm',
   BACKUP_S3_ENDPOINT: 'https://s3.example.com',
@@ -73,6 +89,7 @@ interface Result {
 /** Runs a backup script with the stubs first on PATH; `env` overrides BASE_ENV (an `undefined` value removes a variable). */
 function runScript(script: string, args: string[], env: Record<string, string | undefined> = {}): Result {
   writeFileSync(log, '');
+  writeFileSync(join(work, 'keys.log'), '');
   const merged: Record<string, string> = {
     PATH: `${stubs}:${process.env.PATH ?? ''}`,
     HOME: work,
@@ -82,7 +99,7 @@ function runScript(script: string, args: string[], env: Record<string, string | 
   for (const [key, value] of Object.entries({ ...BASE_ENV, ...env })) {
     if (value !== undefined) merged[key] = value;
   }
-  const proc = Bun.spawnSync(['bash', join(SCRIPTS, script), ...args], { env: merged, cwd: work });
+  const proc = Bun.spawnSync(['bash', join(SCRIPTS, script), ...args], { env: merged, cwd: work, stdin: 'ignore' });
   return {
     code: proc.exitCode,
     out: proc.stdout.toString(),
@@ -93,13 +110,23 @@ function runScript(script: string, args: string[], env: Record<string, string | 
 
 /** Writes the canned output of `rclone lsf <path>` for the stub. */
 function listing(path: string, lines: string[]): void {
-  writeFileSync(join(work, `lsf_${path.replace(/[^A-Za-z0-9]/g, '_')}`), lines.join('\n') + '\n');
+  writeFileSync(
+    join(work, `lsf_${path.replace(/[^A-Za-z0-9]/g, '_')}`),
+    lines.length === 0 ? '' : lines.join('\n') + '\n',
+  );
 }
 
 describe('every script', () => {
   it('passes bash -n', () => {
     const scripts = readdirSync(SCRIPTS).filter((name) => name.endsWith('.sh'));
-    expect(scripts.sort()).toEqual(['files-mirror.sh', 'lib.sh', 'pg-backup.sh', 'pg-restore.sh', 'restore-drill.sh']);
+    expect(scripts.sort()).toEqual([
+      'files-mirror.sh',
+      'files-purge.sh',
+      'lib.sh',
+      'pg-backup.sh',
+      'pg-restore.sh',
+      'restore-drill.sh',
+    ]);
     for (const script of scripts) {
       const check = Bun.spawnSync(['bash', '-n', join(SCRIPTS, script)]);
       expect(check.exitCode, `${script}: ${check.stderr.toString()}`).toBe(0);
@@ -108,16 +135,42 @@ describe('every script', () => {
 });
 
 describe('pg-backup.sh', () => {
-  it('prints the dump | age | rclone rcat pipeline in a dry run, without the password', () => {
+  const NAME = 'gsm-20261110T011500Z.dump.age';
+  const INCOMING = 'backup:gsm-backups/db/incoming';
+  const DAILY = 'backup:gsm-backups/db/daily';
+
+  it('prints the dump | age pipeline into a work file, the copy to incoming and the copy to daily in a dry run, without the password', () => {
     const result = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1' });
     expect(result.code).toBe(0);
     expect(result.err).toContain(
       '+ pg_dump --format=custom --no-owner --no-privileges postgres://gsm:***@postgres:5432/gsm',
     );
     expect(result.err).toContain('+ age -r age1recipient');
-    expect(result.err).toContain('+ rclone rcat backup:gsm-backups/db/daily/gsm-20261110T011500Z.dump.age');
+    // The dump is complete in a file before anything is uploaded; it never streams into the bucket.
+    expect(result.err).toMatch(new RegExp(`\\+ rclone copyto \\S+/${NAME} ${INCOMING}/${NAME}\n`));
+    expect(result.err).toContain(`+ rclone copyto ${INCOMING}/${NAME} ${DAILY}/${NAME}`);
+    expect(result.err).not.toContain('rcat');
     expect(result.err + result.out).not.toContain('topsecretpw');
     expect(result.calls).toEqual([]); // nothing was executed
+  });
+
+  it("deletes nothing by default: retention is the bucket's rule, and says so", () => {
+    const result = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1' });
+    expect(result.err).not.toContain('delete');
+    expect(result.out).toContain('nothing deleted');
+  });
+
+  it('prunes with the retention variables only when BACKUP_PRUNE=1, and rejects nonsense values', () => {
+    const pruning = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_PRUNE: '1' });
+    expect(pruning.code).toBe(0);
+    expect(pruning.err).toContain(`+ rclone delete ${DAILY} --min-age 30d`);
+    expect(pruning.err).toContain(`+ rclone delete ${INCOMING} --min-age 2d`);
+    expect(
+      runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_PRUNE: '1', BACKUP_RETENTION_DAYS: '7' }).err,
+    ).toContain('--min-age 7d');
+    expect(runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_PRUNE: '2' }).code).toBe(1);
+    expect(runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_RETENTION_DAYS: 'soon' }).code).toBe(1);
+    expect(runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_MONTHLY_KEEP: '0' }).code).toBe(1);
   });
 
   it('refuses to upload an unencrypted dump without a recipient, unless plaintext is explicitly allowed', () => {
@@ -138,20 +191,11 @@ describe('pg-backup.sh', () => {
 
   it('keeps a monthly copy only on the first day of the month', () => {
     const ordinary = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1' });
-    expect(ordinary.err).not.toContain('copyto');
+    expect(ordinary.err).not.toContain('db/monthly');
     const first = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_NOW: '2026-12-01T01:15:00Z' });
     expect(first.err).toContain(
-      '+ rclone copyto backup:gsm-backups/db/daily/gsm-20261201T011500Z.dump.age backup:gsm-backups/db/monthly/gsm-20261201T011500Z.dump.age',
+      `+ rclone copyto ${INCOMING}/gsm-20261201T011500Z.dump.age backup:gsm-backups/db/monthly/gsm-20261201T011500Z.dump.age`,
     );
-  });
-
-  it('prunes with the retention variables and rejects nonsense values', () => {
-    const defaults = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1' });
-    expect(defaults.err).toContain('+ rclone delete backup:gsm-backups/db/daily --min-age 30d');
-    const custom = runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_RETENTION_DAYS: '7' });
-    expect(custom.err).toContain('--min-age 7d');
-    expect(runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_RETENTION_DAYS: 'soon' }).code).toBe(1);
-    expect(runScript('pg-backup.sh', [], { BACKUP_DRY_RUN: '1', BACKUP_MONTHLY_KEEP: '0' }).code).toBe(1);
   });
 
   it('fails when a required variable is missing', () => {
@@ -160,31 +204,54 @@ describe('pg-backup.sh', () => {
     expect(result.err).toContain('BACKUP_S3_BUCKET');
   });
 
-  it('runs the real pipeline against the stubs, verifies the uploaded object and prunes old monthly copies', () => {
-    listing('backup:gsm-backups/db/daily/', ['1234;gsm-20261110T011500Z.dump.age']);
+  it('runs the real pipeline against the stubs: dump to a file, copy to incoming, check it there, then copy to daily; deletes nothing', () => {
+    listing(`${INCOMING}/`, [`1234;${NAME}`]);
+    const result = runScript('pg-backup.sh', []);
+    expect(result.code).toBe(0);
+    expect(result.calls.some((call) => call.startsWith('pg_dump --format=custom'))).toBe(true);
+    expect(result.calls).toContain('age -r age1recipient');
+    const copies = result.calls.filter((call) => call.startsWith('rclone copyto'));
+    expect(copies).toHaveLength(2);
+    expect(copies[0]).toMatch(new RegExp(`^rclone copyto \\S+/${NAME} ${INCOMING}/${NAME}$`));
+    expect(copies[1]).toBe(`rclone copyto ${INCOMING}/${NAME} ${DAILY}/${NAME}`);
+    expect(result.calls.some((call) => call.startsWith('rclone rcat'))).toBe(false);
+    expect(result.calls.some((call) => /rclone delete/.test(call))).toBe(false);
+    expect(result.out).toContain('1234 bytes');
+  });
+
+  it('with BACKUP_PRUNE=1 also prunes the old monthly copies, as before', () => {
+    listing(`${INCOMING}/`, [`1234;${NAME}`]);
     const months = Array.from(
       { length: 14 },
       (_, i) => `gsm-2025${String(i < 12 ? i + 1 : 12).padStart(2, '0')}0${i < 12 ? 1 : 2}T011500Z.dump.age`,
     );
     listing('backup:gsm-backups/db/monthly/', months);
-    const result = runScript('pg-backup.sh', [], { BACKUP_MONTHLY_KEEP: '12' });
+    const result = runScript('pg-backup.sh', [], { BACKUP_PRUNE: '1', BACKUP_MONTHLY_KEEP: '12' });
     expect(result.code).toBe(0);
-    expect(result.calls.some((call) => call.startsWith('pg_dump --format=custom'))).toBe(true);
-    expect(result.calls).toContain('age -r age1recipient');
-    expect(result.calls).toContain('rclone rcat backup:gsm-backups/db/daily/gsm-20261110T011500Z.dump.age');
     const deleted = result.calls.filter((call) => call.startsWith('rclone deletefile'));
     expect(deleted.length).toBe(2);
     expect(deleted[0]).toContain(months[0] as string);
-    expect(result.out).toContain('1234 bytes');
+    expect(result.calls).toContain(`rclone delete ${DAILY} --min-age 30d`);
   });
 
-  it('fails when the uploaded object is missing or empty', () => {
-    listing('backup:gsm-backups/db/daily/', ['0;gsm-20261110T011500Z.dump.age']);
-    expect(runScript('pg-backup.sh', []).code).toBe(1);
-    listing('backup:gsm-backups/db/daily/', ['99;gsm-some-other-day.dump.age']);
+  it('fails, and copies nothing to daily, when the uploaded object is missing or empty', () => {
+    listing(`${INCOMING}/`, [`0;${NAME}`]);
+    const empty = runScript('pg-backup.sh', []);
+    expect(empty.code).toBe(1);
+    listing(`${INCOMING}/`, ['99;gsm-some-other-day.dump.age']);
     const missing = runScript('pg-backup.sh', []);
     expect(missing.code).toBe(1);
     expect(missing.err).toContain('missing or empty');
+    for (const result of [empty, missing]) {
+      expect(result.calls.some((call) => call.includes(`${DAILY}/`))).toBe(false);
+    }
+  });
+
+  it('uploads nothing when the dump fails midway', () => {
+    const result = runScript('pg-backup.sh', [], { STUB_PG_DUMP_FAIL: '1' });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('nothing was uploaded');
+    expect(result.calls.some((call) => call.startsWith('rclone'))).toBe(false);
   });
 });
 
@@ -196,19 +263,181 @@ describe('files-mirror.sh', () => {
     S3_ACCESS_KEY_ID: 'minio-user',
     S3_SECRET_ACCESS_KEY: 'minio-secret',
   };
+  const SOURCE = 'files:gsm-files';
+  const COPIES = 'backup:gsm-backups/files-age/';
 
-  it('copies (never syncs) the files bucket to the backup bucket', () => {
+  it('refuses to copy the files unencrypted without a recipient, unless plaintext is explicitly allowed', () => {
+    const refused = runScript('files-mirror.sh', [], { ...filesEnv, BACKUP_AGE_RECIPIENT: undefined });
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain('BACKUP_AGE_RECIPIENT is not set: refusing to copy the files unencrypted');
+    expect(refused.err).not.toContain('rclone copy');
+    // The old behaviour, on request: a plain copy (never a sync) to files/.
+    const allowed = runScript('files-mirror.sh', [], {
+      ...filesEnv,
+      BACKUP_AGE_RECIPIENT: undefined,
+      BACKUP_ALLOW_PLAINTEXT: '1',
+    });
+    expect(allowed.code).toBe(0);
+    expect(allowed.err).toContain('+ rclone copy files:gsm-files backup:gsm-backups/files ');
+    expect(allowed.err).not.toContain('sync');
+    expect(allowed.err).not.toContain('delete');
+    expect(allowed.out).toContain('WITHOUT encryption');
+  });
+
+  it('encrypts and copies only the objects the offsite copy lacks, each from a work file, and deletes nothing', () => {
+    listing(SOURCE, ['a/1.pdf', 'a/2.png', 'b/3.pdf']);
+    listing(COPIES, ['a/1.pdf.age']);
+    const result = runScript('files-mirror.sh', [], { ...filesEnv, BACKUP_DRY_RUN: undefined });
+    expect(result.code).toBe(0);
+    const reads = result.calls.filter((call) => call.startsWith('rclone cat'));
+    expect(reads).toEqual([`rclone cat ${SOURCE}/a/2.png`, `rclone cat ${SOURCE}/b/3.pdf`]);
+    expect(result.calls.filter((call) => call === 'age -r age1recipient')).toHaveLength(2);
+    const uploads = result.calls.filter((call) => call.startsWith('rclone copyto'));
+    expect(uploads).toHaveLength(2);
+    expect(uploads[0]).toMatch(/^rclone copyto \S+\/object\.age backup:gsm-backups\/files-age\/a\/2\.png\.age$/);
+    expect(uploads[1]).toMatch(/^rclone copyto \S+\/object\.age backup:gsm-backups\/files-age\/b\/3\.pdf\.age$/);
+    expect(result.calls.some((call) => /rclone (rcat|delete|deletefile|sync|purge)/.test(call))).toBe(false);
+    expect(result.out).toContain('2 copied');
+  });
+
+  it('copies nothing of an object whose read failed (no partial copy that the next run would skip)', () => {
+    listing(SOURCE, ['a/1.pdf']);
+    const result = runScript('files-mirror.sh', [], { ...filesEnv, BACKUP_DRY_RUN: undefined, STUB_CAT_FAIL: '1' });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('nothing of it was copied');
+    expect(result.calls.some((call) => call.startsWith('rclone copyto'))).toBe(false);
+  });
+
+  it('stops, copying nothing, when the listing of the offsite target fails: it is not an empty target', () => {
+    listing(SOURCE, ['a/1.pdf', 'a/2.png']);
+    listing(COPIES, ['a/1.pdf.age', 'a/2.png.age']);
+    for (const code of ['1', '2', '5', '7']) {
+      const result = runScript('files-mirror.sh', [], {
+        ...filesEnv,
+        BACKUP_DRY_RUN: undefined,
+        STUB_LSF_FAIL: 'files-age',
+        STUB_LSF_FAIL_CODE: code,
+      });
+      expect(result.code, code).toBe(1);
+      expect(result.err, code).toContain(`listing backup:gsm-backups/files-age failed (rclone exit code ${code})`);
+      expect(result.err, code).toContain('nothing was copied');
+      // No object was read, encrypted or copied, and the run never reached its plan.
+      expect(
+        result.calls.some((call) => /^(rclone (cat|copyto|copy|rcat)|age)/.test(call)),
+        code,
+      ).toBe(false);
+      expect(result.out, code).not.toContain('to encrypt and copy');
+    }
+    // A dry run lists too, so it stops the same way instead of printing a plan for every object.
+    const dry = runScript('files-mirror.sh', [], { ...filesEnv, STUB_LSF_FAIL: 'files-age', STUB_LSF_FAIL_CODE: '7' });
+    expect(dry.code).toBe(1);
+    expect(dry.err).not.toContain('+ rclone cat');
+  });
+
+  it('treats only a target folder that does not exist yet (rclone exit code 3) as empty: the first run copies everything', () => {
+    listing(SOURCE, ['a/1.pdf', 'a/2.png']);
+    const result = runScript('files-mirror.sh', [], {
+      ...filesEnv,
+      BACKUP_DRY_RUN: undefined,
+      STUB_LSF_FAIL: 'files-age',
+      STUB_LSF_FAIL_CODE: '3',
+    });
+    expect(result.code).toBe(0);
+    expect(result.calls.filter((call) => call.startsWith('rclone cat'))).toEqual([
+      `rclone cat ${SOURCE}/a/1.pdf`,
+      `rclone cat ${SOURCE}/a/2.png`,
+    ]);
+    expect(result.out).toContain('2 copied');
+  });
+
+  it('stops when the listing of the application bucket fails too', () => {
+    listing(COPIES, ['a/1.pdf.age']);
+    const result = runScript('files-mirror.sh', [], {
+      ...filesEnv,
+      BACKUP_DRY_RUN: undefined,
+      STUB_LSF_FAIL: 'gsm-files',
+      STUB_LSF_FAIL_CODE: '5',
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.calls.some((call) => /^(rclone (cat|copyto)|age)/.test(call))).toBe(false);
+  });
+
+  it('prints its plan in a dry run and changes nothing', () => {
+    listing(SOURCE, ['a/1.pdf', 'a/2.png']);
+    listing(COPIES, ['a/1.pdf.age']);
     const result = runScript('files-mirror.sh', [], filesEnv);
     expect(result.code).toBe(0);
-    expect(result.err).toContain('+ rclone copy files:gsm-files backup:gsm-backups/files');
-    expect(result.err).not.toContain('sync');
-    expect(result.err).not.toContain('delete');
+    expect(result.out).toContain('1 object(s) to encrypt and copy');
+    expect(result.err).toContain(`+ rclone cat ${SOURCE}/a/2.png`);
+    expect(result.err).toMatch(/\+ rclone copyto \S+\/object\.age backup:gsm-backups\/files-age\/a\/2\.png\.age/);
+    // Only the listings ran.
+    expect(result.calls.every((call) => call.startsWith('rclone lsf'))).toBe(true);
   });
 
   it('fails without the files bucket settings', () => {
     const result = runScript('files-mirror.sh', [], { ...filesEnv, S3_BUCKET: undefined });
     expect(result.code).toBe(1);
     expect(result.err).toContain('S3_BUCKET');
+  });
+});
+
+describe('files-purge.sh', () => {
+  const purgeEnv = {
+    S3_ENDPOINT: 'http://minio:9000',
+    S3_BUCKET: 'gsm-files',
+    S3_ACCESS_KEY_ID: 'minio-user',
+    S3_SECRET_ACCESS_KEY: 'minio-secret',
+    BACKUP_PURGE_S3_ACCESS_KEY_ID: 'purge-key-id',
+    BACKUP_PURGE_S3_SECRET_ACCESS_KEY: 'purge-key-secret',
+  };
+  const SOURCE = 'files:gsm-files';
+  const COPIES = 'backup:gsm-backups/files-age/';
+
+  it('refuses without the two purge variables, so the nightly key can never run it', () => {
+    const result = runScript('files-purge.sh', [], { ...purgeEnv, BACKUP_PURGE_S3_SECRET_ACCESS_KEY: undefined });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('BACKUP_PURGE_S3_SECRET_ACCESS_KEY');
+    expect(result.calls).toEqual([]);
+  });
+
+  it('deletes only the copies of objects that no longer exist, with the purge key', () => {
+    listing(SOURCE, ['a/1.pdf']);
+    listing(COPIES, ['a/1.pdf.age', 'c/9.pdf.age']);
+    const result = runScript('files-purge.sh', [], purgeEnv);
+    expect(result.code).toBe(0);
+    expect(result.calls.filter((call) => call.startsWith('rclone deletefile'))).toEqual([
+      'rclone deletefile backup:gsm-backups/files-age/c/9.pdf.age',
+    ]);
+    expect(result.out).toContain('1 removed');
+    // Every call of the run used the purge key, never the nightly one.
+    const keys = new Set(readFileSync(join(work, 'keys.log'), 'utf8').split('\n').filter(Boolean));
+    expect([...keys]).toEqual(['purge-key-id']);
+  });
+
+  it('lists what it would delete in a dry run and deletes nothing', () => {
+    listing(SOURCE, ['a/1.pdf']);
+    listing(COPIES, ['a/1.pdf.age', 'c/9.pdf.age']);
+    const result = runScript('files-purge.sh', [], { ...purgeEnv, BACKUP_DRY_RUN: '1' });
+    expect(result.code).toBe(0);
+    expect(result.err).toContain('+ rclone deletefile backup:gsm-backups/files-age/c/9.pdf.age');
+    expect(result.calls.some((call) => call.startsWith('rclone deletefile'))).toBe(false);
+  });
+
+  it('refuses to delete every copy when the listing of the application bucket is empty', () => {
+    listing(SOURCE, []);
+    listing(COPIES, ['a/1.pdf.age', 'c/9.pdf.age']);
+    const result = runScript('files-purge.sh', [], purgeEnv);
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('refusing to delete every copy');
+    expect(result.calls.some((call) => call.startsWith('rclone deletefile'))).toBe(false);
+  });
+
+  it('removes nothing when every copy still has its object', () => {
+    listing(SOURCE, ['a/1.pdf', 'c/9.pdf']);
+    listing(COPIES, ['a/1.pdf.age', 'c/9.pdf.age']);
+    const result = runScript('files-purge.sh', [], purgeEnv);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('0 removed');
   });
 });
 
@@ -261,10 +490,28 @@ describe('pg-restore.sh', () => {
     expect(result.code).toBe(0);
     expect(result.calls.some((call) => call.startsWith('age'))).toBe(false);
   });
+
+  it('refuses a target that connects as a superuser unless --as-superuser is given (decision 055)', () => {
+    const identity = join(work, 'identity.txt');
+    const refused = runScript('pg-restore.sh', [object, target, '--identity', identity], { STUB_SUPERUSER: 't' });
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain('the target connects as a superuser');
+    expect(refused.err).toContain('--as-superuser');
+    expect(refused.calls.some((call) => call.startsWith('pg_restore'))).toBe(false);
+
+    const allowed = runScript('pg-restore.sh', [object, target, '--identity', identity, '--as-superuser'], {
+      STUB_SUPERUSER: 't',
+    });
+    expect(allowed.code).toBe(0);
+    expect(allowed.calls.some((call) => call.startsWith('pg_restore --clean'))).toBe(true);
+    // A role that is not a superuser needs no flag.
+    expect(runScript('pg-restore.sh', [object, target, '--identity', identity]).code).toBe(0);
+  });
 });
 
 describe('restore-drill.sh', () => {
   const identity = () => join(work, 'identity.txt');
+  const SCRATCH = 'gsm_restore_drill_20261110t011500z';
 
   function migrationsDir(count: number): string {
     const dir = join(work, `migrations-${count}`);
@@ -273,15 +520,26 @@ describe('restore-drill.sh', () => {
     return dir;
   }
 
-  it('prints its plan in a dry run', () => {
+  it('prints its plan in a dry run, and the role password appears in neither output', () => {
     const result = runScript('restore-drill.sh', ['--identity', identity()], { BACKUP_DRY_RUN: '1' });
     expect(result.code).toBe(0);
-    expect(result.err).toContain('gsm_restore_drill_20261110t011500z');
-    expect(result.err).toContain('create database');
-    expect(result.err).toContain('drop database if exists gsm_restore_drill_20261110t011500z with (force)');
+    expect(result.err).toContain(SCRATCH);
+    // The statement that creates the role goes to psql on its standard input: the command shows no statement at all.
+    expect(result.err).toContain('+ psql postgres://gsm:***@postgres:5432/gsm --no-psqlrc --set ON_ERROR_STOP=1\n');
+    expect(result.err).toContain(`create database ${SCRATCH} owner ${SCRATCH}`);
+    expect(result.err).toContain(`drop database if exists ${SCRATCH} with (force)`);
+    expect(result.err).toContain(`drop role if exists ${SCRATCH}`);
+    for (const text of [result.out, result.err]) {
+      expect(text).not.toContain('create role');
+      expect(text).not.toMatch(/password '/);
+      expect(text).not.toContain('topsecretpw');
+      // The random password is 48 hex characters: none is printed, not even inside the restore's target URL.
+      expect(text).not.toMatch(/[0-9a-f]{48}/);
+    }
+    expect(result.err).toMatch(new RegExp(`postgres://${SCRATCH}:\\*\\*\\*@postgres:5432/${SCRATCH}`));
   });
 
-  it('restores the newest daily dump into a scratch database, checks it and drops it', () => {
+  it('restores the newest daily dump as a temporary role that is not a superuser, checks it and drops both', () => {
     listing('backup:gsm-backups/db/daily/', ['gsm-20261108T011500Z.dump.age', 'gsm-20261109T011500Z.dump.age']);
     const result = runScript('restore-drill.sh', ['--identity', identity()], {
       MIGRATIONS_DIR: migrationsDir(3),
@@ -289,16 +547,33 @@ describe('restore-drill.sh', () => {
     });
     expect(result.code).toBe(0);
     expect(result.calls).toContain('rclone cat backup:gsm-backups/db/daily/gsm-20261109T011500Z.dump.age');
-    expect(result.calls.some((call) => call.includes('create database gsm_restore_drill_20261110t011500z'))).toBe(true);
+    // The role: created from standard input, with a random password and no power; the database belongs to it.
+    const statement = result.calls.find((call) => call.startsWith('psql-stdin ')) ?? '';
+    expect(statement).toMatch(
+      new RegExp(
+        `^psql-stdin create role ${SCRATCH} login password '[0-9a-f]{48}' nosuperuser nocreatedb nocreaterole;$`,
+      ),
+    );
+    const password = /password '([0-9a-f]{48})'/.exec(statement)?.[1] ?? '';
+    expect(result.calls.some((call) => call.includes(`create database ${SCRATCH} owner ${SCRATCH}`))).toBe(true);
+    // The restore connects as that role, never as the owner of the server.
     expect(
-      result.calls.some((call) => call.includes('drop database if exists gsm_restore_drill_20261110t011500z')),
+      result.calls.some((call) =>
+        call.endsWith(
+          `pg_restore --clean --if-exists --no-owner --exit-on-error --dbname postgres://${SCRATCH}:${password}@postgres:5432/${SCRATCH}`,
+        ),
+      ),
     ).toBe(true);
+    expect(result.calls.some((call) => call.includes(`drop database if exists ${SCRATCH} with (force)`))).toBe(true);
+    expect(result.calls.some((call) => call.includes(`drop role if exists ${SCRATCH}`))).toBe(true);
     expect(result.out).toContain('ledger_entries sum to zero');
     expect(result.out).toContain('orders: 11');
     expect(result.out).toContain('restore drill passed');
+    // The password is in no output.
+    expect(result.out + result.err).not.toContain(password);
   });
 
-  it('fails, and still drops the scratch database, when the ledger does not sum to zero', () => {
+  it('fails, and still drops the scratch database and the role, when the ledger does not sum to zero', () => {
     listing('backup:gsm-backups/db/daily/', ['gsm-20261109T011500Z.dump.age']);
     const result = runScript('restore-drill.sh', ['--identity', identity()], {
       MIGRATIONS_DIR: migrationsDir(3),
@@ -307,6 +582,7 @@ describe('restore-drill.sh', () => {
     expect(result.code).toBe(1);
     expect(result.err).toContain('do not sum to zero');
     expect(result.calls.some((call) => call.includes('drop database if exists'))).toBe(true);
+    expect(result.calls.some((call) => call.includes('drop role if exists'))).toBe(true);
   });
 
   it('fails when the dump has more migrations than the code, and only warns when it has fewer', () => {

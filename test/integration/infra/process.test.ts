@@ -116,6 +116,7 @@ describe('configuration failure', () => {
       'CONSOLE_BASE_URL',
       'STORE_BASE_URL',
       'TURNSTILE_SECRET_KEY',
+      'TRUST_PROXY',
       // Decision 049: openexchangerates is the production default and needs its key.
       'FX_API_KEY',
     ]) {

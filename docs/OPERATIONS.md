@@ -12,7 +12,7 @@ alias gsmc='docker compose -f deploy/compose.prod.yaml --env-file deploy/.env'
 
 ## 1. Hosts, DNS and what runs where
 
-Three DNS names (A, and AAAA if you have IPv6) point at the server. Ports 80 and 443 (TCP and UDP) must be open: Caddy gets and renews the
+Four DNS names (A, and AAAA if you have IPv6) point at the server. Ports 80 and 443 (TCP and UDP) must be open: Caddy gets and renews the
 certificates itself, and needs port 80 for that. Nothing else is published.
 
 | Host (`deploy/.env`) | Serves | Sent to the API |
@@ -20,6 +20,7 @@ certificates itself, and needs port 80 for that. Nothing else is published.
 | `SHOP_HOST` (`shop.example.com`) | the storefront and the merchant portal (container `site`) | `/client/*`, `/store/v1/*` |
 | `ADMIN_HOST` (`admin.example.com`) | the admin console (container `console`, nginx) | `/admin/*`, `/health`, `/reference*`, `/store/v1/media/*` (the pictures the console shows) |
 | `API_HOST` (`api.example.com`) | machine clients only | `/api/index.php` (Dhru), `/v1/*` (REST v1), `/webhooks/*`, `/docs*`; everything else is 404 |
+| `FILES_HOST` (`files.example.com`) | signed file downloads only (decision 055) | nothing: reads of one object of the files bucket that carry a signature go to MinIO; the bucket itself, a listing and every other path or method are 404 |
 
 Why this shape: the sessions' cookies belong to one host, so the browser must reach the API on the page's own host. `/metrics` is routed
 on no host.
@@ -42,15 +43,26 @@ storefront.
 | --- | --- |
 | `caddy` | the only published service: TLS, routing, the real client address in `X-Forwarded-For` |
 | `api`, `worker` | the same image; the API serves HTTP, the worker runs the queues and the schedules |
-| `migrate` | one-off: applies the pending migrations (profile `tools`) |
+| `migrate` | one-off: applies the pending migrations and sets the application role's privileges; `setup` runs here too (profile `tools`); the only service that holds the owner role of the database |
 | `postgres` | the database (volume `pgdata`) |
-| `redis-queue` | BullMQ only: append-only file, nothing evicted (volume `redis-queue-data`) |
-| `redis-cache` | cache, rate limits and locks: 256 MB, least recently used evicted, nothing saved |
-| `minio`, `minio-init` | the files bucket `gsm-files` (volume `minio-data`); to use an external S3 delete both and change the `S3_*` lines of `.env.production` |
+| `redis-queue` | BullMQ only: append-only file, nothing evicted, 512 MB by default (`REDIS_QUEUE_MAXMEMORY`: beyond it new jobs are refused and the outbox keeps the work), password (volume `redis-queue-data`) |
+| `redis-cache` | cache, rate limits and locks: 256 MB, least recently used evicted, nothing saved, password |
+| `minio`, `minio-init` | the files bucket `gsm-files` (volume `minio-data`); to use an external S3 delete both (and `minio-admin`) and change the `S3_*` lines of `.env.production` |
+| `minio-admin` | one-off MinIO administration (profile `tools`): creates the application's and the backups' users once per MinIO volume (section 2, step 3) |
 | `prometheus` | metrics history for the System health pages (15 days) |
 | `console` | the admin console bundle |
 | `site` | the storefront (profile `site`: it is left out until the storefront ships its image; start with `gsmc --profile site up -d site`) |
-| `backup` | backup tools, started by the host's timer (profile `tools`) |
+| `backup` | backup tools, started by the host's timer (profile `tools`); it receives its own variables only, never `.env.production` |
+
+**Networks and addresses** (decision 055). `edge` holds Caddy, the API, the console and the site: the services that serve browsers or are reached
+by Caddy. `data` is internal (no way out, no way in): the API, the worker, `migrate`, `backup`, Postgres, both Redis, MinIO and Typesense.
+`files` is internal and joins Caddy to MinIO for the signed file links. `monitoring` is internal and joins Prometheus to the API and the worker.
+`egress` carries the worker and the backups to the internet (suppliers, payment gateways, the mail provider, the exchange-rate provider, the
+offsite bucket). Caddy is `172.30.1.2` and the site `172.30.1.3`: the only addresses `TRUST_PROXY` names, so no other container can choose the
+client address the API sees. Never add a service to `edge` that does not serve browsers, and keep `TRUST_PROXY` to those two addresses: it warns at every boot when it holds a range or a hop count (with a CDN in front of Caddy, whose published ranges are added to it, that warning is expected). Caddy has no
+per-address connection cap; a host firewall can add one on ports 80 and 443 (a limit on the number of connections per source address, for
+example with nftables), tested from a second address before it is relied on. The API's own per-address limits stay in force either way, and
+Caddy cuts a client that is slow to send its headers (10 s) or that stalls an upload (30 s).
 
 ### Visitor country (`GEOIP_COUNTRY_HEADER`)
 
@@ -83,20 +95,31 @@ With a CDN in front:
    cp .env.production.example .env.production
    mkdir -p deploy/secrets
    openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, LOOKUP_HASH_KEY, METRICS_TOKEN and, in deploy/.env, TYPESENSE_BOOTSTRAP_KEY, TYPESENSE_INDEXER_KEY, TYPESENSE_SEARCH_KEY
+   openssl rand -hex 24          # run once for each password of deploy/.env (POSTGRES_PASSWORD, REDIS_QUEUE_PASSWORD, REDIS_CACHE_PASSWORD, MINIO_ROOT_PASSWORD, MINIO_APP_PASSWORD, MINIO_BACKUP_PASSWORD) and for the password in DATABASE_URL of .env.production (the application's role)
    echo "k1:$(openssl rand -base64 32)"   # the whole line is the value of ENCRYPTION_KEYS
    ```
 
-   Fill `deploy/.env` (hosts, `ACME_EMAIL`, the Postgres and MinIO passwords: letters and digits only) and `.env.production` (every
-   `CHANGE_ME`, every `example.com`). The same passwords appear in both files: `POSTGRES_PASSWORD` in `DATABASE_URL`, `MINIO_ROOT_USER`
-   and `MINIO_ROOT_PASSWORD` in `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`. Write the metrics token for Prometheus with no newline,
-   readable by it:
+   Fill `deploy/.env` (the four hosts, `ACME_EMAIL`, the passwords: letters and digits only, and the MinIO user names) and `.env.production`
+   (every `CHANGE_ME`, every `example.com`). Some values appear in both files: the Redis passwords in `REDIS_QUEUE_URL` and `REDIS_CACHE_URL`
+   (`redis://:<password>@redis-queue:6379/0`), `MINIO_APP_USER` and `MINIO_APP_PASSWORD` in `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, and
+   `S3_PUBLIC_ENDPOINT=https://<FILES_HOST>`. `POSTGRES_PASSWORD` is the owner role's password: it stays in `deploy/.env` (the `migrate` and
+   `backup` services build the owner's address from it), and `DATABASE_URL` names the application's own role `gsm_app` with a password of its
+   own (`db:migrate` creates the role with it). The root account of MinIO (`MINIO_ROOT_*`) never goes into `.env.production`. Write the metrics
+   token for Prometheus with no newline, readable by the Prometheus user only:
 
    ```bash
-   printf '%s' "<the METRICS_TOKEN value>" > deploy/secrets/metrics_token && chmod 644 deploy/secrets/metrics_token
+   printf '%s' "<the METRICS_TOKEN value>" > deploy/secrets/metrics_token && sudo chown 65534:65534 deploy/secrets/metrics_token && sudo chmod 0400 deploy/secrets/metrics_token
    ```
 
    The app refuses to start in production with a missing required value, a development secret, `COOKIE_SECURE=false`, an `http:` base URL or
-   origin, or a `CORS_ORIGINS` line, and prints the full list.
+   origin, a `CORS_ORIGINS` line, a `CHANGE_ME` placeholder in any variable, a short secret (`METRICS_TOKEN` and the two search keys under 32
+   characters, the S3 secret under 16), a database or Redis password under 16 characters for a service on another machine, no `TRUST_PROXY`,
+   argon2 below the OWASP minimum (the setting must reach one of the published pairs of memory and passes: 46 MiB with 1 pass, 19 MiB with 2, 12 MiB with 3, 9 MiB with 4, 7 MiB with 5) or a database
+   role that is a superuser, an owner of the tables or of the database, a role that reads or writes files or runs programs on the database server
+   (`pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`), or a member of any of these (a member that inherits nothing
+   counts), and prints the full list. Three secrets never
+   reach those checks, because only compose reads them: `MINIO_ROOT_PASSWORD`, `MINIO_BACKUP_PASSWORD` and `TYPESENSE_BOOTSTRAP_KEY`. Make them
+   with the commands above, and check that no placeholder is left in either file: `grep -n CHANGE_ME deploy/.env .env.production` must print nothing.
 
 2. **Build the images** (the console from the console repository, with the API on the same origin):
 
@@ -106,16 +129,29 @@ With a CDN in front:
    docker build -t gsm-console:local --build-arg VITE_API_BASE_URL="" ../frontend-admin   # CONSOLE_IMAGE
    ```
 
-3. **Start the data services, then run the first-run command** (it applies the migrations, creates the base currency, the system ledger
-   accounts and the Owner role, and asks for the first admin):
+3. **Start the data services, create the MinIO users, then run the first-run command** (it applies the migrations, creates the
+   application's database role, the base currency, the system ledger accounts and the Owner role, and asks for the first admin):
 
    ```bash
    gsmc up -d postgres redis-queue redis-cache minio minio-init typesense
-   gsmc run --rm api bun run setup
-   # the search engine's two keys (section 6, "Search engine"): the engine knows only its bootstrap key until this ran
+   # once per MinIO volume (decision 055): the application's user (its bucket only) and the backups' user (read only); --no-deps because
+   # the data services are already up and these one-off commands must not touch them
    set -a; . deploy/.env; set +a
+   gsmc run --rm --no-deps minio-admin admin policy create local gsm-app /etc/gsm/minio/gsm-app-policy.json
+   gsmc run --rm --no-deps minio-admin admin policy create local gsm-backup-read /etc/gsm/minio/gsm-backup-read-policy.json
+   gsmc run --rm --no-deps minio-admin admin user add local "$MINIO_APP_USER" "$MINIO_APP_PASSWORD"
+   gsmc run --rm --no-deps minio-admin admin user add local "$MINIO_BACKUP_USER" "$MINIO_BACKUP_PASSWORD"
+   gsmc run --rm --no-deps minio-admin admin policy attach local gsm-app --user "$MINIO_APP_USER"
+   gsmc run --rm --no-deps minio-admin admin policy attach local gsm-backup-read --user "$MINIO_BACKUP_USER"
+   gsmc run --rm --no-deps minio-admin admin user info local "$MINIO_APP_USER"     # shows PolicyName: gsm-app
+   gsmc run --rm --no-deps migrate bun run setup
+   # the search engine's two keys (section 6, "Search engine"): the engine knows only its bootstrap key until this ran
    gsmc run --rm -e TYPESENSE_BOOTSTRAP_KEY -e TYPESENSE_INDEXER_KEY -e TYPESENSE_SEARCH_KEY -e TYPESENSE_PREFIX=gsm_production_ api bun scripts/search-keys.ts
    ```
+
+   A second `attach` answers that the policy is already attached: that is fine, as is a second `policy create` or `user add`. A user that was not
+   created shows later as "storage unavailable" in System health, not as a refusal at boot. `setup` needs the owner role, which only the
+   `migrate` service holds; it prints `✓ Application role gsm_app: created` the first time.
 
    A temporary password printed by `setup` works for 72 hours (decision 052). If it ran out before the first sign-in, remove the
    never-used first owner and run `setup` again (root `README.md`, "First run on a server").
@@ -126,8 +162,12 @@ With a CDN in front:
    - `curl -s https://<ADMIN_HOST>/health?strict=1` answers 200 with `"status":"ok"` (`degraded` names the part that is down).
    - Sign in at `https://<ADMIN_HOST>`, set up 2FA, open System health: the API and the worker are up and the queues move.
    - **Client address:** sign in once from your own network and open the sessions list or the audit log: the address shown is yours,
-     not `172.30.0.x`. Repeat after loading a storefront page that is rendered on the server. If you see `172.30.0.x`, `TRUST_PROXY`
-     is wrong and every per-IP limit and IP rule is working on the proxy's address.
+     not `172.30.1.x`. Repeat after loading a storefront page that is rendered on the server. If you see `172.30.1.x`, `TRUST_PROXY`
+     is wrong and every per-IP limit and IP rule is working on the proxy's address. `gsmc logs api | grep -i 'Configuration warning'` shows
+     no `TRUST_PROXY` line.
+   - **The application's database role:** `gsmc exec postgres psql -U gsm -d gsm -c '\du gsm_app'` shows the role without `Superuser`.
+   - **Files:** open a KYC document or an invoice PDF from the console: the browser goes to `https://<FILES_HOST>/gsm-files/…` and downloads
+     it. `curl -s -o /dev/null -w '%{http_code}' https://<FILES_HOST>/gsm-files/x` answers 404 (no signature).
    - `https://<API_HOST>/metrics` and `https://<SHOP_HOST>/metrics` are not served by the API (404 or the site's own 404).
    - `gsmc ps` shows `api`, `worker`, `postgres`, both Redis roles and `prometheus` healthy; `gsmc logs worker` shows the queue workers.
    - Prometheus has both targets up: `gsmc exec prometheus wget -qO- 'http://localhost:9090/api/v1/targets'` lists `gsm-api` and
@@ -154,7 +194,8 @@ git pull
 gsmc run --rm -T backup pg-backup.sh
 # 2. build the new image under a new tag: edit BACKEND_IMAGE in deploy/.env, e.g. gsm-backend:2026.11.20
 gsmc build api
-# 3. apply the new migrations with the new image (one-off; the API never migrates on boot)
+# 3. apply the new migrations with the new image and set the application role's privileges for the new tables (one-off; the API never
+#    migrates on boot; run it after every release, before step 4)
 gsmc run --rm migrate
 # 4. replace the API and the worker (the worker drains running jobs for up to 25 s; its container may take 30 s to stop)
 gsmc up -d api worker
@@ -240,6 +281,65 @@ Additive (two nullable or defaulted columns); the usual order applies. What to d
 - A guest checkout is judged as a first order; an email blocked from a guest order may be limited to guest checkouts (the blocklist page
   shows the scope in the reason of the entry).
 
+### Release with decision 055 (the production stack)
+
+The one release that changes the stack itself: new networks, passwords, users and a fourth host. Do it in one sitting, in this order (the
+DNS record of `FILES_HOST` can be made the day before).
+
+**The outage of this release begins at step 6 and ends at step 9.** Step 6 stops the API and the worker and moves Postgres, both Redis,
+MinIO and the search engine onto the new networks; the old API and worker run on the old network and could not reach them any more. The
+shop and the console answer with errors from step 6 until `api` is healthy again at step 9. Nothing before step 6 touches a running
+service.
+
+Two rules keep the order safe on a live host:
+
+- The compose file refuses to run a command (the nightly backup included) while a variable it needs is missing, so `deploy/.env` changes
+  before the new compose file reaches the host (step 2 before step 4). The old stack's backup service reads `DATABASE_URL` and the `S3_*`
+  keys from `.env.production`, and neither the role `gsm_app` nor the MinIO users exist before steps 7 and 8, so those three lines keep
+  their old values until step 8.
+- `gsmc run --rm migrate ...` and `gsmc run --rm minio-admin ...` are written with `--no-deps`. Without it compose also starts the services
+  they depend on and recreates the ones whose definition changed, which would move Postgres and MinIO onto the new networks while the old API
+  and worker still run on the old one: the outage would begin inside a "check" or a "create a user". With it these commands touch nothing but
+  their own container, so the data services must already be up: step 6 does that, on purpose. For the same reason the nightly backup must not
+  fire between step 4 and step 9 (it depends on Postgres and would recreate it): comment its cron line out for the sitting, and put it back
+  after step 10.
+
+1. **Back up with the old stack, before any file changes** (section 4): `gsmc run --rm -T backup pg-backup.sh`, then wait for it to finish.
+   Take it while `.env.production` still has its old values: the old backup service connects with the `DATABASE_URL` in that file.
+2. **Add to `deploy/.env`:** `FILES_HOST`, `REDIS_QUEUE_PASSWORD`, `REDIS_CACHE_PASSWORD`, `MINIO_APP_USER`, `MINIO_APP_PASSWORD`,
+   `MINIO_BACKUP_USER`, `MINIO_BACKUP_PASSWORD` (section 2, step 1; the old compose file ignores them), and create the DNS record of
+   `FILES_HOST` if it does not exist (Caddy asks for its certificate at step 9). Make `MINIO_ROOT_PASSWORD`, `MINIO_BACKUP_PASSWORD` and `TYPESENSE_BOOTSTRAP_KEY` with `openssl rand -hex 24` (or `-hex 32`):
+   only compose reads them, so the application's checks never see them.
+3. **Prepare `.env.production` except three lines:** both Redis URLs with their passwords, `S3_PUBLIC_ENDPOINT=https://<FILES_HOST>` and
+   `TRUST_PROXY=172.30.1.2,172.30.1.3`, and every other value the new rules ask for. **Leave `DATABASE_URL`, `S3_ACCESS_KEY_ID` and
+   `S3_SECRET_ACCESS_KEY` as they are** until step 8 (the reason is above); write the new ones (`DATABASE_URL` as the user `gsm_app` with a new
+   password, the `MINIO_APP_*` values) in a note for step 8. `grep -n CHANGE_ME deploy/.env .env.production` must print nothing.
+4. **`git pull`** (from here every `gsmc` command uses the new compose file), set `BACKEND_IMAGE` to a new tag in `deploy/.env` and build
+   (`gsmc build api`; section 2, step 2).
+5. **Check the existing values against the new rules in the new image before anything is replaced.** The check reads no database, so it runs
+   with `--no-deps`:
+   `gsmc run --rm --no-deps migrate bun -e "const { loadConfigOrExit } = await import('./src/config/index.ts'); loadConfigOrExit(); console.log('configuration ok')"`.
+   It prints every refusal at once (a `METRICS_TOKEN` or search key under 32 characters, an S3 secret under 16, a `TRUST_PROXY` that is missing
+   or wrong, the argon2 floor, an `http:` object store that is not inside the stack). Fix them and run it again. A `DATABASE_OWNER_URL` refusal
+   means `POSTGRES_PASSWORD` is under 16 characters: set a longer one inside Postgres first (section 5). A `TRUST_PROXY` that holds a CDN's ranges
+   is accepted, with a warning at every boot.
+6. **The outage begins.** Stop the API and the worker (the worker drains its running jobs for up to 25 s), then start the data services,
+   which recreates them on the new networks:
+   `gsmc stop api worker`, then `gsmc up -d postgres redis-queue redis-cache minio minio-init typesense`. Wait until `gsmc ps` shows `postgres`
+   and both Redis healthy.
+7. **Create the MinIO users** (section 2, step 3: the `minio-admin` block, once, with `--no-deps`).
+8. **Switch the three lines** of `.env.production` to their new values, run the check of step 5 again, then
+   `gsmc run --rm --no-deps migrate`: it applies the migrations and creates the role `gsm_app` with the password of `DATABASE_URL`
+   (`Application role gsm_app: created`).
+9. **`gsmc up -d`** creates the API, the worker, the console and Caddy on the new networks (Caddy gets its new Caddyfile and a certificate for
+   `FILES_HOST` on its own; add `--profile site` if the storefront runs). **The outage ends** when `gsmc ps` shows `api` healthy and
+   `curl -s https://<ADMIN_HOST>/health?strict=1` answers `ok`.
+10. Remove the old network once nothing uses it: `docker network rm gsm_gsm`. Put the cron line of the nightly backup back.
+11. Check: section 2.5 (the client address, the role, the files host), and that the worker still reaches the outside from its new networks:
+    `gsmc exec worker bun -e "console.log((await fetch('https://example.com')).status)"` prints 200.
+12. Set the rules of the offsite bucket and give the nightly key write-only rights (section 4); if the old plaintext `files/` prefix exists
+    offsite, delete it with the purge key (`rclone purge`, section 4) once the encrypted copy under `files-age/` is complete.
+
 ### Release with decision 045 (origins per surface)
 
 Every command of the image (the API, the worker, `migrate`, `setup`) refuses `CORS_ORIGINS` in production from this release on. Before
@@ -294,11 +394,13 @@ the rate; the same number restarts its age), or set `fx.max_rate_age_hours` (`PA
 
 ## 4. Backups and the restore drill
 
-What is saved, every night: a full dump of the database (`pg_dump`, custom format), encrypted with `age` for the public key
+What is saved, every night: a full dump of the database (`pg_dump`, custom format, as the owner role), encrypted with `age` for the public key
 `BACKUP_AGE_RECIPIENT`, uploaded to the bucket `BACKUP_S3_BUCKET` (use another provider or account than the server: a backup on the same disk
-is not a backup). Thirty daily dumps are kept (`BACKUP_RETENTION_DAYS`), and the dump of the first day of each month is kept twelve
-times (`BACKUP_MONTHLY_KEEP`). The files bucket is copied (never synced: a file deleted by mistake stays in the backup). **Not saved:**
-the queue Redis (its append-only file survives restarts; a job lost with its data is not re-created from `outbox_events`: see "If the
+is not a backup). The dump is made into a file in the backup container first (it needs free disk space of about its own size), copied to
+`db/incoming/`, checked there, and only then copied to `db/daily/` (and, on the first day of each month, to `db/monthly/`), so the daily folder holds
+complete dumps only. The files bucket is copied encrypted with the same key, object by object, to `files-age/` (never synced: a file deleted by
+mistake stays in the backup until the purge below). **How long copies are kept is a rule of the bucket, not of the script** (below). **Not
+saved:** the queue Redis (its append-only file survives restarts; a job lost with its data is not re-created from `outbox_events`: see "If the
 queue Redis loses its data" in section 6), the cache Redis and the Prometheus history.
 
 **Make the age key pair once, on your own computer, not on the server:**
@@ -309,35 +411,77 @@ age-keygen -o gsm-backup.agekey      # prints the public key "age1..."; put it i
 
 The private key (`gsm-backup.agekey`) is kept offline by two people (section 5). Without it a backup cannot be read.
 
+**The offsite bucket's rules** (set them at the provider; the nightly key cannot change them): versioning on; an object lock with a default
+retention of 30 days where the provider offers it; lifecycle rules: `db/incoming/` expires after 2 days, `db/daily/` after
+`BACKUP_RETENTION_DAYS` (30), `db/monthly/` after 400 days, noncurrent versions after 30 days, and incomplete multipart uploads are aborted after
+2 days. **The nightly key** (`BACKUP_S3_ACCESS_KEY_ID`) may list, read and write objects, nothing else: no delete, no version delete, no lock or
+lifecycle change, so a stolen server cannot destroy the past copies. **The purge key** may also delete; it never stays on the server. A provider
+without lifecycle rules: set `BACKUP_PRUNE=1` (the script then deletes the daily dumps older than `BACKUP_RETENTION_DAYS` and the monthly copies
+beyond `BACKUP_MONTHLY_KEEP`) and give the nightly key delete rights; that is weaker, because the key can then delete the backups.
+
+The backup service reads the files bucket with the read-only user `MINIO_BACKUP_USER`. With an external S3 for the files (the `S3_*` lines of
+`.env.production`), change the `S3_*` lines of the `backup` service in `deploy/compose.prod.yaml` to that store and a read-only key.
+
 **Schedule** (the host's cron; `-T` is needed because cron has no terminal):
 
 ```cron
 15 1 * * * cd /opt/gsm && docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm -T backup pg-backup.sh >> /var/log/gsm-backup.log 2>&1 && docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm -T backup files-mirror.sh >> /var/log/gsm-backup.log 2>&1
 ```
 
-Each script prints one JSON line per step and exits non-zero on any failure (an empty or missing upload fails the run). Make the host
+Each script prints one JSON line per step and exits non-zero on any failure (an empty or missing upload fails the run, and so does a listing of the offsite copy that fails: the files mirror never takes an unreadable target for an empty one and copies everything again; only a missing `files-age/` folder on the very first run counts as empty). Make the host
 tell you when the exit code is not zero (cron mails, or a monitor that reads the log). Try a script without doing anything:
 `gsmc run --rm -e BACKUP_DRY_RUN=1 backup pg-backup.sh` prints the commands.
 
+**Purge after an erasure or a retention run** (monthly, and within the deadline of an erasure request). The nightly copy never deletes, so the
+encrypted copy of a file that no longer exists at the source stays until this runs. Run it by hand with the purge key, which never stays on the
+server, exported from a prompt, dry run first:
+
+```bash
+read -rs BACKUP_PURGE_S3_SECRET_ACCESS_KEY; export BACKUP_PURGE_S3_SECRET_ACCESS_KEY
+export BACKUP_PURGE_S3_ACCESS_KEY_ID=<the purge key id>
+gsmc run --rm -e BACKUP_DRY_RUN=1 -e BACKUP_PURGE_S3_ACCESS_KEY_ID -e BACKUP_PURGE_S3_SECRET_ACCESS_KEY backup files-purge.sh   # lists what it would delete
+gsmc run --rm -e BACKUP_PURGE_S3_ACCESS_KEY_ID -e BACKUP_PURGE_S3_SECRET_ACCESS_KEY backup files-purge.sh
+```
+
+It deletes only the copies whose object is gone from the application's bucket, and refuses to run when the listing of that bucket is empty. With
+versioning on, the old versions of a deleted copy disappear when the noncurrent-version rule expires them (30 days): say this limit in the
+privacy notice. If an older release left a plaintext `files/` prefix offsite, remove it once with the purge key (`rclone purge`).
+
+**Restore a file** from the encrypted copy (the age key as in the restore below; the application's own MinIO user writes it back):
+
+```bash
+set -a; . deploy/.env; set +a
+gsmc run --rm -e S3_ACCESS_KEY_ID="$MINIO_APP_USER" -e S3_SECRET_ACCESS_KEY="$MINIO_APP_PASSWORD" -v "$PWD/age.key.restore:/age.key:ro" backup bash -c \
+  '. /opt/backup/lib.sh; setup_backup_remote; setup_files_remote; rclone cat "backup:$BACKUP_BUCKET/files-age/<key>.age" | age --decrypt -i /age.key | rclone rcat "files:$S3_BUCKET/<key>"'
+```
+
 **Restore into a new, empty database** (never over the live one; the script refuses a database that already has tables unless you
-pass `--force`, and it has no default target):
+pass `--force`, it has no default target, and it refuses a target that connects as a superuser unless you pass `--as-superuser`). Restore as
+the owner of a database made for the purpose: a dump's statements run with the rights of the restoring role, so a dump that was tampered
+with can do no more than that role can. Use `--as-superuser` only for a dump you made yourself and checked by name and size against
+`/var/log/gsm-backup.log`.
 
 The backup image runs as uid 10001, and `age-keygen` writes the key file readable by its owner only (mode 0600), so the container
 cannot read your copy. Give it its own copy for the restore and remove it afterwards:
 
 ```bash
 sudo install -m 0400 -o 10001 -g 10001 gsm-backup.agekey ./age.key.restore
-gsmc exec postgres psql -U gsm -d gsm -c 'create database gsm_restored'
+gsmc exec postgres psql -U gsm -d gsm -c "create role gsm_restored login password '<a new password>' nosuperuser nocreatedb nocreaterole" -c 'create database gsm_restored owner gsm_restored'
 gsmc run --rm -v "$PWD/age.key.restore:/age.key:ro" backup pg-restore.sh \
-  db/daily/gsm-<UTC stamp>.dump.age "postgres://gsm:<POSTGRES_PASSWORD>@postgres:5432/gsm_restored" --identity /age.key
+  db/daily/gsm-<UTC stamp>.dump.age "postgres://gsm_restored:<that password>@postgres:5432/gsm_restored" --identity /age.key
 sudo shred -u ./age.key.restore
 ```
 
-To go live on the restored copy, stop `api` and `worker`, change the database name in `DATABASE_URL`, start them, and check.
+To go live on the restored copy: stop `api` and `worker`, rename the databases (`gsmc exec postgres psql -U gsm -d postgres -c 'alter database gsm
+rename to gsm_old' -c 'alter database gsm_restored rename to gsm'`), hand the restored objects to the owner role (`gsmc exec postgres psql -U gsm -d gsm
+-c 'reassign owned by gsm_restored to gsm'`, then drop the role), run `gsmc run --rm migrate` (it sets the application role's privileges on the
+restored tables), start `api` and `worker`, and check. No file of configuration changes.
 
-**Monthly restore drill** (do it on the first working day of the month, and once before go-live): it restores the newest daily dump into
-a scratch database next to the live one, checks that the ledger lines sum to zero and that the migrations match the code, prints the
-row counts and drops the scratch database.
+**Monthly restore drill** (do it on the first working day of the month, and once before go-live): it restores the newest daily dump, as a
+temporary role that is not a superuser, into a scratch database that role owns next to the live one, checks that the ledger lines sum to
+zero and that the migrations match the code, prints the row counts and drops the scratch database and the role. It needs the owner role (it
+creates the role). The role's password is made for the run and never printed. A dump object that needs a superuser fails the drill with its name
+(`pg_restore --exit-on-error`): the first real drill shows whether the dump has any.
 
 ```bash
 sudo install -m 0400 -o 10001 -g 10001 gsm-backup.agekey ./age.key.restore
@@ -366,7 +510,12 @@ The private key only has to be on the machine for the minute the drill runs.
 | `FX_API_KEY` | the hourly rate refresh fails; stored rates stay | any time |
 | `SENTRY_DSN` | errors go to the new project (or nowhere) | any time |
 | `METRICS_TOKEN` | Prometheus cannot scrape until `deploy/secrets/metrics_token` has the same value | change both together |
-| Postgres and MinIO passwords | the services lock out the app | change them in `deploy/.env` and `.env.production` together, then recreate the services |
+| `POSTGRES_PASSWORD` (the owner role `gsm`) | `migrate`, `setup` and the backups are locked out | change it inside Postgres first (`gsmc exec postgres psql -U gsm -d gsm`, then `\password gsm`), then in `deploy/.env`; the stored password of an existing database does not follow the variable |
+| the application role's password (`DATABASE_URL` of `.env.production`) | the API and the worker cannot connect | change it in `DATABASE_URL`, run `gsmc run --rm migrate` (it sets the new password on the role), then restart `api` and `worker` |
+| `REDIS_QUEUE_PASSWORD`, `REDIS_CACHE_PASSWORD` (`deploy/.env`) | the API and the worker cannot reach Redis until both files agree | change it in `deploy/.env` and in the matching URL of `.env.production` together, then recreate the Redis service, `api` and `worker` |
+| `MINIO_ROOT_*` (`deploy/.env`) | the MinIO containers and `minio-admin` | change it in `deploy/.env`, recreate `minio`; the application's and the backups' users are separate and unaffected |
+| `MINIO_APP_*`, `MINIO_BACKUP_*` | file uploads and downloads fail (the API shows storage down), or the file copy of the backups fails | change them with `minio-admin admin user add` (section 2, step 3) and in the files that hold them (`S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` of `.env.production`; `deploy/.env`), then recreate `api` and `worker` |
+| the backup purge key (offsite bucket) | the purge cannot delete | held offline by two people; it never stays on the server (section 4) |
 | `TYPESENSE_BOOTSTRAP_KEY`, `TYPESENSE_INDEXER_KEY`, `TYPESENSE_SEARCH_KEY` (`deploy/.env`) | the shop search falls back to the database search (nothing is lost: the index is derived data) | the bootstrap key stays with the `typesense` container and with you; the worker holds only the indexer key and the API only the search key. After a change or a lost volume run `scripts/search-keys.ts` again (section 6) |
 
 **Adding an encryption key without losing the old one:** `ENCRYPTION_KEYS` is a list, `k1:<key>,k2:<key>`. Make the new key
@@ -382,8 +531,9 @@ enrolment): entering them again seals them with the active key. The twelve encry
   also the `X-Request-Id` the client got; give it to whoever reads the log. Secrets are redacted and e-mail, phone and IMEI masked at any
   depth of a log line; a database failure is logged as its SQLSTATE, table, constraint and a fixed sentence, never the statement or its
   values (decision 054). Caddy's access log replaces link tokens, the Telegram webhook path, searches and IMEIs in the address and the
-  Referer, and leaves out credential headers. Docker keeps the logs on the host: set a log rotation in `/etc/docker/daemon.json`
-  (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`) so the disk does not fill.
+  Referer, and leaves out credential headers. Docker keeps at most 5 × 20 MB of logs per container (the compose file sets the `local` log
+  driver for every service, decision 055); a rotation in `/etc/docker/daemon.json` (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`)
+  is still useful for any other container on the host.
 - **Health:** `GET /health` always answers 200 with `ok`, `degraded` or `down` and the checks; `GET /health?strict=1` answers 503 when
   Postgres is down (this is what the container healthcheck calls). The System health pages of the console show the same and more.
 - **Metrics:** `/metrics` of the API and the worker (port 9464) need `Authorization: Bearer <METRICS_TOKEN>` and are reachable only inside
@@ -537,7 +687,7 @@ backup, set that order's `checkout_session_id` to `NULL` (one `UPDATE orders set
 then run the migration again.
 
 **Search engine** (feature 29, decision 038). The English search of the shop header and the results page runs on one Typesense node
-(`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the network `gsm` only: no published port, no Caddy route, never
+(`typesense` in `deploy/compose.prod.yaml`, pinned by digest, on the internal `data` network only: no published port, no Caddy route, never
 reachable from a browser). Postgres is the truth; the index holds only public, English, price-free documents and can be rebuilt at any
 moment. A prices or stock change shows at once because the API reads them from Postgres on every request; an edit of a service,
 listing, category or stock reaches the index within about 5 seconds (outbox, queue `search-index`), and anything missed within 15
@@ -647,12 +797,13 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 **Mail domain** (without it customers and merchants never receive links)
 - [ ] The domain of `MAIL_FROM` is verified at your SMTP provider.
 - [ ] SPF, DKIM and DMARC records are published for it (the provider shows the exact records).
-- [ ] `MAIL_SMTP_URL` and `MAIL_FROM` are set in `.env.production`.
+- [ ] `MAIL_SMTP_URL` and `MAIL_FROM` are set in `.env.production`. In production mail goes over TLS only: `smtps://`, or `smtp://` on a port that offers STARTTLS (a server that
+      offers none cannot be used: every send fails and is retried).
 - [ ] A test mail reaches an address at another provider (use a password reset of a test account) and does not land in spam.
 
 **DNS and TLS**
-- [ ] The three names resolve to the server, and ports 80 and 443 are open.
-- [ ] `https://<SHOP_HOST>`, `https://<ADMIN_HOST>` and `https://<API_HOST>` open with a valid certificate (Caddy needs a minute after the first start; `gsmc logs caddy` shows why when not).
+- [ ] The four names (`SHOP_HOST`, `ADMIN_HOST`, `API_HOST`, `FILES_HOST`) resolve to the server, and ports 80 and 443 are open.
+- [ ] `https://<SHOP_HOST>`, `https://<ADMIN_HOST>` and `https://<API_HOST>` open with a valid certificate (Caddy needs a minute after the first start; `gsmc logs caddy` shows why when not), and `https://<FILES_HOST>/gsm-files/x` answers 404.
 
 **Provider accounts**
 - [ ] Cloudflare Turnstile: a widget for `SHOP_HOST`; the secret in `TURNSTILE_SECRET_KEY`, the site key given to the storefront, which
@@ -661,7 +812,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`, required in production), or `FX_PROVIDER=manual` and the
   rates entered by hand at least every 48 hours (decision 049).
 - [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`, then run `scripts/telegram-webhook.ts` (section 6).
-- [ ] Object storage for backups on another provider, its keys in `deploy/.env`, and the two key holders named.
+- [ ] Object storage for backups on another provider, with versioning, an object lock and the lifecycle rules of section 4; two keys: the nightly one (list, read and
+      write, never delete; in `deploy/.env`) and a purge key (may delete; kept offline); and the two key holders named.
 - [ ] A Sentry project (optional) and its DSN.
 - [ ] The payment provider chosen by the owner (decision D-6) and its keys entered in the console, never in a file.
 - [ ] The provider sends every checkout, refund and dispute event to `/webhooks/payments/<code>`, and refunds are switched on for the method
@@ -673,6 +825,9 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 **Before go-live**
 - [ ] Every check of section 2.5 passed, including the client-address check.
 - [ ] A backup ran and a restore drill passed (section 4), and the first-day-of-month copy is understood.
+- [ ] The offsite bucket's rules are set and the nightly key cannot delete (try `rclone deletefile` with it: it must be refused).
+- [ ] The application connects as `gsm_app` (not a superuser, not an owner: section 2.5), and `TRUST_PROXY` is the two fixed addresses.
+- [ ] The files host answers a download from the console, and `grep -n CHANGE_ME deploy/.env .env.production` prints nothing.
 - [ ] `ENCRYPTION_KEYS` and the backup private key exist offline in two places, with two people.
 - [ ] `LOOKUP_HASH_KEY` is set (on an installation with data: the value of its `TOKEN_PEPPER`).
 - [ ] `COOKIE_SECURE=true`, `REFERENCE_DOCS=staff`, the dev seed was never run on this database.
@@ -681,7 +836,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
       refused at checkout (decision 050).
 - [ ] Every supplier address starts with https://, and suppliers.allowPlainHttp is not true (only an Owner can change it).
 - [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
-- [ ] Docker log rotation is set, and the host has disk space for the volumes (database, files, Prometheus).
+- [ ] The host has disk space for the volumes (database, files, Prometheus) and for one dump at a time in the backup container (the compose file already limits the logs to 5 × 20 MB per container).
 
 **Staff roles** (decision 046)
 - [ ] Only people trusted like an Owner hold `*`; other admins hold what they need (they can give, and act on, only what they hold).
@@ -699,5 +854,5 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
    `gsmc exec postgres psql -U gsm -d gsm -c "select id, cidr, scope, reason from ip_rules where kind = 'block' and scope in ('admin', 'all');"`
    then `gsmc exec postgres psql -U gsm -d gsm -c "delete from ip_rules where id = <id>;"`
 3. Make it apply at once (otherwise within a few minutes):
-   `gsmc exec redis-cache redis-cli DEL gsm:production:identity:ip-rules:active gsm:production:platform:settings:all`
+   `set -a; . deploy/.env; set +a; gsmc exec -e REDISCLI_AUTH="$REDIS_CACHE_PASSWORD" redis-cache redis-cli DEL gsm:production:identity:ip-rules:active gsm:production:platform:settings:all`
 4. Sign in, check the access settings, and note what you changed: these steps write no audit row.

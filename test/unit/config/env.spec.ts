@@ -3,9 +3,18 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  ARGON2_FLOOR_REFUSED,
   ConfigError,
   DEV_DEFAULTS,
   ENV_VARIABLES,
+  NODE_ENV_REMOTE_REFUSED,
+  PLACEHOLDER_REFUSED,
+  TRUST_PROXY_RANGE_WARNING,
+  WEAK_PASSWORD_REFUSED,
+  argon2MeetsFloor,
+  databaseIsLocal,
+  isLocalHost,
+  isStackHost,
   parseAlertEmails,
   parseCorsOrigins,
   parseEncryptionKeys,
@@ -14,6 +23,7 @@ import {
   parseTurnstileHostnames,
   searchPrefixOf,
   summarizeConfig,
+  trustProxyIsRange,
 } from '@src/config/env';
 
 const KEY = Buffer.alloc(32, 7).toString('base64');
@@ -26,9 +36,10 @@ const production = (): Record<string, string> => ({
   PORTAL_BASE_URL: 'https://portal.gsm.example/',
   CONSOLE_BASE_URL: 'https://admin.gsm.example/',
   STORE_BASE_URL: 'https://shop.gsm.example/',
-  DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
-  REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
-  REDIS_CACHE_URL: 'redis://cache.internal:6379/0',
+  DATABASE_URL: 'postgres://app:app-password-0123456789@db.internal:5432/gsm',
+  REDIS_QUEUE_URL: 'redis://:queue-password-0123456789@queue.internal:6379/0',
+  REDIS_CACHE_URL: 'redis://:cache-password-0123456789@cache.internal:6379/0',
+  TRUST_PROXY: '172.30.1.2,172.30.1.3',
   S3_BUCKET: 'gsm-prod-files',
   S3_ACCESS_KEY_ID: 'AKIA-ID',
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
@@ -37,7 +48,7 @@ const production = (): Record<string, string> => ({
   LOOKUP_HASH_KEY: 'l'.repeat(40),
   ENCRYPTION_KEYS: `k1:${KEY}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
-  METRICS_TOKEN: 'metrics-token-for-prometheus',
+  METRICS_TOKEN: 'metrics-token-for-prometheus-0123456',
   MAIL_SMTP_URL: 'smtps://mailer:pw@smtp.provider.example:465',
   MAIL_FROM: 'IMEI-HUB <noreply@gsm.example>',
   TURNSTILE_SECRET_KEY: 'turnstile-secret-for-tests',
@@ -257,7 +268,7 @@ describe('parseEnv in development and test', () => {
     expect(development.redis.queueUrl).toBe(DEV_DEFAULTS.redisQueueUrl);
     expect(development.s3.bucket).toBe(DEV_DEFAULTS.s3Bucket);
     const prod = parseEnv({ ...production(), ...env });
-    expect(prod.redis.cacheUrl).toBe('redis://cache.internal:6379/0');
+    expect(prod.redis.cacheUrl).toBe('redis://:cache-password-0123456789@cache.internal:6379/0');
     expect(prod.s3.bucket).toBe('gsm-prod-files');
   });
 
@@ -439,6 +450,7 @@ describe('parseEnv in production', () => {
       'PORTAL_BASE_URL',
       'CONSOLE_BASE_URL',
       'STORE_BASE_URL',
+      'TRUST_PROXY',
       'DATABASE_URL',
       'REDIS_QUEUE_URL',
       'REDIS_CACHE_URL',
@@ -555,7 +567,11 @@ describe('ARGON2_* (decision 007)', () => {
 describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
   it('defaults to the Mailpit of compose.yaml outside production and leaves Telegram unset', () => {
     const config = parseEnv({});
-    expect(config.mail).toEqual({ smtpUrl: 'smtp://localhost:1025', from: 'IMEI-HUB <noreply@gsm.local>' });
+    expect(config.mail).toEqual({
+      smtpUrl: 'smtp://localhost:1025',
+      from: 'IMEI-HUB <noreply@gsm.local>',
+      requireTls: false,
+    });
     expect(config.telegram).toEqual({ botToken: undefined, botUsername: undefined, webhookSecret: undefined });
   });
 
@@ -644,7 +660,7 @@ describe('METRICS_TOKEN', () => {
   it('is required in production, so a proxy without forwarding headers cannot expose /metrics', () => {
     const { METRICS_TOKEN: _unused, ...withoutToken } = production();
     expect(issuesOf(withoutToken)).toEqual([{ variable: 'METRICS_TOKEN', message: 'is required in production' }]);
-    expect(parseEnv(production()).observability.metricsToken).toBe('metrics-token-for-prometheus');
+    expect(parseEnv(production()).observability.metricsToken).toBe('metrics-token-for-prometheus-0123456');
   });
 
   it('stays optional outside production', () => {
@@ -959,7 +975,7 @@ describe('summarizeConfig', () => {
   it('never contains secrets, passwords or key material', () => {
     const config = parseEnv({
       ...production(),
-      METRICS_TOKEN: 'metrics-token-1234567890',
+      METRICS_TOKEN: 'metrics-token-1234567890-abcdefgh',
       SENTRY_DSN: 'https://public@sentry.example.com/1',
       PROMETHEUS_URL: 'http://user:promPassword@prometheus.internal:9090',
     });
@@ -967,10 +983,12 @@ describe('summarizeConfig', () => {
     for (const secret of [
       SECRET,
       KEY,
-      'pw@',
+      'app-password-0123456789',
+      'queue-password-0123456789',
+      'cache-password-0123456789',
       'secret-access-key',
       'AKIA-ID',
-      'metrics-token-1234567890',
+      'metrics-token-1234567890-abcdefgh',
       'promPassword',
       'public@sentry',
     ]) {
@@ -1092,12 +1110,434 @@ describe('search (feature 29)', () => {
   it('never prints the keys in the boot summary', () => {
     const config = parseEnv({
       ...production(),
-      TYPESENSE_SEARCH_KEY: 'search-key-secret',
-      TYPESENSE_INDEXER_KEY: 'idx-secret',
+      TYPESENSE_SEARCH_KEY: 'search-key-secret-0123456789abcdef',
+      TYPESENSE_INDEXER_KEY: 'idx-secret-0123456789abcdefghijkl',
     });
     const text = JSON.stringify(summarizeConfig(config));
     expect(text).not.toContain('search-key-secret');
     expect(text).not.toContain('idx-secret');
     expect(text).toContain('"searchKey":"[set]"');
+  });
+});
+
+describe('the production stack and its configuration (decision 055)', () => {
+  const NO_DEV = 'must not use the development default in production';
+
+  describe('a process without NODE_ENV', () => {
+    it('refuses a database that is not on this machine', () => {
+      expect(issuesOf({ DATABASE_URL: 'postgres://u:p@db.example.com:5432/x' })).toEqual([
+        { variable: 'NODE_ENV', message: NODE_ENV_REMOTE_REFUSED },
+      ]);
+      // A host named outside the authority counts too.
+      expect(issuesOf({ DATABASE_URL: 'postgres://u:p@localhost:5432/x?host=db.example.com' })).toEqual([
+        { variable: 'NODE_ENV', message: NODE_ENV_REMOTE_REFUSED },
+      ]);
+      expect(issuesOf({ DATABASE_URL: 'postgres://u:p@localhost:5432/x?hostaddr=10.0.0.5' })).toEqual([
+        { variable: 'NODE_ENV', message: NODE_ENV_REMOTE_REFUSED },
+      ]);
+    });
+
+    it('accepts localhost, a loopback address, an IPv6 loopback and a socket directory, and the default', () => {
+      for (const url of [
+        'postgres://u:p@localhost:5432/x',
+        'postgres://u:p@127.0.0.5:5432/x',
+        'postgres://u:p@[::1]:5432/x',
+        'postgres://u:p@localhost/x?host=/var/run/postgresql',
+      ]) {
+        expect(issuesOf({ DATABASE_URL: url }), url).toEqual([]);
+      }
+      expect(issuesOf({})).toEqual([]);
+    });
+
+    it('judges the host of PGHOST when the URL names none, because the driver connects there', () => {
+      const withoutHost = 'postgres:///x?user=u&password=p';
+      // No host in the URL and no PGHOST: the driver's default, this machine.
+      expect(issuesOf({ DATABASE_URL: withoutHost })).toEqual([]);
+      expect(issuesOf({ DATABASE_URL: withoutHost, PGHOST: 'localhost' })).toEqual([]);
+      expect(issuesOf({ DATABASE_URL: withoutHost, PGHOST: '/var/run/postgresql' })).toEqual([]);
+      // A remote PGHOST makes the database remote.
+      expect(issuesOf({ DATABASE_URL: withoutHost, PGHOST: 'db.example.com' })).toEqual([
+        { variable: 'NODE_ENV', message: NODE_ENV_REMOTE_REFUSED },
+      ]);
+      expect(issuesOf({ DATABASE_URL: withoutHost, PGHOST: 'localhost,db.example.com' })).toEqual([
+        { variable: 'NODE_ENV', message: NODE_ENV_REMOTE_REFUSED },
+      ]);
+      // No DATABASE_URL at all is the development default (a host of its own), which PGHOST does not replace.
+      expect(issuesOf({ PGHOST: 'db.example.com' })).toEqual([]);
+      // A URL that names its host is not changed by PGHOST.
+      expect(issuesOf({ DATABASE_URL: 'postgres://u:p@localhost:5432/x', PGHOST: 'db.example.com' })).toEqual([]);
+      expect(parseEnv({ DATABASE_URL: withoutHost, PGHOST: 'localhost' }).database.driverHost).toBe('localhost');
+      expect(parseEnv({}).database.driverHost).toBeUndefined();
+    });
+
+    it('does not apply once the mode is named, and leaves an unreadable URL to its own variable', () => {
+      const remote = 'postgres://u:p@db.example.com:5432/x';
+      expect(issuesOf({ NODE_ENV: 'development', DATABASE_URL: remote })).toEqual([]);
+      expect(issuesOf({ NODE_ENV: 'test', DATABASE_URL: remote })).toEqual([]);
+      expect(issuesOf({ DATABASE_URL: 'not a url' }).map((issue) => issue.variable)).toEqual(['DATABASE_URL']);
+    });
+  });
+
+  describe('the password rule and PGHOST', () => {
+    it('applies to a database URL without a host when PGHOST is another machine, and not otherwise', () => {
+      const withoutHost = 'postgres:///gsm?user=gsm_app&password=short';
+      const weak = [{ variable: 'DATABASE_URL', message: WEAK_PASSWORD_REFUSED }];
+      expect(issuesOf({ ...production(), DATABASE_URL: withoutHost })).toEqual([]);
+      expect(issuesOf({ ...production(), DATABASE_URL: withoutHost, PGHOST: 'localhost' })).toEqual([]);
+      expect(issuesOf({ ...production(), DATABASE_URL: withoutHost, PGHOST: 'db.internal' })).toEqual(weak);
+      expect(issuesOf({ ...production(), DATABASE_OWNER_URL: withoutHost, PGHOST: 'db.internal' })).toEqual([
+        { variable: 'DATABASE_OWNER_URL', message: WEAK_PASSWORD_REFUSED },
+      ]);
+    });
+  });
+
+  describe('isLocalHost and databaseIsLocal', () => {
+    it('knows the hosts of this machine', () => {
+      for (const host of ['localhost', 'LOCALHOST', '127.0.0.1', '127.9.9.9', '[::1]', '::1']) {
+        expect(isLocalHost(host), host).toBe(true);
+      }
+      for (const host of ['db.example.com', '10.0.0.5', '128.0.0.1', '127.0.0', 'localhost.example.com', '']) {
+        expect(isLocalHost(host), host).toBe(false);
+      }
+    });
+
+    it('reads every host of a connection URL', () => {
+      expect(databaseIsLocal('postgres://u:p@localhost/x')).toBe(true);
+      expect(databaseIsLocal('postgres://u:p@/x?host=/tmp')).toBe(true);
+      expect(databaseIsLocal('postgres://u:p@localhost/x?host=localhost,db.example.com')).toBe(false);
+      expect(databaseIsLocal('postgres://u:p@db.example.com/x')).toBe(false);
+      expect(databaseIsLocal('redis://:p@queue.internal:6379/0')).toBe(false);
+      expect(databaseIsLocal('not a url')).toBe(true);
+    });
+
+    it('does not take an empty host as local by itself: the driver then connects to PGHOST', () => {
+      const empty = 'postgres:///x?user=u';
+      expect(databaseIsLocal(empty)).toBe(true); // no PGHOST: the driver's default is this machine
+      expect(databaseIsLocal(empty, '')).toBe(true);
+      expect(databaseIsLocal(empty, 'localhost')).toBe(true);
+      expect(databaseIsLocal(empty, '127.0.0.1')).toBe(true);
+      expect(databaseIsLocal(empty, '/var/run/postgresql')).toBe(true);
+      expect(databaseIsLocal(empty, 'db.example.com')).toBe(false);
+      expect(databaseIsLocal(empty, '10.0.0.5')).toBe(false);
+      expect(databaseIsLocal(empty, 'localhost, db.example.com')).toBe(false);
+      // A host the URL names itself (in the authority or in ?host=) is the one the driver uses, so PGHOST does not count.
+      expect(databaseIsLocal('postgres://localhost/x', 'db.example.com')).toBe(true);
+      expect(databaseIsLocal('postgres:///x?host=/tmp', 'db.example.com')).toBe(true);
+      expect(databaseIsLocal('postgres:///x?host=localhost', 'db.example.com')).toBe(true);
+      // A remote host of the URL stays remote whatever PGHOST says.
+      expect(databaseIsLocal('postgres://db.example.com/x', 'localhost')).toBe(false);
+      // hostaddr is no host of its own for the driver: with PGHOST remote the database is remote, and a remote hostaddr always counts.
+      expect(databaseIsLocal('postgres:///x?hostaddr=127.0.0.1', 'db.example.com')).toBe(false);
+      expect(databaseIsLocal('postgres:///x?hostaddr=10.0.0.5', 'localhost')).toBe(false);
+    });
+  });
+
+  describe('placeholders', () => {
+    it('are refused in any variable in production, by name, with the same message', () => {
+      for (const [variable, value] of [
+        ['TURNSTILE_SECRET_KEY', 'CHANGE_ME_TURNSTILE_SECRET'],
+        ['MAIL_SMTP_URL', 'smtps://CHANGE_ME_SMTP_USER:CHANGE_ME_SMTP_PASSWORD@smtp.provider.example:465'],
+        ['DATABASE_URL', 'postgres://gsm_app:CHANGE_ME_APP_DB_PASSWORD@db.internal:5432/gsm'],
+        ['REDIS_QUEUE_URL', 'redis://:CHANGE_ME_REDIS_QUEUE_PASSWORD@queue.internal:6379/0'],
+        ['ENCRYPTION_KEYS', 'CHANGE_ME_ENCRYPTION_KEYS'],
+        ['S3_ACCESS_KEY_ID', 'CHANGE_ME_MINIO_APP_USER'],
+        ['LOOKUP_HASH_KEY', 'CHANGE_ME_LOOKUP_HASH_KEY_0123456789abcdef'],
+        ['FX_API_KEY', 'CHANGE_ME_FX_API_KEY'],
+      ] as const) {
+        expect(issuesOf({ ...production(), [variable]: value }), variable).toEqual([
+          { variable, message: PLACEHOLDER_REFUSED },
+        ]);
+      }
+    });
+
+    it('are named even when another rule would refuse the value too (a short secret)', () => {
+      expect(
+        issuesOf({ ...production(), CSRF_SECRET: 'CHANGE_ME_CSRF_SECRET' }).map((issue) => issue.variable),
+      ).toEqual(['CSRF_SECRET']);
+      expect(issuesOf({ ...production(), METRICS_TOKEN: 'CHANGE_ME_METRICS_TOKEN' })).toEqual([
+        { variable: 'METRICS_TOKEN', message: PLACEHOLDER_REFUSED },
+      ]);
+    });
+
+    it('are not a problem outside production', () => {
+      expect(issuesOf({ TURNSTILE_SECRET_KEY: 'CHANGE_ME_TURNSTILE_SECRET' })).toEqual([]);
+    });
+  });
+
+  describe('short secrets and weak passwords', () => {
+    const tooShort = (variable: string, min: number) => ({
+      variable,
+      message: `must be at least ${min} characters in production`,
+    });
+
+    it('refuses a metrics token, a search key or an S3 secret under its minimum, and accepts the minimum', () => {
+      expect(issuesOf({ ...production(), METRICS_TOKEN: 'm'.repeat(31) })).toEqual([tooShort('METRICS_TOKEN', 32)]);
+      expect(issuesOf({ ...production(), METRICS_TOKEN: 'm'.repeat(32) })).toEqual([]);
+      expect(issuesOf({ ...production(), TYPESENSE_SEARCH_KEY: 's'.repeat(31) })).toEqual([
+        tooShort('TYPESENSE_SEARCH_KEY', 32),
+      ]);
+      expect(issuesOf({ ...production(), TYPESENSE_INDEXER_KEY: 'i'.repeat(31) })).toEqual([
+        tooShort('TYPESENSE_INDEXER_KEY', 32),
+      ]);
+      expect(
+        issuesOf({ ...production(), TYPESENSE_SEARCH_KEY: 's'.repeat(32), TYPESENSE_INDEXER_KEY: 'i'.repeat(32) }),
+      ).toEqual([]);
+      expect(issuesOf({ ...production(), S3_SECRET_ACCESS_KEY: 'k'.repeat(15) })).toEqual([
+        tooShort('S3_SECRET_ACCESS_KEY', 16),
+      ]);
+      expect(issuesOf({ ...production(), S3_SECRET_ACCESS_KEY: 'k'.repeat(16) })).toEqual([]);
+    });
+
+    it('refuses a service on another machine without a password or with a short one', () => {
+      const weak = (variable: string) => [{ variable, message: WEAK_PASSWORD_REFUSED }];
+      expect(issuesOf({ ...production(), REDIS_QUEUE_URL: 'redis://queue.internal:6379/0' })).toEqual(
+        weak('REDIS_QUEUE_URL'),
+      );
+      expect(
+        issuesOf({ ...production(), REDIS_CACHE_URL: `redis://:${'c'.repeat(15)}@cache.internal:6379/0` }),
+      ).toEqual(weak('REDIS_CACHE_URL'));
+      expect(issuesOf({ ...production(), DATABASE_URL: 'postgres://app@db.internal:5432/gsm' })).toEqual(
+        weak('DATABASE_URL'),
+      );
+      expect(
+        issuesOf({ ...production(), DATABASE_OWNER_URL: `postgres://gsm:${'o'.repeat(15)}@db.internal:5432/gsm` }),
+      ).toEqual(weak('DATABASE_OWNER_URL'));
+      expect(
+        issuesOf({ ...production(), DATABASE_OWNER_URL: `postgres://gsm:${'o'.repeat(16)}@db.internal:5432/gsm` }),
+      ).toEqual([]);
+      // The length is the length of the password, not of its percent-encoded text.
+      expect(
+        issuesOf({ ...production(), REDIS_QUEUE_URL: `redis://:${'q'.repeat(15)}%41@queue.internal:6379/0` }),
+      ).toEqual([]);
+    });
+
+    it('accepts the same values on this machine (the production rules of the tests run against local instances)', () => {
+      expect(
+        issuesOf({
+          ...production(),
+          DATABASE_URL: 'postgres://app:pw@localhost:5432/gsm',
+          REDIS_QUEUE_URL: 'redis://127.0.0.1:6391/14',
+          REDIS_CACHE_URL: 'redis://localhost:6392/14',
+        }),
+      ).toEqual([]);
+    });
+  });
+
+  describe('the development values', () => {
+    it('are refused in production for the database, both Redis URLs, the S3 key pair and the mail URL', () => {
+      for (const [variable, value] of [
+        ['DATABASE_URL', DEV_DEFAULTS.databaseUrl],
+        ['REDIS_QUEUE_URL', DEV_DEFAULTS.redisQueueUrl],
+        ['REDIS_CACHE_URL', DEV_DEFAULTS.redisCacheUrl],
+        ['S3_ACCESS_KEY_ID', DEV_DEFAULTS.s3AccessKeyId],
+        ['S3_SECRET_ACCESS_KEY', DEV_DEFAULTS.s3SecretAccessKey],
+        ['MAIL_SMTP_URL', DEV_DEFAULTS.mailSmtpUrl],
+      ] as const) {
+        expect(issuesOf({ ...production(), [variable]: value }), variable).toEqual([{ variable, message: NO_DEV }]);
+      }
+    });
+  });
+
+  describe('TRUST_PROXY', () => {
+    it('is required in production, and an explicit false is accepted', () => {
+      const { TRUST_PROXY: _unused, ...without } = production();
+      expect(issuesOf(without)).toEqual([{ variable: 'TRUST_PROXY', message: 'is required in production' }]);
+      const config = parseEnv({ ...production(), TRUST_PROXY: 'false' });
+      expect(config.http.trustProxy).toBe(false);
+      expect(config.warnings).toEqual([]);
+    });
+
+    it('warns once about a range, a named range or a hop count, and not about exact addresses', () => {
+      for (const value of ['172.30.0.0/24', '2', 'loopback', '172.30.1.2, 10.0.0.0/8', 'fd00::/8']) {
+        expect(parseEnv({ ...production(), TRUST_PROXY: value }).warnings, value).toEqual([
+          { variable: 'TRUST_PROXY', message: TRUST_PROXY_RANGE_WARNING },
+        ]);
+      }
+      for (const value of ['172.30.1.2,172.30.1.3', '172.30.1.2/32', '::1', 'fd00::1/128']) {
+        expect(parseEnv({ ...production(), TRUST_PROXY: value }).warnings, value).toEqual([]);
+      }
+      expect(parseEnv(production()).warnings).toEqual([]);
+    });
+
+    it('reads a value the way trustProxyIsRange says', () => {
+      expect(trustProxyIsRange(false)).toBe(false);
+      expect(trustProxyIsRange(1)).toBe(true);
+      expect(trustProxyIsRange(['loopback'])).toBe(true);
+      expect(trustProxyIsRange(['10.0.0.0/8'])).toBe(true);
+      expect(trustProxyIsRange(['10.0.0.1', '10.0.0.2/32'])).toBe(false);
+    });
+  });
+
+  describe('argon2', () => {
+    const floor = (memory: string, passes: string) => ({
+      ...production(),
+      ARGON2_MEMORY_KIB: memory,
+      ARGON2_TIME_COST: passes,
+    });
+
+    // The published pairs (memory in KiB, passes), and for each one the settings just below it on either axis.
+    const PAIRS = [
+      [47_104, 1],
+      [19_456, 2],
+      [12_288, 3],
+      [9_216, 4],
+      [7_168, 5],
+    ] as const;
+
+    it('is refused in production below the OWASP minimum', () => {
+      for (const [memory, passes] of [
+        ['19456', '1'],
+        ['8', '20'],
+        ['7167', '20'],
+        // The old product rule let these through: enough memory times passes, but no published pair.
+        ['12000', '3'],
+        ['30000', '1'],
+        ['10000', '3'],
+      ] as const) {
+        expect(issuesOf(floor(memory, passes)), `${memory}/${passes}`).toEqual([
+          { variable: 'ARGON2_MEMORY_KIB', message: ARGON2_FLOOR_REFUSED },
+        ]);
+      }
+    });
+
+    it('accepts each OWASP setting, and development accepts a cheap one', () => {
+      for (const [memory, passes] of [
+        ['19456', '2'],
+        ['47104', '1'],
+        ['7168', '5'],
+        ['12288', '3'],
+        ['9216', '4'],
+      ] as const) {
+        expect(issuesOf(floor(memory, passes)), `${memory}/${passes}`).toEqual([]);
+      }
+      expect(issuesOf({ ARGON2_MEMORY_KIB: '8', ARGON2_TIME_COST: '1' })).toEqual([]);
+    });
+
+    it('passes exactly on a pair, or on more memory and more passes than a pair, and on neither side of it alone', () => {
+      for (const [memory, passes] of PAIRS) {
+        expect(argon2MeetsFloor(memory, passes), `${memory}/${passes}`).toBe(true);
+        expect(argon2MeetsFloor(memory + 1, passes), `${memory + 1}/${passes}`).toBe(true);
+        expect(argon2MeetsFloor(memory, passes + 1), `${memory}/${passes + 1}`).toBe(true);
+        expect(argon2MeetsFloor(memory + 10_000, passes + 3), `${memory + 10_000}/${passes + 3}`).toBe(true);
+      }
+      // One KiB of memory short of a pair fails unless a cheaper pair with more passes is met.
+      expect(argon2MeetsFloor(47_103, 1)).toBe(false);
+      expect(argon2MeetsFloor(19_455, 2)).toBe(false);
+      expect(argon2MeetsFloor(12_287, 3)).toBe(false);
+      expect(argon2MeetsFloor(9_215, 4)).toBe(false);
+      expect(argon2MeetsFloor(7_167, 5)).toBe(false);
+      // One pass short of a pair fails unless a pair with fewer passes is met by the memory.
+      expect(argon2MeetsFloor(47_103, 5)).toBe(true); // 19456/2 and the others are met
+      expect(argon2MeetsFloor(19_456, 1)).toBe(false);
+      expect(argon2MeetsFloor(12_288, 2)).toBe(false);
+      expect(argon2MeetsFloor(9_216, 3)).toBe(false);
+      expect(argon2MeetsFloor(7_168, 4)).toBe(false);
+      // More of one axis does not make up for the other.
+      expect(argon2MeetsFloor(47_103, 1)).toBe(false);
+      expect(argon2MeetsFloor(7_167, 1_000)).toBe(false);
+      expect(argon2MeetsFloor(1_000_000, 0)).toBe(false);
+    });
+  });
+
+  describe('DATABASE_OWNER_URL and S3_PUBLIC_ENDPOINT', () => {
+    const OWNER = 'postgres://gsm:owner-password-0123456789@db.internal:5432/gsm';
+
+    it('reads the owner URL, ignores it under test, and shows only that it is set', () => {
+      expect(parseEnv({ ...production(), DATABASE_OWNER_URL: OWNER }).database.ownerUrl).toBe(OWNER);
+      expect(parseEnv(production()).database.ownerUrl).toBeUndefined();
+      expect(parseEnv({ NODE_ENV: 'test', DATABASE_OWNER_URL: OWNER }).database.ownerUrl).toBeUndefined();
+      const text = JSON.stringify(summarizeConfig(parseEnv({ ...production(), DATABASE_OWNER_URL: OWNER })));
+      expect(text).toContain('"ownerUrl":"[set]"');
+      expect(text).not.toContain('owner-password-0123456789');
+    });
+
+    it('reads the public endpoint without a trailing slash, requires https in production and shows it redacted', () => {
+      const config = parseEnv({ ...production(), S3_PUBLIC_ENDPOINT: 'https://files.gsm.example//' });
+      expect(config.s3.publicEndpoint).toBe('https://files.gsm.example');
+      expect(JSON.stringify(summarizeConfig(config))).toContain('"publicEndpoint":"https://files.gsm.example/"');
+      expect(issuesOf({ ...production(), S3_PUBLIC_ENDPOINT: 'http://files.gsm.example' })).toEqual([
+        { variable: 'S3_PUBLIC_ENDPOINT', message: 'must be an https URL in production' },
+      ]);
+      expect(parseEnv({ S3_PUBLIC_ENDPOINT: 'http://localhost:9000' }).s3.publicEndpoint).toBe('http://localhost:9000');
+      expect(parseEnv({}).s3.publicEndpoint).toBeUndefined();
+    });
+
+    it('accepts a plain-http store only inside the stack: one label or loopback, and refuses every other host, IPv6 literals included', () => {
+      const refused = {
+        variable: 'S3_ENDPOINT',
+        message: 'must be an https URL in production when the store is not on the private network',
+      };
+      for (const endpoint of [
+        'http://s3.provider.example:9000',
+        'http://10.0.0.5:9000',
+        'http://172.30.2.7:9000',
+        'http://[fd00::1]:9000',
+        'http://[2001:db8::5]:9000',
+        'http://[fe80::1]:9000',
+        'http://[::ffff:10.0.0.5]:9000',
+        'http://minio.:9000',
+        'http://0x0a000005:9000', // written in hexadecimal, it is 10.0.0.5
+        'http://2130706433.example:9000',
+      ]) {
+        expect(issuesOf({ ...production(), S3_ENDPOINT: endpoint }), endpoint).toEqual([refused]);
+      }
+      for (const endpoint of [
+        'http://minio:9000',
+        'http://minio',
+        'http://gsm-minio_1:9000',
+        'http://localhost:9000',
+        'http://127.0.0.1:9000',
+        'http://127.4.5.6:9000',
+        'http://[::1]:9000',
+      ]) {
+        expect(issuesOf({ ...production(), S3_ENDPOINT: endpoint }), endpoint).toEqual([]);
+      }
+    });
+
+    it('knows a host inside the stack', () => {
+      for (const host of ['minio', 'MinIO', 'gsm-minio_1', 'a', 'localhost', '127.0.0.1', '[::1]', '::1']) {
+        expect(isStackHost(host), host).toBe(true);
+      }
+      for (const host of [
+        '',
+        'minio.',
+        'minio.internal',
+        '10.0.0.5',
+        '[fd00::1]',
+        '[::ffff:7f00:1]',
+        '-minio',
+        'mi nio',
+        'minio:9000',
+      ]) {
+        expect(isStackHost(host), host).toBe(false);
+      }
+    });
+
+    it('refuses a plain-http store with a public host name, and warns when links cannot be signed for a browser', () => {
+      const warning = (config: ReturnType<typeof parseEnv>) => config.warnings.map((entry) => entry.variable);
+      expect(issuesOf({ ...production(), S3_ENDPOINT: 'http://s3.provider.example:9000' })).toEqual([
+        {
+          variable: 'S3_ENDPOINT',
+          message: 'must be an https URL in production when the store is not on the private network',
+        },
+      ]);
+      expect(issuesOf({ ...production(), S3_ENDPOINT: 'https://s3.provider.example' })).toEqual([]);
+      // The bundled store has a name without a dot (or is on this machine): accepted, with the warning while no public endpoint is set.
+      for (const endpoint of ['http://minio:9000', 'http://localhost:9000', 'http://127.0.0.1:9000']) {
+        expect(warning(parseEnv({ ...production(), S3_ENDPOINT: endpoint })), endpoint).toEqual(['S3_PUBLIC_ENDPOINT']);
+      }
+      expect(
+        parseEnv({ ...production(), S3_ENDPOINT: 'http://minio:9000', S3_PUBLIC_ENDPOINT: 'https://files.gsm.example' })
+          .warnings,
+      ).toEqual([]);
+      expect(parseEnv({ ...production(), S3_ENDPOINT: 'https://s3.provider.example' }).warnings).toEqual([]);
+    });
+  });
+
+  it('requires TLS for mail in production only', () => {
+    expect(parseEnv(production()).mail.requireTls).toBe(true);
+    expect(parseEnv({ NODE_ENV: 'development' }).mail.requireTls).toBe(false);
+    expect(parseEnv({ NODE_ENV: 'test' }).mail.requireTls).toBe(false);
+    expect(JSON.stringify(summarizeConfig(parseEnv(production())))).toContain('"requireTls":true');
   });
 });

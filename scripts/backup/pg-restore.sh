@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Restores one backup object into an EXPLICIT target database (feature 24D, decision 036).
-# Usage: pg-restore.sh <object> <target database url> [--identity <age private key file>] [--force]
+# Restores one backup object into an EXPLICIT target database (feature 24D, decisions 036 and 055).
+# Usage: pg-restore.sh <object> <target database url> [--identity <age private key file>] [--force] [--as-superuser]
 #   <object>  path inside the backup bucket, e.g. db/daily/gsm-20261110T011500Z.dump.age
-# The target is never defaulted to DATABASE_URL, and a target that already has tables is refused unless --force is given.
+# The target is never defaulted to DATABASE_URL, and a target that already has tables is refused unless --force is given. A target that
+# connects as a superuser is refused unless --as-superuser is given: a dump's statements run with the restoring role's rights, so restore
+# as the owner of the target database (docs/OPERATIONS.md section 4).
 # Needs BACKUP_S3_*; an .age object needs --identity. BACKUP_DRY_RUN=1 prints every command instead of running it.
 set -euo pipefail
 SCRIPT_NAME=pg-restore
@@ -10,7 +12,7 @@ SCRIPT_NAME=pg-restore
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 usage() {
-  die "usage: pg-restore.sh <object> <target database url> [--identity <age key file>] [--force]"
+  die "usage: pg-restore.sh <object> <target database url> [--identity <age key file>] [--force] [--as-superuser]"
 }
 
 [ $# -ge 2 ] || usage
@@ -19,6 +21,7 @@ target=$2
 shift 2
 identity=""
 force=0
+as_superuser=0
 while [ $# -gt 0 ]; do
   case $1 in
     --identity)
@@ -28,6 +31,10 @@ while [ $# -gt 0 ]; do
       ;;
     --force)
       force=1
+      shift
+      ;;
+    --as-superuser)
+      as_superuser=1
       shift
       ;;
     *) usage ;;
@@ -43,8 +50,13 @@ if [[ $object == *.age ]]; then
 fi
 
 if dry_run; then
-  log guard "dry run: skipping the check that the target database is empty"
+  log guard "dry run: skipping the checks of the target database (its role and that it is empty)"
 else
+  superuser=$(psql "$target" --no-psqlrc --tuples-only --no-align --command \
+    "select rolsuper from pg_roles where rolname = current_user")
+  if [ "$superuser" = t ] && [ "$as_superuser" != 1 ]; then
+    die "the target connects as a superuser: a dump's statements run with the restoring role's rights; restore as the owner of the target database (docs/OPERATIONS.md section 4), or pass --as-superuser for a dump you made yourself"
+  fi
   tables=$(psql "$target" --no-psqlrc --tuples-only --no-align --command \
     "select count(*) from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema')")
   if [ "${tables:-0}" -gt 0 ] && [ "$force" != 1 ]; then

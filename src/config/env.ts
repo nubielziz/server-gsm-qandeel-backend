@@ -55,7 +55,10 @@ export interface AppConfig {
   readonly http: {
     readonly host: string;
     readonly port: number;
-    /** Proxies trusted for `X-Forwarded-*` (client IP, protocol). */
+    /**
+     * Proxies trusted for `X-Forwarded-*` (client IP, protocol). Production requires it (decision 055): the exact addresses of the
+     * proxies, or `false` for a stack without one; a range or a hop count gives a boot warning.
+     */
     readonly trustProxy: TrustProxy;
     readonly bodyLimitBytes: number;
     /**
@@ -94,6 +97,8 @@ export interface AppConfig {
     readonly smtpUrl: string;
     /** The sender of every mail: an address, or `Name <address>`. */
     readonly from: string;
+    /** STARTTLS is required on an `smtp://` URL; `smtps://` is TLS from the start (decision 055). On in production, off elsewhere. */
+    readonly requireTls: boolean;
   };
   /** Telegram Bot API (decision 033). Every value is optional: without a token, Telegram sends fail with a clear reason. */
   readonly telegram: {
@@ -118,6 +123,16 @@ export interface AppConfig {
   readonly database: {
     readonly url: string;
     readonly testUrl: string;
+    /**
+     * The owner role of the tables, for `db:migrate` and `setup` (decision 055); never set for the API and the worker in production.
+     * Outside production unset means `DATABASE_URL`; ignored under `NODE_ENV=test`.
+     */
+    readonly ownerUrl: string | undefined;
+    /**
+     * `PGHOST`: the host the Postgres driver connects to when a database URL names none (decision 055). Only the locality rule reads it
+     * (a URL without a host is local only when this is local too); the pool itself never receives it.
+     */
+    readonly driverHost: string | undefined;
     readonly poolMax: number;
     /**
      * Session limits of this process's pool (decision 055); 0 means no limit. Defaults 15 s, 5 s and 60 s; none under
@@ -133,6 +148,8 @@ export interface AppConfig {
   readonly s3: {
     /** Unset means the AWS default endpoint for the region. */
     readonly endpoint: string | undefined;
+    /** The address presigned links are signed for (decision 055): the one a browser reaches; unset means `endpoint`. */
+    readonly publicEndpoint: string | undefined;
     readonly region: string;
     readonly bucket: string;
     readonly accessKeyId: string;
@@ -263,7 +280,8 @@ const MAX_TRUST_PROXY_HOPS = 10;
 /**
  * Local-only values used outside production; production rejects them so a copied `.env` cannot reach it.
  *
- * Why: a fresh checkout runs after `docker compose up -d` with no `.env`; production refuses these values.
+ * Why: a fresh checkout runs after `docker compose up -d` with no `.env`; production refuses these values: the secrets, the database
+ * and both Redis URLs, the S3 key pair, the mail URL and the search key (decision 055).
  */
 export const DEV_DEFAULTS = {
   databaseUrl: 'postgres://gsm:gsm@localhost:5432/gsm',
@@ -375,7 +393,9 @@ const rawSchema = z.object({
     )
     .optional(),
   DATABASE_URL: postgresUrl.optional(),
+  DATABASE_OWNER_URL: postgresUrl.optional(),
   DATABASE_URL_TEST: postgresUrl.optional(),
+  PGHOST: z.string().optional(),
   DATABASE_POOL_MAX: int(1, 200).optional(),
   DATABASE_STATEMENT_TIMEOUT_MS: int(0, 3_600_000).optional(),
   DATABASE_LOCK_TIMEOUT_MS: int(0, 600_000).optional(),
@@ -389,6 +409,7 @@ const rawSchema = z.object({
     .regex(/^[A-Za-z0-9:_-]{1,64}$/, 'use letters, digits, ":", "_" or "-" (1-64 characters)')
     .optional(),
   S3_ENDPOINT: httpUrl.optional(),
+  S3_PUBLIC_ENDPOINT: httpUrl.optional(),
   S3_REGION: z.string().min(1).optional(),
   S3_BUCKET: z.string().min(3).optional(),
   S3_BUCKET_TEST: z.string().min(3).optional(),
@@ -494,6 +515,85 @@ export function parseTrustProxy(value: string | undefined): TrustProxyResult {
     if (entry.endsWith('/0')) return { ok: false, message: `"${entry}" would trust every address` };
   }
   return { ok: true, value: [...new Set(entries)] };
+}
+
+/**
+ * Tells whether a host name is this machine.
+ *
+ * Why: a process or a script that changes or reads data only trusts a server on this machine without being told so
+ * (decision 055): the reset and the seed destroy or fill data, and a process without `NODE_ENV` is development.
+ *
+ * @param host a host name from a URL (`localhost`, `127.0.0.1`, `[::1]`)
+ * @returns true for `localhost`, any `127.x.x.x` address and the IPv6 loopback
+ */
+export function isLocalHost(host: string): boolean {
+  const name = host.toLowerCase();
+  return name === 'localhost' || name === '[::1]' || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
+}
+
+/**
+ * Tells whether every host a connection URL names is on this machine or a socket directory.
+ *
+ * Why: decision 055: a process without `NODE_ENV` refuses a remote database, and production's password rules exempt services on this
+ * machine. A connection string can name its host outside the authority too (`?host=`, `?hostaddr=`), so every one counts. A Postgres URL
+ * that names no host at all is not local by itself: the driver then connects to `PGHOST`, so that value is judged the same way (unset or
+ * empty means the driver's own default, this machine).
+ *
+ * @param url a Postgres or Redis URL
+ * @param driverHost `PGHOST` (`AppConfig.database.driverHost`), for a Postgres URL only: a Redis client has no such fallback
+ * @returns true when each host is empty, a socket directory (starts with `/`) or passes {@link isLocalHost}; an unparsable URL
+ *   answers true (its own variable reports it)
+ */
+export function databaseIsLocal(url: string, driverHost?: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
+  const named = [parsed.hostname, ...parsed.searchParams.getAll('host').flatMap((value) => value.split(','))].filter(
+    (host) => host !== '',
+  );
+  const hosts = [
+    ...named,
+    ...parsed.searchParams.getAll('hostaddr').flatMap((value) => value.split(',')),
+    // The driver uses `config.host || PGHOST`: only a URL without a host of its own falls back to the environment.
+    ...(named.length === 0 && driverHost !== undefined ? driverHost.split(',').map((host) => host.trim()) : []),
+  ];
+  return hosts.every((host) => host === '' || host.startsWith('/') || isLocalHost(host));
+}
+
+/**
+ * Tells whether a host name is inside the stack: a loopback address or a name of one label.
+ *
+ * Why: decision 055: a plain-http object store is accepted in production only when it is the bundled one, reached by its compose
+ * service name (`minio`) or on this machine; a dotted name, an address of a network and an IPv6 literal that is not loopback leave the
+ * stack and need TLS.
+ *
+ * @param host the host name of a URL as `URL.hostname` gives it (an IPv6 literal keeps its brackets)
+ * @returns true for a loopback address (see {@link isLocalHost}) or a single label of letters, digits, `-` and `_`
+ */
+export function isStackHost(host: string): boolean {
+  return isLocalHost(host) || /^[a-z0-9][a-z0-9_-]*$/i.test(host);
+}
+
+/**
+ * Tells whether a `TRUST_PROXY` value trusts more than named addresses.
+ *
+ * Why: decision 055: a range or a hop count lets every host in it choose the client address the API sees, so the boot warns.
+ *
+ * @param value the parsed setting
+ * @returns false for `false`; true for a hop count, a named range or a CIDR shorter than a whole address
+ */
+export function trustProxyIsRange(value: TrustProxy): boolean {
+  if (value === false) return false;
+  if (typeof value === 'number') return true;
+  return value.some((entry) => {
+    if ((NAMED_PROXY_RANGES as readonly string[]).includes(entry)) return true;
+    const [address, prefix] = entry.split('/');
+    if (prefix === undefined || address === undefined) return false;
+    return Number(prefix) < (net.isIP(address) === 4 ? 32 : 128);
+  });
 }
 
 /**
@@ -618,12 +718,131 @@ export function parseEncryptionKeys(
 const CORS_ORIGINS_REFUSED =
   'is not read in production: set CONSOLE_ORIGINS (the admin console) and SHOP_ORIGINS (the storefront and the merchant portal), or remove it to derive both from CONSOLE_BASE_URL, STORE_BASE_URL and PORTAL_BASE_URL';
 
+/** Why: decision 055: a process without `NODE_ENV` is development, and development only talks to a database on this machine. */
+export const NODE_ENV_REMOTE_REFUSED =
+  'is not set, and DATABASE_URL names a database that is not on this machine: set NODE_ENV=production on a server, or NODE_ENV=development for a database you run locally';
+
+/** Why: decision 055: a template's `CHANGE_ME` value reaching production would run on a published password or key. */
+export const PLACEHOLDER_REFUSED =
+  'still holds the CHANGE_ME placeholder of the template: replace it with the real value';
+
+/** Why: decision 055: a service on another machine is reached over a network, so its password must resist guessing. */
+export const WEAK_PASSWORD_REFUSED = 'must carry a password of at least 16 characters in production';
+
+/** Why: decision 055: with a range or a hop count, every host inside it can choose the client address the API sees. */
+export const TRUST_PROXY_RANGE_WARNING =
+  'trusts a range of addresses or a hop count: every host in that range can choose the client address the API sees; list the exact addresses of the proxies (Caddy and the site, docs/OPERATIONS.md section 1)';
+
+/** Why: decision 055: password hashes must keep the cost OWASP recommends for argon2id (decision 007). */
+export const ARGON2_FLOOR_REFUSED =
+  'with ARGON2_TIME_COST is below the OWASP minimum for argon2id (decision 007): use 19456 KiB with a time cost of 2, or another published pair (47104 KiB with 1 pass, 12288 KiB with 3, 9216 KiB with 4, 7168 KiB with 5), or more of both';
+
+/**
+ * The argon2id settings OWASP publishes as equally strong, as memory in KiB and passes, for one lane.
+ *
+ * Why: decision 007 and decision 055: the floor is exactly these pairs. A product of memory and passes is not equivalent: more passes
+ * do not make up for less memory.
+ */
+const ARGON2_FLOOR_PAIRS: readonly (readonly [memoryKib: number, passes: number])[] = [
+  [47_104, 1],
+  [19_456, 2],
+  [12_288, 3],
+  [9_216, 4],
+  [7_168, 5],
+];
+
+/**
+ * Tells whether an argon2id setting reaches the published OWASP minimum.
+ *
+ * Why: decision 055: production refuses weaker password hashing than the published pairs (decision 007).
+ *
+ * @param memoryKib `ARGON2_MEMORY_KIB`
+ * @param passes `ARGON2_TIME_COST`
+ * @returns true when some published pair has both its memory and its passes at or below the setting's
+ */
+export function argon2MeetsFloor(memoryKib: number, passes: number): boolean {
+  return ARGON2_FLOOR_PAIRS.some(([memory, minimumPasses]) => memoryKib >= memory && passes >= minimumPasses);
+}
+
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value) && !Buffer.isBuffer(value)) {
     Object.freeze(value);
     for (const child of Object.values(value)) deepFreeze(child);
   }
   return value;
+}
+
+/**
+ * The production rules for the secrets and the services a process reaches over a network (decision 055).
+ *
+ * Why: a short token, a missing password or a copied development value in production would run on a guessable secret; the
+ * services on this machine are exempt from the password rule because the tests run the production rules against local instances.
+ *
+ * @param raw the parsed variables
+ * @param fail reports a problem of one variable
+ * @param warn reports a setting that is accepted but should change
+ */
+function productionSecrets(
+  raw: RawEnv,
+  fail: (variable: string, message: string) => void,
+  warn: (variable: string, message: string) => void,
+): void {
+  const atLeast = (variable: string, value: string | undefined, min: number) => {
+    if (value !== undefined && value.length < min) fail(variable, `must be at least ${min} characters in production`);
+  };
+  atLeast('METRICS_TOKEN', raw.METRICS_TOKEN, 32);
+  atLeast('TYPESENSE_SEARCH_KEY', raw.TYPESENSE_SEARCH_KEY, 32);
+  atLeast('TYPESENSE_INDEXER_KEY', raw.TYPESENSE_INDEXER_KEY, 32);
+  atLeast('S3_SECRET_ACCESS_KEY', raw.S3_SECRET_ACCESS_KEY, 16);
+
+  // The host of a Redis URL is read the same way as a database host; only a service on another machine needs a password. A database
+  // URL without a host reaches the host named by PGHOST, so that is judged too.
+  const networkPassword = (variable: string, value: string | undefined, driverHost?: string) => {
+    if (value === undefined || databaseIsLocal(value, driverHost)) return;
+    let password: string;
+    try {
+      password = new URL(value).password;
+      password = decodeURIComponent(password);
+    } catch {
+      return; // an unparsable URL is reported by its own variable
+    }
+    if (password.length < 16) fail(variable, WEAK_PASSWORD_REFUSED);
+  };
+  networkPassword('DATABASE_URL', raw.DATABASE_URL, raw.PGHOST);
+  networkPassword('DATABASE_OWNER_URL', raw.DATABASE_OWNER_URL, raw.PGHOST);
+  networkPassword('REDIS_QUEUE_URL', raw.REDIS_QUEUE_URL);
+  networkPassword('REDIS_CACHE_URL', raw.REDIS_CACHE_URL);
+
+  const noDevValue = (variable: string, given: string | undefined, devValue: string) => {
+    if (given === devValue) fail(variable, 'must not use the development default in production');
+  };
+  noDevValue('DATABASE_URL', raw.DATABASE_URL, DEV_DEFAULTS.databaseUrl);
+  noDevValue('REDIS_QUEUE_URL', raw.REDIS_QUEUE_URL, DEV_DEFAULTS.redisQueueUrl);
+  noDevValue('REDIS_CACHE_URL', raw.REDIS_CACHE_URL, DEV_DEFAULTS.redisCacheUrl);
+  noDevValue('S3_ACCESS_KEY_ID', raw.S3_ACCESS_KEY_ID, DEV_DEFAULTS.s3AccessKeyId);
+  noDevValue('S3_SECRET_ACCESS_KEY', raw.S3_SECRET_ACCESS_KEY, DEV_DEFAULTS.s3SecretAccessKey);
+  noDevValue('MAIL_SMTP_URL', raw.MAIL_SMTP_URL, DEV_DEFAULTS.mailSmtpUrl);
+
+  // Presigned links are signed for the public endpoint and opened by a browser, which needs https (decision 055).
+  if (raw.S3_PUBLIC_ENDPOINT !== undefined && new URL(raw.S3_PUBLIC_ENDPOINT).protocol !== 'https:') {
+    fail('S3_PUBLIC_ENDPOINT', 'must be an https URL in production');
+  }
+  // A plain-http store is the bundled MinIO inside the stack: a host name of one label (a compose service) or a loopback address. Any
+  // other host (a dotted name, an IPv4 address that is not loopback, an IPv6 literal that is not loopback) is reached over a network
+  // and needs TLS.
+  if (raw.S3_ENDPOINT !== undefined) {
+    const store = new URL(raw.S3_ENDPOINT);
+    if (store.protocol === 'http:') {
+      if (!isStackHost(store.hostname)) {
+        fail('S3_ENDPOINT', 'must be an https URL in production when the store is not on the private network');
+      } else if (raw.S3_PUBLIC_ENDPOINT === undefined) {
+        warn(
+          'S3_PUBLIC_ENDPOINT',
+          'is not set while S3_ENDPOINT is plain http: file links are signed for that address, which a browser cannot open; set it to the https address of the files host (docs/OPERATIONS.md section 1)',
+        );
+      }
+    }
+  }
 }
 
 /**
@@ -634,6 +853,17 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   const env: NodeEnv = raw.NODE_ENV ?? 'development';
   const production = env === 'production';
   const testing = env === 'test';
+  // Decision 055: a template's CHANGE_ME value is refused in every variable, before any other rule names that variable.
+  if (production) {
+    for (const name of KNOWN_VARIABLES) {
+      const value = (raw as Record<string, unknown>)[name];
+      if (typeof value === 'string' && value.includes('CHANGE_ME')) fail(name, PLACEHOLDER_REFUSED);
+    }
+  }
+  // Decision 055: a process without NODE_ENV is development, and development only talks to a database on this machine.
+  if (raw.NODE_ENV === undefined && !databaseIsLocal(raw.DATABASE_URL ?? DEV_DEFAULTS.databaseUrl, raw.PGHOST)) {
+    fail('NODE_ENV', NODE_ENV_REMOTE_REFUSED);
+  }
   // A value that has a local default outside production and must be given in production.
   const withDefault = <T>(variable: string, value: T | undefined, devDefault: T): T => {
     if (value !== undefined) return value;
@@ -655,6 +885,10 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
 
   const trust = parseTrustProxy(raw.TRUST_PROXY);
   if (!trust.ok) fail('TRUST_PROXY', trust.message);
+  // Decision 055: the API takes the client address from the proxies named here, so production states them (an explicit `false` is
+  // a stack without a proxy); a range or a hop count is accepted with a warning.
+  if (production && raw.TRUST_PROXY === undefined) fail('TRUST_PROXY', 'is required in production');
+  else if (production && trust.ok && trustProxyIsRange(trust.value)) warn('TRUST_PROXY', TRUST_PROXY_RANGE_WARNING);
 
   // Decision 055: the session limits of the pool. Off under NODE_ENV=test (parallel suites under load); the limit tests set them.
   const limit = (variable: string, given: number | undefined, fallback: number): number => {
@@ -700,6 +934,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   // Behind a proxy that adds no forwarding header the public internet looks internal, so production always needs the
   // metrics token (decision 015); Prometheus scrapes with it.
   if (production && raw.METRICS_TOKEN === undefined) fail('METRICS_TOKEN', 'is required in production');
+  if (production) productionSecrets(raw, fail, warn);
 
   // OWASP baseline for argon2id (decision 007); `bun run bench:argon2` helps pick values for the target host.
   const argon2 = {
@@ -709,6 +944,9 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   };
   if (argon2.memoryKib < 8 * argon2.parallelism) {
     fail('ARGON2_MEMORY_KIB', 'must be at least 8 times ARGON2_PARALLELISM (argon2 needs 8 KiB per lane)');
+  }
+  if (production && !argon2MeetsFloor(argon2.memoryKib, argon2.timeCost)) {
+    fail('ARGON2_MEMORY_KIB', ARGON2_FLOOR_REFUSED);
   }
 
   const errorsBaseUrl = withDefault('ERRORS_BASE_URL', raw.ERRORS_BASE_URL, DEV_DEFAULTS.errorsBaseUrl).replace(
@@ -892,6 +1130,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     mail: {
       smtpUrl: withDefault('MAIL_SMTP_URL', raw.MAIL_SMTP_URL, DEV_DEFAULTS.mailSmtpUrl),
       from: withDefault('MAIL_FROM', raw.MAIL_FROM, DEV_DEFAULTS.mailFrom),
+      requireTls: production,
     },
     // Telegram is optional everywhere: a missing token fails the send with a reason instead of stopping the boot.
     telegram: {
@@ -908,6 +1147,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     database: {
       url: withDefault('DATABASE_URL', raw.DATABASE_URL, DEV_DEFAULTS.databaseUrl),
       testUrl: raw.DATABASE_URL_TEST ?? DEV_DEFAULTS.databaseUrlTest,
+      ownerUrl: testing ? undefined : raw.DATABASE_OWNER_URL,
+      driverHost: raw.PGHOST,
       poolMax: raw.DATABASE_POOL_MAX ?? 10,
       timeouts: databaseTimeouts,
     },
@@ -924,6 +1165,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     },
     s3: {
       endpoint: s3Endpoint,
+      publicEndpoint: raw.S3_PUBLIC_ENDPOINT?.replace(/\/+$/, ''),
       region: raw.S3_REGION ?? 'us-east-1',
       bucket: testing
         ? (raw.S3_BUCKET_TEST ?? DEV_DEFAULTS.s3BucketTest)
@@ -1104,7 +1346,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       referenceDocs: config.http.referenceDocs,
     },
     fx: { provider: config.fx.provider, apiKey: flag(config.fx.apiKey), timeoutMs: config.fx.timeoutMs },
-    mail: { smtpUrl: redactUrl(config.mail.smtpUrl), from: config.mail.from },
+    mail: { smtpUrl: redactUrl(config.mail.smtpUrl), from: config.mail.from, requireTls: config.mail.requireTls },
     telegram: {
       botToken: flag(config.telegram.botToken),
       botUsername: config.telegram.botUsername,
@@ -1115,6 +1357,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
     logLevel: config.log.level,
     database: {
       url: redactUrl(config.database.url),
+      ownerUrl: flag(config.database.ownerUrl),
       poolMax: config.database.poolMax,
       timeouts: config.database.timeouts,
     },
@@ -1125,6 +1368,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
     },
     s3: {
       endpoint: redactUrl(config.s3.endpoint),
+      publicEndpoint: redactUrl(config.s3.publicEndpoint),
       region: config.s3.region,
       bucket: config.s3.bucket,
       forcePathStyle: config.s3.forcePathStyle,

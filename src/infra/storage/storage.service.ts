@@ -139,7 +139,8 @@ async function collect(body: StorageBody, maxBytes: number): Promise<Buffer> {
  * through `@aws-sdk/client-s3` (path-style for MinIO), so production can use any S3-compatible store.
  *
  * Side effects: network calls to the S3 endpoint; the client is created without connecting and destroyed at shutdown.
- * An unreachable or failing store becomes `503 UNAVAILABLE`.
+ * An unreachable or failing store becomes `503 UNAVAILABLE`. Calls keep `S3_ENDPOINT`; links are signed for `S3_PUBLIC_ENDPOINT` when
+ * it is set (decision 055): the address a browser reaches, which is not the one the containers use.
  *
  * @see docs/decisions/004-local-s3-minio.md
  */
@@ -148,14 +149,15 @@ export class StorageService implements OnApplicationShutdown {
   /** The bucket every object lives in (`S3_BUCKET`); the `files` table stores it next to the key. */
   readonly bucket: string;
   private readonly s3: S3Client;
+  /** The client that signs download links: `s3` itself, or one built for `S3_PUBLIC_ENDPOINT` (it only signs, it never calls). */
+  private readonly presigner: S3Client;
 
   constructor(
     @Inject(APP_CONFIG) config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {
     this.bucket = config.s3.bucket;
-    this.s3 = new S3Client({
-      endpoint: config.s3.endpoint,
+    const options = {
       region: config.s3.region,
       forcePathStyle: config.s3.forcePathStyle,
       credentials: { accessKeyId: config.s3.accessKeyId, secretAccessKey: config.s3.secretAccessKey },
@@ -165,7 +167,12 @@ export class StorageService implements OnApplicationShutdown {
       responseChecksumValidation: 'WHEN_REQUIRED',
       // A silent store must not hold a request forever.
       requestHandler: { connectionTimeout: 5_000, requestTimeout: 30_000 },
-    });
+    } as const;
+    this.s3 = new S3Client({ ...options, endpoint: config.s3.endpoint });
+    this.presigner =
+      config.s3.publicEndpoint === undefined
+        ? this.s3
+        : new S3Client({ ...options, endpoint: config.s3.publicEndpoint });
   }
 
   /**
@@ -295,7 +302,8 @@ export class StorageService implements OnApplicationShutdown {
    *
    * Why: the file routes answer `302` to such a link (contract GET /admin/files/:id), so downloads go straight from the
    * store to the browser. The link works for anyone who holds it until it expires, so keep the lifetime short and never
-   * log it.
+   * log it. It is signed for `S3_PUBLIC_ENDPOINT` when that is set (decision 055): the signature covers the host the browser sends,
+   * and the stack's files host passes it to the store unchanged.
    *
    * Side effects: none (the signature is computed locally; the object is not checked).
    *
@@ -312,7 +320,7 @@ export class StorageService implements OnApplicationShutdown {
     }
     if (options.contentType !== undefined) assertContentType(options.contentType);
     return getSignedUrl(
-      this.s3,
+      this.presigner,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
@@ -343,5 +351,6 @@ export class StorageService implements OnApplicationShutdown {
   /** Closes the client's connections. */
   onApplicationShutdown(): void {
     this.s3.destroy();
+    if (this.presigner !== this.s3) this.presigner.destroy();
   }
 }

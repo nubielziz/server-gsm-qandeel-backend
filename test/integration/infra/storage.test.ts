@@ -3,6 +3,7 @@
 // unreachable. Every object lives under tests/<uuid>/ and is deleted afterwards.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import http from 'node:http';
 import { Readable } from 'node:stream';
 import { AppError } from '@src/common/errors';
 import { HealthRegistry } from '@src/infra/health';
@@ -340,7 +341,53 @@ describe('presigned links', () => {
     expect(url).not.toContain(harness.config.s3.secretAccessKey);
     expect(url).toContain('X-Amz-Signature=');
   });
+
+  it('are signed for S3_PUBLIC_ENDPOINT, and the store accepts one sent with that host (decision 055)', async () => {
+    const publicHost = 'files.gsm.example';
+    const other = await createInfra({ clock, env: { S3_PUBLIC_ENDPOINT: `https://${publicHost}` } });
+    try {
+      const key = newKey('proof.bin');
+      const data = randomBytes(1200);
+      // Calls keep S3_ENDPOINT: only the links are signed for the public address.
+      await other.get(StorageService).put(key, data, { contentType: 'application/octet-stream' });
+      clock.reset();
+      const link = new URL(await other.get(StorageService).presignGet(key, { filename: 'proof.bin' }));
+      expect(link.origin).toBe(`https://${publicHost}`);
+      expect(link.pathname).toBe(`/${harness.config.s3.bucket}/${key}`);
+      expect(link.searchParams.get('X-Amz-Signature')).toMatch(/^[0-9a-f]{64}$/);
+      expect(link.searchParams.get('response-content-disposition')).toStartWith('attachment');
+
+      // What the files host does: the same path and query, sent to the store with the Host the link was signed for.
+      const store = new URL(harness.config.s3.endpoint ?? 'http://localhost:9000');
+      const signedHost = await rawGet(store, `${link.pathname}${link.search}`, publicHost);
+      expect(signedHost.status).toBe(200);
+      expect(signedHost.body).toEqual(data);
+      // With the store's own address as the Host the signature does not match: the link is bound to the public address.
+      const ownHost = await rawGet(store, `${link.pathname}${link.search}`, store.host);
+      expect(ownHost.status).toBe(403);
+      // Unset, links are signed for S3_ENDPOINT as before.
+      expect(new URL(await storage.presignGet(key)).origin).toBe(new URL(harness.config.s3.endpoint ?? '').origin);
+    } finally {
+      await other.close();
+    }
+  });
 });
+
+/** A GET with an explicit Host header (fetch cannot set one), as the files host's proxy sends it to the store. */
+function rawGet(store: URL, path: string, host: string): Promise<{ status: number; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { host: store.hostname, port: Number(store.port), path, method: 'GET', headers: { host } },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks) }));
+      },
+    );
+    request.on('error', reject);
+    request.end();
+  });
+}
 
 describe('health', () => {
   it('registers the non-critical storage indicator, and it passes', async () => {

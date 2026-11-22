@@ -10,7 +10,7 @@ import { configureApp, createAppAdapter } from '@src/app.bootstrap';
 import { APP_CONFIG, type AppConfig, parseEnv } from '@src/config';
 import { TEST_DATABASE_URL } from './db';
 import { CacheModule } from '@src/infra/cache';
-import { DbModule } from '@src/infra/db';
+import { DatabaseRoleCheckModule, DbModule } from '@src/infra/db';
 import { LOG_DESTINATION } from '@src/infra/logging';
 import { SecurityModule, StreamRoutesModule } from '@src/modules/identity';
 import { QueuesModule } from '@src/infra/queues';
@@ -66,9 +66,10 @@ export const PRODUCTION_ENV: Record<string, string> = {
   PORTAL_BASE_URL: 'https://portal.gsm.example',
   CONSOLE_BASE_URL: 'https://admin.gsm.example',
   STORE_BASE_URL: 'https://shop.gsm.example',
-  DATABASE_URL: 'postgres://app:pw@db.internal:5432/gsm',
-  REDIS_QUEUE_URL: 'redis://queue.internal:6379/0',
-  REDIS_CACHE_URL: 'redis://cache.internal:6379/0',
+  DATABASE_URL: 'postgres://app:app-password-0123456789@db.internal:5432/gsm',
+  REDIS_QUEUE_URL: 'redis://:queue-password-0123456789@queue.internal:6379/0',
+  REDIS_CACHE_URL: 'redis://:cache-password-0123456789@cache.internal:6379/0',
+  TRUST_PROXY: 'false',
   S3_BUCKET: 'gsm-prod-files',
   S3_ACCESS_KEY_ID: 'AKIA-ID',
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
@@ -249,6 +250,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
   // Decision 054: one test database serves apps of several LOOKUP_HASH_KEY values, so the boot check of the real processes is left
   // out; its tests provide LookupKeyCheck themselves.
   builder.overrideModule(LookupKeyCheckModule).useModule(NoSecurityModule);
+  // Decision 055: the test apps connect as the test database's owner on purpose (one role, decision 014); the check of the real
+  // processes is tested by itself.
+  builder.overrideModule(DatabaseRoleCheckModule).useModule(NoSecurityModule);
   if (options.withoutInfrastructure) {
     const replaced = [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule, ...NEEDS_INFRASTRUCTURE];
     for (const module of replaced) builder.overrideModule(module).useModule(NoInfrastructureModule);

@@ -18,3 +18,5 @@ with a memory alert, because a full noeviction instance refuses writes.
 **Consequences.** Idempotency results, balances, holds and statuses never live in either Redis (Postgres only).
 Production may use managed Redis or Valkey with the same two policies; the env has two URLs (`REDIS_QUEUE_URL`,
 `REDIS_CACHE_URL`).
+
+**Amended by decision 055:** both Redis instances require a password (it is in the URLs, `redis://:<password>@host:6379/0`), and the queue instance has `maxmemory` (512 MB by default) with `noeviction`: a full instance refuses new jobs and the outbox keeps the work.

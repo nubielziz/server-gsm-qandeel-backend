@@ -165,7 +165,10 @@ keys made by staff and IP changes that would shut out an Owner are kept for Owne
 and network, every password attempt is counted for its email before the check (a correct one takes back only its own count), and ten
 failed passwords lock an email for 15 minutes for every network its account has not signed in from (while the lock runs, each of the account's own networks
 keeps a budget of five attempts per 15 minutes); temporary passwords expire after 72 hours; the mails a visitor can ask for are capped per
-recipient (decision 052).
+recipient (decision 052). The production stack keeps its tiers apart (decision 055): the database, both Redis instances, the object store
+and the search engine are on internal networks that only the API, the worker and the tools reach; both Redis instances need a password;
+the API trusts the client address from Caddy's and the site's two fixed addresses only; and the application connects with its own
+database role, which cannot rewrite the ledger, the order events or the audit log, change the schema or empty a table.
 
 ## 10. Observability and testing
 

@@ -31,6 +31,10 @@ const url = await this.storage.presignGet(stored.key, { filename: file.filename,
 - **Downloads:** `presignGet` makes a short-lived link (default 5 minutes, at most 7 days) with `Content-Disposition:
   attachment`; the file name is cleaned (no quotes, slashes or control characters). The link works for anyone who holds it:
   never log it.
+- **Public endpoint** (decision 055): calls go to `S3_ENDPOINT`; links are signed for `S3_PUBLIC_ENDPOINT` when it is set (the address a
+  browser reaches: in production the files host of the stack, which passes signed reads of the bucket to the store). The signature
+  covers the host, so a second client built for that address does the signing and never makes a call. Unset means the links are
+  signed for `S3_ENDPOINT` (development: the same address). Production requires https there.
 - `get` and `head` answer `null` for a missing object; `delete` is idempotent.
 - **Store down:** every call answers `503 UNAVAILABLE` (the endpoint is not in the message); `GET /health` reports `storage`
   as down (`degraded`).

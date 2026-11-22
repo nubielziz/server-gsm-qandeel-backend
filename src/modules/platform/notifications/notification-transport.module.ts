@@ -21,7 +21,9 @@ import { HttpTelegramDriver, InMemoryTelegramDriver, type TelegramDriver } from 
       provide: MAIL_DRIVER,
       inject: [APP_CONFIG],
       useFactory: (config: AppConfig): MailDriver =>
-        config.env === 'test' ? new InMemoryMailDriver() : new SmtpMailDriver(config.mail.smtpUrl),
+        config.env === 'test'
+          ? new InMemoryMailDriver()
+          : new SmtpMailDriver(config.mail.smtpUrl, undefined, { requireTls: config.mail.requireTls }),
     },
     {
       provide: TELEGRAM_DRIVER,

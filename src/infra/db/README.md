@@ -92,8 +92,25 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 - Deviation from decision 027 ("booleans default false"): `is_active` / `is_available` default to `true`, because a
   newly created rule, link or service is meant to be live unless the admin switches it off (the frontend forms send
   the flag explicitly anyway).
-- Production should run the API with a role that does not own the tables (so it cannot `TRUNCATE` or disable the
-  ledger triggers); migrations run with the owner role. Tests use the owner role on purpose.
+- **Two roles in production** (decision 055). The API and the worker connect with `DATABASE_URL`: the application's own role
+  (`gsm_app` in the template), which is neither a superuser nor an owner of a table, so it cannot `TRUNCATE`, disable the ledger
+  triggers or change the schema. `db:migrate` and `setup` connect with `DATABASE_OWNER_URL` (the owner; only the migrate service
+  has it) and, after the migrations, run the **grants step** (`grants.ts`, `applyApplicationGrants`): it creates the role or sets its
+  password and attributes (no superuser, createdb, createrole, replication or bypassrls) and grants `CONNECT`, `USAGE` on schema
+  `public`, `SELECT, INSERT, UPDATE, DELETE` on every table minus `UPDATE, DELETE` on the four append-only tables
+  (`ledger_entries`, `ledger_transactions`, `order_events`, `audit_logs`), no `TRUNCATE`, `REFERENCES` or `TRIGGER`, `USAGE, SELECT`
+  on every sequence, and the read of `drizzle.__drizzle_migrations`. It runs on every migrate, so new tables are covered, and refuses a
+  role that is a superuser or owns a table. The role is created or altered with a SCRAM-SHA-256 verifier computed in the process
+  (`scramSha256Verifier`: PBKDF2-HMAC-SHA-256, 4096 rounds, a random 16-byte salt), never with the plain password, so a failing statement
+  cannot write the password into the server's log (the password is printable ASCII); the whole step runs under the transaction-level
+  advisory lock `GRANTS_LOCK_KEY`, so two runs at once wait for each other. **Boot check:** in production `DatabaseRoleCheck`
+  (`database-role-check.ts`, imported by both root modules; a unit test fails when either loses the import) reads the connected role at
+  start and stops the process when it is a superuser or a member of a superuser role, holds the rights of an owner of a table (or is a
+  member of that owner), is a member of `pg_execute_server_program`, `pg_read_server_files` or `pg_write_server_files`, or owns the
+  database (or is a member of its owner), or when the check cannot be made. Membership of any kind counts (`pg_has_role(..., 'MEMBER')`),
+  also one that inherits nothing, because the member can switch to the role. Each refusal names `DATABASE_URL` and the broken rule, never a
+  value; test apps replace the module. **Development and tests use one role** (the owner, decision
+  014): `DATABASE_OWNER_URL` unset means `DATABASE_URL`, and the grants step then does nothing (`ownerUrlFor` in `url.ts`).
 
 ## Integrity enforced by the database (custom migration `0001`)
 

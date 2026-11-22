@@ -585,15 +585,19 @@ describe.skipIf(!ownRedis)('bun run db:reset end to end, on scratch resources', 
 
 /**
  * A complete production environment, as the deploy would give it (the values of `PRODUCTION` in test/tooling/db-reset-plan.test.ts),
- * except that Redis and S3 are on closed ports and the database is named by the test: nothing of the developer's is reachable.
+ * except that Redis and S3 are on closed ports and the databases are named by the test: nothing of the developer's is reachable.
+ * Decision 055: `DATABASE_OWNER_URL` is the owner of the scratch database (the migrate service's variable) and `DATABASE_URL` the
+ * application's own role.
  */
-const productionEnv = (databaseUrl: string): Record<string, string> => ({
+const productionEnv = (ownerUrl: string, applicationUrl: string): Record<string, string> => ({
   NODE_ENV: 'production',
   ERRORS_BASE_URL: 'https://errors.gsm.example',
   PORTAL_BASE_URL: 'https://portal.gsm.example',
   CONSOLE_BASE_URL: 'https://admin.gsm.example',
   STORE_BASE_URL: 'https://shop.gsm.example',
-  DATABASE_URL: databaseUrl,
+  DATABASE_URL: applicationUrl,
+  DATABASE_OWNER_URL: ownerUrl,
+  TRUST_PROXY: 'false',
   REDIS_QUEUE_URL: 'redis://127.0.0.1:1/0',
   REDIS_CACHE_URL: 'redis://127.0.0.1:1/0',
   S3_BUCKET: 'gsm-prod-files',
@@ -645,18 +649,40 @@ describe('bun run setup', () => {
     expect(await query(scratch.url, 'select code from currencies')).toEqual([{ code: 'USD' }]);
   });
 
-  it('is allowed in production (unlike the seed): it migrates, creates the first admin and prints the password once', async () => {
+  /** The application's own role for one test: a random name and a 24-character password, and the URL that names them. */
+  function applicationRole(scratchUrl: string): { role: string; url: string } {
+    const role = `gsm_t_${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+    const url = new URL(scratchUrl);
+    url.username = role;
+    url.password = randomUUID().replace(/-/g, '').slice(0, 24);
+    return { role, url: url.toString() };
+  }
+
+  it('is allowed in production (unlike the seed): it migrates, sets up the application role, creates the first admin and prints the password once', async () => {
     const scratch = newScratch();
     await recreateDatabase(ADMIN_URL, scratch.name);
-    const { stdout, stderr, code } = await runScript('scripts/setup.ts', productionEnv(scratch.url), undefined, [
-      '--email',
-      'Layla@Example.com',
-      '--name',
-      'Layla Haddad',
-    ]);
-    expect(stderr).toBe('');
-    expect(code).toBe(0);
+    const application = applicationRole(scratch.url);
+    let stdout: string;
+    try {
+      const result = await runScript('scripts/setup.ts', productionEnv(scratch.url, application.url), undefined, [
+        '--email',
+        'Layla@Example.com',
+        '--name',
+        'Layla Haddad',
+      ]);
+      stdout = result.stdout;
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(0);
+      expect(await query(scratch.url, `select rolsuper from pg_roles where rolname = '${application.role}'`)).toEqual([
+        { rolsuper: false },
+      ]);
+    } finally {
+      // Roles belong to the cluster, not to the scratch database: what the role holds goes first, then the role.
+      await query(scratch.url, `drop owned by "${application.role}"`).catch(() => undefined);
+      await query(ADMIN_URL, `drop role if exists "${application.role}"`);
+    }
     expect(stdout).toContain(`✓ Migrations: ${journalLength()} applied\n`);
+    expect(stdout).toContain(`✓ Application role ${application.role}: created; privileges set on `);
     expect(stdout).toContain('✓ Base currency USD: created');
     expect(stdout).toContain('✓ 12 system ledger accounts: created');
     expect(stdout).toContain('✓ Owner role: created');
@@ -667,5 +693,36 @@ describe('bun run setup', () => {
     expect(await query(scratch.url, 'select email, status, must_change_password from staff_users')).toEqual([
       { email: 'layla@example.com', status: 'invited', must_change_password: true },
     ]);
+  });
+
+  it('refuses in production a DATABASE_URL that is the owner role: the application needs a role of its own (decision 055)', async () => {
+    const scratch = newScratch();
+    await recreateDatabase(ADMIN_URL, scratch.name);
+    const { stdout, stderr, code } = await runScript(
+      'scripts/setup.ts',
+      productionEnv(scratch.url, scratch.url),
+      undefined,
+      ['--email', 'Layla@Example.com', '--name', 'Layla Haddad'],
+    );
+    expect(code).toBe(1);
+    expect(stderr).toContain('DATABASE_URL and DATABASE_OWNER_URL name the same role');
+    // The migrations ran, and nothing of the first run did.
+    expect(stdout).toContain(`✓ Migrations: ${journalLength()} applied\n`);
+    expect(stdout).not.toContain('First admin created');
+    expect(await query(scratch.url, 'select count(*)::int as n from staff_users')).toEqual([{ n: 0 }]);
+  });
+
+  it('refuses in production without DATABASE_OWNER_URL: setup runs in the migrate service, which holds it', async () => {
+    const scratch = newScratch();
+    await recreateDatabase(ADMIN_URL, scratch.name);
+    const { DATABASE_OWNER_URL: _owner, ...env } = productionEnv(scratch.url, scratch.url);
+    const { stderr, code } = await runScript('scripts/setup.ts', env, undefined, [
+      '--email',
+      'Layla@Example.com',
+      '--name',
+      'Layla Haddad',
+    ]);
+    expect(code).toBe(1);
+    expect(stderr).toContain('setup in production needs DATABASE_OWNER_URL');
   });
 });

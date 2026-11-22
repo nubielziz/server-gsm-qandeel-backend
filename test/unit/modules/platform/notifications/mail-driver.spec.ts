@@ -38,6 +38,19 @@ describe('smtpOptions', () => {
     });
     expect(smtpOptions('smtp://relay.example.com')).toMatchObject({ port: 587, secure: false });
   });
+
+  it('requires STARTTLS on smtp:// when asked, and leaves smtps:// as TLS from the start (decision 055)', () => {
+    expect(smtpOptions('smtp://relay.example.com:587', { requireTls: true })).toMatchObject({
+      secure: false,
+      requireTLS: true,
+    });
+    const implicit = smtpOptions('smtps://relay.example.com', { requireTls: true });
+    expect(implicit).toMatchObject({ secure: true });
+    expect(implicit).not.toHaveProperty('requireTLS');
+    // Without the option (development: the mail catcher speaks plain text) nothing changes.
+    expect(smtpOptions('smtp://localhost:1025')).not.toHaveProperty('requireTLS');
+    expect(smtpOptions('smtp://localhost:1025', { requireTls: false })).not.toHaveProperty('requireTLS');
+  });
 });
 
 describe('classifyMailError', () => {
@@ -155,6 +168,16 @@ describe('SmtpMailDriver', () => {
       messageId: MAIL.messageId,
     });
     expect(rig.calls[1]).toMatchObject({ html: '<p>Hi</p>', text: 'Hi' });
+  });
+
+  it('passes the TLS requirement through to the transporter it makes (decision 055)', async () => {
+    const rig = fake();
+    const driver = new SmtpMailDriver('smtp://relay.example.com:587', rig.factory, { requireTls: true });
+    await driver.send(MAIL);
+    expect(rig.made[0]).toMatchObject({ secure: false, requireTLS: true });
+    const plain = fake();
+    await new SmtpMailDriver('smtp://relay.example.com:587', plain.factory).send(MAIL);
+    expect(plain.made[0]).not.toHaveProperty('requireTLS');
   });
 
   it('turns a transporter failure into a DeliveryError that says whether to retry, and verifies and closes', async () => {

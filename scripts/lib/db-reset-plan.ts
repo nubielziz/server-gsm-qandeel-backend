@@ -2,6 +2,7 @@
 // (the terminal, if any, is a parameter).
 // The effects (drop, migrate, flush, empty the bucket) are in db-reset-steps.ts; the command is scripts/db-reset.ts.
 import type { AppConfig } from '../../src/config';
+import { isLocalHost } from '../../src/config/env';
 import { type OwnerInput, type SetupArgs, checkOwnerInput, parseSetupArgs } from '../first-run';
 
 /**
@@ -172,19 +173,9 @@ export interface ResetTarget {
   };
 }
 
-/**
- * Tells whether a host name is this machine.
- *
- * Why: the reset destroys data, so it only runs against servers on this machine: a shared or production server is never a
- * target, whatever the configuration says.
- *
- * @param host a host name from a URL (`localhost`, `127.0.0.1`, `[::1]`)
- * @returns true for `localhost`, any `127.x.x.x` address and the IPv6 loopback
- */
-export function isLocalHost(host: string): boolean {
-  const name = host.toLowerCase();
-  return name === 'localhost' || name === '[::1]' || name === '::1' || /^127(?:\.\d{1,3}){3}$/.test(name);
-}
+// The reset destroys data, so it only runs against servers on this machine (a shared or production server is never a target,
+// whatever the configuration says). The check itself lives in the configuration (decision 055) and is re-exported here.
+export { isLocalHost };
 
 /** Names a Postgres URL may not point at: the server's own databases. */
 const SYSTEM_DATABASES = new Set(['postgres', 'template0', 'template1']);

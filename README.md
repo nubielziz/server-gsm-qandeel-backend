@@ -95,6 +95,7 @@ bun run setup
 
 ```
 ✓ Migrations: up to date
+✓ The application connects as the owner role gsm: no grants applied
 ✓ Base currency USD: created
 ✓ 12 system ledger accounts: created
 ✓ Owner role: created
@@ -108,8 +109,11 @@ No admin account yet. Create the first one now? [Y/n] y
   Sign in at the console; you will set up 2FA (TOTP) first.
 ```
 
-`setup` applies the pending migrations first (the same as `bun run db:migrate`; nothing happens when there are none), then creates what
-is missing and says what already existed, one line per part:
+`setup` applies the pending migrations first (the same as `bun run db:migrate`; nothing happens when there are none) and sets up the
+application's database role (decision 055: with one role, as in development, it says so and does nothing; in production the
+application has a role of its own, `setup` connects as the owner through `DATABASE_OWNER_URL`, so it runs in the `migrate` service,
+`gsmc run --rm migrate bun run setup`, and prints `✓ Application role gsm_app: created`), then creates what is missing and says what
+already existed, one line per part:
 
 - the base currency USD (rate 1, active) and the 12 system ledger accounts (decision 024: the same rows the development seed creates);
 - the Owner role (permission `*`), unless a role that grants every permission exists already;

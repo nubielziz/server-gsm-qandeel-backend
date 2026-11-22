@@ -24,8 +24,10 @@ const PRODUCTION: Record<string, string> = {
   CONSOLE_BASE_URL: 'https://admin.gsm.example',
   STORE_BASE_URL: 'https://shop.gsm.example',
   DATABASE_URL: 'postgres://app:pw@localhost:5432/gsm',
-  REDIS_QUEUE_URL: 'redis://localhost:6379/0',
-  REDIS_CACHE_URL: 'redis://localhost:6380/0',
+  // Decision 055: production states its proxies, and refuses the development Redis URLs (127.0.0.1 is the same machine).
+  TRUST_PROXY: 'false',
+  REDIS_QUEUE_URL: 'redis://127.0.0.1:6379/0',
+  REDIS_CACHE_URL: 'redis://127.0.0.1:6380/0',
   S3_BUCKET: 'gsm-prod-files',
   S3_ENDPOINT: 'http://localhost:9000',
   S3_ACCESS_KEY_ID: 'AKIA-ID',

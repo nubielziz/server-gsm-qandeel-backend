@@ -20,6 +20,10 @@ other with relative paths. Code under `src/` never uses the alias: the module bo
 | `test/support/` | shared helpers: `app.ts` (test app), `db.ts` (test database), `infra.ts` (Redis, cache, storage, HTTP modules on the test instances), `rejection.ts` (typed `expectRejection`), `fixtures.ts` (minimal rows), `auth.ts` (roles, staff, merchants and signed-in sessions), `admin-api.ts` (`AdminApi`: a signed-in staff member with get/post/patch/put/delete, `withoutCsrf`, `anonymous`), `staff-console.ts` (a browser-like sign-in client and TOTP codes), `clock.ts` (`TestClock`, `ManualTimers`), `security-routes.ts` (one sample route per access kind) | |
 | `test/fixtures/` | data files shared by tests (the supplier names of the shop naming, the search catalog) | |
 
+Two files of `test/integration/infra/` (`db-grants.test.ts`, `database-role-check.test.ts`) create database roles with random names
+(`gsm_t_<hex>`) in the test cluster and drop them in `afterAll`. A role belongs to the cluster, not to the test database, so a crashed
+run can leave one behind; it holds no privilege that anything uses, and it is harmless.
+
 ## Scenario tests (`test/e2e/`)
 
 One file per map scenario, named `<scenario id>.e2e.test.ts` (`admin-team.e2e.test.ts`, `ip-rules.e2e.test.ts`). Bun only runs files

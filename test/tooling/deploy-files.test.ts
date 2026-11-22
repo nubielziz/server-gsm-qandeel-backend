@@ -2,6 +2,7 @@
 // config and the images' Dockerfiles. Nothing is started; these are the rules that must not drift.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { assertObjectKey } from '@src/infra/storage/storage-names';
 
 const ROOT = new URL('../../', import.meta.url);
 const read = (path: string): string => readFileSync(new URL(path, ROOT), 'utf8');
@@ -16,11 +17,26 @@ interface Service {
   init?: boolean;
   volumes?: string[];
   environment?: Record<string, string>;
+  env_file?: unknown;
   mem_limit?: string;
   depends_on?: Record<string, { condition: string }>;
   ulimits?: { nofile?: { soft: number; hard: number } };
+  healthcheck?: { test?: string[] };
+  security_opt?: string[];
+  pids_limit?: number;
+  logging?: { driver?: string; options?: Record<string, string> };
+  cap_drop?: string[];
+  cap_add?: string[];
+  networks?: string[] | Record<string, { ipv4_address?: string } | null>;
 }
-const compose = Bun.YAML.parse(read('deploy/compose.prod.yaml')) as { services: Record<string, Service> };
+interface Network {
+  internal?: boolean;
+  ipam?: { config?: { subnet: string; ip_range?: string }[] };
+}
+const compose = Bun.YAML.parse(read('deploy/compose.prod.yaml')) as {
+  services: Record<string, Service>;
+  networks: Record<string, Network>;
+};
 const service = (name: string): Service => {
   const found = compose.services[name];
   if (!found) throw new Error(`service ${name} is missing`);
@@ -36,17 +52,212 @@ describe('deploy/compose.prod.yaml', () => {
     expect(service('caddy').ports).toEqual(['80:80', '443:443', '443:443/udp']);
   });
 
-  it('runs the queue Redis with noeviction and an append-only file, the cache Redis with LRU and no persistence', () => {
+  it('runs the queue Redis with noeviction, an append-only file and a memory bound, the cache Redis with LRU and no persistence', () => {
     const queue = (service('redis-queue').command ?? []).join(' ');
     expect(queue).toContain('--appendonly yes');
     expect(queue).toContain('--appendfsync everysec');
     expect(queue).toContain('--maxmemory-policy noeviction');
+    // Decision 055: a full instance refuses new jobs and the outbox keeps the work; the container limit leaves room for the rewrite.
+    expect(queue).toContain('--maxmemory ${REDIS_QUEUE_MAXMEMORY:-512mb}');
+    expect(service('redis-queue').mem_limit).toBe('${REDIS_QUEUE_MEM_LIMIT:-1g}');
     const cache = (service('redis-cache').command ?? []).join(' ');
     expect(cache).toContain('--maxmemory-policy allkeys-lru');
     expect(cache).toContain('--appendonly no');
     expect(cache).toContain('--maxmemory 256mb');
     expect(service('redis-cache').volumes).toBeUndefined();
     expect(service('redis-queue').volumes).toEqual(['redis-queue-data:/data']);
+  });
+
+  it('gives both Redis instances a password, and a health check that needs none (decision 055)', () => {
+    expect((service('redis-queue').command ?? []).join(' ')).toContain(
+      '--requirepass ${REDIS_QUEUE_PASSWORD:?set REDIS_QUEUE_PASSWORD in deploy/.env}',
+    );
+    expect((service('redis-cache').command ?? []).join(' ')).toContain(
+      '--requirepass ${REDIS_CACHE_PASSWORD:?set REDIS_CACHE_PASSWORD in deploy/.env}',
+    );
+    for (const name of ['redis-queue', 'redis-cache']) {
+      // NOAUTH proves the server answers: the check has no password of its own.
+      expect(service(name).healthcheck?.test, name).toEqual([
+        'CMD-SHELL',
+        "redis-cli ping 2>&1 | grep -Eq 'PONG|NOAUTH'",
+      ]);
+    }
+  });
+
+  it('splits the stack into five networks, the data ones internal, with explicit subnets that are not the old one (decision 055)', () => {
+    expect(Object.keys(compose.networks).sort()).toEqual(['data', 'edge', 'egress', 'files', 'monitoring']);
+    for (const name of ['data', 'files', 'monitoring']) expect(compose.networks[name]?.internal, name).toBe(true);
+    for (const name of ['edge', 'egress']) expect(compose.networks[name]?.internal, name).toBeUndefined();
+    const subnets = Object.fromEntries(
+      Object.entries(compose.networks).map(([name, network]) => [name, network.ipam?.config?.[0]?.subnet]),
+    );
+    expect(subnets).toEqual({
+      edge: '172.30.1.0/24',
+      data: '172.30.2.0/24',
+      files: '172.30.3.0/24',
+      monitoring: '172.30.4.0/24',
+      egress: '172.30.5.0/24',
+    });
+    // A new network can be created while the old one (172.30.0.0/24) still exists on the host.
+    expect(Object.values(subnets)).not.toContain('172.30.0.0/24');
+    // Every other container of `edge` gets an address from the upper half, so the two fixed ones never collide with it.
+    expect(compose.networks.edge?.ipam?.config?.[0]?.ip_range).toBe('172.30.1.128/25');
+  });
+
+  it('puts each service on exactly the networks it needs, and gives Caddy and the site fixed addresses outside the dynamic range', () => {
+    const networksOf = (name: string): string[] => {
+      const networks = service(name).networks;
+      if (networks === undefined) throw new Error(`${name} has no networks`);
+      return (Array.isArray(networks) ? networks : Object.keys(networks)).sort();
+    };
+    expect(Object.fromEntries(Object.keys(compose.services).map((name) => [name, networksOf(name)]))).toEqual({
+      caddy: ['edge', 'files'],
+      api: ['data', 'edge', 'monitoring'],
+      worker: ['data', 'egress', 'monitoring'],
+      migrate: ['data'],
+      postgres: ['data'],
+      'redis-queue': ['data'],
+      'redis-cache': ['data'],
+      typesense: ['data'],
+      minio: ['data', 'files'],
+      'minio-init': ['data'],
+      'minio-admin': ['data'],
+      prometheus: ['monitoring'],
+      console: ['edge'],
+      site: ['edge'],
+      backup: ['data', 'egress'],
+    });
+    const addressOf = (name: string): string | undefined => {
+      const networks = service(name).networks;
+      return Array.isArray(networks) ? undefined : (networks?.edge?.ipv4_address ?? undefined);
+    };
+    expect(addressOf('caddy')).toBe('172.30.1.2');
+    expect(addressOf('site')).toBe('172.30.1.3');
+    // The dynamic range is 172.30.1.128/25: both fixed addresses are below .128.
+    for (const address of [addressOf('caddy'), addressOf('site')]) {
+      expect(Number(address?.split('.')[3])).toBeLessThan(128);
+    }
+    // Only the services that serve browsers (or are reached by Caddy) are on `edge`: nothing else may be added to it.
+    expect(Object.keys(compose.services).filter((name) => networksOf(name).includes('edge'))).toEqual([
+      'caddy',
+      'api',
+      'console',
+      'site',
+    ]);
+  });
+
+  it('keeps every service from gaining privileges, bounds its logs and processes, and drops capabilities: all for the unprivileged images, raw sockets for the internal services (decision 055)', () => {
+    for (const name of Object.keys(compose.services)) {
+      const definition = service(name);
+      expect(definition.security_opt, name).toEqual(['no-new-privileges:true']);
+      expect(definition.pids_limit, name).toBe(1024);
+      expect(definition.logging, name).toEqual({ driver: 'local', options: { 'max-size': '20m', 'max-file': '5' } });
+    }
+    const dropping = (capabilities: string[]): string[] =>
+      Object.keys(compose.services)
+        .filter((name) => JSON.stringify(service(name).cap_drop) === JSON.stringify(capabilities))
+        .sort();
+    // The images that run as an unprivileged user drop everything.
+    expect(dropping(['ALL'])).toEqual(
+      ['api', 'backup', 'caddy', 'migrate', 'minio-admin', 'minio-init', 'prometheus', 'site', 'worker'].sort(),
+    );
+    // The services that only answer on the data, files and monitoring networks (and the console, which only answers Caddy) drop raw
+    // sockets and keep their other defaults: their entry points start as root and hand over to their own user.
+    expect(dropping(['NET_RAW'])).toEqual(['console', 'minio', 'postgres', 'redis-cache', 'redis-queue', 'typesense']);
+    // No service is left with every default capability.
+    expect(Object.keys(compose.services).filter((name) => service(name).cap_drop === undefined)).toEqual([]);
+    // Caddy binds 80 and 443, and nothing else.
+    expect(Object.keys(compose.services).filter((name) => service(name).cap_add !== undefined)).toEqual(['caddy']);
+    expect(service('caddy').cap_add).toEqual(['NET_BIND_SERVICE']);
+  });
+
+  it('gives only the migrate service the owner role, and the backups the same role in their own variable (decision 055)', () => {
+    expect(service('migrate').environment).toEqual({
+      DATABASE_OWNER_URL: 'postgres://gsm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/gsm',
+    });
+    for (const name of Object.keys(compose.services)) {
+      if (name === 'migrate') continue;
+      expect(Object.keys(service(name).environment ?? {}), name).not.toContain('DATABASE_OWNER_URL');
+    }
+    // The API and the worker connect with DATABASE_URL of .env.production, the application's own role.
+    expect(read('deploy/compose.prod.yaml')).not.toContain('postgres://gsm_app');
+    expect(service('backup').environment?.DATABASE_URL).toBe(
+      'postgres://gsm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/gsm',
+    );
+  });
+
+  it('gives the backup container its own variables only, and the read-only MinIO user (decision 055)', () => {
+    const backup = service('backup');
+    expect(backup.env_file).toBeUndefined();
+    const names = Object.keys(backup.environment ?? {});
+    expect(names.sort()).toEqual(
+      [
+        'DATABASE_URL',
+        'BACKUP_S3_ENDPOINT',
+        'BACKUP_S3_BUCKET',
+        'BACKUP_S3_REGION',
+        'BACKUP_S3_PROVIDER',
+        'BACKUP_S3_ACCESS_KEY_ID',
+        'BACKUP_S3_SECRET_ACCESS_KEY',
+        'BACKUP_AGE_RECIPIENT',
+        'BACKUP_ALLOW_PLAINTEXT',
+        'BACKUP_RETENTION_DAYS',
+        'BACKUP_MONTHLY_KEEP',
+        'BACKUP_PRUNE',
+        'S3_ENDPOINT',
+        'S3_BUCKET',
+        'S3_REGION',
+        'S3_FORCE_PATH_STYLE',
+        'S3_ACCESS_KEY_ID',
+        'S3_SECRET_ACCESS_KEY',
+      ].sort(),
+    );
+    for (const secret of ['TOKEN_PEPPER', 'CSRF_SECRET', 'ENCRYPTION_KEYS', 'LOOKUP_HASH_KEY', 'METRICS_TOKEN']) {
+      expect(names).not.toContain(secret);
+    }
+    expect(names.filter((name) => /^MINIO_ROOT|TYPESENSE/.test(name))).toEqual([]);
+    expect(backup.environment?.S3_ACCESS_KEY_ID).toBe('${MINIO_BACKUP_USER:-}');
+    expect(backup.environment?.S3_SECRET_ACCESS_KEY).toBe('${MINIO_BACKUP_PASSWORD:-}');
+    // The file that used to carry it is gone, so the switch is listed (default: refuse an unencrypted dump).
+    expect(backup.environment?.BACKUP_ALLOW_PLAINTEXT).toBe('${BACKUP_ALLOW_PLAINTEXT:-0}');
+    expect(backup.environment?.BACKUP_PRUNE).toBe('${BACKUP_PRUNE:-0}');
+  });
+
+  it('administers MinIO once per volume with a tools service, and the two policies allow exactly what each user needs (decision 055)', () => {
+    const admin = service('minio-admin');
+    expect(admin.profiles).toEqual(['tools']);
+    expect(admin.restart).toBe('no');
+    expect(admin.image).toBe(service('minio-init').image);
+    expect(admin.volumes).toEqual(['./minio:/etc/gsm/minio:ro']);
+    expect(admin.environment?.MC_HOST_local).toBe('http://${MINIO_ROOT_USER:?}:${MINIO_ROOT_PASSWORD:?}@minio:9000');
+    // The root account stays with MinIO and its two tools: nothing else of the stack names it.
+    for (const name of Object.keys(compose.services)) {
+      const holdsRoot = Object.values(service(name).environment ?? {}).some((value) =>
+        /MINIO_ROOT/.test(String(value)),
+      );
+      expect(holdsRoot, name).toBe(['minio', 'minio-init', 'minio-admin'].includes(name));
+    }
+    const policy = (file: string) => JSON.parse(read(`deploy/minio/${file}`)) as unknown;
+    const listing = {
+      Effect: 'Allow',
+      Action: ['s3:GetBucketLocation', 's3:ListBucket'],
+      Resource: ['arn:aws:s3:::gsm-files'],
+    };
+    expect(policy('gsm-app-policy.json')).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        listing,
+        {
+          Effect: 'Allow',
+          Action: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+          Resource: ['arn:aws:s3:::gsm-files/*'],
+        },
+      ],
+    });
+    expect(policy('gsm-backup-read-policy.json')).toEqual({
+      Version: '2012-10-17',
+      Statement: [listing, { Effect: 'Allow', Action: ['s3:GetObject'], Resource: ['arn:aws:s3:::gsm-files/*'] }],
+    });
   });
 
   it('raises the descriptor limit of Caddy and the API for the live event streams (decision 037)', () => {
@@ -81,6 +292,10 @@ describe('deploy/compose.prod.yaml', () => {
       expect(service(name).init, name).toBe(true);
     }
     expect(service('backup').profiles).toEqual(['tools']);
+    // The one-off MinIO administration (decision 055): never in the default start, never restarted.
+    expect(service('minio-admin').profiles).toEqual(['tools']);
+    expect(service('minio-admin').restart).toBe('no');
+    expect(service('minio-admin').init).toBeUndefined();
     expect(service('site').profiles).toEqual(['site']);
     // The name the storefront reads (storefront lib/api/server.ts), so its server-side calls stay inside the network.
     expect(service('site').environment).toEqual({ GSM_API_ORIGIN: 'http://api:3000' });
@@ -96,7 +311,10 @@ describe('deploy/compose.prod.yaml', () => {
     expect(engine.restart).toBe('unless-stopped');
     expect(engine.mem_limit).toContain('TYPESENSE_MEM_LIMIT');
     const command = (engine.command ?? []).join(' ');
-    expect(command).toContain('--api-key ${TYPESENSE_BOOTSTRAP_KEY:?');
+    // Decision 055: the admin key comes from the environment of the container, not from its command line (a user of the host sees that).
+    expect(command).not.toContain('--api-key');
+    expect(command).not.toContain('TYPESENSE_BOOTSTRAP_KEY');
+    expect(engine.environment).toEqual({ TYPESENSE_API_KEY: '${TYPESENSE_BOOTSTRAP_KEY:?set it in deploy/.env}' });
     expect(command).toContain('--disk-used-max-percentage 85');
     expect(command).toContain('--db-compaction-interval 86400');
     // Step 0: the memory flag never refused a write under a cgroup limit, so it is not used.
@@ -108,12 +326,17 @@ describe('deploy/compose.prod.yaml', () => {
     // The API must boot without search: started, never healthy.
     for (const name of ['api', 'worker'])
       expect(service(name).depends_on?.typesense, name).toEqual({ condition: 'service_started' });
-    expect(Object.keys(service('api').environment ?? {})).toEqual(['TYPESENSE_SEARCH_KEY', 'GEOIP_COUNTRY_HEADER']);
-    expect(Object.keys(service('worker').environment ?? {})).toEqual([
-      'TYPESENSE_INDEXER_KEY',
-      'DATABASE_STATEMENT_TIMEOUT_MS',
-      'DATABASE_LOCK_TIMEOUT_MS',
-    ]);
+    // Other features add variables to the API's environment (the country header): what must hold is its search key and no owner role.
+    const apiVariables = Object.keys(service('api').environment ?? {});
+    expect(apiVariables).toContain('TYPESENSE_SEARCH_KEY');
+    expect(apiVariables).toContain('GEOIP_COUNTRY_HEADER');
+    expect(apiVariables).not.toContain('DATABASE_OWNER_URL');
+    expect(apiVariables.filter((name) => /INDEXER|BOOTSTRAP/.test(name))).toEqual([]);
+    // The worker holds its indexer key, the database time limits of decision 055 (the test below) and never the owner role, the search key
+    // or the engine's admin key.
+    const workerVariables = Object.keys(service('worker').environment ?? {});
+    expect(workerVariables).toContain('TYPESENSE_INDEXER_KEY');
+    expect(workerVariables.filter((name) => /SEARCH|BOOTSTRAP|OWNER/.test(name))).toEqual([]);
   });
 
   it('gives the worker its own database time limits; the API keeps the defaults (decision 055)', () => {
@@ -362,6 +585,154 @@ describe('deploy/Caddyfile', () => {
     expect(fieldRules('resp_headers>Location').at(-1)).toBe(QUERY_CUT);
   });
 
+  it('cuts slow clients with server timeouts, and has no per-address cap that Caddy cannot enforce (decision 055)', () => {
+    const active = caddyfile
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    const options = active.slice(0, active.indexOf('(common) {'));
+    expect(options).toMatch(
+      /servers \{\s*timeouts \{\s*read_header 10s\s*read_body_idle 30s\s*write_idle 1m\s*idle 2m\s*\}\s*\}/,
+    );
+    // The live event streams write at least every 15 s, so a write idle of a minute never cuts one.
+    expect(active).not.toContain('rate_limit');
+    expect(active).not.toContain('max_conns');
+  });
+
+  it("states in its header that the API trusts Caddy's and the site's fixed addresses, and describes the files host", () => {
+    const header = caddyfile.slice(0, caddyfile.indexOf('\n{\n'));
+    expect(header).toContain('TRUST_PROXY=172.30.1.2,172.30.1.3');
+    expect(header).not.toContain('172.30.0.0/24');
+    expect(header).toContain('FILES_HOST');
+  });
+
+  it('serves signed reads of single objects of the files bucket on the files host, and a 404 for everything else (decision 055)', () => {
+    const files = block('FILES_HOST');
+    expect(files).toContain('import common');
+    expect(files).toContain('import access_log');
+    expect(files).toMatch(
+      /@signed_read \{\s*method GET HEAD\s*path_regexp (\S+)\s*vars_regexp raw_path \{http\.request\.uri\.path\} (\S+)\s*query X-Amz-Signature=\*\s*query response-content-disposition=\*\s*\}/,
+    );
+    expect(files).toMatch(
+      /handle @signed_read \{[\s\S]*reverse_proxy minio:9000 \{\s*header_up Host \{hostport\}\s*\}[\s\S]*\}/,
+    );
+    expect(files).toMatch(/handle \{\s*respond 404\s*\}/);
+    // The answers are attachments that can run nothing here, and the headers are set after the store's own (defer).
+    const headers = /header \{([\s\S]*?)\n\t\t\}/.exec(files)?.[1] ?? '';
+    for (const line of [
+      'Content-Security-Policy "default-src \'none\'; sandbox"',
+      'X-Content-Type-Options "nosniff"',
+      'X-Frame-Options "DENY"',
+      'Referrer-Policy "no-referrer"',
+    ]) {
+      expect(headers).toContain(line);
+    }
+    expect(headers).toMatch(/^\s*defer$/m);
+    // The files host never reaches anything but the store: no API, no console, no site.
+    expect(files).not.toContain('api:3000');
+    expect(files).not.toContain('console:80');
+    expect(files).not.toContain('site:3000');
+    expect(files.match(/reverse_proxy/g)).toHaveLength(1);
+  });
+
+  it('lets only the path of one object through: the bucket itself and a listing are not objects', () => {
+    const expression = /path_regexp (\S+)/.exec(block('FILES_HOST'))?.[1] ?? '';
+    expect(expression).toBe('^/gsm-files/[A-Za-z0-9][A-Za-z0-9._=+-]*(/[A-Za-z0-9][A-Za-z0-9._=+-]*)*$');
+    const objectPath = new RegExp(expression);
+    for (const path of [
+      '/gsm-files/files/2026/11/0b6f3c1e-receipt.pdf',
+      '/gsm-files/a',
+      '/gsm-files/uploads/kyc/1/id_card-1.png',
+      '/gsm-files/x=y+z/a.b-c',
+      '/gsm-files/1.2/3..4/a...b', // dots inside a segment are part of a name
+    ]) {
+      expect(objectPath.test(path), path).toBe(true);
+    }
+    for (const path of [
+      '/gsm-files/', // the bucket: a listing with a signature must not reach the store
+      '/gsm-files',
+      '/gsm-files//x',
+      '/gsm-files/a/',
+      '/gsm-files/a b',
+      '/gsm-files/a%2Fb',
+      '/other/x',
+      '/',
+      '/minio/admin/v3/info',
+      '/gsm-files-other/x',
+    ]) {
+      expect(objectPath.test(path), path).toBe(false);
+    }
+  });
+
+  it('passes on only the names the storage layer accepts as a key: no "." or ".." segment, no segment that starts with a symbol', () => {
+    const expression = /path_regexp (\S+)/.exec(block('FILES_HOST'))?.[1] ?? '';
+    const objectPath = new RegExp(expression);
+    // Caddy resolves "." and ".." before path_regexp sees a path, and passes the path on as it was sent: the same expression must
+    // also judge the path as sent (decoded, not resolved), or such a segment would reach the object store.
+    const asSent = /vars_regexp raw_path \{http\.request\.uri\.path\} (\S+)/.exec(block('FILES_HOST'))?.[1];
+    expect(asSent).toBe(expression);
+    // What the check of the path as sent sees for these requests ("%2e%2e" arrives decoded, as "..").
+    for (const path of [
+      '/gsm-files/.',
+      '/gsm-files/..',
+      '/gsm-files/../x',
+      '/gsm-files/a/..',
+      '/gsm-files/a/../b',
+      '/gsm-files/a/./b',
+      '/gsm-files/./a',
+      '/gsm-files/.hidden',
+      '/gsm-files/a/.hidden',
+      '/gsm-files/-a',
+      '/gsm-files/a/=b',
+      '/gsm-files/+a',
+      '/gsm-files/_a',
+    ]) {
+      expect(objectPath.test(path), path).toBe(false);
+    }
+    // The rule is the storage layer's own: for each sample, the host passes the path exactly when the layer accepts the key.
+    for (const key of [
+      'files/2026/11/0b6f3c1e-receipt.pdf',
+      'a',
+      'a.b',
+      '.a',
+      '..',
+      '.',
+      'a/./b',
+      'a/../b',
+      'a//b',
+      'a/',
+      '/a',
+      'a/-b',
+      '9/_',
+      'x=y+z/a.b-c',
+      'a b',
+      'a%2Fb',
+      '',
+    ]) {
+      let accepted = true;
+      try {
+        assertObjectKey(key);
+      } catch {
+        accepted = false;
+      }
+      expect(objectPath.test(`/gsm-files/${key}`), JSON.stringify(key)).toBe(accepted);
+    }
+  });
+
+  it('replaces the signature parameters of a file link in the address and the Referer of the access log', () => {
+    const link =
+      '/gsm-files/files/2026/11/a.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=app%2F20261122&X-Amz-Signature=9f2c&response-content-disposition=attachment';
+    for (const field of ['request>uri', 'request>headers>Referer']) {
+      const written = applyRules(field, link);
+      expect(written, field).not.toContain('9f2c');
+      expect(written, field).not.toContain('app%2F20261122');
+      expect(written, field).toContain('X-Amz-Signature=[redacted]');
+      expect(written, field).toContain('X-Amz-Credential=[redacted]');
+      // The path of the object is not secret and stays.
+      expect(written, field).toStartWith('/gsm-files/files/2026/11/a.pdf?');
+    }
+  });
+
   it('compresses everything except the live event streams (decision 037)', () => {
     const active = caddyfile
       .split('\n')
@@ -377,6 +748,17 @@ describe('deploy/Caddyfile', () => {
     expect(active).toContain('encode @compressible zstd gzip');
     // Caddy flushes text/event-stream by itself; `flush_interval -1` would also stop it from cancelling the upstream on leave.
     expect(active).not.toContain('flush_interval');
+  });
+});
+
+describe('compose.yaml (development)', () => {
+  it('publishes every port on 127.0.0.1 only (decision 055)', () => {
+    const dev = Bun.YAML.parse(read('compose.yaml')) as { services: Record<string, Service> };
+    const ports = Object.entries(dev.services).flatMap(([name, definition]) =>
+      ((definition.ports as string[] | undefined) ?? []).map((port) => [name, port] as const),
+    );
+    expect(ports.length).toBeGreaterThanOrEqual(9);
+    for (const [name, port] of ports) expect(port, name).toStartWith('127.0.0.1:');
   });
 });
 

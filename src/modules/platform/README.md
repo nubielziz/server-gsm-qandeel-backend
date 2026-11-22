@@ -538,7 +538,8 @@ per merchant, channel and period, key `digest:service.price_changed:<channel>:<c
 closes the row first, so a later change opens the next period's row: at most one message a day, no change lost.
 
 **Mail and Telegram** (decision 033): `MailTransport` (`send`, `verify`) over nodemailer with explicit timeouts; `TelegramClient.sendMessage` over `OutboundHttp` (target `telegram`);
-`NODE_ENV=test` uses the in-memory drivers (nothing leaves the process). A 5xx SMTP answer, a Telegram 400, 403 or 404 fail the row at once; everything else is retried.
+`NODE_ENV=test` uses the in-memory drivers (nothing leaves the process). In production the SMTP driver requires TLS (decision 055, `mail.requireTls`): an `smtps://` URL is TLS from the start, an `smtp://` connection must be
+upgraded with STARTTLS or no mail is sent (the queue retries). A 5xx SMTP answer, a Telegram 400, 403 or 404 fail the row at once; everything else is retried.
 Reasons are cleaned of addresses and never hold a token. The log's masks are built from the recipient's current row.
 
 **Merchant and customer mail** (identity's `MerchantMailJobs`, feature 14b's customers `CustomerMailJobs`) call `NotificationService.sendNow` with the clear link as a secret

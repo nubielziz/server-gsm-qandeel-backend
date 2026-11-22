@@ -54,16 +54,21 @@ const defaultFactory: TransporterFactory = (options) => createTransport(options)
 /**
  * Turns an SMTP URL into nodemailer options with explicit timeouts.
  *
+ * Why: decision 033 (SMTP with any provider) and decision 055: with `requireTls` an `smtp://` connection must be upgraded with STARTTLS
+ * or no mail is sent, so a provider that offers plain text only never receives a credential or a link.
+ *
  * @param smtpUrl `smtp://` or `smtps://`, with `user:password@` when the server needs it
+ * @param options `requireTls`: refuse an `smtp://` connection that cannot be upgraded; `smtps://` is TLS from the start
  * @returns the options: host, port, TLS mode, credentials and the timeouts
  */
-export function smtpOptions(smtpUrl: string): Record<string, unknown> {
+export function smtpOptions(smtpUrl: string, options: { readonly requireTls?: boolean } = {}): Record<string, unknown> {
   const url = new URL(smtpUrl);
   const secure = url.protocol === 'smtps:';
   return {
     host: url.hostname,
     port: url.port === '' ? (secure ? 465 : 587) : Number(url.port),
     secure,
+    ...(options.requireTls === true && !secure ? { requireTLS: true } : {}),
     ...(url.username === ''
       ? {}
       : { auth: { user: decodeURIComponent(url.username), pass: decodeURIComponent(url.password) } }),
@@ -121,7 +126,8 @@ export function classifyMailError(error: unknown): DeliveryError {
  * Why: decision 033: SMTP works with any provider, so there is no vendor lock-in and no provider SDK. The transporter is made on the
  * first use, so building the application never connects.
  *
- * Side effects: opens (and pools) SMTP connections to the configured server.
+ * Side effects: opens (and pools) SMTP connections to the configured server. With `requireTls` (production, decision 055) an `smtp://`
+ * connection that cannot be upgraded with STARTTLS fails the send, which the queue retries.
  */
 export class SmtpMailDriver implements MailDriver {
   private transporter: MailTransporter | undefined;
@@ -129,6 +135,7 @@ export class SmtpMailDriver implements MailDriver {
   constructor(
     private readonly smtpUrl: string,
     private readonly factory: TransporterFactory = defaultFactory,
+    private readonly options: { readonly requireTls?: boolean } = {},
   ) {}
 
   /** @inheritdoc */
@@ -160,7 +167,7 @@ export class SmtpMailDriver implements MailDriver {
   }
 
   private connection(): MailTransporter {
-    this.transporter ??= this.factory(smtpOptions(this.smtpUrl));
+    this.transporter ??= this.factory(smtpOptions(this.smtpUrl, this.options));
     return this.transporter;
   }
 }
