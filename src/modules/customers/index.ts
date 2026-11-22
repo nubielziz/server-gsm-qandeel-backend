@@ -18,6 +18,13 @@ export { GrowthModule } from './growth.module';
 export { CustomersModule } from './customers.module';
 export { CustomersAccountsModule } from './customers-accounts.module';
 export { CustomerMailModule } from './customer-mail.module';
+// The one-off seal pass of the checkout tokens stored as issued (decision 054); its module is loaded by the worker only.
+export {
+  CHECKOUT_TOKENS_SEAL_EVENT,
+  CHECKOUT_TOKENS_SEAL_JOB,
+  CheckoutTokenSeal,
+} from './application/checkout-token-seal';
+export { CheckoutTokenSealModule } from './jobs/checkout-token-seal.module';
 export { CustomerErasureModule } from './customer-erasure.module';
 export { CustomerNotificationsModule } from './notifications/customer-notifications.module';
 export { CustomerAudience } from './notifications/customer-audience';

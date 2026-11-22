@@ -11,6 +11,7 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { MINUTE, TestClock } from '../../support/clock';
 import { insertCustomerOrder } from '../../support/customers';
+import { tokenHashOf } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { merchantSession } from '../../support/notifications';
 import { insertOrderRow } from '../../support/orders';
@@ -285,7 +286,9 @@ describe('POST /store/v1/me/tickets', () => {
       channel: 'web',
       requesterType: 'customer',
       requesterId: mine.id,
-      token: res.body.token,
+      // Decision 054: the token is stored only as its keyed hash and an encrypted copy.
+      token: null,
+      tokenHash: tokenHashOf(t, 'ticket', res.body.token),
       status: 'new',
       priority: 'high',
       slaDueAt: new Date(clock.nowMs() + 2 * 60 * MINUTE),

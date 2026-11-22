@@ -12,16 +12,16 @@ function idOf(text: string): number | undefined {
 }
 
 const macOf = (tokens: TokenService, customerId: number): string =>
-  tokens.hash(`${MESSAGE_PREFIX}${customerId}`).slice(0, MAC_HEX_LENGTH);
+  tokens.lookupHash(`${MESSAGE_PREFIX}${customerId}`).slice(0, MAC_HEX_LENGTH);
 
 /**
  * Makes the unsubscribe token of a customer.
  *
  * Why: S10: an unsubscribe link must keep working for as long as the email exists, so the token is stateless and never expires; it is
- * `<id in base 36>.<128 bits of HMAC-SHA256(pepper, 'marketing-unsubscribe:customer:' + id)>`. The id is not secret, the MAC is, and the
+ * `<id in base 36>.<128 bits of HMAC-SHA256(lookup key, 'marketing-unsubscribe:customer:' + id)>`. The id is not secret, the MAC is, and the
  * token can only switch marketing off, never on.
  *
- * @param tokens the token service (the server pepper)
+ * @param tokens the token service (the lookup key `LOOKUP_HASH_KEY`, decision 054: a link in a sent mail keeps working when the pepper changes)
  * @param customerId the customer
  * @returns the token (letters, digits and one dot)
  */

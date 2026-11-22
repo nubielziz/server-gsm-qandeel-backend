@@ -24,6 +24,7 @@ import {
   storefrontEvent,
 } from '../support/b2c';
 import { MINUTE, TestClock } from '../support/clock';
+import { revealedToken } from '../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../support/db';
 import { accountFigures, ledgerTotals } from '../support/money';
 import { eventsOf, ledgerOf, orderRow, outboxOf, systemBalance } from '../support/orders';
@@ -174,8 +175,10 @@ describe('scenario b2c-paid: a storefront order is paid and delivered', () => {
       currency: 'USD',
       checkoutSessionId: session!.id,
     });
-    expect(order!.publicToken).toHaveLength(22);
-    trackingToken = order!.publicToken!;
+    // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
+    expect(order!.publicToken).toBeNull();
+    trackingToken = revealedToken(t, 'tracking', { enc: order!.publicTokenEnc, plain: order!.publicToken }) ?? '';
+    expect(trackingToken).toHaveLength(22);
     expect((await eventsOf(world.db, orderId)).map((event) => event.type)).toEqual(['created', 'paid']);
     // Dr gateway_clearing 31.19, Cr customer_funds 25.99, Cr vat_payable 5.20.
     expect((await ledgerOf(world.db, orderId))[0]).toEqual({

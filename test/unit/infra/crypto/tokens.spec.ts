@@ -66,6 +66,18 @@ describe('TokenService', () => {
     expect(tokens.hash('abc')).toBe(hashToken(PEPPER, 'abc'));
   });
 
+  it('keys stored lookups with LOOKUP_HASH_KEY', () => {
+    const key = 'k'.repeat(40);
+    const keyed = new TokenService(parseEnv({ NODE_ENV: 'test', TOKEN_PEPPER: PEPPER, LOOKUP_HASH_KEY: key }));
+    expect(keyed.lookupHash('abc')).toBe(hashToken(key, 'abc'));
+    expect(keyed.lookupHash('abc')).not.toBe(keyed.hash('abc'));
+    expect(keyed.hash('abc')).toBe(hashToken(PEPPER, 'abc'));
+  });
+
+  it('falls back to TOKEN_PEPPER outside production', () => {
+    expect(tokens.lookupHash('abc')).toBe(hashToken(PEPPER, 'abc'));
+  });
+
   it('makes tokens and compares them', () => {
     const token = tokens.random();
     expect(token).toHaveLength(43);

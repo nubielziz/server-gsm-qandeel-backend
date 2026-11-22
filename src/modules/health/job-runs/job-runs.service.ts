@@ -2,7 +2,7 @@
 // run(); the manual-run route of the health feature starts a run with start() and hands its id to the job.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { AppError } from '../../../common/errors';
+import { AppError, safeErrorText } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import type { JobRun, JobTrigger } from '../db/schema';
 import {
@@ -61,11 +61,6 @@ export interface JobRunReport {
 }
 
 const MAX_ERROR_LENGTH = 1_000;
-
-function describe(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
-  return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH - 3)}...` : text;
-}
 
 /**
  * Writes `job_runs` around the work of a job.
@@ -172,7 +167,7 @@ export class JobRunsService {
     try {
       report = await work(run);
     } catch (error) {
-      await this.closeQuietly(run, { status: 'failed', error: describe(error) });
+      await this.closeQuietly(run, { status: 'failed', error: safeErrorText(error, MAX_ERROR_LENGTH) });
       throw error;
     }
     const outcome: JobRunOutcome = {
@@ -204,7 +199,9 @@ export class JobRunsService {
     try {
       return await this.finish(run.id, outcome);
     } catch (error) {
-      this.logger.error(`Could not record the end of job run ${run.id} ("${run.job}"): ${describe(error)}`);
+      this.logger.error(
+        `Could not record the end of job run ${run.id} ("${run.job}"): ${safeErrorText(error, MAX_ERROR_LENGTH)}`,
+      );
       return undefined;
     }
   }

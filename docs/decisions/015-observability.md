@@ -39,3 +39,6 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** System health routes read live BullMQ counts and these metrics; Grafana/Prometheus can scrape both
 processes.
+
+**Amendment (feature 44, decision 054).** Error reports carry the sanitised error; the scrubber reads at most 1,320 characters
+of any text.

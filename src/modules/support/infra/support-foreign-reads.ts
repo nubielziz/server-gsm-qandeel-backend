@@ -23,8 +23,10 @@ export const DELETED_CUSTOMER_NAME = 'Deleted customer';
 export interface OrderRef {
   readonly id: number;
   readonly customerId: number;
-  /** The stored tracking token, for the constant-time comparison. */
-  readonly token: string;
+  /** The stored lookup hash of the tracking token (decision 054), for the constant-time comparison; null for an order placed before. */
+  readonly tokenHash: string | null;
+  /** The tracking token as issued (an order placed before decision 054, until the seal pass ran), for the same comparison. */
+  readonly token: string | null;
 }
 
 /**
@@ -32,20 +34,36 @@ export interface OrderRef {
  *
  * Why: a ticket opened from the order page carries the order's tracking token (the visitor's proof that the order is theirs); the ticket
  * is linked to the order and belongs to the order's customer. A merchant order has no token and no customer, so it never matches.
+ * Decision 054: the lookup is by the keyed hash; an order placed before is found by its plain token until the seal pass ran.
  *
  * @param db the database or a transaction
- * @param token the tracking token
- * @returns the order id, its customer and the stored token, or `undefined`
+ * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('tracking', …)`) and the token itself
+ * @returns the order id, its customer and the stored form of its token, or `undefined`
  */
-export async function findOrderByTrackingToken(db: DbExecutor, token: string): Promise<OrderRef | undefined> {
-  const [row] = await db
-    .select({ id: s.orders.id, customerId: s.orders.customerId, token: s.orders.publicToken })
+export async function findOrderByTrackingToken(
+  db: DbExecutor,
+  lookup: { readonly hash: string; readonly token: string },
+): Promise<OrderRef | undefined> {
+  const columns = {
+    id: s.orders.id,
+    customerId: s.orders.customerId,
+    tokenHash: s.orders.publicTokenHash,
+    token: s.orders.publicToken,
+  };
+  const [sealed] = await db
+    .select(columns)
     .from(s.orders)
-    .where(and(eq(s.orders.publicToken, token), isNotNull(s.orders.customerId)))
+    .where(and(eq(s.orders.publicTokenHash, lookup.hash), isNotNull(s.orders.customerId)))
     .limit(1);
-  return row?.customerId == null || row.token === null
-    ? undefined
-    : { id: row.id, customerId: row.customerId, token: row.token };
+  // Orders placed before decision 054 keep the token as issued until the seal pass ran.
+  const [row] = sealed
+    ? [sealed]
+    : await db
+        .select(columns)
+        .from(s.orders)
+        .where(and(eq(s.orders.publicToken, lookup.token), isNotNull(s.orders.customerId)))
+        .limit(1);
+  return row?.customerId == null ? undefined : { ...row, customerId: row.customerId };
 }
 
 /** The person or company a ticket belongs to, as a reply and a notification need them. */

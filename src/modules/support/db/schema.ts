@@ -1,6 +1,6 @@
 // Support tables (map domain J): tickets from customers and merchants, their messages and reply templates.
 // Conventions: decision 027; schema additions: MISMATCHES B116, the ticket token (feature 17), the seen marks, the reply-mail columns and
-// the notify channel (feature 28); ownership: scripts/module-map.mjs.
+// the notify channel (feature 28), the token's hash and copy (decision 054); ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigId, bigintList, createdAt, fk, inList, lower, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
@@ -114,8 +114,12 @@ export const supportTickets = pgTable(
     resolvedAt: timestampTz(),
     /** 1 to 5, set by the requester after resolution */
     csatScore: integer(),
-    /** the capability token of the requester's ticket page (decision 010, stored as issued); null for a ticket nobody can open by link */
+    /** the ticket link token as issued: only tickets opened before decision 054, until the seal pass empties it; null for a ticket nobody opens by link */
     token: text(),
+    /** the lookup hash of the ticket link token (CapabilityTokenVault.hashOf('ticket', …), decision 054); unique */
+    tokenHash: text(),
+    /** the ticket link token as AES-GCM text, AAD support_tickets.token_enc (decisions 019, 054) */
+    tokenEnc: text(),
     /** when the satisfaction survey was queued; set once, in the resolve transaction, and never cleared (one survey per ticket) */
     surveySentAt: timestampTz(),
     /** the newest public staff message the requester has seen (feature 28: one seen mark per side, it only moves forward) */
@@ -140,6 +144,12 @@ export const supportTickets = pgTable(
     uniqueIndex('support_tickets_token_uq')
       .on(t.token)
       .where(sql`${t.token} is not null`),
+    uniqueIndex('support_tickets_token_hash_uq')
+      .on(t.tokenHash)
+      .where(sql`${t.tokenHash} is not null`),
+    // Decision 054: a ticket never keeps both forms of its link token, and a hash always comes with its encrypted copy.
+    check('support_tickets_token_form_check', sql`${t.token} is null or ${t.tokenHash} is null`),
+    check('support_tickets_token_enc_check', sql`(${t.tokenHash} is null) = (${t.tokenEnc} is null)`),
     check('support_tickets_channel_check', inList(t.channel, TICKET_CHANNELS)),
     check('support_tickets_requester_type_check', inList(t.requesterType, TICKET_REQUESTER_TYPES)),
     check('support_tickets_category_check', inList(t.category, TICKET_CATEGORIES)),

@@ -11,6 +11,7 @@ import {
   retryingConflictOnce,
   runErrorText,
 } from '@src/modules/storefront/publish/domain/publish-run';
+import { DB_FAILURE_MARKER, drizzleFailure } from '../../../../../support/db-failure';
 
 const pgError = (code: string, constraint?: string) =>
   Object.assign(new Error('a statement and its values'), { code, constraint });
@@ -85,6 +86,13 @@ describe('runErrorText', () => {
   it('keeps the message of any other error, cut to the column', () => {
     expect(runErrorText(new Error('  The chunk went wrong.  '))).toBe('The chunk went wrong.');
     expect(runErrorText(new Error('x'.repeat(MAX_RUN_ERROR_LENGTH + 50)))).toHaveLength(MAX_RUN_ERROR_LENGTH);
+  });
+
+  it("keeps the statement out of a run's text when Postgres gave no SQLSTATE", () => {
+    const failure = drizzleFailure(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }));
+    const text = runErrorText(failure);
+    expect(text).toBe('Database error ECONNRESET: the statement did not complete.');
+    expect(text).not.toContain(DB_FAILURE_MARKER);
   });
 
   it('says something when there is no message', () => {

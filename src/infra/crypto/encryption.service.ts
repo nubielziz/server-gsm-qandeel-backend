@@ -38,8 +38,8 @@ function decodePart(part: string | undefined, expectedBytes?: number): Buffer {
  *
  * Why: decision 019 keeps supplier and gateway credentials, TOTP secrets and checkout IMEIs unreadable in a database
  * dump. Every value carries the id of the key that sealed it, so keys can be rotated: new values use the active key,
- * old keys stay in `ENCRYPTION_KEYS` for decryption until a maintenance job has re-encrypted the rows
- * ({@link EncryptionService.needsRotation}). The AAD ties a ciphertext to its column, so a value copied into another
+ * old keys stay in `ENCRYPTION_KEYS` for decryption for as long as values sealed by them exist (no job re-encrypts the rows,
+ * decision 054; {@link EncryptionService.needsRotation} and `rotate` are building blocks for a later pass). The AAD ties a ciphertext to its column, so a value copied into another
  * column fails to decrypt. Keys never leave this class and are never logged.
  *
  * @see docs/decisions/019-encryption-and-token-hashing.md

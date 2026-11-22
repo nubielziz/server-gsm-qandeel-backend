@@ -141,8 +141,12 @@ export const orders = pgTable(
       .notNull(),
     /** how the price was resolved (client, group or base), kept for support */
     pricingSnapshot: jsonObject(),
-    /** B2C tracking link token (decision 010); unique */
+    /** the tracking token as issued: only orders placed before decision 054, until the seal pass empties it; unique */
     publicToken: text(),
+    /** the lookup hash of the tracking token (CapabilityTokenVault.hashOf('tracking', …), decision 054); unique */
+    publicTokenHash: text(),
+    /** the tracking token as AES-GCM text, AAD orders.public_token_enc (decisions 019, 054) */
+    publicTokenEnc: text(),
     checkoutSessionId: fk((): AnyPgColumn => checkoutSessions.id),
     taxAmount: money().notNull().default('0'),
     taxCountry: text(),
@@ -172,6 +176,12 @@ export const orders = pgTable(
     uniqueIndex('orders_public_token_uq')
       .on(t.publicToken)
       .where(sql`${t.publicToken} is not null`),
+    uniqueIndex('orders_public_token_hash_uq')
+      .on(t.publicTokenHash)
+      .where(sql`${t.publicTokenHash} is not null`),
+    // Decision 054: an order never keeps both forms of its tracking token, and a hash always comes with its encrypted copy.
+    check('orders_public_token_form_check', sql`${t.publicToken} is null or ${t.publicTokenHash} is null`),
+    check('orders_public_token_enc_check', sql`(${t.publicTokenHash} is null) = (${t.publicTokenEnc} is null)`),
     uniqueIndex('orders_client_idempotency_uq')
       .on(t.clientId, t.idempotencyKey)
       .where(sql`${t.idempotencyKey} is not null`),

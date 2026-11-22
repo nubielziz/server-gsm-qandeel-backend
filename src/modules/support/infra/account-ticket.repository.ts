@@ -1,7 +1,7 @@
 // Drizzle queries of the account surfaces of the support chat (feature 28, slice B2): a signed-in customer's or merchant's own tickets, each
 // with the author of its latest public message, and the one check every merchant route starts with (the ticket is theirs). The inbox
 // queries of staff and the live chat's reads are in ticket.repository.ts; nothing here joins a foreign table.
-import { and, count, desc, eq, inArray, isNotNull, ne } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
 import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import { type SupportTicket, supportTickets, ticketMessages } from '../db/schema';
@@ -106,8 +106,8 @@ export async function listAccountTickets(
     and(
       eq(supportTickets.requesterType, owner.type),
       eq(supportTickets.requesterId, owner.id),
-      // A link-less ticket of a customer cannot be opened from the list.
-      owner.type === 'customer' ? isNotNull(supportTickets.token) : undefined,
+      // A link-less ticket of a customer cannot be opened from the list (either stored form of the link counts, decision 054).
+      owner.type === 'customer' ? or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash)) : undefined,
     ),
   );
   const [tickets, [total]] = await Promise.all([

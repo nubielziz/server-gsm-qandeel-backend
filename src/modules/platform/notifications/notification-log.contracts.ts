@@ -88,7 +88,8 @@ export const showNotificationLog = defineRoute({
   key: 'GET /admin/notifications/:id',
   summary: 'One notification',
   description:
-    'The same row as the list plus `payload`, the data the message was built from. A Telegram `chatId` anywhere in the payload is masked like `recipient`.',
+    'The same row as the list plus `payload`, the data the message was built from. A Telegram `chatId` anywhere in the payload is masked like `recipient`. ' +
+    "The payload's values are shown to callers who hold `notifications:*`; for others every text and number in it reads `[hidden]` (its keys stay).",
   tags: ['notifications'],
   surface: 'admin',
   access: 'staff-permission',

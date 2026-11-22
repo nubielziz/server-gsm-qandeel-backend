@@ -20,6 +20,15 @@ export type { AuditEntityType } from './audit/audit-entity-types';
 export type { AuditEntry } from './audit/audit.service';
 export { REDACTED, isSecretKey, redactForAudit } from './audit/audit-redaction';
 export { SettingsModule } from './settings/settings.module';
+// The boot check of LOOKUP_HASH_KEY (decision 054): imported by the API's and the worker's root modules.
+export { LookupKeyCheckModule } from './settings/lookup-key-check.module';
+export {
+  LOOKUP_KEY_CHANGED,
+  LOOKUP_KEY_CHECK_LABEL,
+  LOOKUP_KEY_CHECK_SETTING,
+  LookupKeyCheck,
+} from './settings/lookup-key-check';
+export type { LookupKeyVerdict } from './settings/lookup-key-check';
 export { SETTINGS_TTL_SECONDS, SettingsReader } from './settings/settings-reader';
 export type { IntegerBounds, IntegerSetting } from './settings/settings-reader';
 export { DOCUMENTATION_ROUTES } from './docs/docs.controller';

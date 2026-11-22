@@ -2,7 +2,8 @@
 export { accessLogLevel, registerAccessLog } from './access-log';
 export type { AccessLogFacts } from './access-log';
 export { LOG_DESTINATION, LoggingModule } from './logging.module';
+export { safeErrorObject, serializeLoggedError, withoutStatementTextInLine } from './error-serializer';
 export { maskEmail, maskImei, maskPhone } from './mask';
 export { buildPinoOptions, chooseDestination, requestIdMixin } from './pino-options';
 export type { ServiceName } from './pino-options';
-export { PII_SERIALIZERS, REDACT_CENSOR, REDACT_PATHS } from './redaction';
+export { PII_SERIALIZERS, REDACT_CENSOR, REDACT_PATHS, redactLogObject } from './redaction';

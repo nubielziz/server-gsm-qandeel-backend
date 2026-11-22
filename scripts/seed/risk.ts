@@ -255,8 +255,8 @@ async function seedBlocklist(
             ? normalizeBlockValue('country', SANCTIONED_COUNTRY)
             : { ok: false as const, message: '' };
     const hash = real.ok
-      ? tokens.hash(blockHashInput(entry.kind, real.value))
-      : tokens.hash(`seed:${entry.id}:${entry.display}`);
+      ? tokens.lookupHash(blockHashInput(entry.kind, real.value))
+      : tokens.lookupHash(`seed:${entry.id}:${entry.display}`);
     const at = toDate(entry.ts)!;
     return {
       id: demoNumericId(entry.id),
@@ -298,7 +298,7 @@ async function seedImeiChecks(
       const erased = oldest.has(check.id);
       return {
         id: demoNumericId(check.id),
-        imeiHash: erased ? null : tokens.hash(imeiHashInput(check.imei)),
+        imeiHash: erased ? null : tokens.lookupHash(imeiHashInput(check.imei)),
         imeiEnc: erased ? null : encryption.encrypt(check.imei, IMEI_CHECK_AAD),
         tac: tacs.has(tac) ? tac : null,
         brand: check.brand,

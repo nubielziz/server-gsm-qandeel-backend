@@ -41,6 +41,15 @@ describe('smtpOptions', () => {
 });
 
 describe('classifyMailError', () => {
+  it('stores a refusal without the addresses, links and token-like strings it quotes (decision 054)', () => {
+    const error = classifyMailError({
+      responseCode: 550,
+      response: '550 5.7.1 rejected https://shop.example.com/sign-in?token=AbCdEfGhIjKlMnOpQrStUvWx for r@x.io',
+    });
+    expect(error.message).toBe('550 5.7.1 rejected [link] for r***@x.io');
+    expect(error.message).not.toContain('AbCdEfGhIjKlMnOpQrStUvWx');
+  });
+
   it('treats an SMTP 5xx answer and a refused envelope as permanent, and 4xx, timeouts and drops as worth a retry', () => {
     expect(classifyMailError({ responseCode: 550, response: '550 5.1.1 No such user' }).permanent).toBe(true);
     expect(classifyMailError({ code: 'EENVELOPE', message: 'No recipients defined' }).permanent).toBe(true);

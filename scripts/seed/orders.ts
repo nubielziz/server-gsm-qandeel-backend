@@ -268,7 +268,7 @@ export async function seedOrders(db: DbExecutor, demo: DemoSeed, config?: AppCon
       verificationStatus: verification ? 'requested' : null,
       fingerprint:
         config && squashed !== ''
-          ? hashToken(config.security.tokenPepper, `order-duplicate:${clientId}:${serviceId}:${squashed}`)
+          ? hashToken(config.security.lookupHashKey, `order-duplicate:${clientId}:${serviceId}:${squashed}`)
           : null,
       // Both timestamps are the demo's placement time, as a placement writes them (placed_at equals created_at).
       placedAt: createdAt,

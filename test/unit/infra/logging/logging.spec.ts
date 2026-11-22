@@ -2,11 +2,14 @@
 // access log line (live event streams at debug, decision 037).
 import { describe, expect, it } from 'bun:test';
 import pino from 'pino';
+import pinoHttp from 'pino-http';
 import { runWithRequestId } from '@src/common/request-id';
 import { parseEnv } from '@src/config';
 import { accessLogLevel } from '@src/infra/logging/access-log';
 import { maskEmail, maskImei, maskPhone } from '@src/infra/logging/mask';
 import { buildPinoOptions, chooseDestination } from '@src/infra/logging/pino-options';
+import { redactLogObject } from '@src/infra/logging/redaction';
+import { DB_FAILURE_MARKER, drizzleFailure } from '../../../support/db-failure';
 
 /** A pino logger with the project's options writing JSON lines into an array. */
 function capture(env: Record<string, string> = { NODE_ENV: 'test', LOG_LEVEL: 'trace' }) {
@@ -191,5 +194,160 @@ describe('accessLogLevel', () => {
         contentType: 'application/problem+json',
       }),
     ).toBe('warn');
+  });
+});
+
+/** The logger nestjs-pino builds from the same options: pino-http wraps the `err` serializer, so a serializer sees the standard form. */
+function captureHttp() {
+  const lines: Array<Record<string, unknown>> = [];
+  const { logger } = pinoHttp(
+    { ...buildPinoOptions(parseEnv({ NODE_ENV: 'test', LOG_LEVEL: 'trace' }), 'api'), autoLogging: false },
+    { write: (text: string) => void lines.push(JSON.parse(text) as Record<string, unknown>) },
+  );
+  return { logger, lines };
+}
+
+describe('database failures in log lines (decision 054)', () => {
+  for (const [name, make] of [
+    ['a plain pino logger', capture],
+    ['the pino-http logger of nestjs-pino', captureHttp],
+  ] as const) {
+    it(`never writes a database statement or its values, whatever way the error is logged: ${name}`, () => {
+      const { logger, lines } = make();
+      const failure = drizzleFailure();
+      logger.error({ err: failure, requestId: 'r1' }, 'with a message');
+      logger.error(failure);
+      logger.error('db: ' + failure.message);
+      logger.error({ detail: { error: failure } }, 'nested');
+      logger.error({ err: new Error('outer', { cause: failure }) }, 'wrapped');
+      logger.warn({ msg: 'nested', detail: { deeper: { error: failure } } });
+      expect(lines).toHaveLength(6);
+      for (const line of lines) {
+        const text = JSON.stringify(line);
+        expect(text).not.toContain(DB_FAILURE_MARKER);
+        expect(text).not.toContain('Failed query');
+        expect(text).not.toContain('insert into');
+      }
+      expect((lines[0]?.err as { database: unknown }).database).toEqual({
+        sqlState: '23514',
+        table: 'job_runs',
+        constraint: 'job_runs_trigger_check',
+      });
+      expect((lines[0]?.err as { message: string }).message).toStartWith('Database error 23514');
+    });
+  }
+
+  it('keeps logging any other error in full', () => {
+    const { logger, lines } = capture();
+    const failure = Object.assign(new Error('supplier said no'), { statusCode: 502 });
+    logger.error({ err: failure }, 'upstream');
+    expect(lines[0]?.err).toMatchObject({ type: 'Error', message: 'supplier said no', statusCode: 502 });
+  });
+
+  it('removes statement text from a finished line and keeps the line valid JSON', () => {
+    const { logger, lines } = capture();
+    logger.error('before Failed query: select "a\\"b" from t params: x tail');
+    expect(lines[0]?.msg).toBe('before [database statement removed]');
+  });
+});
+
+describe('the log walk (decision 054)', () => {
+  const secrets = {
+    passwordHash: 'h',
+    tokenHash: 't',
+    configEnc: 'e',
+    apiaccesskey: 'k',
+    otpauthUrl: 'otpauth://totp/x?secret=ABC',
+    recoveryCodes: ['a', 'b'],
+    sentryDsn: 'https://key@sentry.example/1',
+    'x-gsm-signature': 'sig',
+  };
+
+  it('redacts secret names at any depth', () => {
+    const { logger, lines } = capture();
+    logger.info({ ...secrets, one: { ...secrets }, five: { a: { b: { c: { d: { ...secrets } } } } } }, 'deep');
+    const text = JSON.stringify(lines[0]);
+    for (const value of ['"h"', '"t"', '"e"', '"k"', 'otpauth://', 'ABC', '"sig"', 'sentry.example', '"a","b"'])
+      expect(text).not.toContain(value);
+    const five = (lines[0]?.five as { a: { b: { c: { d: Record<string, unknown> } } } }).a.b.c.d;
+    for (const key of Object.keys(secrets)) expect(five[key], key).toBe('[redacted]');
+  });
+
+  it('keeps flags and the boot summary markers readable under a secret name', () => {
+    const { logger, lines } = capture();
+    logger.info(
+      { mustChangePassword: true, security: { tokenPepper: '[set]', lookupHashKey: '[unset]', salt: null } },
+      'summary',
+    );
+    expect(lines[0]).toMatchObject({
+      mustChangePassword: true,
+      security: { tokenPepper: '[set]', lookupHashKey: '[unset]', salt: null },
+    });
+  });
+
+  it('masks e-mail, phone and IMEI at any depth and keeps the top-level values of before', () => {
+    const { logger, lines } = capture();
+    logger.info({ email: 'rami@gsm-supply.example', phone: '+962791234567', imei: '356938035643809' }, 'top');
+    logger.info(
+      {
+        customer: { email: 'rami@gsm-supply.example', phone: '+962791234567' },
+        items: [{ imei: '356938035643809' }],
+        emails: ['a@b.co', 'c@d.co'],
+        recipientEmail: 'z@x.io',
+      },
+      'nested',
+    );
+    expect(lines[0]).toMatchObject({ email: 'r***@gsm-supply.example', phone: '***567', imei: '***3809' });
+    expect(lines[1]).toMatchObject({
+      customer: { email: 'r***@gsm-supply.example', phone: '***567' },
+      items: [{ imei: '***3809' }],
+      emails: ['a***@b.co', 'c***@d.co'],
+      recipientEmail: 'z***@x.io',
+    });
+  });
+
+  it('is bounded in depth and in work, never throws and does not change its input', () => {
+    let deep: Record<string, unknown> = { leaf: 1 };
+    for (let i = 0; i < 20; i++) deep = { next: deep };
+    const walked = redactLogObject({ deep });
+    expect(JSON.stringify(walked)).toContain('[truncated]');
+    const wide = redactLogObject({ values: Array.from({ length: 20_000 }, (_, i) => i) });
+    expect((wide.values as unknown[]).length).toBeLessThan(6000);
+    expect((wide.values as unknown[]).at(-1)).toBe('[truncated]');
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys: () => {
+          throw new Error('no');
+        },
+      },
+    );
+    expect(() => redactLogObject(hostile as Record<string, unknown>)).not.toThrow();
+    const input = { token: 't', nested: { password: 'p' } };
+    redactLogObject(input);
+    expect(input).toEqual({ token: 't', nested: { password: 'p' } });
+  });
+
+  it('keeps dates and other class instances as they are', () => {
+    const when = new Date('2026-01-01T00:00:00Z');
+    expect(redactLogObject({ at: when, nested: { at: when } })).toEqual({ at: when, nested: { at: when } });
+  });
+
+  it('costs little for a typical access-log line', () => {
+    const line = {
+      msg: 'request completed',
+      requestId: 'r-1',
+      method: 'GET',
+      route: '/admin/orders',
+      status: 200,
+      durationMs: 3.2,
+      code: 'X',
+    };
+    const rounds = 20_000;
+    const started = performance.now();
+    for (let i = 0; i < rounds; i++) redactLogObject(line);
+    const microseconds = ((performance.now() - started) * 1000) / rounds;
+    // Measured on the development machine at a few microseconds; the bound is coarse on purpose.
+    expect(microseconds).toBeLessThan(100);
   });
 });

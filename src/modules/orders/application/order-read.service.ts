@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { MerchantWallets } from '../../money';
 import { actorKey, actorNamesOf } from '../infra/foreign-reads.repository';
@@ -54,6 +55,7 @@ export class OrderReadService {
   constructor(
     private readonly db: DbService,
     private readonly wallets: MerchantWallets,
+    private readonly vault: CapabilityTokenVault,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -61,13 +63,16 @@ export class OrderReadService {
    * Reads the tracking token of a storefront order.
    *
    * Why: a paid checkout shows the buyer the link that follows their order (feature 16); the customers module asks here instead of reading `orders`.
+   * Decision 054: the token is revealed from its encrypted copy, or read as issued for an order placed before.
    *
    * @param db the database or a transaction
    * @param orderId the order
    * @returns the token, or `null` for an order that has none
+   * @throws {DecryptionError} when the copy cannot be read (its key left the keyring)
    */
-  trackingTokenOf(db: DbExecutor, orderId: number): Promise<string | null> {
-    return trackingTokenOfOrder(db, orderId);
+  async trackingTokenOf(db: DbExecutor, orderId: number): Promise<string | null> {
+    const stored = await trackingTokenOfOrder(db, orderId);
+    return stored ? this.vault.reveal('tracking', stored) : null;
   }
 
   /**

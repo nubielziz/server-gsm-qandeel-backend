@@ -1,5 +1,6 @@
 // What the two workers of a publish run share (feature 31, plan 31 sections 6.2 and 6.7): the errors that earn a row a second try, the
 // text a run keeps for an unexpected error, the label of its audit rows, and the tally of a run switch. No database, no clock.
+import { safeErrorText } from '../../../../common/errors';
 import { pgErrorInfo } from '../../../../infra/db/pg-errors';
 import { MAX_RUN_ERROR_LENGTH } from './publish-item';
 
@@ -43,7 +44,8 @@ export async function retryingConflictOnce<T>(work: () => Promise<T>): Promise<T
  * The text a run keeps for an unexpected error (`error`, `switch_error`).
  *
  * Why: the console shows it to staff, so a database error is reduced to its SQLSTATE and constraint (the driver's message carries the
- * statement), as Quick add does; any other error keeps its message. The full error goes to the log.
+ * statement), as Quick add does; any other error keeps its message with any statement text cut out, so a failure without a SQLSTATE stores no
+ * statement either (decision 054). The full error goes to the log.
  *
  * @param error whatever was thrown
  * @returns the text, at most `MAX_RUN_ERROR_LENGTH` characters
@@ -52,8 +54,8 @@ export function runErrorText(error: unknown): string {
   const database = pgErrorInfo(error);
   const message = database
     ? `Database error ${database.code}${database.constraint ? ` (${database.constraint})` : ''}.`
-    : error instanceof Error && error.message.trim() !== ''
-      ? error.message.trim()
+    : error instanceof Error && safeErrorText(error).trim() !== ''
+      ? safeErrorText(error).trim()
       : 'unexpected error';
   return message.slice(0, MAX_RUN_ERROR_LENGTH);
 }

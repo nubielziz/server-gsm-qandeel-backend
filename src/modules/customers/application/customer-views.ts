@@ -144,9 +144,10 @@ export function toStoreMe(customer: Customer, hasPassword: boolean): WireStoreMe
  * Builds one of the customer's orders for the store account.
  *
  * @param row the order read for the account
+ * @param trackingToken the order's tracking token, revealed from its stored form (decision 054), or `null`
  * @returns the wire order (an erased IMEI is sent as an empty string)
  */
-export function toStoreOrder(row: StoreOrderRow): WireStoreOrder {
+export function toStoreOrder(row: StoreOrderRow, trackingToken: string | null): WireStoreOrder {
   return {
     id: row.id,
     status: row.status,
@@ -156,7 +157,7 @@ export function toStoreOrder(row: StoreOrderRow): WireStoreOrder {
     totalPrice: row.totalPrice,
     taxAmount: row.taxAmount,
     currency: row.currency,
-    trackingToken: row.publicToken,
+    trackingToken,
     createdAt: row.createdAt.toISOString(),
     completedAt: iso(row.completedAt),
   };

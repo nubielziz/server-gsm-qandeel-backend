@@ -184,8 +184,12 @@ export const checkoutSessions = pgTable(
   'checkout_sessions',
   {
     id: pk(),
-    /** capability token of the checkout link (decision 010); unique */
-    token: text().notNull(),
+    /** the checkout token as issued: only rows written before decision 054, until the seal pass empties it; unique */
+    token: text(),
+    /** the lookup hash of the checkout token (CapabilityTokenVault.hashOf('checkout', …), decision 054); unique */
+    tokenHash: text(),
+    /** the checkout token as AES-GCM text, AAD checkout_sessions.token_enc (decisions 019, 054) */
+    tokenEnc: text(),
     customerId: fk((): AnyPgColumn => customers.id),
     email: text().notNull(),
     serviceId: fk((): AnyPgColumn => services.id).notNull(),
@@ -218,6 +222,12 @@ export const checkoutSessions = pgTable(
   },
   (t) => [
     uniqueIndex('checkout_sessions_token_uq').on(t.token),
+    uniqueIndex('checkout_sessions_token_hash_uq')
+      .on(t.tokenHash)
+      .where(sql`${t.tokenHash} is not null`),
+    // Decision 054: a session keeps exactly one form of its token, and a hash always comes with its encrypted copy.
+    check('checkout_sessions_token_form_check', sql`(${t.token} is null) <> (${t.tokenHash} is null)`),
+    check('checkout_sessions_token_enc_check', sql`(${t.tokenHash} is null) = (${t.tokenEnc} is null)`),
     check('checkout_sessions_status_check', inList(t.status, CHECKOUT_SESSION_STATUSES)),
     index('checkout_sessions_status_created_idx').on(t.status, t.createdAt.desc()),
     index('checkout_sessions_created_idx').on(t.createdAt.desc()),

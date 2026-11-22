@@ -93631,7 +93631,7 @@
     },
     "/admin/notifications/{id}": {
       "get": {
-        "description": "The same row as the list plus `payload`, the data the message was built from. A Telegram `chatId` anywhere in the payload is masked like `recipient`.",
+        "description": "The same row as the list plus `payload`, the data the message was built from. A Telegram `chatId` anywhere in the payload is masked like `recipient`. The payload's values are shown to callers who hold `notifications:*`; for others every text and number in it reads `[hidden]` (its keys stay).",
         "operationId": "getAdminNotificationsById",
         "parameters": [
           {
@@ -257479,7 +257479,7 @@
     },
     "/store/v1/me/tickets": {
       "get": {
-        "description": "The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed as a guest with the same address included. Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket `token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is `hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more (its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials.",
+        "description": "The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed as a guest with the same address included. Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket `token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is `hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more (its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials. The link of a ticket resolved more than 180 days ago no longer opens it (`404` on the token routes).",
         "operationId": "getStoreV1MeTickets",
         "parameters": [
           {
@@ -268713,7 +268713,7 @@
     },
     "/store/v1/tickets/{token}": {
       "get": {
-        "description": "The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is `404`. Lookups are limited to 30 a minute per address. Never cached: the answer holds a credential or sits behind it.",
+        "description": "The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is `404`. A ticket’s link stops working 180 days after the ticket was resolved (also `404`); reopening the ticket opens it again. Lookups are limited to 30 a minute per address. Never cached: the answer holds a credential or sits behind it.",
         "operationId": "getStoreV1TicketsByToken",
         "parameters": [
           {
@@ -284059,7 +284059,7 @@
     },
     "/webhooks/telegram/{secret}": {
       "post": {
-        "description": "Telegram's update webhook. The path secret and the `X-Telegram-Bot-Api-Secret-Token` header must both equal the configured webhook secret (constant-time comparison; otherwise `404 NOT_FOUND`). Always `200 {}` after the database write. A private-chat message `/start <token>` with a live `telegram_link` token links that chat to the merchant (a chat that another merchant had moves) and the bot answers \"Linked to <merchant name>.\"; `/stop` unlinks the chat and turns the merchant’s Telegram events off; anything else is ignored. A repeated `update_id` is processed once.",
+        "description": "Telegram's update webhook. The path segment and the `X-Telegram-Bot-Api-Secret-Token` header carry two different values derived from the configured webhook secret (decision 054; `scripts/telegram-webhook.ts` registers both with Telegram); both are compared in constant time, otherwise `404 NOT_FOUND`. Always `200 {}` after the database write. A private-chat message `/start <token>` with a live `telegram_link` token links that chat to the merchant (a chat that another merchant had moves) and the bot answers \"Linked to <merchant name>.\"; `/stop` unlinks the chat and turns the merchant’s Telegram events off; anything else is ignored. A repeated `update_id` is processed once.",
         "operationId": "postWebhooksTelegramBySecret",
         "parameters": [
           {

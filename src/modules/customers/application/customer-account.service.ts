@@ -4,6 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import type { CustomerPrincipal, RequestMeta } from '../../identity';
 import { profileChanges } from '../domain/profile-edit';
@@ -39,6 +40,7 @@ export class CustomerAccountService {
   constructor(
     private readonly db: DbService,
     private readonly rules: CustomerProfileRules,
+    private readonly vault: CapabilityTokenVault,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -130,6 +132,12 @@ export class CustomerAccountService {
     query: ParsedListQuery<'createdAt' | 'totalPrice'>,
   ): Promise<{ rows: WireStoreOrder[]; total: number }> {
     const { rows, total } = await listCustomerOrders(this.db.db, principal.customerId, query);
-    return { rows: rows.map(toStoreOrder), total };
+    // Decision 054: the tracking token is revealed from its encrypted copy (or the plain column of an order placed before).
+    return {
+      rows: rows.map((row) =>
+        toStoreOrder(row, this.vault.reveal('tracking', { enc: row.publicTokenEnc, plain: row.publicToken })),
+      ),
+      total,
+    };
   }
 }

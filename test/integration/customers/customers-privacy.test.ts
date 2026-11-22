@@ -603,6 +603,9 @@ describe('POST /admin/customers/:id/anonymize', () => {
     // The thread stays for the books; only the link goes, and the inbox order does not move.
     expect(tickets.find((ticket) => ticket.id === mine.id)).toMatchObject({
       token: null,
+      // Decision 054: every stored form of the link goes.
+      tokenHash: null,
+      tokenEnc: null,
       subject: mine.subject,
       updatedAt: mine.updatedAt,
     });

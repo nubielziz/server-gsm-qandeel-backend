@@ -148,9 +148,9 @@ ledger, holds, decision-making statuses, risk decisions, idempotency results.
 
 Staff, merchant and customer sessions are opaque random tokens in httpOnly, Secure, SameSite cookies, stored hashed
 (D019); CSRF and the sign-in steps follow the frontend contract (decision 018). Passwords argon2id (D007); TOTP and
-supplier/gateway credentials AES-256-GCM with key ids; API keys and one-time tokens stored as keyed hashes; outgoing
+supplier/gateway credentials AES-256-GCM with key ids; API keys and one-time tokens stored as keyed hashes; the shop's link tokens as a keyed hash and an encrypted copy; stored lookups keyed with their own key (D054); outgoing
 webhooks HMAC-signed, incoming verified with replay protection; parameterized SQL only; no stack traces in production
-errors; logs redacted (D012). Admin guards are enforced server-side: no self-suspension or self role change, at
+errors; logs redacted at every depth, database failures logged as SQLSTATE and names only (D012, D054). Admin guards are enforced server-side: no self-suspension or self role change, at
 least one active Owner, no self-lockout through IP rules, IP ranges no wider than /16, and a privilege ceiling: nobody grants,
 assigns or acts on permissions they do not hold, and only an Owner edits the role they hold; payment method secrets, merchant API
 keys made by staff and IP changes that would shut out an Owner are kept for Owners (decision 046). Sign-in counters count per email

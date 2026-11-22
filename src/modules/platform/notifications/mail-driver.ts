@@ -2,7 +2,7 @@
 // would be sent, which is what every test (NODE_ENV=test) uses so no test ever opens a connection to an SMTP server.
 import { createTransport } from 'nodemailer';
 import { DeliveryError } from './delivery-error';
-import { redactAddresses } from './masking';
+import { cleanProviderText } from './masking';
 
 /** One message handed to a driver. */
 export interface OutgoingMail {
@@ -92,7 +92,7 @@ const AUTH_REPLIES = new Set([530, 534, 535]);
  * Why: an SMTP 5xx answer (a mailbox that does not exist, a refused sender) will not change on a retry; a 4xx answer (a provider's
  * rate limit or a busy server), a timeout and a dropped connection will. A refused login is not permanent either: it is the
  * configuration, so the queue keeps retrying while the key is fixed instead of failing every message at once. The text is cleaned of
- * addresses before it is stored.
+ * addresses, links and token-like strings before it is stored (decision 054).
  *
  * @param error whatever the transporter threw
  * @returns a {@link DeliveryError} with a safe reason
@@ -107,7 +107,7 @@ export function classifyMailError(error: unknown): DeliveryError {
       : typeof info.message === 'string'
         ? info.message
         : 'The mail server refused the message.';
-  const reason = redactAddresses(raw);
+  const reason = cleanProviderText(raw);
   const loginRefused = code === 'EAUTH' || (responseCode !== undefined && AUTH_REPLIES.has(responseCode));
   const permanent =
     !loginRefused &&

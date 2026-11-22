@@ -22,9 +22,12 @@ import {
 } from '../../support/notifications';
 import { RedisService } from '@src/infra/redis';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
+import { telegramWebhookRequest } from '../../support/capability-tokens';
 
 const prefix = testBullPrefix();
 const SECRET = 'tg-webhook-secret-0123456789-abcdef';
+// Decision 054: Telegram calls with two values derived from the secret, never with the secret itself.
+const WEBHOOK = telegramWebhookRequest(SECRET);
 const BOT = { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' };
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -297,10 +300,10 @@ describe('POST /webhooks/telegram/:secret', () => {
   const send = (body: unknown, options: { secret?: string; header?: string | null; app?: TestApp } = {}) =>
     (options.app ?? t).app.inject({
       method: 'POST',
-      url: `/webhooks/telegram/${options.secret ?? SECRET}`,
+      url: `/webhooks/telegram/${options.secret ?? WEBHOOK.path}`,
       headers: {
         'content-type': 'application/json',
-        ...(options.header === null ? {} : { 'x-telegram-bot-api-secret-token': options.header ?? SECRET }),
+        ...(options.header === null ? {} : { 'x-telegram-bot-api-secret-token': options.header ?? WEBHOOK.header }),
       },
       payload: body as never,
     });
@@ -315,13 +318,13 @@ describe('POST /webhooks/telegram/:secret', () => {
     return { m, token };
   }
 
-  it('answers 404 unless both the path secret and the header carry the configured secret', async () => {
+  it('answers 404 unless the path and the header carry their two values derived from the configured secret', async () => {
     const body = message(1, '/stop');
     expect((await send(body)).statusCode).toBe(200);
     for (const options of [
-      { secret: `${SECRET}x` },
+      { secret: `${WEBHOOK.path}x` },
       { header: null },
-      { header: `${SECRET}x` },
+      { header: `${WEBHOOK.header}x` },
       { secret: 'short', header: 'short' },
     ]) {
       const res = await send(body, options);
@@ -335,6 +338,18 @@ describe('POST /webhooks/telegram/:secret', () => {
     } finally {
       await open.close();
     }
+  });
+
+  it('refuses the configured secret itself as path and header', async () => {
+    const res = await send(message(1, '/stop'), { secret: SECRET, header: SECRET });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe('NOT_FOUND');
+  });
+
+  it('refuses the path value repeated as the header', async () => {
+    const res = await send(message(1, '/stop'), { secret: WEBHOOK.path, header: WEBHOOK.path });
+    expect(res.statusCode).toBe(404);
+    expect((await send(message(1, '/stop'), { secret: WEBHOOK.header, header: WEBHOOK.header })).statusCode).toBe(404);
   });
 
   it('links the chat on /start <token>, spends the token, and the bot answers "Linked to <merchant name>."', async () => {

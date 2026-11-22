@@ -16,3 +16,7 @@ Dhru REFERENCEID (map). B2C links need unguessable tokens (tracking, checkout, t
 
 **Consequences.** Ids are sequential and therefore guessable: every read checks ownership or permission; nothing
 public is addressed by id alone.
+
+**Amendment (feature 44, decision 054).** Capability tokens are no longer stored as issued: a keyed hash (`LOOKUP_HASH_KEY`) for
+the lookup and an AES-GCM copy for the mails and pages that show the link again. A ticket link stops working 180 days after the ticket
+was resolved.

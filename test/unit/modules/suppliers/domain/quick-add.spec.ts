@@ -16,6 +16,7 @@ import {
   runView,
   uniqueGroups,
 } from '@src/modules/suppliers/domain/quick-add';
+import { DB_FAILURE_MARKER, drizzleFailure } from '../../../../support/db-failure';
 
 const NOW = Date.parse('2026-11-11T10:00:00.000Z');
 
@@ -241,6 +242,13 @@ describe('runErrorText', () => {
     expect(runErrorText(new Error('Failed query', { cause: Object.assign(new Error('x'), { code: '40001' }) }))).toBe(
       'Database error 40001.',
     );
+  });
+
+  it("keeps the statement out of a run's text when Postgres gave no SQLSTATE", () => {
+    const failure = drizzleFailure(Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }));
+    const text = runErrorText(failure);
+    expect(text).toBe('Database error ECONNRESET: the statement did not complete.');
+    expect(text).not.toContain(DB_FAILURE_MARKER);
   });
 
   it('says "unexpected error" when there is no message', () => {

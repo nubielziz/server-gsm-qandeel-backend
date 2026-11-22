@@ -8,7 +8,10 @@ import {
 } from '@src/modules/platform/notifications/campaigns/unsubscribe-token';
 
 const tokens = (pepper: string) =>
-  ({ hash: (text: string) => hashToken(pepper, text), equals: (a: string, b: string) => a === b }) as TokenService;
+  ({
+    lookupHash: (text: string) => hashToken(pepper, text),
+    equals: (a: string, b: string) => a === b,
+  }) as TokenService;
 const service = tokens('pepper-one-0123456789-0123456789');
 
 describe('marketingUnsubscribeToken', () => {

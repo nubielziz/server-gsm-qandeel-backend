@@ -69,13 +69,13 @@ export function normalizeBlockValue(kind: BlocklistKind, raw: string): BlockValu
 /**
  * The text that is hashed to find an entry again.
  *
- * Why: `value_hash` is the keyed hash of decision 019 (`TokenService.hash`). An email is hashed as its normalised text, the recipe
+ * Why: `value_hash` is the keyed hash of decision 019, keyed with `LOOKUP_HASH_KEY` (`TokenService.lookupHash`, decision 054). An email is hashed as its normalised text, the recipe
  * the customer routes already use to refuse a blocked email (feature 14b); an IMEI uses the IMEI-check recipe, so an entry matches a
  * stored check; the other kinds sit behind their kind as a prefix.
  *
  * @param kind what the value is
  * @param value the normalised value
- * @returns the text for `TokenService.hash`
+ * @returns the text for `TokenService.lookupHash`
  */
 export function blockHashInput(kind: BlocklistKind, value: string): string {
   switch (kind) {

@@ -4,6 +4,7 @@ import { HttpException } from '@nestjs/common';
 import { pgErrorInfo } from '../../infra/db/pg-errors';
 import { AppError } from './app-error';
 import type { ErrorCode } from './catalog';
+import { errorTypeOf, safeErrorText, withoutStatementText } from './safe-error';
 
 /**
  * Result of {@link normalizeException}.
@@ -104,7 +105,7 @@ function fromStatus(
   const server = status >= 500;
   const detail = server
     ? exposeInternals && message
-      ? message.slice(0, 500)
+      ? withoutStatementText(message).slice(0, 500)
       : INTERNAL_DETAIL
     : (FRAMEWORK_DETAIL[status] ?? message);
   return {
@@ -123,6 +124,7 @@ function fromStatus(
  * itself), so it is a 500 too. A Postgres deadlock (`40P01`) or serialization failure (`40001`), also when it is the
  * `cause` of another error, is not a fault: Postgres rolled the transaction back, so the answer is a retryable
  * `409 CONFLICT`, logged at warn level (a rare lock-order clash between two money paths cannot be removed by ordering alone).
+ * Outside production the 500 detail shows the error's type and its safe text: never a database statement or its values (decision 054).
  *
  * @param exception whatever was thrown
  * @param options `exposeInternals`: outside production the 500 detail may show the error message (never the stack)
@@ -151,7 +153,10 @@ export function normalizeException(exception: unknown, options: { exposeInternal
       logAsWarning: true,
     };
   }
-  const message = exception instanceof Error ? `${exception.name}: ${exception.message}` : String(exception);
+  const message =
+    exception instanceof Error
+      ? `${errorTypeOf(exception)}: ${safeErrorText(exception, 500)}`
+      : safeErrorText(exception, 500);
   return {
     error: new AppError('INTERNAL_ERROR', {
       detail: options.exposeInternals ? message.slice(0, 500) : INTERNAL_DETAIL,

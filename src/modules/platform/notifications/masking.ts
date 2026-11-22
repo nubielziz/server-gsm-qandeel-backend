@@ -50,3 +50,30 @@ export function redactAddresses(text: string, max = 300): string {
     .trim();
   return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked;
 }
+
+/** A link inside free text. */
+const LINK_IN_TEXT = /\b(?:https?|ftp):\/\/[^\s<>"']+/gi;
+/** A run of 20 or more URL-safe characters: a token, a key or an id that a link or a header could carry. */
+const TOKEN_IN_TEXT = /[A-Za-z0-9_-]{20,}/g;
+
+/**
+ * Cleans a provider's refusal text before it is stored, logged and shown.
+ *
+ * Why: W3-B-10 / decision 054: a provider that quotes a refused message could quote its link; the stored reason keeps the provider's
+ * words without addresses, links or token-like strings. The work is bounded: only the first `4 × max` characters are read.
+ *
+ * @param text the provider's text
+ * @param max the longest result, in characters (300 for SMTP, 200 for Telegram)
+ * @returns the text with addresses masked, links replaced by `[link]` and runs of 20 or more URL-safe characters by `[token]`,
+ *   white space collapsed, at most `max` characters
+ */
+export function cleanProviderText(text: string, max = 300): string {
+  const cleaned = text
+    .slice(0, 4 * max)
+    .replace(EMAIL_IN_TEXT, (address) => maskEmail(address))
+    .replace(LINK_IN_TEXT, '[link]')
+    .replace(TOKEN_IN_TEXT, '[token]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}

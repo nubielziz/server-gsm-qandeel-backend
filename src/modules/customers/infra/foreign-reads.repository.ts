@@ -245,7 +245,10 @@ export interface StoreOrderRow {
   readonly totalPrice: string;
   readonly taxAmount: string;
   readonly currency: string;
+  /** The tracking token as issued: only orders placed before decision 054, until the seal pass empties it. */
   readonly publicToken: string | null;
+  /** The tracking token's encrypted copy (decision 054). */
+  readonly publicTokenEnc: string | null;
   readonly createdAt: Date;
   readonly completedAt: Date | null;
 }
@@ -288,6 +291,7 @@ export async function listCustomerOrders(
         taxAmount: s.orders.taxAmount,
         currency: s.orders.currency,
         publicToken: s.orders.publicToken,
+        publicTokenEnc: s.orders.publicTokenEnc,
         createdAt: s.orders.createdAt,
         completedAt: s.orders.completedAt,
       })

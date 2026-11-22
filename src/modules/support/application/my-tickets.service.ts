@@ -2,6 +2,7 @@
 // open one without Turnstile. The ticket page and its chat stay the token routes (StoreTicketService, TicketThreadService).
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { type AccountSortField, listAccountTickets } from '../infra/account-ticket.repository';
 import { AccountTicketOpener, type OpenAccountTicketInput } from './account-ticket-opener';
@@ -13,7 +14,7 @@ import { type StoreTicketView, toStoreTicket } from './ticket-views';
  *
  * Why: B217 and rule 6: a customer's tickets are those whose requester is that customer (tickets they filed as a guest with the same
  * address included, because the address belongs to the customer who owns it); each row hands out the ticket's link token and the page stays
- * the token page, so no new credential exists. A signed-in customer opens a ticket without Turnstile and gets the token at once (5 an hour).
+ * the token page, so no new credential exists (the token is revealed from its encrypted copy, decision 054). A signed-in customer opens a ticket without Turnstile and gets the token at once (5 an hour).
  * Every id comes from the session: a customer reads and opens only their own.
  *
  * Side effects: reads `support_tickets` and `ticket_messages`; opening writes through {@link AccountTicketOpener}.
@@ -25,6 +26,7 @@ export class MyTicketsService {
   constructor(
     private readonly db: DbService,
     private readonly opener: AccountTicketOpener,
+    private readonly vault: CapabilityTokenVault,
   ) {}
 
   /**
@@ -39,9 +41,13 @@ export class MyTicketsService {
     query: ParsedListQuery<AccountSortField>,
   ): Promise<{ rows: MyTicketRowView[]; total: number }> {
     const { rows, total } = await listAccountTickets(this.db.db, { type: 'customer', id: customerId }, query);
-    // The query leaves out tickets without a token (an erasure cleared it); the check narrows the type.
+    // The query leaves out tickets without a token (an erasure cleared it); the check narrows the type. Decision 054: the token is
+    // revealed from its encrypted copy, or read as issued for a ticket opened before.
     return {
-      rows: rows.flatMap((row) => (row.ticket.token === null ? [] : [toMyTicketRow(row, row.ticket.token)])),
+      rows: rows.flatMap((row) => {
+        const token = this.vault.reveal('ticket', { enc: row.ticket.tokenEnc, plain: row.ticket.token });
+        return token === null ? [] : [toMyTicketRow(row, token)];
+      }),
       total,
     };
   }
@@ -58,7 +64,8 @@ export class MyTicketsService {
   async open(customerId: number, input: OpenAccountTicketInput): Promise<StoreTicketView & { token: string }> {
     const { ticket, message, files } = await this.opener.open({ type: 'customer', id: customerId }, input);
     // A customer's ticket always gets a token in the opener; the check is the invariant, not a branch.
-    if (ticket.token === null) throw new Error('A customer ticket was opened without a link token.');
-    return { ...toStoreTicket(ticket, [{ message, authorName: '' }], files), token: ticket.token };
+    const token = this.vault.reveal('ticket', { enc: ticket.tokenEnc, plain: ticket.token });
+    if (token === null) throw new Error('A customer ticket was opened without a link token.');
+    return { ...toStoreTicket(ticket, [{ message, authorName: '' }], files), token };
   }
 }

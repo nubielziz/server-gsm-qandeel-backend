@@ -5,8 +5,8 @@ import type { Clock } from '@src/common/clock';
 import type { TokenService } from '@src/infra/crypto';
 import { IdempotencyStore } from '@src/modules/orders/application/idempotency-store';
 
-// The store hashes through the token service; an identity "hash" lets the tests read the canonical text.
-const store = new IdempotencyStore({ hash: (text: string) => text } as unknown as TokenService, {} as Clock);
+// The store hashes through the token service's lookup hash (decision 054); an identity "hash" lets the tests read the canonical text.
+const store = new IdempotencyStore({ lookupHash: (text: string) => text } as unknown as TokenService, {} as Clock);
 
 describe('IdempotencyStore.hashOf', () => {
   it('is equal for two spellings of one body: the order of keys, at any depth, does not matter', () => {

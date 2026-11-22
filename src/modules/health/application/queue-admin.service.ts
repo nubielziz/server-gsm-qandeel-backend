@@ -2,7 +2,7 @@
 // Redis through the `QueuesService` of decision 020. Both writes are audited with the demo's verb phrases (ANSWERS audit Q3).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { AppError } from '../../../common/errors';
+import { AppError, withoutStatementText } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { QUEUE_NAMES, type QueueName, QueuesService, isQueueName } from '../../../infra/queues';
 import { AuditService, OutboxService } from '../../platform';
@@ -139,8 +139,12 @@ export class QueueAdminService {
       rows: jobs.map((job) => ({
         id: String(job.id ?? ''),
         name: job.name,
-        // A failure message can quote a URL with its credentials (a connection error): those are cut, and the text is capped.
-        failedReason: withoutCredentials(job.failedReason ?? '').slice(0, MAX_FAILED_REASON_LENGTH),
+        // A failure message can quote a URL with its credentials (a connection error): those are cut, and the text is capped. A
+        // failure stored before decision 054 may still hold a database statement (kept 14 days): it is cut when read.
+        failedReason: withoutCredentials(withoutStatementText(job.failedReason ?? '')).slice(
+          0,
+          MAX_FAILED_REASON_LENGTH,
+        ),
         attemptsMade: job.attemptsMade,
         maxAttempts: job.opts.attempts ?? 1,
         failedAt: new Date(job.finishedOn ?? job.timestamp).toISOString(),

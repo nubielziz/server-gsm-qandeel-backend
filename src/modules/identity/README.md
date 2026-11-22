@@ -172,7 +172,10 @@ follows an old link. Brute force is limited per client address by the pipeline's
 The comparison is constant time and always runs, so a missing configuration takes as long to refuse as a wrong secret. A route without a
 source, or without a stored secret, refuses every request with `401`. A source may also name a request `header` that must carry the same
 secret (both are compared, both always, so the time does not say which failed) and a `refusal` of `not_found` (404, so a scanner cannot tell
-the route exists); feature 12a's Telegram webhook uses both (`X-Telegram-Bot-Api-Secret-Token`, `TELEGRAM_WEBHOOK_SECRET`).
+the route exists); a stored `secret` may name a separate `header` value, which the header is then compared with instead of the path's
+(decision 054). Feature 12a's Telegram webhook uses all three: the path and `X-Telegram-Bot-Api-Secret-Token` carry two values derived from
+`TELEGRAM_WEBHOOK_SECRET` with two labels (`telegramWebhookPath`, `telegramWebhookHeader`), registered with Telegram by
+`scripts/telegram-webhook.ts`.
 
 **Gateway signatures** (`webhooks/`). The `:gateway` of the URL (lower case; `^[a-z0-9][a-z0-9_-]{0,39}$`) picks the `WebhookVerifier` billing
 registers (feature 8): `verify({ gateway, headers, rawBody, nowSeconds })` checks the gateway's own scheme over the **exact bytes** of the
@@ -454,7 +457,7 @@ MISMATCHES B165.
 | `GET /client/notification-preferences` | merchant session | `{ email: { address }, telegram: { linked }, lowBalanceThreshold (money or null), events: [{ event, label, email, telegram }] }`: the non-transactional merchant events of the platform's registry; never saved reads as email on, Telegram off (the order results stay off until chosen) |
 | `PUT /client/notification-preferences` | merchant session | `{ lowBalanceThreshold?, events }` replaces the listed events, keeps the others and the keys it does not know; `422` on `events.N.event` (unknown, always-sent or repeated), on `events.N.telegram` ("Link Telegram first."; sending back the value the GET showed is accepted, so the announcements' default Telegram on saves without a chat) and on `lowBalanceThreshold` (negative or malformed); answers the GET body; the row is locked, so it takes turns with a Telegram link |
 | `POST /client/telegram/link` | merchant session | `201 { url: 'https://t.me/<bot>?start=<token>', expiresAt }`, `Cache-Control: no-store`: a single-use `telegram_link` token (hash only, 15 minutes); a new call voids the previous link; `503 UNAVAILABLE` without `TELEGRAM_BOT_USERNAME` |
-| `POST /webhooks/telegram/:secret` | url-secret | the path secret and `X-Telegram-Bot-Api-Secret-Token` must both equal `TELEGRAM_WEBHOOK_SECRET` (constant time, else `404`); always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
+| `POST /webhooks/telegram/:secret` | url-secret | the path segment and `X-Telegram-Bot-Api-Secret-Token` carry two different values derived from `TELEGRAM_WEBHOOK_SECRET` (decision 054; `scripts/telegram-webhook.ts` registers both), compared in constant time, else `404`; always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
 
 The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
 0009); `clients.telegram_chat_id` is unique (one chat, one merchant).

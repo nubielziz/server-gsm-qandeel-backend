@@ -47,6 +47,7 @@ import { SuppliersAdminModule } from '@src/modules/suppliers';
 import { SupportAdminModule, SupportErasureModule, SupportMailModule, SupportStoreModule } from '@src/modules/support';
 import { SupportClientModule } from '@src/modules/support/support-client.module';
 import {
+  LookupKeyCheckModule,
   MaintenanceModule,
   MerchantWebhooksModule,
   NotificationAdminModule,
@@ -73,6 +74,7 @@ export const PRODUCTION_ENV: Record<string, string> = {
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
   CSRF_SECRET: 'c'.repeat(40),
   TOKEN_PEPPER: 'p'.repeat(40),
+  LOOKUP_HASH_KEY: 'l'.repeat(40),
   ENCRYPTION_KEYS: `k1:${Buffer.alloc(32, 7).toString('base64')}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),
@@ -243,6 +245,9 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
     for (const module of NEEDS_DATABASE_AND_CACHE) builder.overrideModule(module).useModule(NoSecurityModule);
   }
   for (const module of options.withoutModules ?? []) builder.overrideModule(module).useModule(NoSecurityModule);
+  // Decision 054: one test database serves apps of several LOOKUP_HASH_KEY values, so the boot check of the real processes is left
+  // out; its tests provide LookupKeyCheck themselves.
+  builder.overrideModule(LookupKeyCheckModule).useModule(NoSecurityModule);
   if (options.withoutInfrastructure) {
     const replaced = [RedisModule, CacheModule, RateLimitModule, QueuesModule, StorageModule, ...NEEDS_INFRASTRUCTURE];
     for (const module of replaced) builder.overrideModule(module).useModule(NoInfrastructureModule);

@@ -23,6 +23,7 @@ import {
   storefrontEvent,
 } from '../../support/b2c';
 import { MINUTE, SECOND, TestClock } from '../../support/clock';
+import { tokenHashOf } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
 import { pdfFontNames } from '../../support/pdf';
@@ -343,7 +344,9 @@ describe('the gateway confirmation', () => {
       currency: 'USD',
       imei: expect.stringMatching(/^353890110000004$/),
     });
-    expect(order.publicToken).toBe(paid.trackingToken);
+    // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
+    expect(order.publicToken).toBeNull();
+    expect(order.publicTokenHash).toBe(tokenHashOf(t, 'tracking', paid.trackingToken));
     expect((await eventsOf(db, paid.orderId)).map((event) => event.type)).toEqual(['created', 'paid', 'review']);
 
     expect((await ledgerOf(db, paid.orderId)).map((entry) => [entry.kind, entry.key])).toEqual([

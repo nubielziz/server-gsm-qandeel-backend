@@ -1,7 +1,7 @@
 // The scheduled jobs list and the manual run (`GET /admin/system/jobs`, `POST /admin/system/jobs/:name/run`): the BullMQ job
 // schedulers on the queue Redis joined with `job_runs` (decision 020, resolutions health-commissions-16).
 import { Injectable } from '@nestjs/common';
-import { AppError } from '../../../common/errors';
+import { AppError, withoutStatementText } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { QUEUE_NAMES, type QueueName, QueuesService } from '../../../infra/queues';
 import { AuditService } from '../../platform';
@@ -61,7 +61,8 @@ export function toJobRun(row: JobRunRow): JobRunView {
     processed: run.processed,
     trigger: run.trigger,
     status: run.status,
-    error: run.error ?? null,
+    // A run recorded before decision 054 may still hold a database statement: it is cut when read.
+    error: run.error === null ? null : withoutStatementText(run.error),
     result: (run.result ?? null) as JobRunView['result'],
     triggeredBy: row.triggeredBy,
   };

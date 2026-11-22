@@ -54,7 +54,7 @@ export interface VoidResult {
  *
  * Why: some services deliver a pre-bought code (decision 025: reserved at placement, sold on completion). Staff import codes in
  * batches and void unsold ones (RESOLUTIONS catalog-15, MISMATCHES B18, RULES services 9). Each code is AES-GCM encrypted
- * (decision 019, context `inventory_codes.code_enc`) with an HMAC of the code (`code_hash`, domain-separated from every other
+ * (decision 019, context `inventory_codes.code_enc`) with an HMAC of the code (`code_hash`, keyed with `LOOKUP_HASH_KEY`, decision 054, and domain-separated from every other
  * token) so duplicates are found without decrypting, and its last four characters in clear for the mask. The service row is
  * locked `FOR SHARE` during an import, so a delete (which decides between archive and delete from what refers to it) waits.
  *
@@ -179,6 +179,6 @@ export class InventoryAdminService {
 
   /** The keyed hash of a code (see {@link inventoryCodeHashInput}). */
   private hashOf(code: string): string {
-    return this.tokens.hash(inventoryCodeHashInput(code));
+    return this.tokens.lookupHash(inventoryCodeHashInput(code));
   }
 }

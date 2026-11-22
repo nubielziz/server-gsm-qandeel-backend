@@ -4,7 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { APP_CONFIG, type AppConfig } from '../../../config';
-import { EncryptionService } from '../../../infra/crypto';
+import { CapabilityTokenVault, EncryptionService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { UnrecoverableError } from '../../../infra/queues';
 import { TacDirectory } from '../../catalog';
@@ -43,8 +43,8 @@ export type RecoveryMailJob = Pick<Job<OutboxJobData>, 'data'> & {
  * Sends one recovery email.
  *
  * Why: RULES checkouts 1 and 3: consent is checked again at send time (the customer may have withdrawn it since the claim), and a paid
- * checkout needs no reminder. The link carries the checkout token, which is a bearer secret (decision 010): it is read from the
- * session here and handed to the delivery as a secret, so it is never in the event, the job data or the `notifications` row, which
+ * checkout needs no reminder. The link carries the checkout token, which is a bearer secret (decision 010): it is revealed from the
+ * session's encrypted copy here (decision 054) and handed to the delivery as a secret, so it is never in the event, the job data or the `notifications` row, which
  * the console shows. The row (dedupe key `outbox-<event id>:email`) logs the mail without the link; a retry of the job finds it
  * and resends. The mail is at least once, like every notification.
  *
@@ -66,6 +66,7 @@ export class RecoveryMail {
   constructor(
     private readonly db: DbService,
     private readonly encryption: EncryptionService,
+    private readonly vault: CapabilityTokenVault,
     private readonly tacs: TacDirectory,
     private readonly notifications: NotificationService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
@@ -128,6 +129,9 @@ export class RecoveryMail {
     if (earlier === 'sent') return { sent: false, skipped: 'already_sent' };
     if (earlier === 'failed') return { sent: false, skipped: 'already_failed' };
 
+    // Decision 054: the token is read from the session's encrypted copy (or the plain column of a row written before).
+    const token = this.vault.reveal('checkout', { enc: session.tokenEnc, plain: session.token });
+    if (token === null) throw new Error(`Checkout session ${session.id} has no token.`);
     const result = await this.notifications.sendNow(
       {
         event: ABANDONED_EVENT,
@@ -139,7 +143,7 @@ export class RecoveryMail {
         },
         dedupeKey,
       },
-      { link: recoveryLink(this.config.http.storeBaseUrl, session.token) },
+      { link: recoveryLink(this.config.http.storeBaseUrl, token) },
       { attempt: (job.attemptsMade ?? 0) + 1, maxAttempts: job.opts?.attempts ?? 1 },
     );
     switch (result.status) {

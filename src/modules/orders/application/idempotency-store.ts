@@ -69,10 +69,10 @@ export class IdempotencyStore {
    *
    * @param scope the route kind (`order`, `bulk`)
    * @param body the validated request body
-   * @returns a keyed hash, equal for two spellings of the same body
+   * @returns a keyed hash (`LOOKUP_HASH_KEY`, decision 054), equal for two spellings of the same body
    */
   hashOf(scope: IdempotencyScope, body: unknown): string {
-    return this.tokens.hash(`idempotency:${scope}:${canonical(body)}`);
+    return this.tokens.lookupHash(`idempotency:${scope}:${canonical(body)}`);
   }
 
   /**

@@ -1,8 +1,25 @@
 // Drizzle queries on `support_tickets` and `ticket_messages` (feature 17): the inbox list with its filters and sorts, one ticket with its
 // requester and assignee, the thread with author names, the writes of the use cases, and the token lookup of the ticket page. Feature 28
 // adds the live chat's reads (one message, the messages after a cursor), the guarded seen marks, the reply-mail sweep and the attachments.
-import { and, asc, count, desc, eq, gt, inArray, isNull, lte, max, ne, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  max,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import type { ParsedListQuery, ParsedFilter } from '../../../common/contract';
+import type { SealedCapabilityToken, UnsealedCapabilityToken } from '../../../infra/crypto';
 import { type DbExecutor, listOrderBy, listWhere, type ListColumns } from '../../../infra/db';
 import { fromWireStatus, type WireTicketStatus } from '../domain/ticket-status';
 import type { LastPublicMessage } from '../domain/ticket-sla';
@@ -280,25 +297,84 @@ export async function lockTicket(db: DbExecutor, id: number): Promise<SupportTic
 }
 
 /**
- * Finds the id and token of the ticket a token names.
+ * Finds the ticket a presented link token names, with the stored form to compare and when it was resolved.
  *
- * Why: the capability guard looks the token up by the unique index before any handler runs; it gets the stored token back so the resolver
- * can compare it in constant time.
+ * Why: the capability guard looks the token up by a unique index before any handler runs; it gets the stored form back so the resolver
+ * can compare it in constant time, and `resolved_at` for the end of the link (decision 054). The lookup is by the keyed hash; a ticket
+ * opened before is found by its plain token until the seal pass ran.
  *
  * @param db the database or a transaction
- * @param token the token the visitor sent
- * @returns the ticket id and stored token, or `undefined`
+ * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('ticket', …)`) and the token itself
+ * @returns the ticket id with its stored hash or plain token and its resolution time, or `undefined`
  */
 export async function findTicketByToken(
   db: DbExecutor,
-  token: string,
-): Promise<{ id: number; token: string } | undefined> {
-  const [row] = await db
+  lookup: { readonly hash: string; readonly token: string },
+): Promise<{ id: number; tokenHash: string | null; token: string | null; resolvedAt: Date | null } | undefined> {
+  const columns = {
+    id: supportTickets.id,
+    tokenHash: supportTickets.tokenHash,
+    token: supportTickets.token,
+    resolvedAt: supportTickets.resolvedAt,
+  };
+  const [sealed] = await db
+    .select(columns)
+    .from(supportTickets)
+    .where(eq(supportTickets.tokenHash, lookup.hash))
+    .limit(1);
+  if (sealed) return sealed;
+  // Tickets opened before decision 054 keep the token as issued until the seal pass ran.
+  const [plain] = await db.select(columns).from(supportTickets).where(eq(supportTickets.token, lookup.token)).limit(1);
+  return plain;
+}
+
+/**
+ * The tickets that still keep their link token as issued, by id.
+ *
+ * Why: decision 054: the one-off seal pass walks them a page at a time.
+ *
+ * @param db the database
+ * @param afterId the last id of the previous page (0 to start)
+ * @param limit the page size
+ * @returns the id and plain token of each row
+ */
+export async function findUnsealedTickets(
+  db: DbExecutor,
+  afterId: number,
+  limit: number,
+): Promise<UnsealedCapabilityToken[]> {
+  const rows = await db
     .select({ id: supportTickets.id, token: supportTickets.token })
     .from(supportTickets)
-    .where(eq(supportTickets.token, token))
-    .limit(1);
-  return row?.token == null ? undefined : { id: row.id, token: row.token };
+    .where(and(isNotNull(supportTickets.token), isNull(supportTickets.tokenHash), gt(supportTickets.id, afterId)))
+    .orderBy(asc(supportTickets.id))
+    .limit(limit);
+  return rows.flatMap((row) => (row.token === null ? [] : [{ id: row.id, token: row.token }]));
+}
+
+/**
+ * Stores a ticket's link token as its hash and encrypted copy and empties the plain column.
+ *
+ * Why: decision 054: the seal pass converts each row in one guarded statement, so a row that changed since it was read (a token
+ * cleared by an anonymization) is left alone and a repeat finds nothing to do.
+ *
+ * @param db the database
+ * @param row the row as read (id and plain token)
+ * @param sealed the token's stored forms
+ * @returns true when the row was converted
+ */
+export async function sealTicketToken(
+  db: DbExecutor,
+  row: UnsealedCapabilityToken,
+  sealed: SealedCapabilityToken,
+): Promise<boolean> {
+  const changed = await db
+    .update(supportTickets)
+    // Sealing is not a change of the ticket: updated_at keeps its value, so the inbox order does not move.
+    .set({ tokenHash: sealed.hash, tokenEnc: sealed.enc, token: null, updatedAt: sql`${supportTickets.updatedAt}` })
+    .where(and(eq(supportTickets.id, row.id), eq(supportTickets.token, row.token), isNull(supportTickets.tokenHash)))
+    .returning({ id: supportTickets.id });
+  return changed.length === 1;
 }
 
 /**
@@ -362,8 +438,8 @@ export async function updateTicket(
  * Clears the page token of every ticket a customer opened.
  *
  * Why: the token is a capability link kept in an email; once the customer is anonymized nobody may open the thread with it
- * (decision 010, feature 18). The ticket and its messages stay for the books; only the link goes. `updated_at` is kept so the inbox
- * order does not move.
+ * (decision 010, feature 18). The ticket and its messages stay for the books; only the link goes, in every stored form (the plain token,
+ * its hash and its encrypted copy, decision 054). `updated_at` is kept so the inbox order does not move.
  *
  * @param db the anonymization's transaction
  * @param customerId the customer
@@ -372,12 +448,12 @@ export async function updateTicket(
 export async function clearTicketTokensOfCustomer(db: DbExecutor, customerId: number): Promise<number> {
   const rows = await db
     .update(supportTickets)
-    .set({ token: null, updatedAt: sql`${supportTickets.updatedAt}` })
+    .set({ token: null, tokenHash: null, tokenEnc: null, updatedAt: sql`${supportTickets.updatedAt}` })
     .where(
       and(
         eq(supportTickets.requesterType, 'customer'),
         eq(supportTickets.requesterId, customerId),
-        sql`${supportTickets.token} is not null`,
+        or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash)),
       ),
     )
     .returning({ id: supportTickets.id });

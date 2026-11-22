@@ -123,14 +123,18 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   again after a reopen gets none, rated or not (`support_tickets.survey_sent_at`, set once in the resolve transaction, is the record). **Reopen** clears `resolved_at`.
 - **Storefront.** `POST /store/v1/tickets` needs Turnstile (decision 034). The body names a subject, a message, an optional category and
   either an `orderToken` (the order's tracking token: the ticket links to that order and belongs to its customer; the typed email is
-  ignored) or an `email` (a known address finds its customer, a new one becomes a guest customer). The ticket token (128 random bits, stored
-  as issued like the checkout and tracking tokens, decision 010) is the whole credential of the three token routes. The receipt email holds
+  ignored) or an `email` (a known address finds its customer, a new one becomes a guest customer). The ticket token (128 random bits,
+  decision 010) is the whole credential of the token routes; it is stored only as a keyed hash (`token_hash`) and an AES-GCM copy
+  (`token_enc`, AAD `support_tickets.token_enc`) that the mails and the account list reveal (decision 054). The receipt email holds
   its link; the 201 answer carries `token` only on the `orderToken` path (the caller already holds the order link). On the `email` path the
   answer has no token: the ticket is filed under whoever owns the address and Turnstile only stops bots, so a token in the body would let a
   stranger who knows an address read that customer's thread. The receipt email repeats the visitor's subject to the address they typed, so
   besides Turnstile and the per-IP limit one email address (case-insensitive) opens at most 3 tickets an hour on the `email` path (limiter
   `ticket-email`, decision 021): the fourth is `429 RATE_LIMITED` with `Retry-After`. `TicketTokenResolver`
-  registers with identity's `CapabilityTokenResolvers` and compares in constant time. A customer message on a ticket that waited on the
+  registers with identity's `CapabilityTokenResolvers`, finds the ticket by the keyed hash (a ticket opened before decision 054 by its plain
+  token until the seal pass ran) and compares in constant time. **A ticket's link stops working 180 days after the ticket was resolved**
+  (`TICKET_LINK_DAYS_AFTER_RESOLUTION`, `domain/ticket-link.ts`; the default of `support.attachmentRetentionDays`): the guard answers the same
+  `404` as for an unknown token; reopening clears `resolved_at` and opens it again. A customer message on a ticket that waited on the
   customer makes it `open`, on a `new` ticket leaves it `new` (a resolved ticket takes none: see the next rule); the rating is once, 1 to
   5, only when the ticket is resolved, and the ticket stays resolved. The storefront's view carries no staff name, assignee, priority, timer or internal message.
 - **A resolved ticket is closed for its requester (B220, owner decision 2026-11-15; it replaces ANSWERS support Q8, where a customer
@@ -282,3 +286,10 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 - `b2c-2` · POST /admin/support-tickets/:id/reply, GET /admin/support-tickets
 - `b2c-9` · GET/POST/PATCH /admin/reply-templates
+
+## Link tokens at rest (decision 054)
+
+`support_tickets.token` keeps the plain form only for tickets opened before decision 054; new tickets have `token_hash` and `token_enc`
+(checks: never both forms, hash and copy together). Anonymization clears all three. The one-off pass `TicketTokenSeal` (job
+`ticket_tokens_seal` on `maintenance`, `TicketTokenSealModule`, worker only) is asked for once by migration `capability_tokens_seal`: it seals
+each ticket that still holds a plain token in one guarded `UPDATE` (`updated_at` kept) and records a `job_runs` row (trigger `event`).

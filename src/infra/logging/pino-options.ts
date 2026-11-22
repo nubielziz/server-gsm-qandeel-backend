@@ -1,10 +1,11 @@
-// pino options shared by the API and the worker (decision 012): level per environment, redaction, PII masking and the
+// pino options shared by the API and the worker (decisions 012, 054): level per environment, redaction, PII masking, safe errors and the
 // request id on every line. Built from the typed config; the destination (JSON to stdout or pretty) is chosen apart.
 import { hostname } from 'node:os';
 import { type DestinationStream, type LoggerOptions, stdTimeFunctions } from 'pino';
 import { getRequestId } from '../../common/request-id';
 import type { AppConfig } from '../../config';
-import { PII_SERIALIZERS, REDACT_CENSOR, REDACT_PATHS } from './redaction';
+import { serializeLoggedError, withoutStatementTextInLine } from './error-serializer';
+import { REDACT_CENSOR, REDACT_PATHS, redactLogObject } from './redaction';
 
 /**
  * The processes that log; becomes the `service` field of every line.
@@ -29,7 +30,10 @@ export function requestIdMixin(): { requestId?: string } {
 /**
  * Builds the pino options of a process.
  *
- * Why: decision 012: one place defines level, redaction, masking and the request id for both processes.
+ * Why: decision 012: one place defines level, redaction, masking and the request id for both processes. Decision 054 adds three
+ * layers against statements and values in a line: an `err` serializer that rebuilds a database failure from the original error, a
+ * `formatters.log` walk that applies the secret-name rule and the personal-data masks at every depth, and a `streamWrite` check that
+ * removes any statement text from the finished line.
  *
  * @param config the process configuration (level comes from `LOG_LEVEL`, else info/debug/warn by environment)
  * @param service which process is logging
@@ -41,7 +45,9 @@ export function buildPinoOptions(config: AppConfig, service: ServiceName): Logge
     base: { service, pid: process.pid, hostname: hostname() },
     timestamp: stdTimeFunctions.isoTime,
     redact: { paths: [...REDACT_PATHS], censor: REDACT_CENSOR },
-    serializers: { ...PII_SERIALIZERS },
+    serializers: { err: serializeLoggedError },
+    formatters: { log: redactLogObject },
+    hooks: { streamWrite: withoutStatementTextInLine },
     mixin: requestIdMixin,
   };
 }

@@ -202,7 +202,7 @@ export class OrderPlacement {
       const fingerprint =
         item.mainInput === null
           ? null
-          : this.tokens.hash(
+          : this.tokens.lookupHash(
               `order-duplicate:${merchant.id}:${service.id}:${item.mainInput.replace(/\s+/g, '').toLowerCase()}`,
             );
       if (fingerprint !== null && service.duplicateRule === 'block_open') {

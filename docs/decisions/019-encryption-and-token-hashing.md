@@ -17,3 +17,7 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** A database dump alone reveals no usable secret or credential; rotating the pepper invalidates all
 sessions and keys, so it is a planned operation.
+
+**Amendment (feature 44, decision 054).** No maintenance job re-encrypts the `*_enc` columns: an old key stays in the keyring for
+as long as values sealed by it are kept, and `needsRotation`/`rotate` are building blocks for a later pass. Hashes stored for later
+matching use `LOOKUP_HASH_KEY` (`TOKEN_PEPPER` outside production when unset); `TOKEN_PEPPER` keys credentials.

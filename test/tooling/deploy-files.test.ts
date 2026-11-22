@@ -206,20 +206,127 @@ describe('deploy/Caddyfile', () => {
     expect(caddyfile).toContain('Strict-Transport-Security');
   });
 
-  it('hides the ticket token and the typed search in the shop host access log, and logs the other hosts as plain JSON (features 28, 29)', () => {
-    const shop = block('SHOP_HOST');
-    expect(shop).toContain('format filter {');
-    // One `multi_regexp` per field holds every rule (one `regexp` line each): the ticket token and the `q` parameter of a search, which
-    // can be an IMEI, a phone number or an email address.
-    for (const field of ['request>uri', 'request>headers>Referer']) {
-      const rules = new RegExp(`${field} multi_regexp \\{([\\s\\S]*?)\\n\\s*\\}`).exec(shop)?.[1] ?? '';
-      expect(rules, field).not.toBe('');
-      expect(rules, field).toContain('regexp "/tickets/[^/?]+" "/tickets/[token]"');
-      expect(rules, field).toContain('regexp "([?&])q=[^&]*" "${1}q=[redacted]"');
+  // The shared access log (decision 054): every site block imports it and none writes a log of its own.
+  const accessLog = (() => {
+    const start = caddyfile.indexOf('(access_log) {');
+    if (start < 0) throw new Error('no access_log snippet');
+    return caddyfile.slice(start, caddyfile.indexOf('\n}\n', start));
+  })();
+  const fieldRules = (field: string): string[] => {
+    const body = new RegExp(`${field} multi_regexp \\{([\\s\\S]*?)\\n\\s*\\}`).exec(accessLog)?.[1] ?? '';
+    return body
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  };
+  /** Applies the rules of one field in order, the way Caddy does (Go's `${n}` written as JavaScript's `$n`). */
+  const applyRules = (field: string, input: string): string =>
+    fieldRules(field).reduce((text, line) => {
+      const match = /^regexp "(.*)" "(.*)"$/.exec(line);
+      if (!match?.[1] || match[2] === undefined) throw new Error(`not a regexp line: ${line}`);
+      return text.replace(new RegExp(match[1], 'g'), match[2].replace(/\$\{(\d)\}/g, '$$$1'));
+    }, input);
+
+  it('every site block writes the shared access log and none has its own', () => {
+    const hosts = [...caddyfile.matchAll(/^\{\$([A-Z_]+)\} \{$/gm)].map((match) => match[1] ?? '');
+    expect(hosts.sort()).toEqual(expect.arrayContaining(['ADMIN_HOST', 'API_HOST', 'SHOP_HOST']));
+    for (const host of hosts) expect(block(host), host).toContain('import access_log');
+    const active = caddyfile
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+    expect(active.match(/^\s*log \{$/gm)).toHaveLength(1);
+    expect(active).not.toContain('json_log');
+    expect(accessLog).toContain('format filter {');
+  });
+
+  /** The one rule that cuts the whole query string of a redirect's Location. */
+  const QUERY_CUT = 'regexp "[?].*" "?[redacted]"';
+
+  it('the request address and the Referer use the same rules, and a redirect the same path rules', () => {
+    const address = fieldRules('request>uri');
+    expect(address.length).toBeGreaterThan(5);
+    expect(fieldRules('request>headers>Referer')).toEqual(address);
+    const pathRules = address.filter((line) => !line.startsWith('regexp "([?&])'));
+    expect(pathRules).toHaveLength(7);
+    expect(fieldRules('resp_headers>Location')).toEqual([...pathRules, QUERY_CUT]);
+    expect(accessLog).not.toMatch(/^\s*(request|resp_headers)>[^\n]* regexp /m);
+  });
+
+  it('the rules replace link tokens, the webhook secret, searches and IMEIs', () => {
+    const token = 'AbCdEfGhIjKlMnOpQrStUv';
+    const cases: Array<[string, string]> = [
+      [`/store/v1/orders/${token}/receipt`, '/store/v1/orders/[token]/receipt'],
+      [`/store/v1/checkout-sessions/${token}/pay`, '/store/v1/checkout-sessions/[token]/pay'],
+      [`/store/v1/tickets/${token}/stream`, '/store/v1/tickets/[token]/stream'],
+      [
+        '/store/v1/marketing/unsubscribe/1a.0123456789abcdef0123456789abcdef',
+        '/store/v1/marketing/unsubscribe/[token]',
+      ],
+      [`/en/track/${token}`, '/en/track/[token]'],
+      [`/en/checkout/${token}`, '/en/checkout/[token]'],
+      [`/en/checkout/return?token=${token}`, '/en/checkout/return?token=[redacted]'],
+      [`/en/support/tickets/${token}`, '/en/support/tickets/[token]'],
+      [`/en/support?order=${token}`, '/en/support?order=[redacted]'],
+      ['/en/sign-in?as=customer&next=%2Fen%2Fcheckout%2FAbCd', '/en/sign-in?as=customer&next=[redacted]'],
+      ['/set-password?token=abc', '/set-password?token=[redacted]'],
+      ['/store/v1/search?q=356938035643809&page=2', '/store/v1/search?q=[redacted]&page=2'],
+      ['/admin/customers?_start=0&_end=25&q=rania%40example.com', '/admin/customers?_start=0&_end=25&q=[redacted]'],
+      ['/admin/orders?_sort=createdAt&_order=desc', '/admin/orders?_sort=createdAt&_order=desc'],
+      ['/v1/orders?imei=356938035643809&limit=50', '/v1/orders?imei=[redacted]&limit=50'],
+      ['/webhooks/telegram/0123456789abcdef0123', '/webhooks/telegram/[secret]'],
+      ['/admin/orders/123', '/admin/orders/123'],
+      ['/admin/support-tickets/9', '/admin/support-tickets/9'],
+      ['/store/v1/me/tickets', '/store/v1/me/tickets'],
+      ['/store/v1/checkout-sessions', '/store/v1/checkout-sessions'],
+    ];
+    for (const [input, expected] of cases) {
+      expect(applyRules('request>uri', input), input).toBe(expected);
+      const referer = 'https://shop.example.com';
+      expect(applyRules('request>headers>Referer', referer + input), input).toBe(referer + expected);
     }
-    expect(shop).not.toMatch(/^\s*request>[^\n]* regexp /m);
-    for (const host of ['ADMIN_HOST', 'API_HOST']) expect(block(host)).toContain('import json_log');
-    expect(shop).not.toContain('import json_log');
+  });
+
+  it("a redirect's Location loses its link tokens and its whole query string, and keeps any other path", () => {
+    const token = 'AbCdEfGhIjKlMnOpQrStUv';
+    const cases: Array<[string, string]> = [
+      // The storefront's redirect of a ticket mail's link (STORE_BASE_URL has no /en).
+      [`https://shop.example.com/en/support/tickets/${token}`, 'https://shop.example.com/en/support/tickets/[token]'],
+      [`https://shop.example.com/en/track/${token}`, 'https://shop.example.com/en/track/[token]'],
+      [
+        `https://shop.example.com/en/checkout/${token}?step=pay`,
+        'https://shop.example.com/en/checkout/[token]?[redacted]',
+      ],
+      [`/store/v1/checkout-sessions/${token}`, '/store/v1/checkout-sessions/[token]'],
+      ['/en/sign-in?as=customer&next=%2Fen%2Fcheckout%2FAbCd', '/en/sign-in?[redacted]'],
+      ['https://shop.example.com/en/checkout/return', 'https://shop.example.com/en/checkout/return'],
+      // A signed download link keeps its path; its signature is in the query.
+      [
+        'https://files.example.com/gsm-files/files/2026/11/0b6f3c1e-receipt.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=9f2c',
+        'https://files.example.com/gsm-files/files/2026/11/0b6f3c1e-receipt.pdf?[redacted]',
+      ],
+    ];
+    for (const [input, expected] of cases) {
+      expect(applyRules('resp_headers>Location', input), input).toBe(expected);
+    }
+  });
+
+  it('credential headers and redirect queries are not logged', () => {
+    for (const header of [
+      'request>headers>X-Csrf-Token',
+      'request>headers>X-Turnstile-Token',
+      'request>headers>Idempotency-Key',
+      'request>headers>X-Telegram-Bot-Api-Secret-Token',
+      'request>headers>Stripe-Signature',
+      'request>headers>X-Gsm-Signature',
+      // The shop's pages send their own address (a link token in it) with every prefetch, refresh and navigation.
+      'request>headers>Next-Url',
+      'request>headers>Next-Router-State-Tree',
+      'resp_headers>X-Csrf-Token',
+    ]) {
+      expect(accessLog, header).toContain(`${header} delete`);
+    }
+    expect(fieldRules('resp_headers>Location').at(-1)).toBe(QUERY_CUT);
   });
 
   it('compresses everything except the live event streams (decision 037)', () => {
@@ -283,6 +390,12 @@ describe('Dockerfile and .dockerignore', () => {
     expect(read('.dockerignore').split('\n')).toContain('!scripts/search-keys.ts');
     expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/search-keys\.ts [^\n]*\.\/scripts\/$/m);
     expect(dockerfile).toContain("'search-keys'");
+  });
+
+  it('carries the Telegram webhook tool the runbook runs in the api container, in the allow-list, the copy and the import check', () => {
+    expect(read('.dockerignore').split('\n')).toContain('!scripts/telegram-webhook.ts');
+    expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/telegram-webhook\.ts [^\n]*\.\/scripts\/$/m);
+    expect(dockerfile).toContain("'telegram-webhook'");
   });
 
   it('carries the English-only export the release-30 runbook runs in the migrate container, in the allow-list, the copy and the import check', () => {

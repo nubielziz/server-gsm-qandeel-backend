@@ -8,6 +8,7 @@ import { DbService, type DbExecutor, type TransactionContext } from '../../../in
 import { AuditService } from '../../platform';
 import type { SupportTicket, TicketPriority, TicketStatus } from '../db/schema';
 import { replyChannelsOf } from '../domain/reply-channels';
+import { hasTicketLink } from '../domain/ticket-link';
 import { slaDueAt } from '../domain/ticket-sla';
 import { type WireTicketStatus, fromWireStatus, judgeStatusMove, toWireStatus } from '../domain/ticket-status';
 import { findAssignableStaff, findRequester, findStaffName } from '../infra/support-foreign-reads';
@@ -248,7 +249,7 @@ export class TicketAdminService {
       customer &&
       ticket.csatScore === null &&
       ticket.surveySentAt === null &&
-      ticket.token !== null &&
+      hasTicketLink(ticket) &&
       requester?.reachable === true;
     // The guarded update is the record that the survey was queued; it runs in this transaction, with the event and the message below.
     const survey = askable && (await markSurveySent(tx, ticket.id, now));

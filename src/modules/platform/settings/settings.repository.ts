@@ -1,4 +1,4 @@
-// Drizzle query on `settings`, the key/value system settings table (platform module).
+// Drizzle queries on `settings`, the key/value system settings table (platform module).
 import type { DbExecutor } from '../../../infra/db';
 import { settings } from '../db/schema';
 
@@ -14,4 +14,26 @@ import { settings } from '../db/schema';
 export async function loadAllSettings(db: DbExecutor): Promise<Record<string, unknown>> {
   const rows = await db.select({ key: settings.key, value: settings.value }).from(settings);
   return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+}
+
+/**
+ * Writes a setting only when the key has none yet.
+ *
+ * Why: decision 054: the boot check of `LOOKUP_HASH_KEY` stores its marker once; two processes starting together race on the unique
+ * key, and the loser keeps the winner's value.
+ *
+ * Side effects: inserts at most one `settings` row.
+ *
+ * @param db the database or a transaction
+ * @param key the key
+ * @param value any JSON value
+ * @returns true when this call wrote the row
+ */
+export async function insertSettingIfAbsent(db: DbExecutor, key: string, value: unknown): Promise<boolean> {
+  const rows = await db
+    .insert(settings)
+    .values({ key, value })
+    .onConflictDoNothing({ target: settings.key })
+    .returning({ id: settings.id });
+  return rows.length === 1;
 }

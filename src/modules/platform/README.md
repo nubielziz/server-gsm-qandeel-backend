@@ -187,7 +187,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 |---|---|---|
 | `GET /admin/audit-logs` | `audit:read` | the log newest first. Filters (equality): `actorType` (`staff \| client \| customer \| system`), `actorId`, `entityType`, `entityId`; `q` is a case-insensitive contains over `actorName`, `action` and `entityLabel`; `from` and `to` are UTC days, both included; sorts `createdAt` and `id`; `x-total-count` is exact for the filter |
 | `GET /admin/audit-logs/:id` | `audit:read` | one entry; `404 NOT_FOUND` |
-| `GET /admin/settings` | `settings:read` | one flat object `{ key: value }` of every settings row with its JSON type; keys whose names mark a secret (`password`, `token`, `secret`, `hash`, `apiKey`, ...: `isSecretKey`) are never sent; a key that was never set is absent |
+| `GET /admin/settings` | `settings:read` | one flat object `{ key: value }` of every settings row with its JSON type; keys whose names mark a secret (`password`, `token`, `secret`, `hash`, `apiKey`, ...: `isSecretKey`, the shared rule of `src/common/secret-keys.ts`, decision 054) are never sent; a key that was never set is absent |
 | `PATCH /admin/settings` | `settings:update` | the allow-list below; answers the whole object after the change |
 
 - **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
@@ -648,3 +648,20 @@ viewer's visible rows with `id > after`, ascending, at most 50; a 51st row is `'
   replay the lower id. The count is never wrong (`snapshot`) and clients refetch their open list after a reconnect.
 - **Tests:** `test/integration/platform/realtime-inbox.test.ts` (delivery under 1 s, rollback, no leak, mark read, campaign fan-out through
   Redis, cancel, replay and `resync`, subscriber outage) beside the hub's `realtime-stream.test.ts`.
+
+## Logs and secrets (decision 054)
+
+- **Notification log payload.** `GET /admin/notifications/:id` shows the values of the payload (what a message was built from) only to
+  holders of `notifications:*` (an Owner's `*` included); for others every text and number reads `[hidden]` (keys, booleans and null stay,
+  after the chat-id and address masks). The controller reads the caller through identity's `principalOf` and `grants`, loaded late
+  (`notifications/identity-api.ts`, decision 032 amendment).
+- **Provider refusal texts.** An SMTP or Telegram refusal is stored, logged and shown after `cleanProviderText`: addresses masked, links
+  replaced by `[link]`, runs of 20 or more URL-safe characters by `[token]`, cut to 300 (SMTP) or 200 (Telegram) characters.
+- **Secret names.** `isSecretKey` lives in `src/common/secret-keys.ts` (the audit snapshots, the settings route and the logger share it);
+  `audit/audit-redaction.ts` re-exports it.
+- **Boot check of `LOOKUP_HASH_KEY`.** `LookupKeyCheckModule` (`settings/lookup-key-check.ts`), imported by the API's and the worker's root
+  modules, stores `HMAC(LOOKUP_HASH_KEY, label)` under the settings key `system.lookupKeyCheckHash` on the first start (a secret name, so
+  `GET /admin/settings` never lists it, and outside the registry, so `PATCH` refuses it) and compares it on every start: in production a
+  different key stops the process, elsewhere one configuration warning line. A database that does not answer (a connection failure
+  only) stops a production start and is one warning line elsewhere; any other failure of the check stops the start everywhere, with the
+  sanitised text of the failure.

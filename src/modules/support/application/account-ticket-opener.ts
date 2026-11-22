@@ -3,7 +3,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
-import { TokenService } from '../../../infra/crypto';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import type { SupportTicket, TicketCategory, TicketMessage } from '../db/schema';
@@ -53,7 +53,7 @@ export interface OpenedAccountTicket {
 export class AccountTicketOpener {
   constructor(
     private readonly db: DbService,
-    private readonly tokens: TokenService,
+    private readonly vault: CapabilityTokenVault,
     private readonly mail: TicketMailOutbox,
     private readonly limits: RateLimitService,
     private readonly attachments: TicketAttachmentService,
@@ -89,6 +89,9 @@ export class AccountTicketOpener {
       const { ids, files } = await this.attachments.attach(tx, owner, input.fileIds);
       const category = input.category ?? 'other';
       const priority = defaultPriority(category);
+      // Only a customer's ticket has a page; its 128-bit token (decision 010) is stored as a keyed hash and an encrypted copy (decision
+      // 054). A merchant's ticket has neither.
+      const issued = owner.type === 'customer' ? this.vault.issue('ticket') : null;
       const ticket = await insertTicket(tx, {
         subject: input.subject,
         channel: 'web',
@@ -100,8 +103,9 @@ export class AccountTicketOpener {
         status: 'new',
         // The requester's first message is the one a reply is awaited for.
         slaDueAt: new Date(now.getTime() + PRIORITY_TARGET_MS[priority]),
-        // Only a customer's ticket has a page; the 128-bit token is stored as issued (decision 010).
-        token: owner.type === 'customer' ? this.tokens.random(16) : null,
+        token: null,
+        tokenHash: issued?.hash ?? null,
+        tokenEnc: issued?.enc ?? null,
         createdAt: now,
         updatedAt: now,
       });

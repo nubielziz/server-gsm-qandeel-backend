@@ -150,25 +150,51 @@ describe('toStoreMe and toStoreOrder', () => {
   });
 
   it('sends an erased IMEI as an empty string and an order without a page as a null token', () => {
-    const order = toStoreOrder({
-      id: 4,
-      status: 'processing',
-      serviceId: 1,
-      serviceName: 'Unlock',
-      imei: null,
-      quantity: 1,
-      totalPrice: '5.0000',
-      taxAmount: '0.0000',
-      currency: 'GBP',
-      publicToken: null,
-      createdAt: at('2026-11-05T10:00:00.000Z'),
-      completedAt: null,
-    });
+    const order = toStoreOrder(
+      {
+        id: 4,
+        status: 'processing',
+        serviceId: 1,
+        serviceName: 'Unlock',
+        imei: null,
+        quantity: 1,
+        totalPrice: '5.0000',
+        taxAmount: '0.0000',
+        currency: 'GBP',
+        publicToken: null,
+        publicTokenEnc: null,
+        createdAt: at('2026-11-05T10:00:00.000Z'),
+        completedAt: null,
+      },
+      null,
+    );
     expect(order).toMatchObject({
       imei: '',
       trackingToken: null,
       completedAt: null,
       service: { id: 1, name: 'Unlock' },
     });
+  });
+
+  it('shows the tracking token it is given, revealed from the stored form (decision 054)', () => {
+    const order = toStoreOrder(
+      {
+        id: 5,
+        status: 'completed',
+        serviceId: 1,
+        serviceName: 'Unlock',
+        imei: '356938035643809',
+        quantity: 1,
+        totalPrice: '5.0000',
+        taxAmount: '0.0000',
+        currency: 'GBP',
+        publicToken: null,
+        publicTokenEnc: 'k1:sealed',
+        createdAt: at('2026-11-05T10:00:00.000Z'),
+        completedAt: at('2026-11-05T11:00:00.000Z'),
+      },
+      'Zk3b0jY8mQe1xVn7hT2cLw',
+    );
+    expect(order.trackingToken).toBe('Zk3b0jY8mQe1xVn7hT2cLw');
   });
 });

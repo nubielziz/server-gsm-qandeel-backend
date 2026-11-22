@@ -3,7 +3,7 @@
 import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { DbService, type Database, schema as s } from '@src/infra/db';
-import { signWebhook } from '@src/infra/crypto';
+import { CapabilityTokenVault, signWebhook } from '@src/infra/crypto';
 import { Money } from '@src/common/money';
 import { RECEIPT_RENDER_EVENT, ReceiptRenderProcessor, type ReceiptRenderResult } from '@src/modules/money';
 import { toMinor } from '@src/modules/money/infra/gateway-drivers/stripe-amounts';
@@ -461,7 +461,9 @@ export async function paidOrder(
   });
   const session = json(shown);
   if (session.status !== 'paid') throw new Error(`the checkout is ${session.status} after the confirmation`);
-  const [order] = await world.db.select().from(s.orders).where(eq(s.orders.publicToken, session.trackingToken));
+  // Decision 054: a new order keeps its tracking token only as a keyed hash and an encrypted copy.
+  const hash = t.app.get(CapabilityTokenVault).hashOf('tracking', session.trackingToken);
+  const [order] = await world.db.select().from(s.orders).where(eq(s.orders.publicTokenHash, hash));
   return {
     token,
     trackingToken: session.trackingToken,

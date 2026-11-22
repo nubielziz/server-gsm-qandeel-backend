@@ -15,6 +15,7 @@ import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
+import { revealedToken } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import {
   body,
@@ -336,12 +337,14 @@ describe('a ticket message in Arabic round-trips through the store and staff rou
     expect(row).toMatchObject({ subject: SUBJECT });
     const [customer] = await db.select().from(s.customers);
     expect(customer!.name).toBe(NAME);
+    // Decision 054: the link token is stored as a keyed hash and an encrypted copy; the receipt mail's link is the visitor's way in.
+    const token = revealedToken(t, 'ticket', { enc: row!.tokenEnc, plain: row!.token })!;
 
-    const followUp = await send('POST', `/store/v1/tickets/${row!.token}/messages`, {
+    const followUp = await send('POST', `/store/v1/tickets/${token}/messages`, {
       body: ANSWER.replace('مرحباً', 'هل'),
     });
     expect(followUp.statusCode).toBe(201);
-    const seen = await send('GET', `/store/v1/tickets/${row!.token}`);
+    const seen = await send('GET', `/store/v1/tickets/${token}`);
     expect(seen.json().subject).toBe(SUBJECT);
     expect(seen.json().messages.map((message: { body: string }) => message.body)).toEqual([
       QUESTION,
@@ -357,7 +360,7 @@ describe('a ticket message in Arabic round-trips through the store and staff rou
     expect(reply.status).toBe(201);
     expect(reply.body.body).toBe(ANSWER);
 
-    const answered = await send('GET', `/store/v1/tickets/${row!.token}`);
+    const answered = await send('GET', `/store/v1/tickets/${token}`);
     expect(answered.json().messages.at(-1).body).toBe(ANSWER);
     // The text is stored as typed: no trimming of inner marks, no normalisation of the Arabic letters or digits.
     const [stored] = await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.id, reply.body.id));

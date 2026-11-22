@@ -111,7 +111,9 @@ const ADDITIONS: Record<string, string[]> = {
   invoices: ['description', 'checkout_url', 'idempotency_key', 'request_fingerprint'],
   // Feature 21: the freeze state of a customer wallet; whether a checkout was opened by a signed-in customer.
   ledger_accounts: ['frozen_at', 'frozen_reason'],
-  checkout_sessions: ['opened_signed_in'],
+  // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token.
+  checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc'],
+  orders: ['public_token_hash', 'public_token_enc'],
   kyc_submissions: ['submitted_note'],
   // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
   refunds: ['note', 'send_attempt'],
@@ -129,6 +131,9 @@ const ADDITIONS: Record<string, string[]> = {
     'last_staff_message_id',
     'reply_mail_due_at',
     'reply_mailed_message_id',
+    // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token.
+    'token_hash',
+    'token_enc',
   ],
   // Feature 28: the channel a public staff message was delivered on.
   ticket_messages: ['notify_channel'],

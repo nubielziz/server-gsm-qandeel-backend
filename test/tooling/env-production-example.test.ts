@@ -64,7 +64,14 @@ describe('.env.production.example', () => {
   });
 
   it('marks every secret as a placeholder that production refuses until it is replaced', () => {
-    for (const name of ['ENCRYPTION_KEYS', 'CSRF_SECRET', 'TOKEN_PEPPER', 'METRICS_TOKEN', 'TURNSTILE_SECRET_KEY']) {
+    for (const name of [
+      'ENCRYPTION_KEYS',
+      'CSRF_SECRET',
+      'TOKEN_PEPPER',
+      'LOOKUP_HASH_KEY',
+      'METRICS_TOKEN',
+      'TURNSTILE_SECRET_KEY',
+    ]) {
       expect(productionVars[name]).toMatch(/^CHANGE_ME/);
     }
     expect(() => parseEnv(productionVars)).toThrow(/ENCRYPTION_KEYS|CSRF_SECRET|TOKEN_PEPPER/);
@@ -75,6 +82,7 @@ describe('.env.production.example', () => {
     filled.ENCRYPTION_KEYS = `k1:${randomBytes(32).toString('base64')}`;
     filled.CSRF_SECRET = randomBytes(32).toString('hex');
     filled.TOKEN_PEPPER = randomBytes(32).toString('hex');
+    filled.LOOKUP_HASH_KEY = randomBytes(32).toString('hex');
     filled.METRICS_TOKEN = randomBytes(32).toString('hex');
     filled.MAIL_SMTP_URL = 'smtps://user:pass@smtp.example.com:465';
     filled.TURNSTILE_SECRET_KEY = 'turnstile-secret-for-the-test';

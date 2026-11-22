@@ -16,6 +16,7 @@ import { insertCategory, insertService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { mailbox, notificationRows } from '../../support/notifications';
 import { insertOrderRow } from '../../support/orders';
+import { revealedToken, tokenHashOf } from '../../support/capability-tokens';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { TURNSTILE_HEADERS, insertCurrency } from '../../support/storefront';
 import {
@@ -71,8 +72,12 @@ const write = (token: string, payload: unknown) => send('POST', `/store/v1/ticke
 const rate = (token: string, payload: unknown) => send('POST', `/store/v1/tickets/${token}/csat`, payload);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON
 const body = (res: { json: () => any }): any => res.json();
+// Decision 054: a ticket opened through the API keeps its token only as a keyed hash and an encrypted copy.
+const byToken = (token: string) => eq(s.supportTickets.tokenHash, tokenHashOf(t, 'ticket', token));
+const tokenOf = (row: { tokenEnc: string | null; token: string | null }) =>
+  revealedToken(t, 'ticket', { enc: row.tokenEnc, plain: row.token });
 const ticketRow = async (token: string) =>
-  (await (await testDb()).db.select().from(s.supportTickets).where(eq(s.supportTickets.token, token)))[0]!;
+  (await (await testDb()).db.select().from(s.supportTickets).where(byToken(token)))[0]!;
 const ticketByNumber = async (number: string) =>
   (await (await testDb()).db.select().from(s.supportTickets).where(eq(s.supportTickets.number, number)))[0]!;
 /**
@@ -82,7 +87,7 @@ const ticketByNumber = async (number: string) =>
 const openByEmail = async (payload: unknown = VALID) => {
   const res = await open(payload);
   expect(res.statusCode).toBe(201);
-  return { ...body(res), token: (await ticketByNumber(body(res).number)).token as string };
+  return { ...body(res), token: tokenOf(await ticketByNumber(body(res).number)) as string };
 };
 
 const TRACKING_TOKEN = 'T7kq2Zp9Xw4Ld1Hn6Rb3Yc';
@@ -141,7 +146,9 @@ describe('POST /store/v1/tickets', () => {
       status: 'active',
     });
     const row = await ticketByNumber(ticket.number);
-    expect(row.token).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(row.token).toBeNull();
+    const rowToken = tokenOf(row)!;
+    expect(rowToken).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(row).toMatchObject({
       requesterType: 'customer',
       requesterId: customer!.id,
@@ -168,12 +175,12 @@ describe('POST /store/v1/tickets', () => {
       channel: 'email',
       status: 'sent',
     });
-    expect(JSON.stringify(notification!.payload)).not.toContain(row.token!);
+    expect(JSON.stringify(notification!.payload)).not.toContain(rowToken);
     const [mail] = mailbox(t).sent;
     expect(mail).toMatchObject({ to: 'victor@mail.example', subject: `We got your message (${ticket.number})` });
     expect(mail!.text).toContain('Hi Victor,');
     // The link is built from STORE_BASE_URL (the development default here).
-    expect(mail!.text).toContain(`http://localhost:5175/support/tickets/${row.token}`);
+    expect(mail!.text).toContain(`http://localhost:5175/support/tickets/${rowToken}`);
   });
 
   it('reuses the customer of a known address (any case) and makes a ticket for each request', async () => {
@@ -185,7 +192,7 @@ describe('POST /store/v1/tickets', () => {
     const tickets = await db.select().from(s.supportTickets);
     expect(tickets).toHaveLength(2);
     expect(new Set(tickets.map((ticket) => ticket.requesterId))).toEqual(new Set([known.id]));
-    expect(new Set(tickets.map((ticket) => ticket.token)).size).toBe(2);
+    expect(new Set(tickets.map(tokenOf)).size).toBe(2);
     // The name a stranger types never renames the customer.
     expect((await db.select().from(s.customers))[0]!.name).toBe('Victor Hale');
   });
@@ -238,18 +245,18 @@ describe('POST /store/v1/tickets', () => {
       [stranger, rows[0]!],
       [fresh, rows[1]!],
     ] as const) {
-      expect(res.payload).not.toContain(row.token!);
-      expect(JSON.stringify(res.headers)).not.toContain(row.token!);
+      expect(res.payload).not.toContain(tokenOf(row)!);
+      expect(JSON.stringify(res.headers)).not.toContain(tokenOf(row)!);
     }
     expect((await show(body(stranger).number)).statusCode).toBe(404);
     // The owner of the address still gets in: the receipt mail holds the link.
     expect(await sendTicketMails(t)).toEqual([{ sent: true }, { sent: true }]);
     const [first, second] = mailbox(t).sent;
     expect(first!.to).toBe('victor@mail.example');
-    expect(first!.text).toContain(`http://localhost:5175/support/tickets/${rows[0]!.token}`);
+    expect(first!.text).toContain(`http://localhost:5175/support/tickets/${tokenOf(rows[0]!)}`);
     expect(second!.to).toBe('new@mail.example');
-    expect(second!.text).toContain(`http://localhost:5175/support/tickets/${rows[1]!.token}`);
-    expect((await show(rows[0]!.token!)).statusCode).toBe(200);
+    expect(second!.text).toContain(`http://localhost:5175/support/tickets/${tokenOf(rows[1]!)}`);
+    expect((await show(tokenOf(rows[0]!)!)).statusCode).toBe(200);
   });
 
   it('hands the token over on the order-token path only, where the caller already holds the order link', async () => {
@@ -257,7 +264,7 @@ describe('POST /store/v1/tickets', () => {
     const res = await open({ subject: 'Delay', message: 'Still waiting.', orderToken: TRACKING_TOKEN });
     expect(res.statusCode).toBe(201);
     const row = await ticketByNumber(body(res).number);
-    expect(body(res).token).toBe(row.token);
+    expect(body(res).token).toBe(tokenOf(row));
     expect((await show(body(res).token)).statusCode).toBe(200);
     // An email typed next to the order token changes nothing: the order link is the proof.
     const both = await open({
@@ -266,7 +273,7 @@ describe('POST /store/v1/tickets', () => {
       orderToken: TRACKING_TOKEN,
       email: 'x@mail.example',
     });
-    expect(body(both).token).toBe((await ticketByNumber(body(both).number)).token);
+    expect(body(both).token).toBe(tokenOf(await ticketByNumber(body(both).number)));
     expect(await db.select().from(s.supportTickets)).toHaveLength(2);
   });
 
@@ -483,15 +490,12 @@ describe('GET /store/v1/tickets/:token', () => {
   it('shows pending as the status of a ticket that waits on the customer, and the rating form once resolved', async () => {
     const opened = await openByEmail(VALID);
     const { db } = await testDb();
-    await db
-      .update(s.supportTickets)
-      .set({ status: 'pending_customer', slaDueAt: null })
-      .where(eq(s.supportTickets.token, opened.token));
+    await db.update(s.supportTickets).set({ status: 'pending_customer', slaDueAt: null }).where(byToken(opened.token));
     expect(body(await show(opened.token)).status).toBe('pending');
     await db
       .update(s.supportTickets)
       .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()) })
-      .where(eq(s.supportTickets.token, opened.token));
+      .where(byToken(opened.token));
     expect(body(await show(opened.token))).toMatchObject({ status: 'resolved', canRate: true, resolvedAt: NOW });
   });
 });
@@ -531,7 +535,7 @@ describe('POST /store/v1/tickets/:token/messages', () => {
     await db
       .update(s.supportTickets)
       .set({ status: 'pending_customer', slaDueAt: null, assigneeId: null })
-      .where(eq(s.supportTickets.token, opened.token));
+      .where(byToken(opened.token));
     clock.advance(HOUR);
     await write(opened.token, { body: 'Here is the photo.' });
     const row = await ticketRow(opened.token);

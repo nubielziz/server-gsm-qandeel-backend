@@ -1,10 +1,15 @@
 // Removes personal data from an error event before it leaves the process (decision 015, feature 24D). Pure and unit-tested.
+import { withoutStatementText } from '../../common/errors/safe-error';
 import { maskEmail, maskImei } from '../logging/mask';
 
 /** Longest exception message or value that is sent; a longer one is cut (messages can embed a whole SQL statement). */
 const MAX_TEXT_LENGTH = 1000;
 
-const EMAIL_PATTERN = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
+/** How much of a text is read: what is kept plus room for an address or digit run that the cut at {@link MAX_TEXT_LENGTH} splits. */
+const SCAN_LENGTH = MAX_TEXT_LENGTH + 320;
+
+// Every part is bounded, so no input makes the pattern work quadratically (decision 054).
+const EMAIL_PATTERN = /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}/g;
 /** 12 to 19 digits, in one run or in groups separated by single spaces or dashes: an IMEI, a card number, an account number. */
 const DIGIT_RUN_PATTERN = /\b\d(?:[ -]?\d){11,18}\b/g;
 
@@ -15,14 +20,20 @@ const DIGIT_RUN_PATTERN = /\b\d(?:[ -]?\d){11,18}\b/g;
  * names the IMEI); decision 012 keeps both out of logs and this keeps them out of Sentry. The masks are those of the log
  * serializers: `r***@domain` and the last four digits.
  *
+ * The work is bounded by {@link SCAN_LENGTH} whatever the input (decision 054): only the first 1,320 characters are read, and any
+ * database statement in them is cut out first.
+ *
  * @param text any message
- * @returns the text with addresses and 12 to 19 digit runs masked, cut to 1000 characters
+ * @returns the text with a database statement removed and addresses and 12 to 19 digit runs masked, cut to 1000 characters
  */
 export function scrubText(text: string): string {
-  const masked = text
+  const head = withoutStatementText(text.slice(0, SCAN_LENGTH));
+  const masked = head
     .replace(EMAIL_PATTERN, (address) => maskEmail(address))
     .replace(DIGIT_RUN_PATTERN, (digits) => maskImei(digits));
-  return masked.length > MAX_TEXT_LENGTH ? `${masked.slice(0, MAX_TEXT_LENGTH)}...` : masked;
+  return text.length > MAX_TEXT_LENGTH || masked.length > MAX_TEXT_LENGTH
+    ? `${masked.slice(0, MAX_TEXT_LENGTH)}...`
+    : masked;
 }
 
 /** The parts of an SDK event this module touches; the SDK's own event type is assignable to it. */

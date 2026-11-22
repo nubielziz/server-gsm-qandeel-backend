@@ -131,6 +131,12 @@ export interface AppConfig {
     readonly csrfCookieDomain: string | undefined;
     readonly cookieSecure: boolean;
     readonly tokenPepper: string;
+    /**
+     * HMAC key of every hash stored for later matching (decision 054): the blocklist, the IMEI checks, inventory and open-order
+     * duplicates, unsubscribe links, Idempotency-Key requests, webhook event ids and the shop's link tokens. Outside production
+     * `TOKEN_PEPPER` when `LOOKUP_HASH_KEY` is unset; production requires it.
+     */
+    readonly lookupHashKey: string;
     /** AES-256-GCM keyring (decision 019): key id to 32 raw bytes. */
     readonly encryptionKeys: Readonly<Record<string, Buffer>>;
     readonly encryptionActiveKid: string;
@@ -377,6 +383,7 @@ const rawSchema = z.object({
   CSRF_COOKIE_DOMAIN: z.string().min(1).optional(),
   COOKIE_SECURE: z.stringbool().optional(),
   TOKEN_PEPPER: z.string().min(32, 'must be at least 32 characters').optional(),
+  LOOKUP_HASH_KEY: z.string().min(32, 'must be at least 32 characters').optional(),
   ENCRYPTION_KEYS: z.string().optional(),
   ENCRYPTION_ACTIVE_KID: z.string().optional(),
   ARGON2_MEMORY_KIB: int(8, 1_048_576).optional(),
@@ -653,6 +660,9 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
   noDevValue('CSRF_SECRET', raw.CSRF_SECRET, DEV_DEFAULTS.csrfSecret);
   const tokenPepper = withDefault('TOKEN_PEPPER', raw.TOKEN_PEPPER, DEV_DEFAULTS.tokenPepper);
   noDevValue('TOKEN_PEPPER', raw.TOKEN_PEPPER, DEV_DEFAULTS.tokenPepper);
+  // Decision 054: stored lookups have their own key; outside production the pepper stands in, so every existing row keeps matching.
+  const lookupHashKey = withDefault('LOOKUP_HASH_KEY', raw.LOOKUP_HASH_KEY, tokenPepper);
+  noDevValue('LOOKUP_HASH_KEY', raw.LOOKUP_HASH_KEY, DEV_DEFAULTS.tokenPepper);
   const cookieSecure = raw.COOKIE_SECURE ?? production;
   if (production && !cookieSecure) fail('COOKIE_SECURE', 'must be true in production (session cookies are Secure)');
   // Behind a proxy that adds no forwarding header the public internet looks internal, so production always needs the
@@ -884,6 +894,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       csrfCookieDomain: raw.CSRF_COOKIE_DOMAIN,
       cookieSecure,
       tokenPepper,
+      lookupHashKey,
       encryptionKeys,
       encryptionActiveKid: activeKid,
       argon2,
@@ -1078,6 +1089,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       csrfCookieDomain: config.security.csrfCookieDomain,
       cookieSecure: config.security.cookieSecure,
       tokenPepper: flag(config.security.tokenPepper),
+      lookupHashKey: flag(config.security.lookupHashKey),
       encryptionKeyIds: Object.keys(config.security.encryptionKeys),
       encryptionActiveKid: config.security.encryptionActiveKid,
       argon2: config.security.argon2,

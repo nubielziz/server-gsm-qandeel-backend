@@ -36,7 +36,7 @@ export interface ImeiCheckOutcome {
  *
  * Why: the map's `POST /store/v1/imei/check` (stage 14): the checksum and the TAC are decided here, from the buyer's own input;
  * what the supplier would say about blacklist and lock is stage 18, so a check says `unknown` for status. The IMEI is personal
- * data: it is stored only as AES-GCM text (`imei_enc`) with a keyed hash (`imei_hash`, decision 019), and never appears in a log
+ * data: it is stored only as AES-GCM text (`imei_enc`) with a keyed hash (`imei_hash`, decision 019, keyed with `LOOKUP_HASH_KEY`, decision 054), and never appears in a log
  * line, an error or a metric. Every check writes its own row and is never answered from another visitor's check: the basic check
  * costs nothing to run again, and reusing a stored result would tell a stranger that, and when, someone else checked the same
  * IMEI. `cached_until` and `cached: true` belong to the paid supplier check of stage 18.
@@ -74,7 +74,7 @@ export class ImeiCheckService {
     if (request.serviceId !== undefined) await this.assertSellable(request.serviceId);
 
     const now = this.clock.now();
-    const imeiHash = this.tokens.hash(imeiHashInput(reading.imei));
+    const imeiHash = this.tokens.lookupHash(imeiHashInput(reading.imei));
     const tac = await this.tacs.find(db, reading.tac);
 
     const source: ImeiCheckSource = request.serviceId === undefined ? 'storefront_free' : 'pre_order';

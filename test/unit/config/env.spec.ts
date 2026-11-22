@@ -34,6 +34,7 @@ const production = (): Record<string, string> => ({
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
   CSRF_SECRET: SECRET,
   TOKEN_PEPPER: `${SECRET}-pepper`,
+  LOOKUP_HASH_KEY: 'l'.repeat(40),
   ENCRYPTION_KEYS: `k1:${KEY}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'metrics-token-for-prometheus',
@@ -445,6 +446,7 @@ describe('parseEnv in production', () => {
       'S3_SECRET_ACCESS_KEY',
       'CSRF_SECRET',
       'TOKEN_PEPPER',
+      'LOOKUP_HASH_KEY',
       'ENCRYPTION_KEYS',
       'ENCRYPTION_ACTIVE_KID',
       'METRICS_TOKEN',
@@ -473,6 +475,38 @@ describe('parseEnv in production', () => {
       'ENCRYPTION_KEYS',
       'TOKEN_PEPPER',
     ]);
+  });
+
+  describe('LOOKUP_HASH_KEY (decision 054)', () => {
+    it('is required in production', () => {
+      const env = production();
+      delete env.LOOKUP_HASH_KEY;
+      expect(issuesOf(env)).toEqual([{ variable: 'LOOKUP_HASH_KEY', message: 'is required in production' }]);
+    });
+
+    it('refuses the development pepper as the key in production', () => {
+      expect(issuesOf({ ...production(), LOOKUP_HASH_KEY: DEV_DEFAULTS.tokenPepper })).toEqual([
+        { variable: 'LOOKUP_HASH_KEY', message: 'must not use the development default in production' },
+      ]);
+    });
+
+    it('refuses a key under 32 characters', () => {
+      const issues = issuesOf({ ...production(), LOOKUP_HASH_KEY: 'short' });
+      expect(issues.map((issue) => issue.variable)).toEqual(['LOOKUP_HASH_KEY']);
+    });
+
+    it('defaults to the pepper outside production, so existing rows keep matching', () => {
+      const config = parseEnv({ NODE_ENV: 'development', TOKEN_PEPPER: 'q'.repeat(40) });
+      expect(config.security.lookupHashKey).toBe('q'.repeat(40));
+      expect(parseEnv({}).security.lookupHashKey).toBe(DEV_DEFAULTS.tokenPepper);
+      expect(parseEnv({ LOOKUP_HASH_KEY: 'k'.repeat(40) }).security.lookupHashKey).toBe('k'.repeat(40));
+    });
+
+    it('is flagged, never shown, in the summary', () => {
+      const summary = JSON.stringify(summarizeConfig(parseEnv(production())));
+      expect(summary).toContain('"lookupHashKey":"[set]"');
+      expect(summary).not.toContain('l'.repeat(40));
+    });
   });
 
   it('requires the active key id to exist in the keyring', () => {

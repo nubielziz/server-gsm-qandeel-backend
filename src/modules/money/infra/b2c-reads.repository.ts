@@ -20,7 +20,6 @@ export interface OrderFacts {
   /** The title the service is published under, or its catalog name when it has no listing. */
   readonly serviceName: string;
   readonly resultCode: string | null;
-  readonly publicToken: string | null;
   readonly placedAt: Date;
 }
 
@@ -47,7 +46,6 @@ export async function loadOrderFacts(db: DbExecutor, ids: readonly number[]): Pr
       checkoutSessionId: s.orders.checkoutSessionId,
       serviceName: sql<string>`coalesce(${s.serviceListings.publicTitle}, ${s.services.name})`,
       resultCode: s.orders.resultCode,
-      publicToken: s.orders.publicToken,
       placedAt: s.orders.placedAt,
     })
     .from(s.orders)

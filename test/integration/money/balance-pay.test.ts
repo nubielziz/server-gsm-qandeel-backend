@@ -20,6 +20,7 @@ import {
   payFromBalance,
   walletSettings,
 } from '../../support/customer-wallet';
+import { tokenHashOf } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
 import { notificationRows, seedDefaultTemplates } from '../../support/notifications';
@@ -135,7 +136,12 @@ describe('POST /store/v1/checkout-sessions/:token/balance-payment', () => {
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
 
     const order = await orderRow(db, body.order.id);
-    expect(order).toMatchObject({ customerId: customer.id, publicToken: body.order.trackingToken });
+    // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
+    expect(order).toMatchObject({
+      customerId: customer.id,
+      publicToken: null,
+      publicTokenHash: tokenHashOf(t, 'tracking', body.order.trackingToken),
+    });
     expect((await eventsOf(db, order.id)).find((event) => event.type === 'paid')?.data).toMatchObject({
       message: 'Payment of 3.8400 GBP received (Store balance)',
     });
@@ -232,7 +238,10 @@ describe('POST /store/v1/checkout-sessions/:token/balance-payment', () => {
     // A guest checkout typed with the account's email carries the account's id, but can never spend its balance (K2).
     const guest = await openCheckout(t, world, { email: customer.email });
     expect(guest.session.balancePayable).toBe(false);
-    const [guestRow] = await db.select().from(s.checkoutSessions).where(eq(s.checkoutSessions.token, guest.token));
+    const [guestRow] = await db
+      .select()
+      .from(s.checkoutSessions)
+      .where(eq(s.checkoutSessions.tokenHash, tokenHashOf(t, 'checkout', guest.token)));
     expect(guestRow!.customerId).toBe(customer.id);
     const refused = await payFromBalance(client, guest.token);
     expect(refused.statusCode).toBe(403);

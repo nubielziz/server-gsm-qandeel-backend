@@ -19,8 +19,11 @@ import type { AccessState } from '../access-state';
 export type StoredUrlSecret =
   /** `TokenService.hash(secret)`, as 64 hex characters. */
   | { readonly form: 'hash'; readonly value: string }
-  /** The secret itself, decrypted by the owning module for this comparison only. Never cache or log it. */
-  | { readonly form: 'secret'; readonly value: string };
+  /**
+   * The value the path must carry, decrypted or derived by the owning module for this comparison only. Never cache or log it.
+   * `header` is the value the source's header must carry when it differs from the path's (decision 054); the path value is used when absent.
+   */
+  | { readonly form: 'secret'; readonly value: string; readonly header?: string };
 
 /**
  * Where the expected secret of one webhook route comes from.
@@ -34,8 +37,9 @@ export interface UrlSecretSource {
   /** The path parameter that holds the secret (default `secret`). */
   readonly param?: string;
   /**
-   * A request header (lower case) that must carry the same secret as the path, compared in constant time as well: both must match.
-   * Telegram's `X-Telegram-Bot-Api-Secret-Token` is the use (MISMATCHES B165).
+   * A request header (lower case) that must match as well, compared in constant time: both must match. It carries the same value as
+   * the path unless the stored secret names a separate header value (decision 054). Telegram's `X-Telegram-Bot-Api-Secret-Token` is
+   * the use (MISMATCHES B165).
    */
   readonly header?: string;
   /**
@@ -124,16 +128,17 @@ export class UrlSecretAccessHandler implements AccessHandler {
     }
     const presented = (request.params as Record<string, unknown> | null | undefined)?.[source.param ?? DEFAULT_PARAM];
     const stored = await source.load();
-    const matches = (value: unknown): boolean => {
+    const matches = (value: unknown, expected: string | undefined): boolean => {
       const usable = typeof value === 'string' && value.length > 0 && value.length <= MAX_SECRET_LENGTH;
       const candidate = usable ? (stored?.form === 'hash' ? this.tokens.hash(value) : value) : '';
       // Always compare, whatever is missing, so the time does not tell a configured route from an unconfigured one.
-      const equal = constantTimeEqual(candidate, stored?.value ?? NOTHING_STORED);
-      return usable && stored !== null && stored !== undefined && equal;
+      const equal = constantTimeEqual(candidate, expected ?? NOTHING_STORED);
+      return usable && expected !== undefined && equal;
     };
-    const pathOk = matches(presented);
+    const pathOk = matches(presented, stored?.value);
+    const headerExpected = stored?.form === 'secret' ? (stored.header ?? stored.value) : stored?.value;
     // The header is compared even when the path was wrong, so the time does not tell which of the two failed.
-    const headerOk = source.header === undefined ? true : matches(request.headers[source.header]);
+    const headerOk = source.header === undefined ? true : matches(request.headers[source.header], headerExpected);
     if (!pathOk || !headerOk) throw new AppError(source.refusal === 'not_found' ? 'NOT_FOUND' : 'UNAUTHORIZED');
     return {};
   }

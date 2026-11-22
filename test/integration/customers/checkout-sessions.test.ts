@@ -13,6 +13,7 @@ import { MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertCategory, insertService } from '../../support/catalog';
 import { freshClientIp } from '../../support/pipeline-routes';
+import { revealedToken, tokenHashOf } from '../../support/capability-tokens';
 import { insertBlock } from '../../support/risk';
 import {
   APPLE_IMEI,
@@ -116,8 +117,11 @@ describe('POST /store/v1/checkout-sessions', () => {
     expect(JSON.stringify(session)).not.toContain(APPLE_IMEI);
 
     const [row] = await db.select().from(s.checkoutSessions);
+    // Decision 054: the token is stored only as its keyed hash and an encrypted copy.
+    expect(revealedToken(t, 'checkout', { enc: row!.tokenEnc, plain: row!.token })).toBe(session.token);
     expect(row).toMatchObject({
-      token: session.token,
+      token: null,
+      tokenHash: tokenHashOf(t, 'checkout', session.token),
       email: 'sam@mail.example',
       serviceId: world.icloud.serviceId,
       quantity: 1,
@@ -487,7 +491,12 @@ describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)
     expect(res.statusCode).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
     const [row] = await db.select().from(s.checkoutSessions);
-    expect(row).toMatchObject({ token: body(res).token, customerId: customer.id, email: customer.email });
+    expect(row).toMatchObject({
+      token: null,
+      tokenHash: tokenHashOf(t, 'checkout', body(res).token),
+      customerId: customer.id,
+      email: customer.email,
+    });
     // The account is the customer: no guest row was made, and the session works like any other.
     expect(await counts()).toEqual({ customers: 1, sessions: 1, consents: 0 });
     expect((await show(body(res).token)).statusCode).toBe(200);

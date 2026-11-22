@@ -27,11 +27,25 @@ export interface WireNotification {
 }
 
 /**
+ * The permission that shows the values of a notification's payload.
+ *
+ * Why: decision 054: what a message was built from holds replies, names and results of other areas; reading it needs the whole
+ * notifications area (`notifications:*`), an Owner's `*` included. Others see the payload's keys with hidden values.
+ */
+export const NOTIFICATION_PAYLOAD_PERMISSION = 'notifications:*';
+
+/** What replaces a text or number of a payload for a caller without {@link NOTIFICATION_PAYLOAD_PERMISSION}. */
+export const HIDDEN_VALUE = '[hidden]';
+
+/** How much of the payload one answer carries. */
+type PayloadView = 'none' | 'full' | 'hidden';
+
+/**
  * Reads the notification log.
  *
  * Why: RULES settings 11 and M172: staff see what the system sent and why a message failed, never a whole address: the server masks
  * the recipient (`r***@example.com`, `@1***`) from the recipient's current row before the answer leaves the API. The list omits the
- * payload; the single read has it.
+ * payload; the single read has it, with its values shown only to holders of `notifications:*` (decision 054).
  *
  * Side effects: none (read only).
  */
@@ -47,20 +61,22 @@ export class NotificationLogAdminService {
    */
   async list(query: ParsedListQuery<NotificationSortField>): Promise<{ rows: WireNotification[]; total: number }> {
     const { rows, total } = await listLogRows(this.db.db, query);
-    return { rows: rows.map((row) => toWire(row, false)), total };
+    return { rows: rows.map((row) => toWire(row, 'none')), total };
   }
 
   /**
    * Reads one notification.
    *
    * @param id the notification id
+   * @param options `fullPayload`: the caller holds `notifications:*` (decision 054); otherwise every text and number of the payload
+   *   reads `[hidden]`
    * @returns the entry with its payload
    * @throws {AppError} `NOT_FOUND`
    */
-  async get(id: number): Promise<WireNotification> {
+  async get(id: number, options: { readonly fullPayload: boolean }): Promise<WireNotification> {
     const row = await findLogRow(this.db.db, id);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'No notification with this id.' });
-    return toWire(row, true);
+    return toWire(row, options.fullPayload ? 'full' : 'hidden');
   }
 }
 
@@ -105,8 +121,34 @@ function maskRecipients(value: JsonValue): JsonValue {
   return copy;
 }
 
-function toWire(row: LogRow, withPayload: boolean): WireNotification {
+/**
+ * A copy of a payload with every value hidden and its shape kept.
+ *
+ * Why: decision 054: a caller without `notifications:*` still sees which data a message was built from (its keys), never the values:
+ * every string or number becomes `[hidden]`; booleans, `null`, keys, arrays and objects keep their shape.
+ *
+ * @param value a JSON value (after the recipient masks)
+ * @returns the copy
+ */
+export function hiddenPayload(value: JsonValue): JsonValue {
+  if (Array.isArray(value)) return value.map(hiddenPayload);
+  if (typeof value === 'string' || typeof value === 'number') return HIDDEN_VALUE;
+  if (value === null || typeof value !== 'object') return value;
+  const copy: JsonObject = {};
+  for (const [key, inner] of Object.entries(value)) copy[key] = hiddenPayload(inner);
+  return copy;
+}
+
+function payloadOf(payload: JsonObject, view: PayloadView): JsonObject | undefined {
+  if (view === 'none') return undefined;
+  const masked = publicPayload(payload);
+  return view === 'full' ? masked : (hiddenPayload(masked) as JsonObject);
+}
+
+function toWire(row: LogRow, view: PayloadView): WireNotification {
   const n = row.notification;
+  // jsonb holds JSON by definition, so the cast only tells the compiler what Postgres guarantees.
+  const payload = payloadOf(n.payload as JsonObject, view);
   return {
     id: n.id,
     recipientType: n.recipientType,
@@ -119,8 +161,7 @@ function toWire(row: LogRow, withPayload: boolean): WireNotification {
     sentAt: n.sentAt?.toISOString() ?? null,
     error: n.status === 'failed' ? n.error : null,
     campaignId: n.campaignId,
-    // jsonb holds JSON by definition, so the cast only tells the compiler what Postgres guarantees.
-    ...(withPayload ? { payload: publicPayload(n.payload as JsonObject) } : {}),
+    ...(payload === undefined ? {} : { payload }),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

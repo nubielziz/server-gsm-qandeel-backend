@@ -5,6 +5,7 @@ import { DiscoveryService } from '@nestjs/core';
 import { type Job, UnrecoverableError, Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { Counter, Histogram } from 'prom-client';
+import { sanitizeError, withoutStatementText } from '../../common/errors/safe-error';
 import { LogThrottle } from '../../common/log-throttle';
 import { generateRequestId, isSafeRequestId, runWithRequestId } from '../../common/request-id';
 import { TimeoutError, withTimeout } from '../../common/timeout';
@@ -53,6 +54,27 @@ function requestIdOf(job: Job): string {
 }
 
 /**
+ * The error a processor's failure is stored as.
+ *
+ * Why: decision 054: BullMQ stores the message and stack of the error thrown from the worker function (`failedReason`,
+ * `stacktrace`), and the queue board, the failed-jobs list and Sentry read them; a database failure is stored as its SQLSTATE and
+ * names, never its statement or values. An `UnrecoverableError` stays one, so a permanent failure is still not retried.
+ *
+ * @param error whatever the processor threw
+ * @returns the same value when it holds no database statement, else a safe copy
+ */
+export function toQueueError(error: unknown): unknown {
+  const safe = sanitizeError(error);
+  if (safe === error) return error;
+  if (error instanceof UnrecoverableError) {
+    const copy = new UnrecoverableError((safe as Error).message);
+    copy.stack = (safe as Error).stack;
+    return copy;
+  }
+  return safe;
+}
+
+/**
  * Starts the BullMQ workers of the process and stops them gracefully.
  *
  * Why: decision 020 runs all async work in the worker process, and decision 001 requires that a SIGTERM lets the jobs
@@ -64,7 +86,8 @@ function requestIdOf(job: Job): string {
  *
  * Side effects: reads and writes the BullMQ keys of the queues that have processors; counts
  * `queue_jobs_processed_total{queue,job,outcome}` and observes `queue_job_duration_seconds{queue,job}`; logs failures and
- * reports a job that failed for good to Sentry when `SENTRY_DSN` is set.
+ * reports a job that failed for good to Sentry when `SENTRY_DSN` is set. A failed job's stored reason and stack, its log line and
+ * its report never carry a database statement or its values (decision 054: {@link toQueueError}).
  *
  * @see docs/queues.md and docs/decisions/001-runtime-bun.md
  */
@@ -175,17 +198,18 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
       // BullMQ fails a job that stalled too often with its own message, whatever the attempts left.
       const final =
         error instanceof UnrecoverableError ||
+        error.name === 'UnrecoverableError' ||
         /stalled more than allowable limit/.test(error.message) ||
         (job?.attemptsMade ?? attempts) >= attempts;
       // A scheduled job (the outbox tick, every second) fails again and again while its dependency is down: one line per
       // interval is enough. Jobs of events are about one order or one delivery each, so every failure is logged.
       let more = '';
       if (job?.repeatJobKey !== undefined) {
-        const allowed = this.throttle.attempt(`failed:${queue}/${job.name}:${error.message}`);
+        const allowed = this.throttle.attempt(`failed:${queue}/${job.name}:${withoutStatementText(error.message)}`);
         if (!allowed) return;
         if (allowed.suppressed > 0) more = ` (${allowed.suppressed} similar failures not logged)`;
       }
-      const text = `Job ${queue}/${job?.name ?? '?'} ${job?.id ?? '?'} failed (attempt ${job?.attemptsMade ?? '?'} of ${attempts}${final ? ', no more retries' : ''}): ${error.message}${more}`;
+      const text = `Job ${queue}/${job?.name ?? '?'} ${job?.id ?? '?'} failed (attempt ${job?.attemptsMade ?? '?'} of ${attempts}${final ? ', no more retries' : ''}): ${withoutStatementText(error.message)}${more}`;
       if (final) {
         this.logger.error(text);
         // A job that failed for good (decision 015): reported once, after the same throttle as its log line.
@@ -211,7 +235,9 @@ export class QueueWorkers implements OnApplicationBootstrap, OnModuleDestroy {
       return result;
     } catch (error) {
       this.processed.inc({ queue, job: job.name, outcome: 'failed' });
-      throw error;
+      // BullMQ stores the message and stack of the error thrown here (failedReason, stacktrace): a database failure is stored as
+      // its SQLSTATE and names (decision 054).
+      throw toQueueError(error);
     } finally {
       stopTimer();
     }

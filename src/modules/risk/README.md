@@ -19,7 +19,7 @@ Built: feature 14a (`POST /store/v1/imei/check`) and feature 18 (the other 19 ro
   `{ stage: 'basic', checksum: 'valid', tac: 'known' | 'unknown' }`. No supplier blacklist or lock lookup exists (the manifest has no
   supplier call for it), so `cached_until` stays null; a stored check that says `blacklisted` (the seed has some) still counts.
 - **Privacy** (decision 019): the IMEI is stored only as `imei_enc` (AES-GCM, context `imei_checks.imei_enc`) with `imei_hash` =
-  `TokenService.hash('imei:' + imei)` for the lookup; it is never in a log line, an error or a metric (a test checks the log).
+  `TokenService.lookupHash('imei:' + imei)` for the lookup (keyed with `LOOKUP_HASH_KEY`, decision 054, as are the blocklist hashes); it is never in a log line, an error or a metric (a test checks the log).
 - **No reuse**: every check writes its own row (`cached_until` null, `cached: false`).
 - **Source**: with `serviceId` the check is `pre_order` for that service; without it, `storefront_free`. `ip` is the trusted-proxy
   address; `country` is the country header of a trusted proxy when `GEOIP_COUNTRY_HEADER` is configured, else null.

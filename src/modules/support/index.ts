@@ -18,6 +18,10 @@ export { TicketMailJobs } from './application/ticket-mail.jobs';
 export type { TicketMailJobResult } from './application/ticket-mail.jobs';
 export { TicketMailProcessor } from './jobs/ticket-mail.processor';
 export { SupportMailModule } from './support-mail.module';
+// The one-off seal pass of the ticket link tokens stored as issued (decision 054); its module is loaded by the worker only.
+export { TICKET_TOKENS_SEAL_EVENT, TICKET_TOKENS_SEAL_JOB, TicketTokenSeal } from './application/ticket-token-seal';
+export { TicketTokenSealModule } from './jobs/ticket-token-seal.module';
+export { TICKET_LINK_DAYS_AFTER_RESOLUTION } from './domain/ticket-link';
 export {
   SUPPORT_REPLY_MAIL_SCHEDULER,
   SupportJobsModule,

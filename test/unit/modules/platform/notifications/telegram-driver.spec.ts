@@ -100,6 +100,18 @@ describe('HttpTelegramDriver', () => {
   });
 });
 
+describe('HttpTelegramDriver refusal text (decision 054)', () => {
+  it("stores Telegram's description without links or token-like strings", async () => {
+    const { driver } = driverWith(() =>
+      answer(400, {
+        description: 'Bad Request: can not parse https://shop.example.com/x?token=AbCdEfGhIjKlMnOpQrStUvWx',
+      }),
+    );
+    const error = await driver.sendMessage('1', 'x').catch((e) => e);
+    expect(error.message).toBe('Telegram refused the message: Bad Request: can not parse [link]');
+  });
+});
+
 describe('InMemoryTelegramDriver', () => {
   it('records messages and fails on demand once', async () => {
     const driver = new InMemoryTelegramDriver();

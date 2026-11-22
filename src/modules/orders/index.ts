@@ -81,6 +81,13 @@ export type {
   UnclaimedOrder,
 } from './infra/order-supplier.repository';
 export { OrdersOutboxModule } from './orders-outbox.module';
+// The one-off seal pass of the tracking tokens stored as issued (decision 054); its module is loaded by the worker only.
+export {
+  TRACKING_TOKENS_SEAL_EVENT,
+  TRACKING_TOKENS_SEAL_JOB,
+  TrackingTokenSeal,
+} from './application/tracking-token-seal';
+export { TrackingTokenSealModule } from './jobs/tracking-token-seal.module';
 export { IdempotencyPurge, IDEMPOTENCY_PURGE_BATCH_SIZE } from './jobs/idempotency-purge';
 export type { IdempotencyPurgeCount } from './jobs/idempotency-purge';
 export { IdempotencyPurgeModule, IDEMPOTENCY_PURGE_SCHEDULER } from './jobs/idempotency-purge.module';

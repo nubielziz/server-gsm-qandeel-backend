@@ -109,8 +109,9 @@ export const telegramWebhook = defineRoute({
   key: 'POST /webhooks/telegram/:secret',
   summary: 'Telegram bot updates: linking a chat and /stop',
   description:
-    "Telegram's update webhook. The path secret and the `X-Telegram-Bot-Api-Secret-Token` header must both equal the configured webhook secret " +
-    '(constant-time comparison; otherwise `404 NOT_FOUND`). Always `200 {}` after the database write. A private-chat message `/start <token>` with a live ' +
+    "Telegram's update webhook. The path segment and the `X-Telegram-Bot-Api-Secret-Token` header carry two different values derived from the " +
+    'configured webhook secret (decision 054; `scripts/telegram-webhook.ts` registers both with Telegram); both are compared in constant time, ' +
+    'otherwise `404 NOT_FOUND`. Always `200 {}` after the database write. A private-chat message `/start <token>` with a live ' +
     '`telegram_link` token links that chat to the merchant (a chat that another merchant had moves) and the bot answers "Linked to <merchant name>."; ' +
     '`/stop` unlinks the chat and turns the merchant’s Telegram events off; anything else is ignored. A repeated `update_id` is processed once.',
   tags: ['notifications'],

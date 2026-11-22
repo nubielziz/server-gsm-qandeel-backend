@@ -65,7 +65,7 @@ export class ImeiCheckAdminService {
    */
   async list(query: ParsedListQuery<ImeiCheckSortField>): Promise<{ rows: ImeiCheckView[]; total: number }> {
     const condition = query.search
-      ? imeiSearchCondition(query.search.text, (imei) => this.tokens.hash(imeiHashInput(imei)))
+      ? imeiSearchCondition(query.search.text, (imei) => this.tokens.lookupHash(imeiHashInput(imei)))
       : undefined;
     const page = await listImeiCheckRows(this.db.db, query, { condition });
     return { rows: page.rows.map((row) => this.viewOf(row)), total: page.total };

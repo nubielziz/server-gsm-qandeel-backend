@@ -602,6 +602,7 @@ const productionEnv = (databaseUrl: string): Record<string, string> => ({
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
   CSRF_SECRET: 'c'.repeat(40),
   TOKEN_PEPPER: 'p'.repeat(40),
+  LOOKUP_HASH_KEY: 'l'.repeat(40),
   ENCRYPTION_KEYS: `k1:${Buffer.alloc(32, 7).toString('base64')}`,
   ENCRYPTION_ACTIVE_KID: 'k1',
   METRICS_TOKEN: 'm'.repeat(32),

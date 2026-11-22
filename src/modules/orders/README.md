@@ -105,8 +105,12 @@ the one `POST /api/index.php` transport route.
 
 `GET /store/v1/orders/:token` (`access: tracking-token`, `order-tracking.module.ts`): the holder of an order's public token sees its
 status, result and timeline. `TrackingTokenResolver` registers with the identity guard in `onModuleInit`: the order is found by the
-unique partial index on `orders.public_token` and the stored token is compared with the presented one in constant time (decision
-010 keeps the token as is so the tracking link can be re-sent); a merchant order has no token and can never be opened this way. One
+keyed hash of the token (`orders.public_token_hash`, unique partial index, decision 054) and the stored hash is compared with the
+presented token's in constant time; an order placed before decision 054 is found by its plain `public_token` until the seal pass ran. The
+token is stored only as that hash and an AES-GCM copy (`public_token_enc`, AAD `orders.public_token_enc`), which the paid checkout view,
+the balance-payment answer and the customer's order list reveal (`OrderReadService.trackingTokenOf`, `CapabilityTokenVault`). The one-off
+pass `TrackingTokenSeal` (job `tracking_tokens_seal` on `maintenance`, `TrackingTokenSealModule`, worker only; asked for once by migration
+`capability_tokens_seal`) seals the orders placed before. A merchant order has no token and can never be opened this way. One
 answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
 minute per address by the pipeline. The view (`application/order-tracking.service.ts`, `domain/tracking.ts`): `status` (a risk hold
 reads `pending`), the service name, type and delivery time, the main input with all but its last four characters hidden, the

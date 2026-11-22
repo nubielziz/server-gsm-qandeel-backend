@@ -162,7 +162,8 @@ export const showStoreTicket = defineRoute({
   summary: 'Show a support ticket',
   description:
     'The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is ' +
-    `\`404\`. Lookups are limited to 30 a minute per address. ${NO_STORE}`,
+    '`404`. A ticket’s link stops working 180 days after the ticket was resolved (also `404`); reopening the ticket opens it again. ' +
+    `Lookups are limited to 30 a minute per address. ${NO_STORE}`,
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',

@@ -307,4 +307,40 @@ describe('GET /admin/notifications/:id', () => {
     const text = JSON.stringify([res.body, (await owner.get('/admin/notifications')).body]);
     for (const chat of ['555111222', '666333444', '777888999', '444222000']) expect(text).not.toContain(chat);
   });
+
+  it("shows a notification's data to holders of the whole notifications area only (decision 054)", async () => {
+    const { merchant } = await history();
+    const { db } = await testDb();
+    const [row] = await db
+      .insert(s.notifications)
+      .values({
+        recipientType: 'client',
+        recipientId: merchant,
+        channel: 'telegram',
+        event: 'support.reply',
+        status: 'sent',
+        attempts: 1,
+        payload: {
+          variables: { customerName: 'Rania', ticketNumber: 'T-1042', count: 3, urgent: true },
+          chatId: '987654321',
+        },
+      })
+      .returning({ id: s.notifications.id });
+    const reader = await adminWith(t, ['notifications:read']);
+    const hidden = await reader.get(`/admin/notifications/${row!.id}`);
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.payload).toEqual({
+      variables: { customerName: '[hidden]', ticketNumber: '[hidden]', count: '[hidden]', urgent: true },
+      chatId: '[hidden]',
+    });
+    expect(JSON.stringify(hidden.body)).not.toContain('Rania');
+    expect(JSON.stringify(hidden.body)).not.toContain('987654321');
+    for (const api of [await adminWith(t, ['notifications:*']), owner]) {
+      const shown = await api.get(`/admin/notifications/${row!.id}`);
+      expect(shown.body.payload).toEqual({
+        variables: { customerName: 'Rania', ticketNumber: 'T-1042', count: 3, urgent: true },
+        chatId: '@9***',
+      });
+    }
+  });
 });

@@ -2,6 +2,7 @@
 // every test (NODE_ENV=test) uses.
 import { HttpRequestError, type OutboundHttp } from '../../../infra/http';
 import { DeliveryError } from './delivery-error';
+import { cleanProviderText } from './masking';
 
 /** What the Telegram client needs from a way of reaching the Bot API. */
 export interface TelegramDriver {
@@ -59,7 +60,9 @@ export class HttpTelegramDriver implements TelegramDriver {
       throw new DeliveryError(`Telegram could not be reached (${kind}).`, { cause: error });
     }
     if (status >= 200 && status < 300) return;
-    const description = typeof body.description === 'string' ? body.description.slice(0, 200) : `HTTP ${status}`;
+    // Decision 054: Telegram's text is stored without addresses, links or token-like strings.
+    const description =
+      typeof body.description === 'string' ? cleanProviderText(body.description, 200) : `HTTP ${status}`;
     if (status === 429) {
       const wait = Number(body.parameters?.retry_after);
       throw new DeliveryError(`Telegram asked to slow down: ${description}`, {

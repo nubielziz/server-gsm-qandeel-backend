@@ -2,7 +2,7 @@
 // limits, crypto, storage, outbound HTTP, the anti-bot check, queue producers, the real-time publisher and hub of decision 037), the error filter,
 // the request pipeline registry, the search engine client with the API's search-only key (feature 29, decision 038) and the 12 domain
 // modules (the storefront's search index module writes the search's outbox events and registers their routes, its publish engine those of a bulk publish, feature 31). The API only produces work (queue producers, outbox writes). Fastify hooks (IP rules, maintenance, per-IP limit)
-// register with the pipeline; sessions, guards and CSRF are added by their own feature.
+// register with the pipeline; sessions, guards and CSRF are added by their own feature. The boot check of LOOKUP_HASH_KEY runs first (decision 054).
 import { Module } from '@nestjs/common';
 import { ClockModule } from './common/clock.module';
 import { DhruModule } from './common/dhru';
@@ -29,7 +29,7 @@ import { HealthModule } from './modules/health';
 import { IdentityModule } from './modules/identity';
 import { MoneyModule } from './modules/money';
 import { OrdersModule } from './modules/orders';
-import { PlatformModule } from './modules/platform';
+import { LookupKeyCheckModule, PlatformModule } from './modules/platform';
 import { RiskModule } from './modules/risk';
 import {
   PublishEngineModule,
@@ -71,6 +71,7 @@ import { SupportModule } from './modules/support';
     PublicIpLimitModule,
     IdentityModule,
     PlatformModule,
+    LookupKeyCheckModule,
     MoneyModule,
     CatalogModule,
     CatalogPricesModule,

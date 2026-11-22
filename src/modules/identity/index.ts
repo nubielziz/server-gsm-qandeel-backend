@@ -71,6 +71,13 @@ export {
   IDENTITY_TEMPLATES_MIGRATION,
   identityTemplatesSql,
 } from './application/mail/identity-templates';
+// The two values Telegram's webhook is registered with, derived from the configured secret (decision 054); plain functions.
+export {
+  TELEGRAM_HEADER_LABEL,
+  TELEGRAM_PATH_LABEL,
+  telegramWebhookHeader,
+  telegramWebhookPath,
+} from './application/telegram-webhook-secret';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
 export { STAFF_TOKEN_PURPOSES } from './infra/auth-token.repository';

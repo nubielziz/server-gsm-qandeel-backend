@@ -1,59 +1,12 @@
-// Unit tests of the audit redaction (decisions 007, 019): secrets never reach audit_logs, flags and dates stay readable.
+// Unit tests of the audit redaction (decisions 007, 019): secrets never reach audit_logs, flags and dates stay readable. The rule that names
+// a secret is tested in test/unit/common/secret-keys.spec.ts (decision 054).
 import { describe, expect, it } from 'bun:test';
 import { REDACTED, isSecretKey, redactForAudit } from '@src/modules/platform/audit/audit-redaction';
+import { isSecretKey as sharedRule } from '@src/common/secret-keys';
 
-describe('isSecretKey', () => {
-  it('flags names that end in a secret word, in camelCase, snake_case and kebab-case', () => {
-    for (const key of [
-      'password',
-      'passwordHash',
-      'password_hash',
-      'newPassword',
-      'totpSecretEnc',
-      'totp_secret_enc',
-      'secret',
-      'webhookSecret',
-      'token',
-      'sessionToken',
-      'tokenHash',
-      'keyHash',
-      'apiKey',
-      'api_key',
-      'privateKey',
-      'signingKey',
-      'authorization',
-      'cookie',
-      'credentials',
-      'configEnc',
-      'imeiEnc',
-      'pepper',
-    ]) {
-      expect(isSecretKey(key), key).toBe(true);
-    }
-  });
-
-  it('leaves ordinary names alone, including ones that merely mention a secret word', () => {
-    for (const key of [
-      'name',
-      'email',
-      'roleId',
-      'status',
-      'passwordChangedAt',
-      'mustChangePassword',
-      'twofaEnabled',
-      'tokenExpiresAt',
-      'prefix',
-      'idempotencyKey',
-      'keyName',
-      'lastLoginIp',
-      'permissions',
-      'enc1',
-      '',
-    ]) {
-      // mustChangePassword ends in a secret word; the value rule (booleans stay readable) keeps it, see redactForAudit.
-      if (key === 'mustChangePassword') continue;
-      expect(isSecretKey(key), key).toBe(false);
-    }
+describe('isSecretKey of the audit redaction', () => {
+  it('is the shared rule of src/common/secret-keys.ts (decision 054)', () => {
+    expect(isSecretKey).toBe(sharedRule);
   });
 });
 

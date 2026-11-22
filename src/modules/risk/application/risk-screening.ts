@@ -142,7 +142,7 @@ export class RiskScreening {
       imeiBlacklistedBefore:
         imei !== null &&
         /^\d{15}$/.test(imei) &&
-        (await wasCheckedBlacklisted(tx, this.tokens.hash(imeiHashInput(imei)))),
+        (await wasCheckedBlacklisted(tx, this.tokens.lookupHash(imeiHashInput(imei)))),
       blocklistHits: hits.map((hit) => hit.sentence),
     };
     const verdict = scorePayment(facts, rules);

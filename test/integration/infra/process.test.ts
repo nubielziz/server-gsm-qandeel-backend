@@ -109,6 +109,7 @@ describe('configuration failure', () => {
       'REDIS_CACHE_URL',
       'CSRF_SECRET',
       'TOKEN_PEPPER',
+      'LOOKUP_HASH_KEY',
       'ENCRYPTION_KEYS',
       'ERRORS_BASE_URL',
       'PORTAL_BASE_URL',

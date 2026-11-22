@@ -7,7 +7,7 @@ import type { ResultOf } from '../../../common/contract';
 import { type FieldError, AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService, type DbExecutor } from '../../../infra/db';
-import { EncryptionService, TokenService } from '../../../infra/crypto';
+import { CapabilityTokenVault, EncryptionService } from '../../../infra/crypto';
 import { StorefrontServices, type SellableField } from '../../catalog';
 import { CustomerWallets, StorefrontMoney } from '../../money';
 import { OrderReadService, inputProblems, isValidImei, normalizeImei, quantityProblem } from '../../orders';
@@ -76,7 +76,8 @@ function cannotOrder(): AppError {
  * is what was shown. A guest becomes a `customers` row by email; a suspended or blocked customer cannot open a session (scenario
  * b2c-account step 8). A signed-in customer opens the checkout as the account: the email must be the account's own, the shop's
  * `guestCheckout` switch does not apply and the session belongs to that customer. The IMEI is stored only as AES-GCM text
- * (decision 019). Expiry is judged on the injected clock.
+ * (decision 019). The checkout token is stored as a keyed hash and an encrypted copy (decision 054). Expiry is judged on the injected
+ * clock.
  *
  * Side effects: inserts a guest `customers` row when the email is new and one `checkout_sessions` row, in one transaction.
  */
@@ -91,7 +92,7 @@ export class CheckoutSessionService {
     private readonly orders: OrderReadService,
     private readonly blocklist: Blocklist,
     private readonly encryption: EncryptionService,
-    private readonly tokens: TokenService,
+    private readonly vault: CapabilityTokenVault,
     private readonly wallets: CustomerWallets,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -153,8 +154,12 @@ export class CheckoutSessionService {
 
       const amounts = this.quotes.amounts(context, priced.unitNet, quantity);
       const now = this.clock.now();
+      // Decision 054: the token is stored only as its keyed hash and an encrypted copy; the answer shows it once more.
+      const issued = this.vault.issue('checkout');
       return insertCheckoutSession(tx, {
-        token: this.tokens.random(16),
+        token: null,
+        tokenHash: issued.hash,
+        tokenEnc: issued.enc,
         customerId: customer.id,
         email: request.email,
         serviceId: service.id,
@@ -225,7 +230,8 @@ export class CheckoutSessionService {
       currency?.decimals ?? 2,
     );
     return {
-      token: row.token,
+      // The CHECK of the table guarantees one of the two forms.
+      token: this.vault.reveal('checkout', { enc: row.tokenEnc, plain: row.token }) ?? '',
       status: effectiveStatus(row.status, row.expiresAt, now),
       expiresAt: row.expiresAt.toISOString(),
       createdAt: row.createdAt.toISOString(),

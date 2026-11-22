@@ -43,7 +43,7 @@ feature 6.
   `fields.N.regex` and the reason's sentence (`FIELD_PATTERN_MESSAGES`). The order check runs only a pattern in that form
   (`compileFieldPattern`); the patterns stored before were reviewed once (`field_patterns_review`, see "Jobs and schedules").
 - **Inventory** (`inventory-admin.service.ts`, `domain/inventory-codes.ts`): codes AES-GCM encrypted (`inventory_codes.code_enc`)
-  with `code_hash` (`TokenService.hash` of `inventory-code:<code>`) and `code_last4`; import counts imported, duplicates and
+  with `code_hash` (`TokenService.lookupHash` of `inventory-code:<code>`, keyed with `LOOKUP_HASH_KEY`, decision 054) and `code_last4`; import counts imported, duplicates and
   rejected, never logs a clear code; void only `available` codes, idempotent. `InventoryStock` (`application/inventory-stock.ts`,
   public, in `CatalogModule`) hands codes to an order at placement: `claim` locks the oldest available codes of a service
   (`FOR UPDATE SKIP LOCKED`) and decrypts them as the order's result, `sell` marks them sold with the order id (RULES orders 10).

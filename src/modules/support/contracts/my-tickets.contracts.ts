@@ -101,7 +101,8 @@ export const listMyTickets = defineRoute({
     'for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket ' +
     '`token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is ' +
     '`hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more ' +
-    '(its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials.',
+    '(its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials. ' +
+    'The link of a ticket resolved more than 180 days ago no longer opens it (`404` on the token routes).',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'customer-session',

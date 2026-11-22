@@ -241,7 +241,7 @@ async function seedInventory(
       id: code.id,
       serviceId: code.serviceId,
       codeEnc: encryption.encrypt(code.code, INVENTORY_CODE_AAD),
-      codeHash: tokens.hash(inventoryCodeHashInput(code.code)),
+      codeHash: tokens.lookupHash(inventoryCodeHashInput(code.code)),
       codeLast4: lastFour(code.code),
       status: code.status,
       batchRef: code.batchRef,

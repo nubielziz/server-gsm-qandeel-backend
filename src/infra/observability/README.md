@@ -16,3 +16,7 @@ Reports unexpected server errors to Sentry (decision 015, feature 24D). Metrics,
 - Every capture carries tags: `process` (`api` or `worker`) and, where known, `request_id`, `surface`, `route`, `method`, `code`,
   `queue`, `job`.
 - Tests replace the transport through `ERROR_REPORTER_OPTIONS` and read the events from memory; nothing in the suite sends.
+- Every capture is sanitised (decision 054): a database failure is reported as its SQLSTATE, table, constraint and a fixed sentence,
+  never the statement or its values (`sanitizeError`).
+- The scrubber reads at most 1,320 characters of any text (the 1,000 it keeps plus room for an address or a digit run that the cut
+  splits), cuts any database statement first, and its e-mail pattern is bounded, so no input makes it work long.

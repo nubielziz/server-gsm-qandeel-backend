@@ -60,7 +60,7 @@ storefront.
    cp deploy/.env.example deploy/.env
    cp .env.production.example .env.production
    mkdir -p deploy/secrets
-   openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, METRICS_TOKEN and, in deploy/.env, TYPESENSE_BOOTSTRAP_KEY, TYPESENSE_INDEXER_KEY, TYPESENSE_SEARCH_KEY
+   openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, LOOKUP_HASH_KEY, METRICS_TOKEN and, in deploy/.env, TYPESENSE_BOOTSTRAP_KEY, TYPESENSE_INDEXER_KEY, TYPESENSE_SEARCH_KEY
    echo "k1:$(openssl rand -base64 32)"   # the whole line is the value of ENCRYPTION_KEYS
    ```
 
@@ -205,6 +205,23 @@ Additive; the usual order applies. What staff and the owner notice:
   the audit log ("cleared an unsupported field pattern of <service>", with the old pattern); enter a simpler pattern where it still matters.
 - Only an Owner can change `suppliers.allowPlainHttp`.
 
+### Release with decision 054 (logs and secrets)
+
+1. Before `gsmc run --rm migrate`: add `LOOKUP_HASH_KEY` to `.env.production`. On an installation that has data, give it **exactly the value
+   of the current `TOKEN_PEPPER`** (the blocklist, IMEI history, duplicate checks, unsubscribe links and pending webhook ids were made
+   with it). A new installation uses `openssl rand -hex 32`. Without it, production refuses to start (`migrate` too). The first start of
+   the API or the worker stores a marker of the key; from then on a start with another key is refused (this key is never changed). A
+   start that cannot read the marker because Postgres does not answer stops too; compose starts it again once Postgres is healthy.
+2. Upgrade as usual (backup, build, migrate, `gsmc up -d api worker`). The worker then converts the stored link tokens once.
+3. Reload Caddy for the new access log: `gsmc exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+4. If the Telegram bot is used: before the `gsmc up -d api worker` of step 2, set a new `TELEGRAM_WEBHOOK_SECRET` in `.env.production`
+   (`openssl rand -hex 32`): until this release the secret was part of the webhook address, so the access logs written before it hold the
+   old value. After step 2, register the webhook: `gsmc run --rm api bun scripts/telegram-webhook.ts --url https://<API_HOST>` (section 6).
+   Until then Telegram's calls are refused and chats cannot be linked or unlinked; messages to linked chats keep working.
+5. Check: `gsmc exec postgres psql -U gsm -d gsm -c "select job, status, processed from job_runs where job like '%_tokens_seal'"` shows
+   three succeeded runs, and `select count(*) from checkout_sessions where token is not null` (likewise `orders.public_token`,
+   `support_tickets.token`) answers 0.
+
 ## 4. Backups and the restore drill
 
 What is saved, every night: a full dump of the database (`pg_dump`, custom format), encrypted with `age` for the public key
@@ -265,26 +282,37 @@ The private key only has to be on the machine for the minute the drill runs.
 
 ## 5. Key custody
 
-| Secret | What breaks if it is lost or changed | Rule |
+| Secret | What a change or a loss breaks | Rule |
 | --- | --- | --- |
-| `ENCRYPTION_KEYS` | TOTP secrets and supplier and gateway credentials become unreadable (suppliers and gateways stop until their credentials are typed in again, staff must re-enrol 2FA) | two offline copies, held by two people, with the `age` private key of the backups. Never lose it, never change an existing key |
+| `ENCRYPTION_KEYS` | values sealed by a key that is gone cannot be read: TOTP secrets (staff and merchants enrol 2FA again), supplier and gateway credentials and webhook secrets (they stop until typed in again), stored IMEIs and inventory codes, and the copies of the shop's links (mails and account pages can no longer show those links; the links themselves keep working) | two offline copies, two people, with the backup key; never lose it, never change an existing key; add keys as below |
 | `age` private key | no backup can be read | two offline copies, two people; never on the server except during a drill |
-| `TOKEN_PEPPER` | changing it signs everybody out and voids every API key and open link | change only as a planned operation |
-| `CSRF_SECRET` | changing it only voids forms that are open | can be changed at any time |
+| `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset, invitation and Telegram link stops working | change only as a planned operation |
+| `LOOKUP_HASH_KEY` | every stored lookup stops matching: blocked e-mails, cards and IMEIs pass the blocklist again, the IMEI history and the duplicate checks of inventory codes and open orders forget what they knew, unsubscribe links in sent mails stop working, Idempotency-Key replays of the last 7 days and the event ids of pending merchant webhook deliveries change, and every checkout, tracking and ticket link stops working | never change it (production refuses to start with a different key); on an installation that has data it equals the `TOKEN_PEPPER` the data was made with (section 3) |
+| `CSRF_SECRET` | forms that are open fail once and are sent again | any time |
+| `TELEGRAM_WEBHOOK_SECRET` | Telegram's calls are refused until the webhook is registered again | change it, restart api, run `scripts/telegram-webhook.ts` (section 6); the release of decision 054 gives it a new value (section 3) |
+| `TELEGRAM_BOT_TOKEN` | Telegram messages fail until the new token is set; the webhook must be registered again | change it at BotFather and in `.env.production` together, then run the script |
+| `TURNSTILE_SECRET_KEY` | the shop's protected forms refuse visitors until the site key and the secret belong to one widget | change both together |
+| `MAIL_SMTP_URL` credentials | mails fail and are retried until the right ones are set | change at the provider and in `.env.production` together |
+| `FX_API_KEY` | the hourly rate refresh fails; stored rates stay | any time |
+| `SENTRY_DSN` | errors go to the new project (or nowhere) | any time |
 | `METRICS_TOKEN` | Prometheus cannot scrape until `deploy/secrets/metrics_token` has the same value | change both together |
 | Postgres and MinIO passwords | the services lock out the app | change them in `deploy/.env` and `.env.production` together, then recreate the services |
 | `TYPESENSE_BOOTSTRAP_KEY`, `TYPESENSE_INDEXER_KEY`, `TYPESENSE_SEARCH_KEY` (`deploy/.env`) | the shop search falls back to the database search (nothing is lost: the index is derived data) | the bootstrap key stays with the `typesense` container and with you; the worker holds only the indexer key and the API only the search key. After a change or a lost volume run `scripts/search-keys.ts` again (section 6) |
 
 **Adding an encryption key without losing the old one:** `ENCRYPTION_KEYS` is a list, `k1:<key>,k2:<key>`. Make the new key
-(`openssl rand -base64 32`), append it with a new id, set `ENCRYPTION_ACTIVE_KID=k2`, keep `k1` in the list for as long as any stored value
-still carries it (old values stay readable under their own id; new ones are written under `k2`; decision 019), then `gsmc up -d api worker`.
-Keep a copy of the new list offline before you restart.
+(`openssl rand -base64 32`), append it with a new id, set `ENCRYPTION_ACTIVE_KID=k2`, then `gsmc up -d api worker`: new values are written under
+`k2`, old ones stay readable under their own id (decision 019). No job re-encrypts stored values (decision 054): keep `k1` in the list for as
+long as values sealed by it exist. After a suspected leak, change the secrets themselves (supplier and gateway keys, webhook secrets, 2FA
+enrolment): entering them again seals them with the active key. The twelve encrypted columns are listed by `rg "_AAD = '" src` and
+`CAPABILITY_TOKEN_COLUMNS` (`src/infra/crypto/capability-token-vault.ts`). Keep a copy of the new list offline before you restart.
 
 ## 6. Logs, health, metrics and Sentry
 
 - **Logs** are JSON lines on stdout (decision 012): `gsmc logs -f api worker caddy`. Every line of a request has its request id, which is
-  also the `X-Request-Id` the client got; give it to whoever reads the log. Passwords, tokens, cookies and secrets are redacted; e-mail,
-  phone and IMEI are masked. Docker keeps the logs on the host: set a log rotation in `/etc/docker/daemon.json`
+  also the `X-Request-Id` the client got; give it to whoever reads the log. Secrets are redacted and e-mail, phone and IMEI masked at any
+  depth of a log line; a database failure is logged as its SQLSTATE, table, constraint and a fixed sentence, never the statement or its
+  values (decision 054). Caddy's access log replaces link tokens, the Telegram webhook path, searches and IMEIs in the address and the
+  Referer, and leaves out credential headers. Docker keeps the logs on the host: set a log rotation in `/etc/docker/daemon.json`
   (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`) so the disk does not fill.
 - **Health:** `GET /health` always answers 200 with `ok`, `degraded` or `down` and the checks; `GET /health?strict=1` answers 503 when
   Postgres is down (this is what the container healthcheck calls). The System health pages of the console show the same and more.
@@ -294,7 +322,13 @@ Keep a copy of the new list offline before you restart.
 - **Sentry** is off until you set `SENTRY_DSN` in `.env.production` (a project of your own Sentry account) and run `gsmc up -d api worker`.
   It then receives only unexpected server errors (an unhandled 5xx of the API) and jobs that failed for good, with the stack, the route, the
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
-  e-mail addresses and long digit runs inside messages. To turn it off, remove the line and restart: with no DSN the SDK is never started.
+  e-mail addresses and long digit runs inside messages; database failures arrive as their SQLSTATE and table, never the statement. To turn
+  it off, remove the line and restart: with no DSN the SDK is never started.
+- **Telegram bot:** set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET` in `.env.production` and restart api, then
+  register the webhook: `gsmc run --rm api bun scripts/telegram-webhook.ts --url https://<API_HOST>`. It sends Telegram the address and the
+  header value derived from the secret, never prints them, and ends with `Telegram webhook registered…`. Run it again after changing the
+  secret, the bot token or `API_HOST`. `--dry-run` shows what it would do. An installation that used the bot before the release of
+  decision 054 sets a new secret first (section 3, that release's step 4).
 
 **If the queue Redis loses its data** (a lost volume, a `FLUSHALL`, a crash that loses the last second of the append-only file; decision 044):
 restart the worker (`gsmc restart worker`): it writes its schedules only when it starts. Then these come back by themselves: outbox events
@@ -446,7 +480,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
       shows it on the shop forms and on the merchant sign-in and forgot-password forms (`TURNSTILE_MERCHANT_AUTH` is on by default in
       production, decision 052; `false` switches the merchant forms' check off).
 - [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`), or the rates are kept by hand.
-- [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`.
+- [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`, then run `scripts/telegram-webhook.ts` (section 6).
 - [ ] Object storage for backups on another provider, its keys in `deploy/.env`, and the two key holders named.
 - [ ] A Sentry project (optional) and its DSN.
 - [ ] The payment provider chosen by the owner (decision D-6) and its keys entered in the console, never in a file.
@@ -455,6 +489,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Every check of section 2.5 passed, including the client-address check.
 - [ ] A backup ran and a restore drill passed (section 4), and the first-day-of-month copy is understood.
 - [ ] `ENCRYPTION_KEYS` and the backup private key exist offline in two places, with two people.
+- [ ] `LOOKUP_HASH_KEY` is set (on an installation with data: the value of its `TOKEN_PEPPER`).
 - [ ] `COOKIE_SECURE=true`, `REFERENCE_DOCS=staff`, the dev seed was never run on this database.
 - [ ] `.env.production` has no `CORS_ORIGINS`, and the four base URLs are https (decision 045).
 - [ ] Every supplier address starts with https://, and suppliers.allowPlainHttp is not true (only an Owner can change it).

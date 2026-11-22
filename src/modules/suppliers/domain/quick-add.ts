@@ -1,5 +1,6 @@
 // The pure rules of the supplier quick add (feature 26, B214): the constants, the groups of a scope, when a live run counts as stalled,
 // how a run record reads on the wire, the chunks of the work list and the reason a failed item reports.
+import { safeErrorText } from '../../../common/errors';
 import { pgErrorInfo } from '../../../infra/db/pg-errors';
 import type {
   QuickAddPublishMode,
@@ -223,7 +224,8 @@ export function failureReason(error: unknown): string {
  * The text a run keeps for an unexpected error.
  *
  * Why: the console shows it to staff, so a database error is reduced to its SQLSTATE and constraint (the driver's message carries the
- * statement); any other error keeps its message.
+ * statement); any other error keeps its message with any statement text cut out, so a failure without a SQLSTATE (a dropped connection
+ * under a Drizzle error) stores no statement either (decision 054).
  *
  * @param error whatever was thrown
  * @returns the text cut to {@link MAX_RUN_ERROR_LENGTH} characters, or `unexpected error`
@@ -232,8 +234,8 @@ export function runErrorText(error: unknown): string {
   const database = pgErrorInfo(error);
   const message = database
     ? `Database error ${database.code}${database.constraint ? ` (${database.constraint})` : ''}.`
-    : error instanceof Error && error.message.trim() !== ''
-      ? error.message.trim()
+    : error instanceof Error && safeErrorText(error).trim() !== ''
+      ? safeErrorText(error).trim()
       : 'unexpected error';
   return message.slice(0, MAX_RUN_ERROR_LENGTH);
 }

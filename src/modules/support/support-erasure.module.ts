@@ -18,7 +18,8 @@ import { clearTicketTokensOfCustomer } from './infra/ticket.repository';
  * merchant is not touched. Feature 28 (rule 10): every attachment of the customer's tickets is deleted too (both sides' files; a file
  * another record still uses is kept), and the ticket streams still open with the old link end (`bye session_ended`).
  *
- * Side effects: updates `support_tickets.token` and `ticket_messages.file_ids` and deletes `files` rows on the anonymization's
+ * Side effects: updates `support_tickets.token`, `token_hash` and `token_enc` (every stored form of the link, decision 054) and
+ * `ticket_messages.file_ids` and deletes `files` rows on the anonymization's
  * transaction (the objects after its commit); a failure rolls the whole anonymization back. Rings `ticket revoked` after the commit.
  */
 @Injectable()

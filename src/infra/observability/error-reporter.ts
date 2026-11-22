@@ -1,6 +1,7 @@
 // Reports unexpected server errors to Sentry (decision 015, feature 24D). Off, and never initialised, without SENTRY_DSN.
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit, Optional } from '@nestjs/common';
 import * as Sentry from '@sentry/bun';
+import { sanitizeError } from '../../common/errors/safe-error';
 import { APP_CONFIG, type AppConfig } from '../../config';
 import { scrubEvent } from './scrub';
 
@@ -93,7 +94,8 @@ export class ErrorReporter implements OnModuleInit, OnApplicationShutdown {
   }
 
   /**
-   * Reports one error with its context as tags.
+   * Reports one error with its context as tags. A database failure is reported as its SQLSTATE and names, never the statement or
+   * its values (decision 054).
    *
    * @param error what was thrown (any value)
    * @param context where it happened
@@ -107,7 +109,7 @@ export class ErrorReporter implements OnModuleInit, OnApplicationShutdown {
       }
       Sentry.withScope((scope) => {
         scope.setTags(tags);
-        Sentry.captureException(error);
+        Sentry.captureException(sanitizeError(error));
       });
     } catch (failure) {
       this.logger.warn(`Sentry could not record an error: ${errorText(failure)}`);

@@ -40,7 +40,8 @@ function routeTemplateOf(request: FastifyRequest | IncomingMessage): string | un
  * page (`api_errors_total`, decision 015) and logs server faults with the request id so support can find them.
  *
  * Side effects: increments `api_errors_total{surface,method,route,status,code}`; reports an unexpected 5xx (an unhandled throw, or an
- * `INTERNAL_ERROR`) to Sentry through {@link ErrorReporter} when `SENTRY_DSN` is set; logs 5xx at error level and a Postgres deadlock or serialization failure (answered 409) at warn level; sets
+ * `INTERNAL_ERROR`) to Sentry through {@link ErrorReporter} when `SENTRY_DSN` is set; logs 5xx at error level and a Postgres deadlock or serialization failure (answered 409) at warn level (the logged error passes the
+ * logger's error serializer and the reported one `ErrorReporter.capture`: both keep a database failure to its SQLSTATE and names, decision 054); sets
  * `Retry-After` on 429 (default 1 s), `Cache-Control: no-store` and `X-Request-Id` (also added by the onSend hook).
  */
 @Catch()
@@ -106,7 +107,8 @@ export class ProblemExceptionFilter implements ExceptionFilter {
       code: error.code,
     });
     if (logAsError) {
-      // Full error (with cause chain and stack) goes to the log only; the client gets the generic detail.
+      // Full error (with cause chain and stack) goes to the log only; the client gets the generic detail. A database failure is
+      // reduced to its SQLSTATE and names by the logger's error serializer (decision 054).
       this.logger.error(
         { err: exception, requestId, code: error.code, status: error.status, method, route: template ?? 'unmatched' },
         'Request failed with a server error',

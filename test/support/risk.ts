@@ -180,7 +180,7 @@ export async function insertBlock(
     .insert(s.blocklistEntries)
     .values({
       kind,
-      valueHash: t.app.get(TokenService).hash(blockHashInput(kind, value)),
+      valueHash: t.app.get(TokenService).lookupHash(blockHashInput(kind, value)),
       display: value,
       reason: 'Test',
       ...values,
@@ -199,7 +199,7 @@ export async function insertImeiCheck(
   const [row] = await db
     .insert(s.imeiChecks)
     .values({
-      imeiHash: t.app.get(TokenService).hash(imeiHashInput(imei)),
+      imeiHash: t.app.get(TokenService).lookupHash(imeiHashInput(imei)),
       imeiEnc: t.app.get(EncryptionService).encrypt(imei, IMEI_CHECK_AAD),
       tac: null,
       brand: 'Apple',

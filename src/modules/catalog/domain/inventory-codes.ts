@@ -18,11 +18,11 @@ export const INVENTORY_CODE_AAD = 'inventory_codes.code_enc';
 /**
  * The text that is hashed to find a duplicate code: the code behind a prefix.
  *
- * Why: `code_hash` is the keyed hash of decision 019 (`TokenService.hash`); the prefix keeps it apart from session, API key and
+ * Why: `code_hash` is the keyed hash of decision 019, keyed with `LOOKUP_HASH_KEY` (`TokenService.lookupHash`, decision 054); the prefix keeps it apart from session, API key and
  * every other token hash, so a code can never collide with a credential. The import and the seed both use this function.
  *
  * @param code a trimmed code
- * @returns the text to pass to `TokenService.hash`
+ * @returns the text to pass to `TokenService.lookupHash`
  */
 export function inventoryCodeHashInput(code: string): string {
   return `inventory-code:${code}`;

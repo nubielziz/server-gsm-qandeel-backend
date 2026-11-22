@@ -3,6 +3,7 @@
 // 28 adds the batched reply mail of the email fallback (every unseen reply in one email) and the merchant's portal link.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../config';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { type Job, UnrecoverableError } from '../../../infra/queues';
 import { type NotificationInput, NotificationService, type OutboxJobData } from '../../platform';
@@ -69,6 +70,7 @@ export class TicketMailJobs {
   constructor(
     private readonly db: DbService,
     private readonly notifications: NotificationService,
+    private readonly vault: CapabilityTokenVault,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -147,12 +149,14 @@ export class TicketMailJobs {
     if (!requester?.reachable) return { sent: false, skipped: 'recipient_gone' };
 
     const customer = ticket.requesterType === 'customer';
-    // A customer's ticket page is its token link; a merchant's is the portal's ticket page, by id (feature 28).
+    // A customer's ticket page is its token link; a merchant's is the portal's ticket page, by id (feature 28). Decision 054: the token
+    // is revealed from its encrypted copy, or read as issued for a ticket opened before.
+    const token = customer ? this.vault.reveal('ticket', { enc: ticket.tokenEnc, plain: ticket.token }) : null;
     const link = !customer
       ? `${this.config.http.storeBaseUrl}/merchant/support/${ticket.id}`
-      : ticket.token === null
+      : token === null
         ? ''
-        : `${this.config.http.storeBaseUrl}/support/tickets/${encodeURIComponent(ticket.token)}`;
+        : `${this.config.http.storeBaseUrl}/support/tickets/${encodeURIComponent(token)}`;
     const common = { ticketNumber: ticket.number, subject: ticket.subject };
     const customerName = { customerName: requester.name.trim() || 'there' };
     let input: Omit<NotificationInput, 'dedupeKey'>;

@@ -9,11 +9,12 @@ import { ErrorReporter, type SentryTransportFactory } from '@src/infra/observabi
 import { AppError } from '@src/common/errors/app-error';
 import { ProblemExceptionFilter } from '@src/common/errors/exception.filter';
 import { ErrorFormatterRegistry } from '@src/common/errors/formatter-registry';
+import { DB_FAILURE_MARKER, drizzleFailure } from '../../../support/db-failure';
 
-const events: { tags?: Record<string, string> }[] = [];
+const events: { tags?: Record<string, string>; exception?: { values?: { type?: string; value?: string }[] } }[] = [];
 const transport: SentryTransportFactory = () => ({
   send: (envelope) => {
-    for (const [header, payload] of envelope[1] as unknown as [{ type: string }, { tags?: Record<string, string> }][]) {
+    for (const [header, payload] of envelope[1] as unknown as [{ type: string }, (typeof events)[number]][]) {
       if (header.type === 'event') events.push(payload);
     }
     return Promise.resolve({});
@@ -112,6 +113,17 @@ describe('ProblemExceptionFilter and Sentry', () => {
     expect(answer(filter, Object.assign(new Error('deadlock detected'), { code: '40P01' }))).toBe(409);
     await reporter.flush();
     expect(events).toHaveLength(0);
+  });
+
+  it('reports a database failure without its statement or values', async () => {
+    const { filter, reporter } = setup(DSN);
+    expect(answer(filter, drizzleFailure())).toBe(500);
+    await reporter.flush();
+    expect(events).toHaveLength(1);
+    const text = JSON.stringify(events[0]);
+    expect(text).not.toContain(DB_FAILURE_MARKER);
+    expect(text).not.toContain('Failed query');
+    expect(events[0]?.exception?.values?.[0]?.value).toStartWith('Database error 23514');
   });
 
   it('answers the same and reports nothing when SENTRY_DSN is not set', async () => {

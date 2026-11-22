@@ -7,6 +7,8 @@
 # exactly the compose subnet (TRUST_PROXY=172.30.0.0/24). Do not add `trusted_proxies` unless a CDN is placed in front.
 # The console's and the shop's pages get the anti-framing, nosniff and referrer headers of decision 045; the API's answers keep the
 # API's own headers.
+# Every host writes the same access log (decision 054): the token part of the shop's link addresses, the Telegram webhook path, link
+# tokens, searches and IMEIs in the query, and credential headers are not written.
 {
 	email {$ACME_EMAIL}
 }
@@ -25,10 +27,58 @@
 	}
 }
 
-(json_log) {
+# The access log of every host (decision 054). Caddy writes the request address, the Referer and the headers of each request and answer.
+# Here the token part of the shop's link pages and of their API routes, the Telegram webhook path, and the values of the query parameters
+# that carry a link token, a typed search or an IMEI are replaced, in the address and in the Referer alike; the headers that carry a
+# credential are not written (Caddy itself hides Cookie, Set-Cookie, Authorization and Proxy-Authorization), nor the two headers in which
+# the shop's pages send their own address with every prefetch, refresh and navigation (Next-Url, Next-Router-State-Tree). A redirect's
+# Location gets the same path rules and loses its whole query string (a signed download link). One multi_regexp per field holds every
+# rule, one regexp line each. The API logs route templates only. Every site block imports this snippet.
+(access_log) {
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			request>uri multi_regexp {
+				regexp "/store/v1/orders/[^/?#]+" "/store/v1/orders/[token]"
+				regexp "/checkout-sessions/[^/?#]+" "/checkout-sessions/[token]"
+				regexp "/tickets/[^/?#]+" "/tickets/[token]"
+				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
+				regexp "/track/[^/?#]+" "/track/[token]"
+				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
+				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
+				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
+			}
+			request>headers>Referer multi_regexp {
+				regexp "/store/v1/orders/[^/?#]+" "/store/v1/orders/[token]"
+				regexp "/checkout-sessions/[^/?#]+" "/checkout-sessions/[token]"
+				regexp "/tickets/[^/?#]+" "/tickets/[token]"
+				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
+				regexp "/track/[^/?#]+" "/track/[token]"
+				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
+				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
+				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
+			}
+			request>headers>X-Csrf-Token delete
+			request>headers>X-Turnstile-Token delete
+			request>headers>Idempotency-Key delete
+			request>headers>X-Telegram-Bot-Api-Secret-Token delete
+			request>headers>Stripe-Signature delete
+			request>headers>X-Gsm-Signature delete
+			request>headers>Next-Url delete
+			request>headers>Next-Router-State-Tree delete
+			resp_headers>X-Csrf-Token delete
+			resp_headers>Location multi_regexp {
+				regexp "/store/v1/orders/[^/?#]+" "/store/v1/orders/[token]"
+				regexp "/checkout-sessions/[^/?#]+" "/checkout-sessions/[token]"
+				regexp "/tickets/[^/?#]+" "/tickets/[token]"
+				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
+				regexp "/track/[^/?#]+" "/track/[token]"
+				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
+				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
+				regexp "[?].*" "?[redacted]"
+			}
+		}
 	}
 }
 
@@ -60,25 +110,7 @@
 
 {$SHOP_HOST} {
 	import common
-	# A ticket token is the whole credential of the ticket page and its API routes (feature 28): Caddy logs the full URI and the Referer,
-	# so both have the token part replaced (`/store/v1/tickets/<token>/…`, `/en/support/tickets/<token>`). A typed search can be an
-	# IMEI, a phone number or an email address (feature 29): the `q` parameter is replaced in both fields too, whether it is the URI of
-	# `/store/v1/search*` or the Referer of a results page. One `multi_regexp` per field holds every rule (one `regexp` line each); the
-	# API itself logs the route template only.
-	log {
-		output stdout
-		format filter {
-			wrap json
-			request>uri multi_regexp {
-				regexp "/tickets/[^/?]+" "/tickets/[token]"
-				regexp "([?&])q=[^&]*" "${1}q=[redacted]"
-			}
-			request>headers>Referer multi_regexp {
-				regexp "/tickets/[^/?]+" "/tickets/[token]"
-				regexp "([?&])q=[^&]*" "${1}q=[redacted]"
-			}
-		}
-	}
+	import access_log
 	@api path /client/* /store/v1/*
 	handle @api {
 		reverse_proxy api:3000
@@ -91,7 +123,7 @@
 
 {$ADMIN_HOST} {
 	import common
-	import json_log
+	import access_log
 	@api path /admin/* /health /reference /reference/* /store/v1/media/*
 	handle @api {
 		reverse_proxy api:3000
@@ -104,7 +136,7 @@
 
 {$API_HOST} {
 	import common
-	import json_log
+	import access_log
 	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
 	handle @api {
 		reverse_proxy api:3000

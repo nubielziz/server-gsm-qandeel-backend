@@ -1,5 +1,6 @@
 // Drizzle queries of the public order tracking (feature 14a): the order a token names with its service, and its timeline. Read only.
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import type { SealedCapabilityToken, UnsealedCapabilityToken } from '../../../infra/crypto';
 import type { DbExecutor } from '../../../infra/db';
 import { type Order, type OrderEvent, type OrderEventType, orderEvents, orders } from '../db/schema';
 import { foreignTables as f } from './foreign-reads.repository';
@@ -14,25 +15,80 @@ export interface TrackedOrderRow {
 }
 
 /**
- * Finds the id and token of the order a tracking token names.
+ * Finds the order a presented tracking token names, with the stored form to compare.
  *
- * Why: the capability guard looks the token up by the unique index before any handler runs; it gets the stored token back so the
- * resolver can compare it in constant time. Only a storefront order has a token.
+ * Why: the capability guard looks the token up by a unique index before any handler runs; it gets the stored form back so the
+ * resolver can compare it in constant time. Only a storefront order has a token. Decision 054: the lookup is by the keyed hash; an
+ * order placed before is found by its plain token until the seal pass ran.
  *
  * @param db the database or a transaction
- * @param token the token the visitor sent
- * @returns the order id and stored token, or `undefined`
+ * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('tracking', …)`) and the token itself
+ * @returns the order id with its stored hash or plain token, or `undefined`
  */
 export async function findOrderByTrackingToken(
   db: DbExecutor,
-  token: string,
-): Promise<{ id: number; token: string } | undefined> {
-  const [row] = await db
+  lookup: { readonly hash: string; readonly token: string },
+): Promise<{ id: number; tokenHash: string | null; token: string | null } | undefined> {
+  const columns = { id: orders.id, tokenHash: orders.publicTokenHash, token: orders.publicToken };
+  const [sealed] = await db.select(columns).from(orders).where(eq(orders.publicTokenHash, lookup.hash)).limit(1);
+  if (sealed) return sealed;
+  // Orders placed before decision 054 keep the token as issued until the seal pass ran.
+  const [plain] = await db.select(columns).from(orders).where(eq(orders.publicToken, lookup.token)).limit(1);
+  return plain;
+}
+
+/**
+ * The orders that still keep their tracking token as issued, by id.
+ *
+ * Why: decision 054: the one-off seal pass walks them a page at a time.
+ *
+ * @param db the database
+ * @param afterId the last id of the previous page (0 to start)
+ * @param limit the page size
+ * @returns the id and plain token of each row
+ */
+export async function findUnsealedOrders(
+  db: DbExecutor,
+  afterId: number,
+  limit: number,
+): Promise<UnsealedCapabilityToken[]> {
+  const rows = await db
     .select({ id: orders.id, token: orders.publicToken })
     .from(orders)
-    .where(eq(orders.publicToken, token))
-    .limit(1);
-  return row?.token == null ? undefined : { id: row.id, token: row.token };
+    .where(and(isNotNull(orders.publicToken), isNull(orders.publicTokenHash), gt(orders.id, afterId)))
+    .orderBy(asc(orders.id))
+    .limit(limit);
+  return rows.flatMap((row) => (row.token === null ? [] : [{ id: row.id, token: row.token }]));
+}
+
+/**
+ * Stores an order's tracking token as its hash and encrypted copy and empties the plain column.
+ *
+ * Why: decision 054: the seal pass converts each row in one guarded statement, so a row that changed since it was read is left alone
+ * and a repeat finds nothing to do.
+ *
+ * @param db the database
+ * @param row the row as read (id and plain token)
+ * @param sealed the token's stored forms
+ * @returns true when the row was converted
+ */
+export async function sealOrderToken(
+  db: DbExecutor,
+  row: UnsealedCapabilityToken,
+  sealed: SealedCapabilityToken,
+): Promise<boolean> {
+  const changed = await db
+    .update(orders)
+    // Sealing is not a change of the order: updated_at keeps its value.
+    .set({
+      publicTokenHash: sealed.hash,
+      publicTokenEnc: sealed.enc,
+      publicToken: null,
+      updatedAt: sql`${orders.updatedAt}`,
+    })
+    .where(and(eq(orders.id, row.id), eq(orders.publicToken, row.token), isNull(orders.publicTokenHash)))
+    .returning({ id: orders.id });
+  return changed.length === 1;
 }
 
 /**
@@ -82,13 +138,22 @@ export async function findOrderEventsOfTypes(
 }
 
 /**
- * Reads the tracking token of one order.
+ * Reads the stored forms of one order's tracking token.
+ *
+ * Why: decision 054: the token is kept as an encrypted copy (or, for an order placed before, as issued); the caller reveals it.
  *
  * @param db the database or a transaction
  * @param orderId the order
- * @returns the token, or `null` for an order without one (a merchant's)
+ * @returns the encrypted copy and the plain column, or `undefined` when the order does not exist
  */
-export async function trackingTokenOfOrder(db: DbExecutor, orderId: number): Promise<string | null> {
-  const [row] = await db.select({ token: orders.publicToken }).from(orders).where(eq(orders.id, orderId)).limit(1);
-  return row?.token ?? null;
+export async function trackingTokenOfOrder(
+  db: DbExecutor,
+  orderId: number,
+): Promise<{ enc: string | null; plain: string | null } | undefined> {
+  const [row] = await db
+    .select({ enc: orders.publicTokenEnc, plain: orders.publicToken })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  return row;
 }

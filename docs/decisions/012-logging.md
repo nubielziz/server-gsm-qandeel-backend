@@ -20,3 +20,8 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** Logs are safe to ship to a log store; investigations join by request id across API, worker and
 supplier logs.
+
+**Amendment (feature 44, decision 054).** Redaction applies one secret-name rule (shared with the audit log) and the personal-data
+masks at every depth; errors are logged through one sanitiser, so a database failure appears as its SQLSTATE, table, constraint and a
+fixed sentence; a last check on each line removes any statement text that reached a message. The reverse proxy's access log follows the
+same rules for addresses and headers (decision 054).

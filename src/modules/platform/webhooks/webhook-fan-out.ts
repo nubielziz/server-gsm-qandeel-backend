@@ -81,7 +81,9 @@ export class WebhookFanOut {
       );
     }
 
-    const eventId = eventIdOf(this.tokens.hash(`webhook-event:${eventKeyOf(job.type, job.eventId, job.payload)}`));
+    const eventId = eventIdOf(
+      this.tokens.lookupHash(`webhook-event:${eventKeyOf(job.type, job.eventId, job.payload)}`),
+    );
     const payload = buildEnvelope(eventId, job.type, createdAt, built.data);
     const now = this.clock.now();
     const created = await this.db.runInTransaction(async ({ tx }) => {

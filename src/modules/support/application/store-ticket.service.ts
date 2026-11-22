@@ -3,7 +3,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
-import { TokenService } from '../../../infra/crypto';
+import { CapabilityTokenVault, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import { CustomerDirectory } from '../../customers';
@@ -72,6 +72,7 @@ export class StoreTicketService {
   constructor(
     private readonly db: DbService,
     private readonly tokens: TokenService,
+    private readonly vault: CapabilityTokenVault,
     private readonly mail: TicketMailOutbox,
     private readonly customers: CustomerDirectory,
     private readonly limits: RateLimitService,
@@ -105,9 +106,15 @@ export class StoreTicketService {
       // True when the caller holds the order's tracking token, the only proof of identity this route can check.
       let provedByOrder = false;
       if (input.orderToken !== undefined) {
-        const order = await findOrderByTrackingToken(tx, input.orderToken);
-        if (!order || !this.tokens.equals(order.token, input.orderToken))
-          throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
+        // Decision 054: the order is found by the keyed hash of its tracking token (an order placed before by its plain token).
+        const hash = this.vault.hashOf('tracking', input.orderToken);
+        const order = await findOrderByTrackingToken(tx, { hash, token: input.orderToken });
+        const valid =
+          order !== undefined &&
+          (order.tokenHash !== null
+            ? this.tokens.equals(order.tokenHash, hash)
+            : order.token !== null && this.tokens.equals(order.token, input.orderToken));
+        if (!order || !valid) throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
         orderId = order.id;
         customerId = order.customerId;
         provedByOrder = true;
@@ -119,7 +126,8 @@ export class StoreTicketService {
 
       const category = input.category ?? 'other';
       const priority = defaultPriority(category);
-      const token = this.tokens.random(16);
+      // Decision 054: the link token is stored only as its keyed hash and an encrypted copy.
+      const issued = this.vault.issue('ticket');
       const ticket = await insertTicket(tx, {
         subject: input.subject,
         channel: 'web',
@@ -131,7 +139,9 @@ export class StoreTicketService {
         status: 'new',
         // The customer's first message is the one a reply is awaited for.
         slaDueAt: new Date(now.getTime() + PRIORITY_TARGET_MS[priority]),
-        token,
+        token: null,
+        tokenHash: issued.hash,
+        tokenEnc: issued.enc,
         createdAt: now,
         updatedAt: now,
       });
@@ -149,7 +159,7 @@ export class StoreTicketService {
       await this.mail.received(work, ticket);
       this.events.updated(ticket.id);
       const view = toStoreTicket(stored, [{ message, authorName: '' }], NO_FILES);
-      return provedByOrder ? { ...view, token } : view;
+      return provedByOrder ? { ...view, token: issued.token } : view;
     });
   }
 

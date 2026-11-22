@@ -1,6 +1,7 @@
 // Unit tests of the Sentry scrubbing rules (decision 015, feature 24D): what may leave the process, and what may not.
 import { describe, expect, it } from 'bun:test';
 import { type ScrubbableEvent, scrubEvent, scrubText } from '@src/infra/observability/scrub';
+import { DB_FAILURE_MARKER } from '../../../support/db-failure';
 
 describe('scrubText', () => {
   it('masks e-mail addresses like the log serializers do', () => {
@@ -29,6 +30,27 @@ describe('scrubText', () => {
     const cut = scrubText('x'.repeat(5000));
     expect(cut.length).toBe(1003);
     expect(cut.endsWith('...')).toBe(true);
+  });
+
+  it('removes statement text', () => {
+    const text = scrubText(`save failed: Failed query: insert into "x" values ($1)\nparams: ${DB_FAILURE_MARKER}`);
+    expect(text).toBe('save failed: [database statement removed]');
+  });
+
+  it('masks an address cut by the limit', () => {
+    const text = `${'a '.repeat(495)}name@example.com tail`;
+    const scrubbed = scrubText(text);
+    expect(scrubbed).not.toContain('name@');
+    expect(scrubbed).toContain('n***@examp');
+  });
+
+  it('bounds its work whatever the input', () => {
+    for (const text of ['a'.repeat(400_000), `${'a.'.repeat(200_000)}@x.io`, '1 '.repeat(200_000)]) {
+      const started = performance.now();
+      const scrubbed = scrubText(text);
+      expect(scrubbed.length).toBeLessThanOrEqual(1003);
+      expect(performance.now() - started).toBeLessThan(200);
+    }
   });
 });
 

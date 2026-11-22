@@ -35,7 +35,7 @@ Layout of the admin part (`HealthAdminModule`, API process; `HealthJobsModule`, 
 | `domain/` | pure rules: `checks` (status words, uptime, overall verdict), `measure` (the metric specs and thresholds), `queue-verdict`, `cron-text`; 12b: `metric-registry` (the eleven alert metrics, their units and subjects), `alert-evaluation` (comparison, subject key, fire/resolve decision, the three ok minutes of a measured recovery, the reminder rounds), `alert-message` (the words of the alert messages), `incident-timeline`, `integrity` (the four checks, finding labels, the run result) |
 | `infra/` | Drizzle queries on the module's own tables (`service-checks`, `job-runs-admin`, `alerts-read`; 12b: `alert-rules`, `alert-events`, `incidents`, `integrity-runs`) and the documented reads of other modules' tables: `foreign-reads.repository.ts` and (12b) `integrity-reads.repository.ts` (ledger entries, holds, payments); `sibling-modules.ts` (late-bound imports of the other modules' public API, decision 032) |
 | `jobs/` | the six worker jobs and their schedules (`health-processors.ts`; 12b: `alerts-processors.ts`) |
-| `queues-board/` | the read-only Bull Board mount behind the staff gate |
+| `queues-board/` | the read-only Bull Board mount behind the staff gate (no Redis details; the failure text of every job it shows is cleaned of database statements and URL credentials, decision 054) |
 
 ## Public API (`index.ts`)
 
@@ -147,8 +147,8 @@ policy: `docs/queues.md`. Feature 12b adds `alert_evaluation` (queue `alerts`, e
 - **`JobRunsService.run({ job, trigger, runId?, triggeredBy?, overlap? }, work)`** is the wrapper processors use around their
   scheduled or manual work. It inserts a `running` row, runs `work(run)`, and closes the row as `succeeded` (or `skipped`
   when the report says `skipped: true`) with the duration (the injected clock, decision 031), `processed` and the `result` counters (no secrets,
-  no personal data); when `work` throws it closes the row as `failed` with the message (cut at 1 000 characters) and
-  rethrows, so BullMQ retries as the queue says (each attempt is its own row). A failure while recording the end is logged
+  no personal data); when `work` throws it closes the row as `failed` with the safe text of the error (`safeErrorText`, cut at
+  1 000 characters: a database failure reads as its SQLSTATE and names, never its statement or values, decision 054) and rethrows, so BullMQ retries as the queue says (each attempt is its own row). A failure while recording the end is logged
   and never hides the job's own outcome.
 - **One run per job at a time.** `overlap` is `skip` for `run` (default: a second run records a `skipped` row with
   `result.runningRunId` and does not call `work`), `refuse` (`start` throws `AppError('JOB_ALREADY_RUNNING')`, 409, for the
@@ -252,3 +252,9 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-9` · GET /admin/dashboard
 - `identity-platform-10` · GET /admin/dashboard
 - `orders-suppliers-1` · GET /admin/orders
+
+## Failure texts (decision 054)
+
+The failed-jobs list (`GET /admin/system/queues/:name/failed`), the queue board and the jobs list's `error` show no database statement:
+the worker stores the sanitised error of a failed job, and failures stored before (BullMQ keeps them 14 days; old `job_runs.error` rows) are
+cut at `Failed query: ` when they are read (`withoutStatementText`). The board hides the Redis details.

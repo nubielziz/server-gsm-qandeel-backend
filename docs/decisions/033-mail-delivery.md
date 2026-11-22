@@ -30,3 +30,6 @@ way to see what would be sent without sending it.
 **Consequences.** Feature 12a builds `MailTransport`, the Telegram client and the delivery processor on this; feature 9's
 `mail` check calls `MailTransport.verify()`. Running `docker compose up -d` gives every developer a mailbox at
 `http://localhost:8025`.
+
+**Amendment (feature 44, decision 054).** The webhook's path segment and `X-Telegram-Bot-Api-Secret-Token` value are two values
+derived from `TELEGRAM_WEBHOOK_SECRET`; `scripts/telegram-webhook.ts` registers them with Telegram.

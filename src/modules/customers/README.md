@@ -31,8 +31,10 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
 - **Status** (RESOLUTIONS b2c-14): `open | paid | expired`; an `open` session past `expires_at` reads `expired` for every reader at
   once without a job (`effectiveStatus`); `paid` is feature 16's.
 - **Read** (`GET`): the capability guard of the identity module resolves the token (`CheckoutTokenResolver`, registered in
-  `onModuleInit`): the row is found by the unique index and the stored token is compared with the presented one in constant time
-  (decision 010 stores the checkout token as is so the link can be re-sent, so this is not a hash lookup like a session). One
+  `onModuleInit`): the row is found by the keyed hash of the token (`checkout_sessions.token_hash`, decision 054) and the stored hash is
+  compared with the presented token's in constant time; a session written before decision 054 is found by its plain `token` until the
+  seal pass ran. The token is stored only as that hash and an AES-GCM copy (`token_enc`, AAD `checkout_sessions.token_enc`), which the
+  session view and the recovery mail reveal (`CapabilityTokenVault`). One
   answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
   minute per address by the pipeline. The view: status, expiry, the service, quantity, masked IMEI and email, the country, currency,
   rate and tax rate, the amounts in USD and in the buyer's currency (`gross` is what is charged), the consent state and the active
@@ -384,3 +386,12 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `b2c-12` · GET /admin/customers/:id
 - `b2c-14` · GET /admin/checkouts/abandoned, GET /admin/customers/:id, GET /admin/legal-documents
 - `b2c-16` · POST /admin/customers, PATCH /admin/customers/:id
+
+## Link tokens at rest (decision 054)
+
+The checkout token is stored as `token_hash` (`CapabilityTokenVault.hashOf('checkout', …)`, keyed with `LOOKUP_HASH_KEY`) and `token_enc`
+(AES-GCM, AAD `checkout_sessions.token_enc`); `token` keeps the plain form only for rows written before, and a check keeps exactly one
+form per row. The tracking tokens of `GET /store/v1/me/orders` are revealed from `orders.public_token_enc` (or the plain column of an
+order placed before). The one-off pass `CheckoutTokenSeal` (job `checkout_tokens_seal` on `maintenance`, `CheckoutTokenSealModule`, worker
+only) is asked for once by migration `capability_tokens_seal`: it seals each row that still holds a plain token in one guarded `UPDATE`
+(`updated_at` kept) and records a `job_runs` row (trigger `event`).

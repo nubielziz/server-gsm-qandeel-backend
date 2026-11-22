@@ -61,7 +61,7 @@ const KIND_WORDS: Readonly<Record<BlocklistKind, string>> = {
  *
  * Why: RESOLUTIONS b2c-5 and the brief: "Blocklist (b2c-5). Manual block adds email, card and IMEI entries with ON CONFLICT DO NOTHING,
  * unblock removes only the customer's manual entries; checks at checkout and registration." Values are stored only as keyed hashes
- * (decision 019) plus a masked display, so the table never holds a readable email or IMEI. An entry past its `expires_at` does not
+ * (decision 019; keyed with `LOOKUP_HASH_KEY`, decision 054) plus a masked display, so the table never holds a readable email or IMEI. An entry past its `expires_at` does not
  * block (the clock's time is a parameter, decision 031).
  *
  * Side effects: `add` inserts `blocklist_entries` rows on the caller's transaction (no audit: the caller audits its own action).
@@ -92,7 +92,7 @@ export class Blocklist {
       return [
         {
           kind: request.kind,
-          valueHash: this.tokens.hash(blockHashInput(request.kind, value.value)),
+          valueHash: this.tokens.lookupHash(blockHashInput(request.kind, value.value)),
           display: blockDisplay(request.kind, value.value),
           reason: request.reason,
           expiresAt: request.expiresAt ?? null,
@@ -180,6 +180,6 @@ export class Blocklist {
    * @returns the hash `blocklist_entries.value_hash` holds
    */
   hashOf(kind: BlocklistKind, normalized: string): string {
-    return this.tokens.hash(blockHashInput(kind, normalized));
+    return this.tokens.lookupHash(blockHashInput(kind, normalized));
   }
 }

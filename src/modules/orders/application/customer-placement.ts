@@ -5,6 +5,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
+import { CapabilityTokenVault } from '../../../infra/crypto';
 import type { DbExecutor } from '../../../infra/db';
 import { InventoryStock } from '../../catalog';
 import type { Order } from '../db/schema';
@@ -55,8 +56,8 @@ const CURRENCY = 'USD';
 /**
  * Places the order of a paid checkout.
  *
- * Why: scenario b2c-paid step 7: in the capture's transaction the order exists with `customer_id` and a tracking token instead of a
- * merchant, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
+ * Why: scenario b2c-paid step 7: in the capture's transaction the order exists with `customer_id` and a tracking token (stored as a
+ * keyed hash and an encrypted copy, decision 054) instead of a merchant, the payment is posted, and an automatic order is queued for dispatch ("B2C never dispatches before payment", CLAUDE.md).
  * Codes in stock are delivered at once like a merchant's order (RULES orders 10). The customer already paid the locked price, so
  * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
@@ -75,6 +76,7 @@ export class CustomerOrderPlacement {
     private readonly ledger: OrderLedger,
     private readonly outbox: OrderOutbox,
     private readonly stock: InventoryStock,
+    private readonly vault: CapabilityTokenVault,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -123,6 +125,8 @@ export class CustomerOrderPlacement {
     const net = Money.of(request.net);
     const unitPrice = Money.of(new Decimal(request.net).div(request.quantity).toDecimalPlaces(4).toFixed(4));
     const unitCost = Money.of(service.effectiveCost);
+    // Decision 054: the tracking token is stored only as its keyed hash and an encrypted copy.
+    const sealed = this.vault.seal('tracking', request.publicToken);
     const order = await insertOrder(tx, {
       customerId: request.customerId,
       clientId: null,
@@ -143,7 +147,9 @@ export class CustomerOrderPlacement {
       totalCost: unitCost.mul(request.quantity).toWire(),
       currency: CURRENCY,
       pricingSnapshot: { source: 'storefront', ...request.snapshot },
-      publicToken: request.publicToken,
+      publicToken: null,
+      publicTokenHash: sealed.hash,
+      publicTokenEnc: sealed.enc,
       checkoutSessionId: request.checkoutSessionId,
       taxAmount: Money.of(request.tax).toWire(),
       taxCountry: request.taxCountry,
