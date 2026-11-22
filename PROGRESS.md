@@ -89,20 +89,28 @@ state each rule and its reason.
 | 42 sign-in and mail limits | `745c9ce` | 052 | none | Per-email sign-in limits count per email and network; ten failed passwords lock an email for 15 minutes for every network its account has not signed in from; the sign-in link and forgot-password mails are capped per recipient; temporary passwords expire after 72 hours; two-step sign-in needs a confirmed address |
 | 41 suppliers | `50b8517` | 051 | 0048 | A saved supplier key stays with the address it was saved for; what a supplier answers is cleaned and bounded; a field pattern is checked against a supported form before it ever runs; only an Owner allows supplier calls over plain http |
 | 44 logs and secrets | `20a4355` | 054 | 0049, 0050 | A failed database statement leaves no values in logs, error reports, job records or queue pages; the proxy's access log writes no link token; the shop's link tokens are stored as a keyed hash; one key (`LOOKUP_HASH_KEY`) for the hashes kept for later matching |
+| 39 manual money and exchange rates | `ddea7c4` | 049 | 0051 | A transfer receipt backs one payment (by file and by content); a staff member's manual credits are capped over 24 hours; a manual invoice is not approved by its issuer; money on the wire is bounded and signed only where it can be; a refreshed exchange rate that moves beyond a bound is held, and an old rate is not offered |
+| 45a infrastructure, inside the application | `e02e478` | 055 (part A) | none | Cache entries are sealed and checked before they are trusted; database statements, lock waits and idle transactions end at a limit and answer 503; work whose queue job was lost is asked for again (`lost_work_reconcile`); handed-over outbox rows are purged after 45 days |
 
 Checks: the whole `bun run check` on the tree of `8065e0c` (main with 34, 35, 36): 8290 pass, 1 skip, 0 fail; on the tree of `745c9ce`
 (with 42): 8393 pass, 1 skip, 0 fail; on the tree of `50b8517` (with 41): 8456 pass, 1 skip, 2 fail, both Redis command timeouts under load in
 files the change does not touch, each green alone; on the tree of `20a4355` (with 44): 8565 pass, 1 skip, 2 fail, both naming one migration as
-pending in a test database migrated before the renumbering, green on a fresh one. Dev DB `gsm` migrated to 0050 after a dump before each step (the worker's one-off review of stored field
+pending in a test database migrated before the renumbering, green on a fresh one. From here the whole check runs its test batches in four
+parallel shards (same batches, isolated databases; a failed batch is run again alone): the tree of `ddea7c4` (with 39): typecheck, lint and
+generators pass, 8631 pass, 1 skip, 1 fail (the 15-second limit of one openapi-generator test under load; its batch alone 179 pass); the tree
+of `e02e478` (with 45a): 8706 pass, 1 skip, the same single limit, its batch alone 317 pass. Dev DB `gsm` migrated to 0051 after a dump before
+each step (the worker's one-off review of stored field
 patterns clears nothing there: all 458 are in the import's length form). **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
 `CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
 helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
 
-Next (2026-11-22, evening): 39 manual money and exchange rates (decision 049) passed both reviews and is in the lead's last round; 38 payments
-integrity (048) is in its re-review; 45a infrastructure inside the application (055, part A) is in review; 37 staff data access (047) and 43
-public abuse limits (053) are being built; 40 risk inputs (050) follows 38, 45b the production stack follows 45a and 40. **For the owner
-after decision 054:** production needs `LOOKUP_HASH_KEY` (an installation with data sets it to its `TOKEN_PEPPER`); a Telegram bot's webhook
-needs a new secret and a new registration (`scripts/telegram-webhook.ts`); the worker converts the stored link tokens once when it starts.
+Next (2026-11-22, night): 38 payments integrity (decision 048) passed its reviews and two more rounds on its money paths and is being merged
+with main; 37 staff data access (047) passed both reviews and follows it; 45b the production stack (055, part B) and 40 risk inputs (050) are
+in review; 43 public abuse limits (053) is being built. **For the owner after decision 054:** production needs `LOOKUP_HASH_KEY` (an
+installation with data sets it to its `TOKEN_PEPPER`); a Telegram bot's webhook needs a new secret and a new registration
+(`scripts/telegram-webhook.ts`); the worker converts the stored link tokens once when it starts. **After decision 049:** a currency whose rate
+was not saved or refreshed for 48 hours is not offered until its rate is saved again; production needs `FX_API_KEY` or `FX_PROVIDER=manual`.
+**After decision 055 part A:** every cache entry is read as a miss once after the release.
 
 **Follow-ups (not blocking):** a test of a top-up dispute through `/webhooks/payments`; a same-instant refund.failed/complete race in
 `refund-settlement.ts`; `closeForErasure` should also refuse while a balance-paid order is not final (B191); no per-email lock on the
