@@ -171,6 +171,20 @@ export async function updateDispute(db: DbExecutor, id: number, changes: Partial
 }
 
 /**
+ * Every dispute of a payment, oldest first.
+ *
+ * Why: the status a payment takes when one of its disputes is won depends on its other disputes (`paymentStatusAfterDispute`); the
+ * caller holds the payment's lock, which every writer of its disputes takes first.
+ *
+ * @param db the database or a transaction
+ * @param paymentId the payment
+ * @returns the disputes
+ */
+export async function disputesOfPayment(db: DbExecutor, paymentId: number): Promise<Dispute[]> {
+  return db.select().from(disputes).where(eq(disputes.paymentId, paymentId)).orderBy(disputes.id);
+}
+
+/**
  * The newest dispute of each payment.
  *
  * Why: the Deposits wire shows a top-up's chargeback (feature 21, plan § 7.3) for a whole page in one query (no N+1).

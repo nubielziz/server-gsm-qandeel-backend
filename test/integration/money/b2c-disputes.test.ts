@@ -255,7 +255,12 @@ describe('POST /webhooks/disputes/:gateway: dispute.created', () => {
   it('acknowledges and ignores what it cannot use: other event types and bodies that are not disputes', async () => {
     const paid = await order();
     const ignored = [
-      disputeEvent(`evt_i2_${unique()}`, { dispute: 'dp_upd', intent: paid.intent, type: 'charge.dispute.updated' }),
+      disputeEvent(`evt_i2_${unique()}`, {
+        dispute: 'dp_upd',
+        intent: paid.intent,
+        type: 'charge.dispute.updated',
+        status: 'won',
+      }),
       disputeEvent(`evt_i3_${unique()}`, {
         dispute: 'dp_pending',
         intent: paid.intent,

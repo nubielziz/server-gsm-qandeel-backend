@@ -1,6 +1,6 @@
 // DisputeLedger: the outcomes of a dispute, shared by the staff's accept and the gateway's webhook (feature 16): a loss posts the one
-// chargeback journal and marks the payment `chargeback`; a win returns the payment to the status its refunds leave it in. A dispute of a
-// top-up (feature 21, customers and merchants) claws the credited amount back from the owner's wallet instead.
+// chargeback journal and marks the payment `chargeback`; a win returns the payment to the status its refunds and its other disputes leave
+// it in. A dispute of a top-up (feature 21, customers and merchants) claws the credited amount back from the owner's wallet instead.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
@@ -9,11 +9,12 @@ import { AuditService } from '../../platform';
 import type { Dispute, Payment } from '../db/schema';
 import { statusAfterRefunds, toUsd, wireUsd } from '../domain/b2c-money';
 import { type TopUpOwner, clawbackSplit, topupChargeback } from '../domain/customer-wallet-events';
+import { type ChargebackReturn, chargebackReturn, paymentStatusAfterDispute } from '../domain/dispute-rules';
 import { paymentRef } from '../domain/invoice-rules';
 import { b2cChargeback } from '../domain/money-events';
 import { CHARGEBACK_NOT_SENT_NOTE } from '../domain/refund-rules';
-import { loadSessionMoney } from '../infra/b2c-reads.repository';
-import { updateDispute, updateDisputeIn } from '../infra/dispute.repository';
+import { type RefundOrderRow, ledgerPartsOf, loadSessionMoney, orderForRefund } from '../infra/b2c-reads.repository';
+import { disputesOfPayment, updateDispute, updateDisputeIn } from '../infra/dispute.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
 import { updatePayment } from '../infra/payment.repository';
 import { updateOrderPayment } from '../infra/order-payment.repository';
@@ -53,10 +54,13 @@ export function topUpDisputeHold(disputeId: number, paymentId: number): string {
  *
  * Why: RESOLUTIONS money-5 and rule 8 of RULES refunds: a dispute lost, from the staff's accept or from the gateway's webhook, posts
  * exactly one `b2c_chargeback` journal (Dr chargeback_loss amount + fee, Cr gateway_clearing; key `dispute:<id>:chargeback`) and
- * keeps its id in `disputes.ledger_tx_id`, so whichever comes second posts nothing; a dispute won sets the payment back to `captured`,
- * or to `partial_refund` or `refunded` when completed refunds exist. Decision 048: when a loss books the chargeback, the payment's refunds
- * that have not completed at the gateway are closed unsent and their journals reversed ({@link B2cRefunds.closeNotSent}), each with a
- * timeline line, so the books show the money leaving once.
+ * keeps its id in `disputes.ledger_tx_id`, so whichever comes second posts nothing. The chargeback of an order that was never delivered
+ * (`rejected`) gives back what its sale booked as owed to the buyer and as VAT, for the disputed share of what the refunds that went out
+ * left ({@link chargebackReturn}: Dr customer_funds, Dr vat_payable), and only the rest and the dispute fee are a loss; a delivered order's
+ * stays a loss. A dispute won sets the payment back to `captured`, or to `partial_refund` or `refunded` when completed refunds exist,
+ * unless another dispute of the payment is lost (`chargeback`) or still open (`disputed`). Decision 048: when a loss books the
+ * chargeback, the payment's refunds that have not completed at the gateway are closed unsent and their journals reversed
+ * ({@link B2cRefunds.closeNotSent}), each with a timeline line, so the books show the money leaving once.
  *
  * Side effects (on the caller's transaction): updates `disputes` and `payments`; writes one ledger transaction for a loss; for a loss,
  * updates `refunds`, writes one reversing ledger transaction per closed refund that was booked and one order timeline line per closed
@@ -76,7 +80,8 @@ export class DisputeLedger {
   ) {}
 
   /**
-   * Marks a dispute lost and posts the chargeback once.
+   * Marks a dispute lost and posts the chargeback once; for an order that was never delivered (`rejected`) the disputed share of what its
+   * sale booked as customer funds and VAT goes back instead of to the loss.
    *
    * @param tx the caller's transaction (the payment and the dispute are locked)
    * @param dispute the dispute (`needs_response`, `under_review` or already `lost`)
@@ -94,14 +99,17 @@ export class DisputeLedger {
       const session =
         dispute.orderId === null ? undefined : (await loadSessionMoney(tx, [dispute.orderId])).get(dispute.orderId);
       const fx = session?.fxRate ?? '1';
-      const posting = b2cChargeback({
-        amount: wireUsd(
-          Money.of(dispute.amount),
-          session ? { amount: payment.amount, grossUsd: session.grossAmount } : undefined,
-          fx,
-        ),
-        fee: toUsd(Money.of(dispute.fee), fx),
-      });
+      const amount = wireUsd(
+        Money.of(dispute.amount),
+        session ? { amount: payment.amount, grossUsd: session.grossAmount } : undefined,
+        fx,
+      );
+      // Read without a lock: an order's lock comes before its payment's (the lock order of every writer of an order's money) and the
+      // payment is held here; a rejected order is final, so what this rule reads cannot change under it.
+      const order = dispute.orderId === null ? undefined : await orderForRefund(tx, dispute.orderId);
+      const returned =
+        order?.status === 'rejected' ? await this.returnedOf(tx, dispute, order, payment, amount) : undefined;
+      const posting = b2cChargeback({ amount, fee: toUsd(Money.of(dispute.fee), fx), returned });
       const posted = await this.poster.post(tx, {
         kind: posting.kind,
         refType: posting.refType,
@@ -138,7 +146,8 @@ export class DisputeLedger {
   }
 
   /**
-   * Marks a dispute won and restores the payment's status.
+   * Marks a dispute won and restores the payment's status: the one its completed refunds leave, or `chargeback` / `disputed` while
+   * another dispute of the payment is lost / still open.
    *
    * @param tx the caller's transaction (the payment and the dispute are locked)
    * @param dispute the dispute (`needs_response` or `under_review`)
@@ -154,12 +163,51 @@ export class DisputeLedger {
     });
     if (!won) return undefined;
     const completed = (await takenRefundsOfPayment(tx, payment.id)).filter((refund) => refund.status === 'completed');
-    const status = statusAfterRefunds(
+    const afterRefunds = statusAfterRefunds(
       Money.of(payment.amount),
       Money.sum(completed.map((refund) => Money.of(refund.amount))),
     );
-    await updateOrderPayment(tx, payment.id, { status, updatedAt: now });
+    // Another dispute of the payment that was lost or is still open keeps the payment's dispute status.
+    const others = (await disputesOfPayment(tx, payment.id)).filter((other) => other.id !== won.id);
+    await updateOrderPayment(tx, payment.id, {
+      status: paymentStatusAfterDispute(others, afterRefunds),
+      updatedAt: now,
+    });
     return won;
+  }
+
+  /**
+   * What the chargeback of an order that was never delivered gives back from its sale's lines (see {@link chargebackReturn}): what the
+   * refunds that went out left, less what earlier lost disputes of the payment already gave back.
+   *
+   * @param tx the loss's transaction (after the refunds that were not sent are closed; the payment is locked)
+   * @param dispute the dispute being lost
+   * @param order the rejected order
+   * @param payment the disputed payment
+   * @param amount the disputed amount in USD
+   * @returns the net and the VAT given back
+   */
+  private async returnedOf(
+    tx: DbExecutor,
+    dispute: Dispute,
+    order: RefundOrderRow,
+    payment: Payment,
+    amount: Money,
+  ): Promise<ChargebackReturn> {
+    const left = await this.refunds.leftOn(tx, order, payment);
+    const earlier = (await disputesOfPayment(tx, payment.id)).flatMap((other) =>
+      other.id !== dispute.id && other.ledgerTxId !== null ? [other.ledgerTxId] : [],
+    );
+    const given = [...(await ledgerPartsOf(tx, earlier)).values()];
+    const givenNet = Money.sum(given.map((part) => Money.of(part.net)));
+    const givenVat = Money.sum(given.map((part) => Money.of(part.vat)));
+    return chargebackReturn({
+      disputed: amount,
+      left: left.usd.sub(givenNet).sub(givenVat),
+      paid: left.paidUsd,
+      tax: left.taxUsd,
+      vatTaken: left.vatTaken.add(givenVat),
+    });
   }
 
   /**

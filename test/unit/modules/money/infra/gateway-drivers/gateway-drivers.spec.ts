@@ -267,6 +267,43 @@ describe('card driver dispute events', () => {
       currency: 'JPY',
     });
   });
+
+  const event = (type: string, status?: string) => ({
+    id: 'evt_s',
+    type,
+    data: {
+      object: {
+        id: 'dp_1',
+        payment_intent: 'pi_1',
+        amount: 100,
+        currency: 'usd',
+        ...(status === undefined ? {} : { status }),
+      },
+    },
+  });
+
+  it('records nothing for a card network inquiry: a status that starts with warning_, whatever the event type', () => {
+    for (const type of ['charge.dispute.created', 'charge.dispute.updated', 'charge.dispute.closed']) {
+      for (const status of ['warning_needs_response', 'warning_under_review', 'warning_closed']) {
+        expect(cardDriver.parseDispute?.(event(type, status))).toBeUndefined();
+      }
+    }
+  });
+
+  it('opens a dispute from its creation, or from an update or a withdrawal of funds while it is open; closes it as won or lost only', () => {
+    const kind = (type: string, status?: string) => cardDriver.parseDispute?.(event(type, status))?.kind;
+    expect(kind('charge.dispute.created')).toBe('created');
+    expect(kind('charge.dispute.created', 'needs_response')).toBe('created');
+    expect(kind('charge.dispute.updated', 'needs_response')).toBe('created');
+    expect(kind('charge.dispute.updated', 'under_review')).toBe('created');
+    expect(kind('charge.dispute.funds_withdrawn', 'needs_response')).toBe('created');
+    expect(kind('charge.dispute.updated')).toBeUndefined();
+    expect(kind('charge.dispute.updated', 'won')).toBeUndefined();
+    expect(kind('charge.dispute.closed', 'won')).toBe('won');
+    expect(kind('charge.dispute.closed', 'lost')).toBe('lost');
+    expect(kind('charge.dispute.closed')).toBeUndefined();
+    expect(kind('charge.dispute.funds_reinstated', 'won')).toBeUndefined();
+  });
 });
 
 describe('card driver refund events', () => {

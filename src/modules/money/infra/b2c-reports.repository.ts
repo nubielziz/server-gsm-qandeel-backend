@@ -17,8 +17,10 @@ export interface VatRowRecord {
  * VAT per country and month from the ledger.
  *
  * Why: RESOLUTIONS money-4 and the endpoint doc: the report is worked out from the posted `vat_payable` lines of the storefront's
- * `b2c_pay` journals minus its `b2c_refund` journals, never from invoices, so it matches the books; the gross is the gateway line or, for
- * a payment from the store balance and its refunds, the `customer_wallet` line (feature 21, defect D1). Decision 048: a refund journal
+ * `b2c_pay` journals minus its `b2c_refund` journals and the VAT a chargeback of an order that was never delivered gave back (its
+ * `b2c_chargeback` journal's `vat_payable` line; its taxable part is the journal's `customer_funds` line), never from invoices, so it
+ * matches the books; the gross is the gateway line or, for a payment from the store balance and its refunds, the `customer_wallet` line
+ * (feature 21, defect D1). Decision 048: a refund journal
  * that was reversed (a refund closed unsent when its payment was charged back) and its reversal (key `reverse:<journal id>`, the same
  * kind) are both left out, the rule `MerchantSpend` uses for a reversed settlement: together they returned nothing, and the reports
  * would otherwise count the money as going back twice. One row per tax country and month (UTC), newest month first, then country;
@@ -41,21 +43,26 @@ export async function vatRows(db: DbExecutor, from: Date, to: Date): Promise<Vat
     with tx as (
       select lt.id, lt.kind, lt.ref_id as order_id, lt.created_at,
         abs(coalesce(sum(le.amount) filter (where la.kind = 'vat_payable'), 0)) as vat,
-        abs(coalesce(sum(le.amount) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)) as gross
+        abs(coalesce(sum(le.amount) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)) as gross,
+        abs(coalesce(sum(le.amount) filter (where la.kind = 'customer_funds'), 0)) as funds
       from ledger_transactions lt
       join ledger_entries le on le.transaction_id = lt.id
       join ledger_accounts la on la.id = le.account_id
-      where lt.ref_type = 'order' and lt.kind in ('b2c_payment', 'refund')
+      where lt.ref_type = 'order' and lt.kind in ('b2c_payment', 'refund', 'chargeback')
         and lt.created_at >= ${from} and lt.created_at < ${to}
         -- A reversed journal and its reversal cancel out: neither is money paid or returned (decision 048).
         and lt.idempotency_key not like 'reverse:%'
         and not exists (select 1 from ledger_transactions rv where rv.idempotency_key = 'reverse:' || lt.id::text)
-      group by lt.id)
+      group by lt.id
+      -- A chargeback counts only when it gave back what a sale booked (an order that was never delivered).
+      having lt.kind <> 'chargeback'
+        or coalesce(sum(le.amount) filter (where la.kind in ('vat_payable', 'customer_funds')), 0) <> 0)
     select coalesce(o.tax_country, '') as country,
       to_char(tx.created_at at time zone 'UTC', 'YYYY-MM') as period,
       coalesce((array_agg(cs.tax_rate order by tx.created_at desc, tx.id desc))[1], 0)::text as rate,
       (count(distinct tx.order_id) filter (where tx.kind = 'b2c_payment'))::int as orders,
-      coalesce(sum(case when tx.kind = 'b2c_payment' then tx.gross - tx.vat else -(tx.gross - tx.vat) end), 0)::numeric(20,4)::text as taxable,
+      coalesce(sum(case when tx.kind = 'b2c_payment' then tx.gross - tx.vat when tx.kind = 'chargeback' then -tx.funds
+        else -(tx.gross - tx.vat) end), 0)::numeric(20,4)::text as taxable,
       coalesce(sum(case when tx.kind = 'b2c_payment' then tx.vat else -tx.vat end), 0)::numeric(20,4)::text as vat
     from tx
     join orders o on o.id = tx.order_id and o.customer_id is not null
@@ -153,10 +160,15 @@ const REFUND_USD = sql`coalesce(
   case when r.amount = p.amount then cs.gross_amount end,
   round(r.amount / coalesce(cs.fx_rate, 1), 4))`;
 
-/** What a dispute cost in USD: its chargeback journal when it has one (amount and fee), else converted. */
-const DISPUTE_LOSS_USD = sql`coalesce(
-  ${clearingOf(sql`d.ledger_tx_id`)},
-  round((d.amount + d.fee) / coalesce(cs.fx_rate, 1), 4))`;
+/**
+ * What a dispute cost in USD: the `chargeback_loss` line of its chargeback journal when it has one (the amount and the fee; for an order
+ * that was never delivered only the fee and what was not given back), so the strip ties to the books; else converted.
+ */
+const DISPUTE_LOSS_USD = sql`case when d.ledger_tx_id is null then round((d.amount + d.fee) / coalesce(cs.fx_rate, 1), 4)
+  else coalesce((
+    select abs(sum(le.amount)) from ledger_entries le
+    join ledger_accounts la on la.id = le.account_id and la.kind = 'chargeback_loss'
+    where le.transaction_id = d.ledger_tx_id), 0) end`;
 
 /**
  * The method comparison, a page of payments and the strip's totals.

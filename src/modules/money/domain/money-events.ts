@@ -310,17 +310,31 @@ export function b2cRefund(input: { net: Money; vat: Money; from?: 'customer_fund
 /**
  * Event `b2c_chargeback`: a card dispute was lost; the payment and the dispute fee are taken from what the gateway owes us.
  *
- * Why: the map's "dispute we lost" money event: 14.99 and the 15 dispute fee, 29.99 in all.
+ * Why: the map's "dispute we lost" money event: 14.99 and the 15 dispute fee, 29.99 in all. An order that was never delivered still owed
+ * the disputed money to the buyer (customer funds) and its VAT when the card network returned it, so that share of what the sale booked is
+ * given back (`returned`, split like a refund) and only the rest of the amount and the dispute fee are a loss.
  *
- * @param input the disputed amount and the dispute fee
- * @returns Dr chargeback_loss amount + fee / Cr gateway_clearing amount + fee; reference type `order`
+ * @param input the disputed amount, the dispute fee and, for an order that was never delivered, the net and the VAT given back
+ * @returns Dr customer_funds net / Dr vat_payable vat (when `returned`) / Dr chargeback_loss the rest of the amount + fee / Cr
+ *   gateway_clearing amount + fee; reference type `order`
+ * @throws {RangeError} when the net and the VAT given back are more than the disputed amount
  */
-export function b2cChargeback(input: { amount: Money; fee: Money }): MoneyEventPosting {
+export function b2cChargeback(input: {
+  amount: Money;
+  fee: Money;
+  returned?: { net: Money; vat: Money } | undefined;
+}): MoneyEventPosting {
   const total = input.amount.add(input.fee);
+  const net = input.returned?.net ?? Money.zero();
+  const vat = input.returned?.vat ?? Money.zero();
+  const lost = input.amount.sub(net).sub(vat);
+  if (lost.isNegative()) throw new RangeError('A chargeback cannot give back more than the disputed amount.');
   return posting(
     'b2c_chargeback',
     'order',
-    debitLine(SYSTEM('chargeback_loss'), total),
+    debitLine(SYSTEM('customer_funds'), net),
+    debitLine(SYSTEM('vat_payable'), vat),
+    debitLine(SYSTEM('chargeback_loss'), lost.add(input.fee)),
     creditLine(SYSTEM('gateway_clearing'), total),
   );
 }

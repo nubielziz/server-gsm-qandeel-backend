@@ -1,12 +1,15 @@
 // Unit tests of the dispute rules (feature 16): the sentence of a reason code, the six lines of the evidence pack with their weights and the strength
 // (the demo's `evidenceFor`: 1, 3, 3, 2, 1, 1; strong from 8, fair from 5), and the text sent to the gateway.
 import { describe, expect, it } from 'bun:test';
+import { Money } from '@src/common/money';
 import {
   type EvidenceInput,
   EVIDENCE_KEYS,
   buildEvidencePack,
+  chargebackReturn,
   disputeNote,
   evidenceText,
+  paymentStatusAfterDispute,
 } from '@src/modules/money/domain/dispute-rules';
 
 const consent = { purpose: 'terms', documentType: 'terms', version: '3.2', ip: '203.0.113.7' };
@@ -146,5 +149,60 @@ describe('evidenceText', () => {
       '\n\nNote from the merchant: Delivered and acknowledged.',
     );
     expect(evidenceText([pack[0]!], '   ')).not.toContain('Note from the merchant');
+  });
+});
+
+describe('chargebackReturn', () => {
+  const m = (amount: string): Money => Money.of(amount);
+  const wire = (split: { net: Money; vat: Money }) => ({ net: split.net.toWire(), vat: split.vat.toWire() });
+  const paid = { paid: m('4.79'), tax: m('0.80') };
+
+  it('gives back the whole net and VAT for a dispute of everything that is left', () => {
+    expect(wire(chargebackReturn({ ...paid, disputed: m('4.79'), left: m('4.79'), vatTaken: m('0') }))).toEqual({
+      net: '3.9900',
+      vat: '0.8000',
+    });
+  });
+
+  it('splits a dispute of a part like a refund of that part', () => {
+    // VAT share = round(0.80 x 2.40 / 4.79, 2) = 0.40.
+    expect(wire(chargebackReturn({ ...paid, disputed: m('2.40'), left: m('4.79'), vatTaken: m('0') }))).toEqual({
+      net: '2.0000',
+      vat: '0.4000',
+    });
+  });
+
+  it('gives back no more than what the refunds that went out left, with the VAT they left', () => {
+    expect(wire(chargebackReturn({ ...paid, disputed: m('4.79'), left: m('2.79'), vatTaken: m('0.33') }))).toEqual({
+      net: '2.3200',
+      vat: '0.4700',
+    });
+    expect(wire(chargebackReturn({ ...paid, disputed: m('4.79'), left: m('0'), vatTaken: m('0.80') }))).toEqual({
+      net: '0.0000',
+      vat: '0.0000',
+    });
+    expect(wire(chargebackReturn({ ...paid, disputed: m('4.79'), left: m('-0.01'), vatTaken: m('0.80') }))).toEqual({
+      net: '0.0000',
+      vat: '0.0000',
+    });
+  });
+});
+
+describe('paymentStatusAfterDispute', () => {
+  it('keeps the payment charged back while another dispute of it was lost', () => {
+    expect(paymentStatusAfterDispute([{ status: 'lost' }], 'captured')).toBe('chargeback');
+    expect(paymentStatusAfterDispute([{ status: 'needs_response' }, { status: 'lost' }], 'captured')).toBe(
+      'chargeback',
+    );
+  });
+
+  it('keeps the payment disputed while another dispute of it is open', () => {
+    expect(paymentStatusAfterDispute([{ status: 'needs_response' }], 'captured')).toBe('disputed');
+    expect(paymentStatusAfterDispute([{ status: 'under_review' }, { status: 'won' }], 'refunded')).toBe('disputed');
+  });
+
+  it('otherwise gives the status its completed refunds leave', () => {
+    expect(paymentStatusAfterDispute([], 'captured')).toBe('captured');
+    expect(paymentStatusAfterDispute([{ status: 'won' }], 'partial_refund')).toBe('partial_refund');
   });
 });

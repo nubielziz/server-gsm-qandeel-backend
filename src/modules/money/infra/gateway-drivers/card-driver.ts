@@ -353,10 +353,16 @@ export const cardDriver: PaymentGatewayDriver = {
     const reference = textOf(dispute?.['id']);
     const paymentReference = textOf(dispute?.['payment_intent']);
     if (!event || !dispute || !reference || !paymentReference) return undefined;
+    const status = textOf(dispute['status']);
+    // A card network inquiry (`warning_needs_response`, `warning_under_review`, `warning_closed`) takes no money: nothing is recorded
+    // for it. An update of a dispute that is open at the gateway opens it once (like its creation), so an inquiry that becomes a dispute is
+    // recorded then.
+    if (status?.startsWith('warning_')) return undefined;
     let kind: DisputeEvent['kind'] | undefined;
     if (type === 'charge.dispute.created') kind = 'created';
-    else if (type === 'charge.dispute.closed')
-      kind = dispute['status'] === 'won' ? 'won' : dispute['status'] === 'lost' ? 'lost' : undefined;
+    else if (type === 'charge.dispute.updated' || type === 'charge.dispute.funds_withdrawn')
+      kind = status === 'needs_response' || status === 'under_review' ? 'created' : undefined;
+    else if (type === 'charge.dispute.closed') kind = status === 'won' ? 'won' : status === 'lost' ? 'lost' : undefined;
     if (!kind) return undefined;
     const currency = textOf(dispute['currency']);
     return {

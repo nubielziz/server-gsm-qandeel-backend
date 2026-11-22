@@ -1,5 +1,9 @@
 // The pure rules of card disputes (feature 16): the sentence a bank's reason code becomes, the six lines of the evidence pack with their
-// weights, how strong the case looks, the text sent to the gateway, and the default deadline. No database.
+// weights, how strong the case looks, the text sent to the gateway, the default deadline, what a lost dispute of an order that was never
+// delivered gives back, and the payment's status when one of its disputes is won. No database.
+import { Money } from '../../../common/money';
+import type { DisputeStatus, OrderPaymentStatus } from '../db/schema';
+import { refundSplit } from './b2c-money';
 
 /** How long staff have to answer a dispute when the gateway names no deadline (days). */
 export const DEFAULT_EVIDENCE_DAYS = 7;
@@ -200,4 +204,66 @@ export function buildEvidencePack(input: EvidenceInput): EvidencePack {
 export function evidenceText(items: readonly EvidenceLine[], note: string): string {
   const body = items.map((line) => `${line.title}: ${line.body}`).join('\n');
   return note.trim() === '' ? body : `${body}\n\nNote from the merchant: ${note.trim()}`;
+}
+
+/** What a lost dispute of an order that was never delivered gives back from what its sale booked (USD). */
+export interface ChargebackReturn {
+  /** The share of customer funds. */
+  readonly net: Money;
+  /** The share of VAT payable. */
+  readonly vat: Money;
+}
+
+/**
+ * What a lost dispute of an order that was never delivered gives back from what its sale booked.
+ *
+ * Why: the sale booked the net as owed to the buyer (customer funds) and the VAT as owed (`b2c_pay`); an order that was never delivered
+ * still owes both when the card network returns the money, so the chargeback takes that share back instead of booking it as a loss. The
+ * share is split like a refund (RESOLUTIONS money-4, {@link refundSplit}) and is never more than what the refunds that went out left: a
+ * dispute of everything that is left takes exactly the VAT that is left (no rounding dust), and the part of a dispute above what is left
+ * stays a loss.
+ *
+ * @param input the disputed amount, what is left of the payment after the refunds that went out, what was paid with the VAT inside it, and
+ *   the VAT those refunds took back (all USD)
+ * @returns the net and the VAT given back (both zero when nothing is left)
+ */
+export function chargebackReturn(input: {
+  readonly disputed: Money;
+  readonly left: Money;
+  readonly paid: Money;
+  readonly tax: Money;
+  readonly vatTaken: Money;
+}): ChargebackReturn {
+  const zero = Money.zero();
+  const left = input.left.isPositive() ? input.left : zero;
+  const share = input.disputed.cmp(left) <= 0 ? input.disputed : left;
+  if (!share.isPositive()) return { net: zero, vat: zero };
+  if (share.cmp(left) >= 0) {
+    const vatLeft = input.tax.sub(input.vatTaken);
+    const vat = !vatLeft.isPositive() ? zero : vatLeft.cmp(share) <= 0 ? vatLeft : share;
+    return { net: share.sub(vat), vat };
+  }
+  const split = refundSplit(input.paid, input.tax, share);
+  return { net: split.net, vat: split.vat };
+}
+
+/**
+ * The status an order payment takes when one of its disputes is won.
+ *
+ * Why: a payment can have more than one dispute (one row per gateway dispute id), and a win ends only that one. While another dispute of
+ * the payment is lost the card network kept that money (`chargeback`), and while another is open it may still take it (`disputed`); the
+ * refund paths read these words before they pay anything out (decision 048). Otherwise the payment takes the status its completed refunds
+ * leave.
+ *
+ * @param others the payment's other disputes
+ * @param afterRefunds the status its completed refunds leave (`statusAfterRefunds`)
+ * @returns `chargeback`, `disputed`, or `afterRefunds`
+ */
+export function paymentStatusAfterDispute(
+  others: readonly { readonly status: DisputeStatus }[],
+  afterRefunds: Extract<OrderPaymentStatus, 'captured' | 'partial_refund' | 'refunded'>,
+): Extract<OrderPaymentStatus, 'chargeback' | 'disputed' | 'captured' | 'partial_refund' | 'refunded'> {
+  if (others.some((other) => other.status === 'lost')) return 'chargeback';
+  if (others.some((other) => other.status === 'needs_response' || other.status === 'under_review')) return 'disputed';
+  return afterRefunds;
 }

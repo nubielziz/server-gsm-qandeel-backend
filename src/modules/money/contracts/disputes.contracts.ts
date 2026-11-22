@@ -170,7 +170,9 @@ export const acceptDispute = defineRoute({
   description:
     'Accepts the loss: the dispute is `lost` with `resolvedAt`, the payment `chargeback`, and one `b2c_chargeback` journal posts the ' +
     'amount and the dispute fee (Dr chargeback_loss, Cr gateway_clearing, key `dispute:<id>:chargeback`), kept in `disputes.ledger_tx_id` ' +
-    'so a later `lost` event from the gateway posts nothing again. Refunds of the payment the gateway has not paid (requested, waiting ' +
+    'so a later `lost` event from the gateway posts nothing again. For an order that was never delivered (`rejected`) the journal gives ' +
+    'back what the sale booked as owed to the buyer and as VAT for the disputed share of what the refunds that went out left (Dr ' +
+    'customer_funds, Dr vat_payable), and only the rest and the dispute fee go to chargeback_loss. Refunds of the payment the gateway has not paid (requested, waiting ' +
     'to be sent, or failed) are closed `rejected` with the note "Not sent: the payment was charged back." and their journals reversed, so ' +
     'the money leaves the books once (decision 048). The customer is not blocked (M115). `409 DISPUTE_NOT_OPEN` when it ' +
     'no longer waits for evidence.',
@@ -196,7 +198,11 @@ export const disputeWebhook = defineRoute({
     "A payment gateway reports a dispute. The delivery must carry the gateway's signature (the scheme of its driver; either of the gateway's two webhook secrets), a signed time within " +
     '5 minutes of now and an event id not seen before; otherwise `400 WEBHOOK_SIGNATURE_INVALID`. `dispute.created` records the ' +
     'dispute once (the gateway id is unique per payment) with its evidence deadline and marks the payment `disputed` and the order ' +
-    'timeline; a dispute won returns the payment to `captured` (or `partial_refund`/`refunded` when refunds completed); a dispute lost ' +
+    'timeline; an update of a dispute that is open at the gateway (`charge.dispute.updated` or `charge.dispute.funds_withdrawn` with ' +
+    'status `needs_response` or `under_review`) records it the same way when it is not recorded yet. A card network inquiry (a status ' +
+    'that starts with `warning_`) records nothing and is acknowledged with `200`. A dispute won returns the payment to `captured` (or ' +
+    '`partial_refund`/`refunded` when refunds completed), unless another dispute of the payment is lost (`chargeback`) or still open ' +
+    '(`disputed`); a dispute lost ' +
     'posts the chargeback journal once and marks the payment `chargeback`, and closes the refunds of the payment the gateway has not paid ' +
     '(their journals reversed, decision 048). A repeat of an event answers `200` and changes nothing; event ' +
     'types the shop does not use are acknowledged with `200`; an event that names a payment not recorded yet, a payment held for staff, ' +

@@ -181,3 +181,45 @@ describe('amounts', () => {
     expect(() => assertBalanced(events.order({ clientId: 7, amount: m('0') }).lines, 'USD')).toThrow();
   });
 });
+
+describe('b2cChargeback of an order that was never delivered', () => {
+  it('gives back the net and the VAT the sale booked; only the dispute fee is a loss', () => {
+    const posting = events.b2cChargeback({
+      amount: m('14.99'),
+      fee: m('15'),
+      returned: { net: m('12.49'), vat: m('2.50') },
+    });
+    expect(posting).toMatchObject({ event: 'b2c_chargeback', kind: 'chargeback', refType: 'order' });
+    expect(triples(posting)).toEqual([
+      ['customer_funds', 12.49, 0],
+      ['vat_payable', 2.5, 0],
+      ['chargeback_loss', 15, 0],
+      ['gateway_clearing', 0, 29.99],
+    ]);
+    expect(() => assertBalanced(posting.lines, 'USD')).not.toThrow();
+  });
+
+  it('books what is not given back as part of the loss, and drops a zero loss line', () => {
+    expect(
+      triples(events.b2cChargeback({ amount: m('14.99'), fee: m('15'), returned: { net: m('5'), vat: m('1') } })),
+    ).toEqual([
+      ['customer_funds', 5, 0],
+      ['vat_payable', 1, 0],
+      ['chargeback_loss', 23.99, 0],
+      ['gateway_clearing', 0, 29.99],
+    ]);
+    expect(
+      triples(events.b2cChargeback({ amount: m('14.99'), fee: m('0'), returned: { net: m('12.49'), vat: m('2.50') } })),
+    ).toEqual([
+      ['customer_funds', 12.49, 0],
+      ['vat_payable', 2.5, 0],
+      ['gateway_clearing', 0, 14.99],
+    ]);
+  });
+
+  it('refuses to give back more than the disputed amount', () => {
+    expect(() => events.b2cChargeback({ amount: m('5'), fee: m('1'), returned: { net: m('5'), vat: m('1') } })).toThrow(
+      RangeError,
+    );
+  });
+});

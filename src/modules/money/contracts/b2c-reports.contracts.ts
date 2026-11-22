@@ -19,7 +19,8 @@ export const getVatReport = defineRoute({
   summary: 'VAT due by country and month',
   description:
     'Worked out from the ledger, not from invoices: the `vat_payable` lines of the storefront payment journals (`b2c_pay`) minus its ' +
-    'refund journals (`b2c_refund`), posted between `from` and `to` (days, both included, UTC). A refund journal that was reversed (a ' +
+    'refund journals (`b2c_refund`) and the VAT a chargeback of an order that was never delivered gave back (`b2c_chargeback`), posted ' +
+    'between `from` and `to` (days, both included, UTC). A refund journal that was reversed (a ' +
     'refund closed unsent when its payment was charged back) and its reversal are both left out (decision 048). One row per tax country ' +
     'and month, newest month first, then country. Amounts are USD. `422` for a bad date or `from` after `to`.',
   tags: ['finance'],

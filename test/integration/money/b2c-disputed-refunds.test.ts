@@ -252,11 +252,12 @@ describe('a chargeback closes the refunds the gateway has not paid (decision 048
     );
     // A closed refund cannot be sent again.
     expect((await staff.post(`/admin/refunds/${refund.id}/retry`, {})).status).toBe(409);
-    // The VAT report ties to the books: the refund and its reversal are left out, so the payment's VAT is what vat_payable holds.
+    // The VAT report ties to the books: the refund and its reversal are left out, and the chargeback of the rejected order gave the
+    // payment's VAT back, so the report shows what vat_payable holds.
     const finance = await adminWith(t, ['reports:finance'], { name: 'Omar Saleh' });
     const vat = await finance.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
     expect(vat.status).toBe(200);
-    expect(vat.body.totals).toEqual({ orders: 1, taxable: '3.9900', vat: '0.8000' });
+    expect(vat.body.totals).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
     expect(await systemBalance(db, 'vat_payable')).toBe(vat.body.totals.vat);
   });
 
