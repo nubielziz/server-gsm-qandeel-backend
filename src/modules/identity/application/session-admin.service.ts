@@ -8,8 +8,10 @@ import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { type SessionWithSubject, findListedSession, listLiveSessions } from '../infra/session-admin.repository';
 import { findStaffRow } from '../infra/staff-admin.repository';
-import { assertOwnerTargetAllowed, assertWithinCeiling } from '../security/principal';
-import type { StaffPrincipal } from '../security/principal';
+import { maskCustomerEmail } from '../../../common/customer-contact';
+import { grants, uncoveredPermissions } from '../security/permission-grammar';
+import { assertOwnerTargetAllowed, assertWithinCeiling, requirePermission } from '../security/principal';
+import type { PermissionHolder, StaffPrincipal } from '../security/principal';
 import type { IdleLimits } from '../security/session.repository';
 import { SessionPolicy } from '../security/session-policy';
 import { idleLimitsOf } from './idle-limits';
@@ -28,11 +30,22 @@ export interface SessionRowView {
   readonly current: boolean;
 }
 
+/** What the list shows in place of an address or a device that the caller may not read. */
+const MASKED = '•••';
+
+/** The permission that shows a merchant's email address in full. */
+const MERCHANT_READ_PERMISSION = 'clients:read';
+
+/** The permission that ending a merchant's session needs besides the route's own (the merchant page's "sign out everywhere"). */
+const MERCHANT_SECURITY_PERMISSION = 'clients:security';
+
 /**
  * Lists and ends sessions for staff.
  *
  * Why: scenario admin-team and ip-rules, RESOLUTIONS identity-platform-6: "active" is one rule everywhere (not revoked, not
- * past its end, used within the idle limit). The list shows fully signed-in staff and merchant sessions only (B9).
+ * past its end, used within the idle limit). The list shows fully signed-in staff and merchant sessions only (B9). Decisions 046
+ * and 047: the list reads only what the caller's permissions cover, and ending a merchant's session needs the permission of the
+ * merchant's security tools.
  *
  * Side effects: `remove` sets `revoked_at`, deletes the cached session view after the commit and writes `audit_logs`.
  *
@@ -51,6 +64,10 @@ export class SessionAdminService {
   /**
    * Lists the live sessions.
    *
+   * Why: decisions 046 and 047: the address and the device of another staff member's session are masked when that member's role
+   * holds permissions the caller does not hold (an Owner's, for a caller who is not an Owner); a merchant's email address is masked
+   * unless the caller holds `clients:read`. The rows keep their shape.
+   *
    * @param caller the signed-in staff member (their own session is marked `current`)
    * @param query the parsed list request
    * @returns the page of sessions and the exact total
@@ -66,17 +83,20 @@ export class SessionAdminService {
       });
     }
     const { rows, total } = await listLiveSessions(this.db.db, query, this.clock.now(), await this.idleLimits());
-    return { rows: rows.map((row) => toView(row, caller.session.id)), total };
+    return { rows: rows.map((row) => toView(row, caller)), total };
   }
 
   /**
    * Ends a live session. The audit row of a merchant's session is filed under the merchant (`merchant`), a staff session keeps `session`.
    *
+   * Why: decisions 046 and 047: ending a merchant's session acts on the merchant's sign-in, as the merchant page's "sign out
+   * everywhere" does, so it needs `clients:security` as well.
+   *
    * @param caller the signed-in staff member
    * @param id the session id
    * @throws {AppError} `NOT_FOUND` (404) when the session is unknown or no longer live by the list's rule, `FORBIDDEN` (403: the
    *   session belongs to another staff member who is an Owner and the caller is not, or whose role has permissions the caller does
-   *   not hold, decision 046)
+   *   not hold, decision 046; or the session is a merchant's and the caller lacks `clients:security`, decision 047)
    */
   async remove(caller: StaffPrincipal, id: number): Promise<void> {
     const idle = await this.idleLimits();
@@ -89,6 +109,7 @@ export class SessionAdminService {
         assertOwnerTargetAllowed(caller, { permissions });
         assertWithinCeiling(caller, permissions, 'account');
       }
+      if (found.session.subjectType === 'client') requirePermission(caller, MERCHANT_SECURITY_PERMISSION);
       // False only when a parallel request ended it first: the end state is the one asked for.
       await this.sessions.revoke(id, work);
       // A merchant's session is filed under the merchant, so the merchant page's audit history shows it (feature 20, O-12).
@@ -119,20 +140,34 @@ export class SessionAdminService {
   }
 }
 
-function toView({ session, subjectName, subjectEmail }: SessionWithSubject, currentId: number): SessionRowView {
+function toView(
+  { session, subjectName, subjectEmail, subjectPermissions }: SessionWithSubject,
+  caller: StaffPrincipal,
+): SessionRowView {
+  const isClient = session.subjectType === 'client';
+  // The same reach as ending the session (decision 046): another member whose role the caller does not cover, an Owner's included.
+  const aboveCeiling =
+    !isClient &&
+    session.subjectId !== caller.staffId &&
+    uncoveredPermissions(caller.permissions, subjectPermissions ?? []).length > 0;
+  const emailInFull = !isClient || mayReadMerchants(caller);
   return {
     id: session.id,
     expiresAt: session.expiresAt.toISOString(),
     createdAt: session.createdAt.toISOString(),
-    ip: session.ip,
-    userAgent: session.userAgent,
+    ip: aboveCeiling ? MASKED : session.ip,
+    userAgent: aboveCeiling ? MASKED : session.userAgent,
     lastSeenAt: session.lastSeenAt.toISOString(),
-    subjectType: session.subjectType === 'client' ? 'client' : 'staff',
+    subjectType: isClient ? 'client' : 'staff',
     subject: {
       id: session.subjectId,
       name: subjectName ?? '',
-      ...(subjectEmail === null ? {} : { email: subjectEmail }),
+      ...(subjectEmail === null ? {} : { email: emailInFull ? subjectEmail : maskCustomerEmail(subjectEmail) }),
     },
-    current: session.id === currentId,
+    current: session.id === caller.session.id,
   };
+}
+
+function mayReadMerchants(caller: PermissionHolder): boolean {
+  return grants(caller.permissions, MERCHANT_READ_PERMISSION);
 }

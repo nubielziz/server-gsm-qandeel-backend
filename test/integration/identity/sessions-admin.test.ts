@@ -51,7 +51,10 @@ const sessionRow = async (id: number) => {
 const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
 const ids = (body: Array<{ id: number }>) => body.map((row) => row.id);
 
-async function viewer(permissions = ['sessions:read', 'sessions:revoke', 'staff:read'], name = 'Rami K.') {
+async function viewer(
+  permissions = ['sessions:read', 'sessions:revoke', 'staff:read', 'clients:read', 'clients:security'],
+  name = 'Rami K.',
+) {
   return adminWith(t, permissions, { name });
 }
 
@@ -333,7 +336,7 @@ describe('DELETE /admin/sessions/:id', () => {
     expect((await rami.delete('/admin/sessions/abc')).status).toBe(422);
 
     clock.advance(31 * MINUTE);
-    const later = await viewer(['sessions:revoke'], 'Later');
+    const later = await viewer(['sessions:revoke', 'clients:security'], 'Later');
     for (const dead of [expired, idle])
       expect((await later.delete(`/admin/sessions/${dead.sessionId}`)).status).toBe(404);
     // The merchant session (7 days idle limit) is still live and can be ended.
@@ -353,6 +356,104 @@ describe('DELETE /admin/sessions/:id', () => {
     expect(noCsrf.status).toBe(403);
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
     expect((await sessionRow(reader.session.sessionId)).revokedAt).toBeNull();
+  });
+});
+
+describe('what the session list and ending a session show, by permission', () => {
+  const MASK = '•••';
+  const sessionIn = (body: Array<{ id: number }>, id: number) => body.find((row) => row.id === id)!;
+
+  it('masks the address and device of a session whose role holds permissions the caller lacks, and of nobody else', async () => {
+    const { db } = await testDb();
+    const ownerRole = await insertRole(db, ['*'], 'Owner');
+    const ownerId = await insertStaff(db, ownerRole, { name: 'Boss' });
+    const ownerSession = await openSession(t, { type: 'staff', id: ownerId });
+    const finance = await insertRole(db, ['staff:read', 'wallet:adjust'], 'Finance');
+    const nadia = await insertStaff(db, finance, { name: 'Nadia H.' });
+    const nadiaSession = await openSession(t, { type: 'staff', id: nadia });
+    const support = await insertRole(db, ['staff:read'], 'Support');
+    const lina = await insertStaff(db, support, { name: 'Lina S.' });
+    const linaSession = await openSession(t, { type: 'staff', id: lina });
+    const merchant = await insertMerchant(db);
+    const merchantSession = await openSession(t, { type: 'client', id: merchant });
+
+    const reader = await adminWith(t, ['sessions:read', 'staff:read'], { name: 'Reader' });
+    const seen = (await reader.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
+    const owner = sessionIn(seen, ownerSession.sessionId) as Record<string, unknown>;
+    const member = sessionIn(seen, nadiaSession.sessionId) as Record<string, unknown>;
+    // The row keeps its shape: the two values are masked, nothing is dropped.
+    expect(owner).toMatchObject({
+      ip: MASK,
+      userAgent: MASK,
+      subjectType: 'staff',
+      subject: { id: ownerId, name: 'Boss' },
+    });
+    expect(member).toMatchObject({ ip: MASK, userAgent: MASK, subject: { id: nadia, name: 'Nadia H.' } });
+    expect(Object.keys(owner)).toEqual(Object.keys(sessionIn(seen, linaSession.sessionId)));
+    // A member whose role the caller covers, the caller's own session and a merchant's session are shown as they are.
+    for (const own of [linaSession.sessionId, reader.session.sessionId, merchantSession.sessionId]) {
+      expect(sessionIn(seen, own)).toMatchObject({ ip: '203.0.113.7', userAgent: 'bun-test' });
+    }
+
+    // An area wildcard covers its actions; an Owner covers every role.
+    const wide = await adminWith(t, ['sessions:read', 'staff:read', 'wallet:*'], { name: 'Wide' });
+    const widest = (await wide.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
+    expect(sessionIn(widest, nadiaSession.sessionId)).toMatchObject({ ip: '203.0.113.7', userAgent: 'bun-test' });
+    expect(sessionIn(widest, ownerSession.sessionId)).toMatchObject({ ip: MASK, userAgent: MASK });
+    const chief = await adminWith(t, ['*'], { name: 'Chief' });
+    const everything = (await chief.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
+    for (const row of [ownerSession, nadiaSession, linaSession, merchantSession]) {
+      expect(sessionIn(everything, row.sessionId)).toMatchObject({ ip: '203.0.113.7', userAgent: 'bun-test' });
+    }
+  });
+
+  it("shows a merchant's email in full only to a caller who holds clients:read", async () => {
+    const { db } = await testDb();
+    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
+    const merchantSession = await openSession(t, { type: 'client', id: merchant });
+    const emailFor = async (permissions: string[]) => {
+      const caller = await adminWith(t, permissions);
+      const res = await caller.get(`/admin/sessions?subjectType=client&subjectId=${merchant}`);
+      expect(res.status).toBe(200);
+      const row = sessionIn(res.body, merchantSession.sessionId) as unknown as {
+        subject: { name: string; email?: string };
+      };
+      expect(row.subject.name).toBe('Zain Mobile Hub');
+      return row.subject.email;
+    };
+
+    expect(await emailFor(['sessions:read'])).toBe('op•••@zain.example');
+    expect(await emailFor(['sessions:read', 'clients:update'])).toBe('op•••@zain.example');
+    expect(await emailFor(['sessions:read', 'clients:read'])).toBe('ops@zain.example');
+    expect(await emailFor(['sessions:read', 'clients:*'])).toBe('ops@zain.example');
+    expect(await emailFor(['*'])).toBe('ops@zain.example');
+  });
+
+  it("ends a merchant's session only for a caller who also holds clients:security, and leaves it live otherwise", async () => {
+    const { db } = await testDb();
+    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    const first = await openSession(t, { type: 'client', id: merchant });
+    const second = await openSession(t, { type: 'client', id: merchant });
+    const third = await openSession(t, { type: 'client', id: merchant });
+
+    const revoker = await adminWith(t, ['sessions:revoke', 'clients:read', 'clients:update']);
+    const refused = await revoker.delete(`/admin/sessions/${first.sessionId}`);
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe('You need the clients:security permission to do this.');
+    expect((await sessionRow(first.sessionId)).revokedAt).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
+
+    const security = await adminWith(t, ['sessions:revoke', 'clients:security']);
+    expect((await security.delete(`/admin/sessions/${first.sessionId}`)).status).toBe(204);
+    expect((await sessionRow(first.sessionId)).revokedAt).not.toBeNull();
+    const area = await adminWith(t, ['sessions:revoke', 'clients:*']);
+    expect((await area.delete(`/admin/sessions/${second.sessionId}`)).status).toBe(204);
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.delete(`/admin/sessions/${third.sessionId}`)).status).toBe(204);
+    expect(await auditRows()).toHaveLength(3);
+    // An unknown or ended session still answers 404 before any permission is weighed.
+    expect((await revoker.delete(`/admin/sessions/${first.sessionId}`)).status).toBe(404);
   });
 });
 

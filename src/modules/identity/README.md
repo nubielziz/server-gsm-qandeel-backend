@@ -288,7 +288,7 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
 | `POST /admin/staff/:id/suspend`, `POST /admin/staff/:id/reactivate` | `staff:suspend` | `204` |
 | `GET /admin/roles`, `GET /admin/roles/:id`, `GET /admin/permissions` | `roles:read` | `RoleAdminService`, `PermissionsCatalog` |
 | `POST /admin/roles`, `PATCH /admin/roles/:id`, `DELETE /admin/roles/:id` | `roles:create`, `roles:update`, `roles:delete` | `409 ROLE_IN_USE` while any member holds the role |
-| `GET /admin/sessions`, `DELETE /admin/sessions/:id` | `sessions:read`, `sessions:revoke` | `SessionAdminService` |
+| `GET /admin/sessions`, `DELETE /admin/sessions/:id` | `sessions:read`, `sessions:revoke` (and `clients:security` for a merchant's session) | `SessionAdminService` |
 | `GET /admin/ip-rules`, `GET /admin/ip-rules/:id`, `POST /admin/ip-rules/check` | `access:read` | `IpRuleAdminService` |
 | `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id`, `PUT /admin/access/restriction` | `access:create`, `access:delete`, `access:update` | |
 | `GET /admin/clients`, `GET /admin/clients/:id` | `clients:read` (`wallet` and `stats` only with `wallet:read`) | `ClientAdminService` |
@@ -304,6 +304,9 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   **Privilege ceiling** (decision 046, `assertWithinCeiling`): role create, edit (current and new list) and delete, the role given to a new member
   or by a role change, and every action on another member's account (also `DELETE /admin/sessions/:id`) need the caller to hold each permission
   concerned (`403 FORBIDDEN`); only an Owner edits the role they hold (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
+  `GET /admin/sessions` masks the address and device (`•••`) of another member's session whose role the caller does not cover (an Owner's, for
+  everyone but an Owner), and a merchant's email unless the caller holds `clients:read`; `DELETE /admin/sessions/:id` on a merchant's session also
+  needs `clients:security` (decisions 046 and 047).
 - **What a change does to sessions and caches:** a suspension, "end all sessions", a password reset with `revokeSessions` and a 2FA reset
   call `SessionService.revokeAllOf` (the caller keeps their own session when they reset their own 2FA); a rename or role change, and a
   reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`, and a change of a role's permissions also calls

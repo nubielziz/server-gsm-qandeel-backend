@@ -24,7 +24,9 @@ export const listSessions = defineRoute({
     'Fully signed-in staff and merchant sessions that are live: not revoked, not past `expiresAt`, and used within the idle ' +
     'limit of their subject type (decision 018). Storefront customer sessions and sign-in steps are not listed (B9). ' +
     "`current` marks the session that made the request. `subjectId` lists one account's sessions (the merchant page); it needs " +
-    '`subjectType` in the same request because staff and merchant ids overlap (`422` on `subjectId` otherwise).',
+    '`subjectType` in the same request because staff and merchant ids overlap (`422` on `subjectId` otherwise). ' +
+    "The address and the device of another staff member's session are masked (`•••`) when that member's role holds permissions the caller does not hold " +
+    "(an owner's, for a caller who is not an owner); a merchant's email address is masked unless the caller holds `clients:read` (decisions 046 and 047).",
   tags: ['sessions'],
   surface: 'admin',
   access: 'staff-permission',
@@ -63,7 +65,8 @@ export const revokeSession = defineRoute({
   description:
     'Ends any live session of the list (staff or merchant). Ending your own session signs you out on your next request. A ' +
     "session that is no longer live by the list's rule (revoked, expired or idle) answers 404. " +
-    "A session of another staff member is ended only by an owner when that member is an owner, and only by a caller who holds every permission of the member's role (`403 FORBIDDEN`, decision 046).",
+    "A session of another staff member is ended only by an owner when that member is an owner, and only by a caller who holds every permission of the member's role (`403 FORBIDDEN`, decision 046). " +
+    "A merchant's session is ended only by a caller who also holds `clients:security` (`403 FORBIDDEN`, decision 047).",
   tags: ['sessions'],
   surface: 'admin',
   access: 'staff-permission',

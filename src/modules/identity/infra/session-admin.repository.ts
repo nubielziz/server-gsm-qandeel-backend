@@ -3,14 +3,16 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type Session, clients, sessions, staffUsers } from '../db/schema';
+import { type Session, clients, roles, sessions, staffUsers } from '../db/schema';
 import { type IdleLimits, liveSessionCondition } from '../security/session.repository';
 
-/** A live session with the name (and email) of the account that owns it. */
+/** A live session with the name (and email) of the account that owns it, and the permissions of a staff member's role. */
 export interface SessionWithSubject {
   readonly session: Session;
   readonly subjectName: string | null;
   readonly subjectEmail: string | null;
+  /** The permissions of the staff member's role; `null` for a merchant's session or an account that no longer exists. */
+  readonly subjectPermissions: string[] | null;
 }
 
 /** Fully signed-in sessions of staff and merchants: the rows `GET /admin/sessions` may show (B9). */
@@ -29,9 +31,10 @@ const subjectEmail = sql<string | null>`coalesce(${staffUsers.email}, ${clients.
 
 function withSubject(db: DbExecutor) {
   return db
-    .select({ session: sessions, subjectName, subjectEmail })
+    .select({ session: sessions, subjectName, subjectEmail, subjectPermissions: roles.permissions })
     .from(sessions)
     .leftJoin(staffUsers, and(eq(sessions.subjectType, 'staff'), eq(staffUsers.id, sessions.subjectId)))
+    .leftJoin(roles, eq(roles.id, staffUsers.roleId))
     .leftJoin(clients, and(eq(sessions.subjectType, 'client'), eq(clients.id, sessions.subjectId)));
 }
 
