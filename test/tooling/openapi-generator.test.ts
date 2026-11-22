@@ -10,6 +10,12 @@ const ROOT = join(import.meta.dir, '../..');
 const COMMITTED = join(ROOT, 'docs', 'contract');
 const FILES = ['openapi.json', 'openapi.public.json'] as const;
 
+/**
+ * The time limit of a test that starts the generator more than once: every start boots the whole application in a child process
+ * (a few seconds each), and the suite runs beside other suites on one machine, so the default limit of one test is too short.
+ */
+const GENERATOR_RUNS_TIMEOUT_MS = 90_000;
+
 const dirs: string[] = [];
 afterAll(async () => {
   await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
@@ -73,43 +79,55 @@ describe('gen-openapi.ts', () => {
     }
   });
 
-  it('--check passes on a folder it just generated', async () => {
-    const dir = await scratch();
-    expect((await generate(['--dir', dir])).code).toBe(0);
-    const result = await generate(['--check', '--dir', dir]);
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-  });
+  it(
+    '--check passes on a folder it just generated',
+    async () => {
+      const dir = await scratch();
+      expect((await generate(['--dir', dir])).code).toBe(0);
+      const result = await generate(['--check', '--dir', dir]);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe('');
+    },
+    GENERATOR_RUNS_TIMEOUT_MS,
+  );
 
-  it('--check fails, naming the file and the first difference, when a committed file was edited', async () => {
-    const dir = await scratch();
-    await generate(['--dir', dir]);
-    const file = join(dir, 'openapi.public.json');
-    await writeFile(file, (await readFile(file, 'utf8')).replace('"IMEI-HUB API"', '"Edited by hand"'));
-    const result = await generate(['--check', '--dir', dir]);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('openapi.public.json is out of date: first difference at line');
-    expect(result.stderr).toContain('Edited by hand');
-    expect(result.stderr).toContain('bun run docs:openapi');
-    // The other file is still reported as fine.
-    expect(result.stdout).toContain('openapi.json is up to date.');
-  });
+  it(
+    '--check fails, naming the file and the first difference, when a committed file was edited',
+    async () => {
+      const dir = await scratch();
+      await generate(['--dir', dir]);
+      const file = join(dir, 'openapi.public.json');
+      await writeFile(file, (await readFile(file, 'utf8')).replace('"IMEI-HUB API"', '"Edited by hand"'));
+      const result = await generate(['--check', '--dir', dir]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('openapi.public.json is out of date: first difference at line');
+      expect(result.stderr).toContain('Edited by hand');
+      expect(result.stderr).toContain('bun run docs:openapi');
+      // The other file is still reported as fine.
+      expect(result.stdout).toContain('openapi.json is up to date.');
+    },
+    GENERATOR_RUNS_TIMEOUT_MS,
+  );
 
-  it('--check fails when a file is missing, and when the text only lacks the trailing newline', async () => {
-    const dir = await scratch();
-    await generate(['--dir', dir]);
-    await rm(join(dir, 'openapi.json'));
-    const missing = await generate(['--check', '--dir', dir]);
-    expect(missing.code).toBe(1);
-    expect(missing.stderr).toContain('openapi.json is missing.');
+  it(
+    '--check fails when a file is missing, and when the text only lacks the trailing newline',
+    async () => {
+      const dir = await scratch();
+      await generate(['--dir', dir]);
+      await rm(join(dir, 'openapi.json'));
+      const missing = await generate(['--check', '--dir', dir]);
+      expect(missing.code).toBe(1);
+      expect(missing.stderr).toContain('openapi.json is missing.');
 
-    await generate(['--dir', dir]);
-    const file = join(dir, 'openapi.public.json');
-    await writeFile(file, (await readFile(file, 'utf8')).trimEnd());
-    const noNewline = await generate(['--check', '--dir', dir]);
-    expect(noNewline.code).toBe(1);
-    expect(noNewline.stderr).toContain('openapi.public.json is out of date');
-  });
+      await generate(['--dir', dir]);
+      const file = join(dir, 'openapi.public.json');
+      await writeFile(file, (await readFile(file, 'utf8')).trimEnd());
+      const noNewline = await generate(['--check', '--dir', dir]);
+      expect(noNewline.code).toBe(1);
+      expect(noNewline.stderr).toContain('openapi.public.json is out of date');
+    },
+    GENERATOR_RUNS_TIMEOUT_MS,
+  );
 
   it('--check writes nothing', async () => {
     const dir = join(await scratch(), 'never-created');
