@@ -153,8 +153,11 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   of the fields (`PUT /admin/services/:id/fields`) it writes nothing for the shop or the search index; the caller writes the audit row.
   `ServiceImporter` now injects `CatalogSignals` (the supplier engine module provides both for the worker).
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
-  listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do 7a's
-  lists (`GET /v1/services[/:id]`, `imeiservicelist`). `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
+  listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do
+  7a's lists (`GET /v1/services[/:id]`, `imeiservicelist`; API key calls, no browser check). The portal's list and show reads carry
+  `originCheck: 'fetch-metadata'` (decision 045): a request that the browser marks `cross-site` or `same-site`, without an `Origin`
+  of the shop, is `403 CSRF_FAILED` and records nothing; the portal's own server calls, which carry neither header, are answered.
+  The export carries `originCheck: true` (same-origin or an `Origin` of the shop): the browser downloads it. `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
   tolerance `refuse` (`409 PRICE_CHANGED` with `listedPrice` and `currentPrice`), within it `raised` (charge it, record
   `raised = true` and the reason `floor` or `price_change` in `pricing_snapshot`), nothing on record `ok`. The tolerance is the
   setting `pricing.price_change_tolerance_percent` (platform settings registry, integer 0 to 100, default 10; read with

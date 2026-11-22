@@ -242,8 +242,12 @@ export interface RouteSpec<
    * `/store/v1`). On a `/store/v1` mutation without a session (`csrf: false`; the routes that sign a visitor in): an `Origin` of
    * the shop. Anything else is `403 CSRF_FAILED`. Refused elsewhere: a session mutation has its CSRF token, and every session-less
    * mutation on `/admin` and `/client` is checked without the flag.
+   *
+   * `'fetch-metadata'` (a `GET` with a session access only) is the lighter rule for a read that the portal's own server calls
+   * as well as its pages, which send neither `Sec-Fetch-Site` nor `Origin`: only a request that the browser marks `cross-site`
+   * or `same-site`, without an `Origin` of the route's audience, is `403 CSRF_FAILED`.
    */
-  readonly originCheck?: boolean;
+  readonly originCheck?: boolean | 'fetch-metadata';
 }
 
 /**
@@ -298,8 +302,8 @@ export interface RouteContract<
   readonly turnstile: boolean;
   /** The switch that must be on for the `turnstile` check to run (feature 24A); `undefined` = always checked. */
   readonly turnstileRollout: TurnstileRollout | undefined;
-  /** True when the CSRF guard checks where the request was started (see `RouteSpec.originCheck`; decision 045). */
-  readonly originCheck: boolean;
+  /** Not `false` when the CSRF guard checks where the request was started (see `RouteSpec.originCheck`; decision 045). */
+  readonly originCheck: boolean | 'fetch-metadata';
 }
 
 /**
@@ -547,7 +551,10 @@ export function defineRoute<
   }
 
   if (spec.originCheck !== undefined) {
-    if (typeof spec.originCheck !== 'boolean') problem('originCheck must be true or false');
+    if (typeof spec.originCheck !== 'boolean' && spec.originCheck !== 'fetch-metadata')
+      problem("originCheck must be true, false or 'fetch-metadata'");
+    if (spec.originCheck === 'fetch-metadata' && method !== 'GET')
+      problem("originCheck: 'fetch-metadata' only applies to a GET");
     if (spec.originCheck && method === 'GET' && !sessionAccess)
       problem(`originCheck on a GET only applies to routes with a session (access is "${spec.access}")`);
     if (spec.originCheck && method !== 'GET') {

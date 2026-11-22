@@ -1,7 +1,7 @@
 // The CSRF guard (decisions 018 and 045, ALIGNMENT § 6): a mutation that carries a session needs the matching X-CSRF-Token
 // header; a session-less mutation on /admin or /client (and the /store/v1 sign-in routes) needs an Origin header that is one of
 // the origins of the route's surface. A GET whose contract sets `originCheck` (a download, a stream) needs a request started by
-// the surface's own page.
+// the surface's own page; with `'fetch-metadata'` it only must not be marked as started by another site.
 import { type CanActivate, type ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { audienceOfSurface, originsOf } from '../../../common/browser-origins';
@@ -10,7 +10,12 @@ import { AppError } from '../../../common/errors';
 import { APP_CONFIG, type AppConfig } from '../../../config';
 import { accessStateOf } from './access-state';
 import { CSRF_HEADER, CsrfService } from './csrf';
-import { originCheckedGetRefusal, sessionlessOriginRefusal } from './origin-checks';
+import {
+  NOT_STARTED_HERE_DETAIL,
+  originCheckedGetRefusal,
+  sessionlessOriginRefusal,
+  startedByAnotherSite,
+} from './origin-checks';
 
 /** Methods that never change data; the API's GETs do not change state (ALIGNMENT § 1). */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -42,7 +47,8 @@ export class CsrfGuard implements CanActivate {
    * @param context the request being handled
    * @returns true when the request may proceed (a safe method, a matching token, or an allowed origin)
    * @throws {AppError} `CSRF_FAILED` (403) when the token is missing or wrong, or the Origin is missing or not on the route's
-   *   surface's list (or, for an `originCheck` GET, the request is neither `Sec-Fetch-Site: same-origin` nor from a listed origin)
+   *   surface's list (or, for an `originCheck` GET, the request is neither `Sec-Fetch-Site: same-origin` nor from a listed origin;
+   *   for `originCheck: 'fetch-metadata'`, the browser marks it `cross-site` or `same-site` and no listed origin sent it)
    */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<FastifyRequest>();
@@ -52,7 +58,11 @@ export class CsrfGuard implements CanActivate {
     if (SAFE_METHODS.has(request.method.toUpperCase())) {
       // A GET changes no state, except the routes that declare originCheck: they carry no token (a download, a stream), so the
       // request must have been started by one of the surface's own pages instead.
-      if (contract.originCheck) refuse(originCheckedGetRefusal(request.headers, allowed));
+      if (contract.originCheck === 'fetch-metadata') {
+        refuse(startedByAnotherSite(request.headers, allowed) ? NOT_STARTED_HERE_DETAIL : undefined);
+      } else if (contract.originCheck) {
+        refuse(originCheckedGetRefusal(request.headers, allowed));
+      }
       return true;
     }
     const { session } = accessStateOf(request);

@@ -230720,7 +230720,7 @@
     },
     "/client/prices/export": {
       "get": {
-        "description": "The whole visible catalog at the merchant's prices as `text/csv` (header `serviceId,code,name,type,category,price,currency,deliveryTime`, CRLF line ends, up to 10,000 services, category order then name). Optional filters `type` and `categoryId`. A cell that starts with `=`, `+`, `-` or `@` is written as text. Every price in the file is remembered as the merchant's listed price. Never cached.",
+        "description": "The whole visible catalog at the merchant's prices as `text/csv` (header `serviceId,code,name,type,category,price,currency,deliveryTime`, CRLF line ends, up to 10,000 services, category order then name). Optional filters `type` and `categoryId`. A cell that starts with `=`, `+`, `-` or `@` is written as text. Every price in the file is remembered as the merchant's listed price, so the route is answered only to a request started by the portal itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the shop's origins); anything else is `403 CSRF_FAILED` and remembers nothing. Never cached.",
         "operationId": "getClientPricesExport",
         "parameters": [
           {
@@ -230860,7 +230860,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.",
+            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -230890,7 +230890,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "ACCOUNT_PENDING_APPROVAL"
+                        "ACCOUNT_PENDING_APPROVAL",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -230934,6 +230935,17 @@
                       "status": 403,
                       "code": "ACCOUNT_PENDING_APPROVAL",
                       "detail": "This account is waiting for approval.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -233989,7 +234001,7 @@
     },
     "/client/services": {
       "get": {
-        "description": "The services the signed-in merchant may order, at the price it pays (client price, else group price, else the base price after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9).",
+        "description": "The services the signed-in merchant may order, at the price it pays (client price, else group price, else the base price after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9), so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
         "operationId": "getClientServices",
         "parameters": [
           {
@@ -234342,7 +234354,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.",
+            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -234372,7 +234384,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "ACCOUNT_PENDING_APPROVAL"
+                        "ACCOUNT_PENDING_APPROVAL",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -234416,6 +234429,17 @@
                       "status": 403,
                       "code": "ACCOUNT_PENDING_APPROVAL",
                       "detail": "This account is waiting for approval.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -234542,7 +234566,7 @@
     },
     "/client/services/{id}": {
       "get": {
-        "description": "The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. A service the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the listed price.",
+        "description": "The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. A service the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
         "operationId": "getClientServicesById",
         "parameters": [
           {
@@ -234884,7 +234908,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.",
+            "description": "ACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -234914,7 +234938,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "ACCOUNT_PENDING_APPROVAL"
+                        "ACCOUNT_PENDING_APPROVAL",
+                        "CSRF_FAILED"
                       ]
                     },
                     "detail": {
@@ -234958,6 +234983,17 @@
                       "status": 403,
                       "code": "ACCOUNT_PENDING_APPROVAL",
                       "detail": "This account is waiting for approval.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }

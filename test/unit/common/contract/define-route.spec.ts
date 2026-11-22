@@ -544,6 +544,27 @@ describe('defineRoute originCheck option (RESOLUTIONS b2c-8)', () => {
     expect(download({ originCheck: true }).originCheck).toBe(true);
   });
 
+  it("accepts 'fetch-metadata' on a GET route with a session and refuses it elsewhere", () => {
+    expect(download({ originCheck: 'fetch-metadata' }).originCheck).toBe('fetch-metadata');
+    expect(() =>
+      define({
+        key: 'GET /store/v1/spec-origin-fm-public',
+        surface: 'store',
+        access: 'public',
+        originCheck: 'fetch-metadata',
+      }),
+    ).toThrow(/only applies to routes with a session/);
+    expect(() =>
+      define({
+        key: 'POST /admin/spec-origin-fm-post',
+        surface: 'admin',
+        access: 'staff-session',
+        originCheck: 'fetch-metadata',
+      }),
+    ).toThrow(/only applies to a GET/);
+    expect(() => download({ originCheck: 'sometimes' })).toThrow(/originCheck must be true, false or 'fetch-metadata'/);
+  });
+
   it('is refused on a GET without a session, on a session mutation and on a mutation without a session outside /store/v1', () => {
     expect(() =>
       define({ key: 'GET /store/v1/spec-origin-public', surface: 'store', access: 'public', originCheck: true }),

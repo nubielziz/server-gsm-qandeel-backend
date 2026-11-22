@@ -66,10 +66,14 @@ export const listClientServices = defineRoute({
     'after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose ' +
     "allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: " +
     'category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and ' +
-    "category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9).",
+    "category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9), so a request that " +
+    'the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of ' +
+    "the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, " +
+    'are answered.',
   tags: ['client-catalog'],
   surface: 'client',
   access: 'merchant-session',
+  originCheck: 'fetch-metadata',
   query: listQuery({
     sorts: ['category', 'name', 'type', 'id'],
     defaultSort: [
@@ -83,7 +87,7 @@ export const listClientServices = defineRoute({
     search: ['name', 'code', 'category.name'],
   }),
   success: { status: 200, schema: CatalogRow },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED', 'CSRF_FAILED'],
   examples: { response: [ROW_EXAMPLE] },
 });
 
@@ -94,16 +98,19 @@ export const showClientService = defineRoute({
   description:
     'The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. A service ' +
     'the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the ' +
-    'listed price.',
+    'listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, ' +
+    "without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server " +
+    'calls, which carry neither header, are answered.',
   tags: ['client-catalog'],
   surface: 'client',
   access: 'merchant-session',
+  originCheck: 'fetch-metadata',
   params: z.object({ id: zIdParam }),
   success: {
     status: 200,
     schema: CatalogRow.extend({ fields: z.array(CatalogField), options: z.array(CatalogOption) }),
   },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'NOT_FOUND'],
+  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'NOT_FOUND', 'CSRF_FAILED'],
   examples: {
     response: {
       ...ROW_EXAMPLE,
@@ -121,11 +128,13 @@ export const exportClientPrices = defineRoute({
     "The whole visible catalog at the merchant's prices as `text/csv` (header `serviceId,code,name,type,category,price,currency," +
     'deliveryTime`, CRLF line ends, up to 10,000 services, category order then name). Optional filters `type` and `categoryId`. ' +
     "A cell that starts with `=`, `+`, `-` or `@` is written as text. Every price in the file is remembered as the merchant's listed " +
-    'price. Never cached.',
+    'price, so the route is answered only to a request started by the portal itself (`Sec-Fetch-Site: same-origin`, or an ' +
+    "`Origin` that is one of the shop's origins); anything else is `403 CSRF_FAILED` and remembers nothing. Never cached.",
   tags: ['client-catalog'],
   surface: 'client',
   access: 'merchant-session',
+  originCheck: true,
   query: z.object({ type: z.enum(SERVICE_TYPES).optional(), categoryId: zIdParam.optional() }),
   success: { status: 200, contentType: 'text/csv' },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED'],
+  errors: ['UNAUTHORIZED', 'ACCOUNT_PENDING_APPROVAL', 'VALIDATION_FAILED', 'CSRF_FAILED'],
 });

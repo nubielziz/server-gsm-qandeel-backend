@@ -65,7 +65,10 @@ async function world() {
 async function as(clientId: number) {
   const session = await openSession(t, { type: 'client', id: clientId });
   const get = (url: string) => t.app.inject({ method: 'GET', url, headers: session.headers });
-  return { session, get };
+  // The portal downloads the price list in the browser, which marks such a request `Sec-Fetch-Site: same-origin` (decision 045).
+  const download = (url: string) =>
+    t.app.inject({ method: 'GET', url, headers: { ...session.headers, 'sec-fetch-site': 'same-origin' } });
+  return { session, get, download };
 }
 
 describe('GET /client/services', () => {
@@ -137,7 +140,7 @@ describe('GET /client/services', () => {
     const rows = (await (await as(erbil)).get('/client/services')).json();
     // Category order (sort, then id), then name: the carrier category (id 1) first, then Apple, never interleaved.
     expect(rows.map((row: { code: string }) => row.code)).toEqual(['IMEI-ATT-USA', 'ZETA', 'ALPHA', 'IMEI-ICL-CHK']);
-    const file = (await (await as(erbil)).get('/client/prices/export')).body.split('\r\n');
+    const file = (await (await as(erbil)).download('/client/prices/export')).body.split('\r\n');
     expect(file.slice(1, 5).map((line: string) => line.split(',')[1])).toEqual([
       'IMEI-ATT-USA',
       'ZETA',
@@ -399,7 +402,7 @@ describe('GET /client/prices/export', () => {
       cost: '1',
       effectiveCost: '1',
     });
-    const res = await (await as(erbil)).get('/client/prices/export');
+    const res = await (await as(erbil)).download('/client/prices/export');
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(res.headers['content-disposition']).toBe('attachment; filename="price-list.csv"');
@@ -414,7 +417,7 @@ describe('GET /client/prices/export', () => {
     const cairoFile = (
       await (
         await as(cairo)
-      ).get(
+      ).download(
         '/client/prices/export?type=imei&categoryId=' +
           (await db.select().from(s.services).where(eq(s.services.id, icloud)))[0]!.categoryId,
       )
@@ -425,6 +428,6 @@ describe('GET /client/prices/export', () => {
 
   it('refuses a filter it does not know', async () => {
     const { erbil } = await world();
-    expect((await (await as(erbil)).get('/client/prices/export?type=banana')).statusCode).toBe(422);
+    expect((await (await as(erbil)).download('/client/prices/export?type=banana')).statusCode).toBe(422);
   });
 });

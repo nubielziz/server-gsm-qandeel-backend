@@ -6,6 +6,7 @@ import {
   ORIGIN_NOT_ALLOWED_DETAIL,
   originCheckedGetRefusal,
   sessionlessOriginRefusal,
+  startedByAnotherSite,
 } from '@src/modules/identity/security/origin-checks';
 
 const ALLOWED = ['https://console.example.com'];
@@ -51,5 +52,38 @@ describe('originCheckedGetRefusal', () => {
 
   it('does not take a repeated Sec-Fetch-Site header for same-origin', () => {
     expect(refusal({ 'sec-fetch-site': ['same-origin', 'same-origin'] })).toBe(NOT_STARTED_HERE_DETAIL);
+  });
+});
+
+describe('startedByAnotherSite', () => {
+  const listed = 'https://console.example.com';
+  const judged = (headers: { origin?: string; 'sec-fetch-site'?: string | string[] }) =>
+    startedByAnotherSite(headers, ALLOWED);
+
+  it('lets a request through that carries no Sec-Fetch-Site (a call of the portal server), with or without an allowed Origin', () => {
+    expect(judged({})).toBe(false);
+    expect(judged({ origin: listed })).toBe(false);
+  });
+
+  it('lets a request through that the browser marks as the same origin or typed by the user', () => {
+    expect(judged({ 'sec-fetch-site': 'same-origin' })).toBe(false);
+    expect(judged({ 'sec-fetch-site': 'same-origin', origin: 'https://evil.example' })).toBe(false);
+    expect(judged({ 'sec-fetch-site': 'none' })).toBe(false);
+  });
+
+  it('refuses a request that the browser marks as cross-site or same-site unless an allowed Origin sent it', () => {
+    expect(judged({ 'sec-fetch-site': 'cross-site' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'same-site' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'cross-site', origin: 'https://evil.example' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'cross-site', origin: 'https://shop.example.com' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'cross-site', origin: '' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'cross-site', origin: listed })).toBe(false);
+    expect(judged({ 'sec-fetch-site': 'same-site', origin: listed })).toBe(false);
+  });
+
+  it('judges a repeated or unknown Sec-Fetch-Site value as another site', () => {
+    expect(judged({ 'sec-fetch-site': ['same-origin', 'same-origin'] })).toBe(true);
+    expect(judged({ 'sec-fetch-site': 'sideways' })).toBe(true);
+    expect(judged({ 'sec-fetch-site': '' })).toBe(true);
   });
 });
