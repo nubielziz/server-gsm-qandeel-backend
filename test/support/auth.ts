@@ -6,7 +6,7 @@ import { CacheKeys, CacheService } from '@src/infra/cache';
 import { RedisService } from '@src/infra/redis';
 import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
-import { CsrfService, SessionCookies, SessionService } from '@src/modules/identity';
+import { CsrfService, IpRuleCache, SessionCookies, SessionService } from '@src/modules/identity';
 import type { SessionStage, SubjectType } from '@src/modules/identity/db/schema';
 import { PRODUCTION_ENV, type TestApp } from './app';
 import { TEST_DATABASE_URL, testDb } from './db';
@@ -126,13 +126,19 @@ export async function signInStaff(
   return { session: await openSession(t, { type: 'staff', id: staffId }, options), staffId, roleId };
 }
 
-/** Deletes the cached sessions, role permissions and settings of the test app (the database is reset between tests). */
+/**
+ * Deletes the cached sessions, role permissions, settings and IP rules of the test app (the database is reset between tests).
+ *
+ * Why the IP rules: their snapshot is served from the cache for minutes, which outlives a test file. After a file that seeds an
+ * allowlist for the console, the staff requests of the next file would be refused from every other address.
+ */
 export async function clearIdentityCaches(t: TestApp): Promise<void> {
   const cache = t.app.get(CacheService);
   const keys = t.app.get(CacheKeys);
   await cache.delByPrefix(keys.prefix('identity', 'session'));
   await cache.delByPrefix(keys.prefix('identity', 'role'));
   await cache.del(keys.settings());
+  await t.app.get(IpRuleCache).invalidate();
 }
 
 /**
