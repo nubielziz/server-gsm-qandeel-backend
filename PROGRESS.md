@@ -95,6 +95,7 @@ state each rule and its reason.
 | 40 risk inputs | `8abc73e` | 050 | 0053 | The card's issuing country and funding and the visitor's country are read and used; a rule without an input source does not apply and is named at boot; while a tax window is in force a country without one is refused and a payment whose card or visitor country differs from the declared one is held; a guest checkout is judged as a first order; a block from a guest order can be limited to guest checkouts; order counts see checkouts still being paid; a top-up without a risk screening goes to staff |
 | 45b infrastructure, the production stack | `6ba0a4d` | 055 (part B) | none | Five networks with fixed proxy addresses; the application's own database role, checked at a production start; passwords on both Redis instances; application and backup users for the file store and a files host for signed reads only; a production start refuses template, development and weak values; encrypted, append-only backups |
 | 37 staff data access | `3d277cf` | 047 | 0054 | An email change of a merchant or a customer needs the security permission of that account, ends its sessions and tells the address before the change; the mails that carry a sign-in link or protect an account keep the link and the notice visible, hold no other address, and cannot be switched off; a stored file opens only with the read permission of every record that uses it, and identity documents and payment proofs are audited; a customer's address is masked outside the Customers pages; the order export and the digits of an IMEI check need their own permissions |
+| 43 limits of the public surfaces | `7c394a5` | 053 | 0055 | Request text with U+0000 or an unpaired surrogate is refused; a ticket opened by a typed address is unconfirmed until its link is used and its receipt holds nothing a visitor typed; a marketing answer counts once the address is confirmed; uploads are bounded by bytes read, by a live session and by quotas, and a janitor removes unused files; lookups of unknown sessions and keys are counted per address; merchant webhooks have a test budget and switch off after twenty failed deliveries; the health probe, incoming webhooks and bulk calls are bounded; the server bounds the time of a request |
 
 Checks: the whole `bun run check` on the tree of `8065e0c` (main with 34, 35, 36): 8290 pass, 1 skip, 0 fail; on the tree of `745c9ce`
 (with 42): 8393 pass, 1 skip, 0 fail; on the tree of `50b8517` (with 41): 8456 pass, 1 skip, 2 fail, both Redis command timeouts under load in
@@ -105,14 +106,21 @@ generators pass, 8631 pass, 1 skip, 1 fail (the 15-second limit of one openapi-g
 of `e02e478` (with 45a): 8706 pass, 1 skip, the same single limit, its batch alone 317 pass; the tree of `9a3aa04` (with 38, after the
 generator tests got a time limit that fits, `c4f647a`): 8808 pass, 1 skip, 0 fail; the tree of `8abc73e` (with 40, after the test helper
 learned to clear the cached IP rules, `bab76b7`): 8863 pass, 1 skip, 0 fail; the tree of `6ba0a4d` (with 45b): 8978 pass, 1 skip, 0 fail; the tree of
-`3d277cf` (with 37): 9079 pass, 1 skip, 0 fail. Dev DB `gsm` migrated to 0054 after a dump before each step (the worker's one-off review of stored field
+`3d277cf` (with 37): 9079 pass, 1 skip, 0 fail; the tree of `7c394a5` (with 43, the last one): 9270 pass, 1 skip, 0 fail. Dev DB `gsm`
+migrated to 0055 after a dump before each step (the worker's one-off review of stored field
 patterns clears nothing there: all 458 are in the import's length form). **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
 `CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
 helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
 
-Next (2026-11-22, night): 43 public abuse limits (decision 053), the last of the fixes, passed its reviews after one fix round and is in a
-last round of small points before its merge. Then the list of places worth another review; the notes for the console and the shop are
-written.
+All findings of the audit of 2026-11-20 are closed on main (3 high, 23 medium; features 34 to 45, decisions 044 to 055). What the console
+and the shop must change, and the places that deserve another review, are written down outside the repositories for the owner.
+
+Next (2026-11-22, night): a second, deeper review of the money logic and of sign-in, permissions and tenant scoping, with fixes on the branch
+`security/deep-financial-auth-fixes` (not merged: the owner reviews it first).
+
+**For the owner after decision 053:** a ticket opened from the contact form with a typed address joins the customer's account only after the
+link in its receipt is used. A merchant webhook endpoint whose last 20 deliveries failed is switched off and the merchant is told by email.
+The upload janitor removes files that nothing has used for 7 days.
 
 **For the owner after decision 047:** a staff role that changes merchant emails needs `clients:security`, one that changes customer emails
 or creates customers with a temporary password needs `customers:password`, the order export needs `reports:read`. A stored mail template
