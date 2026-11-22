@@ -28,7 +28,7 @@ const ServiceRow = z.object({
   category: NamedRef.nullable(),
   basePrice: zMoney,
   cost: zMoney.describe(
-    'The effective cost (B117): the larger of the service cost and the first active supplier link cost.',
+    'The effective cost (B117): the larger of the service cost and the cost of the first supplier link an order can use.',
   ),
   costChangedFrom: zMoney
     .nullable()

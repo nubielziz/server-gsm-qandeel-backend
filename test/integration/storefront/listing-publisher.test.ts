@@ -1037,7 +1037,8 @@ describe('ListingPublisher: the service row lock', () => {
         inside: async (tx) => {
           const publisherPid = await backendPid(tx);
           sync = syncCost(one.id, one.supplierServiceId, '100.0000');
-          expect(await blockedBy(publisherPid)).toMatch(/update "services"/);
+          // The effective cost recompute; the activity view may cut a long statement before its update.
+          expect(await blockedBy(publisherPid)).toMatch(/update "services"|with figures as/);
         },
       }),
     );

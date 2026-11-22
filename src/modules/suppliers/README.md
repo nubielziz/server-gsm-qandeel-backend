@@ -35,6 +35,8 @@ See `docs/queues.md` (`supplier-dispatch`, `supplier-poll`, `supplier-sync`). In
 
 Money: a supplier's result settles the order through `OrderTransitions`: the hold becomes revenue and, because the order has `supplier_id` and `supplier_ref`, the cost (`credit x credit_rate`, refreshed on the order when the supplier is chosen) is booked from the prepaid balance at the supplier (B17); a rejection releases the hold with no cost.
 
+Cost basis (user rule 9): no route sets `credit_rate` (it stays 1), so a supplier is kept in the base currency: `POST` and `PATCH /admin/suppliers` refuse another `currency` (`422` on `currency`, `unsupported`), and a sync whose `accountinfo` reports another currency than the supplier's own saves nothing (`SUPPLIER_UNAVAILABLE`; a supplier that reports none syncs). The effective cost of a service (the catalog's `recomputeEffectiveCost`) follows the first link an order can use (switched on, supplier `active`, service still listed), so the sync recomputes every linked service and a change of a supplier's `status` recomputes the services linked to it and moves the catalog price version.
+
 ## Lost Quick add jobs (decision 055)
 
 `QuickAddReconcilePass` (kind `quick_add_runs`, in `SupplierJobsModule`) is the Quick add's pass of the platform's `lost_work_reconcile`:

@@ -217,7 +217,8 @@ export const createSupplier = defineRoute({
     "Saves a supplier. The key is stored encrypted (AES-GCM with a key id) and `apiKeyHint` is a masked form (`••••`, and the key's last 2 characters " +
     'when it has 16 or more). Left out: ' +
     '`lowBalanceAlert` 150, `maxConcurrency` 5, `rateLimitPerMin` 60, `timeoutMs` 15000. `driver` is `dhru` or `rest` (`rest` cannot ' +
-    'be called yet); the parameter format follows from it. A name already used (ignoring case) is `422` on `name`.',
+    'be called yet); the parameter format follows from it. A name already used (ignoring case) is `422` on `name`. A `currency` other ' +
+    'than USD is `422` on `currency` (`unsupported`): every cost is `credit x credit_rate` in USD and the rate stays 1.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -264,7 +265,9 @@ export const updateSupplier = defineRoute({
     'Only the keys sent change. `apiKey` replaces the key (and its hint); an omitted key keeps both. `status` switches the supplier: ' +
     '`paused` and `disabled` stop new orders (routing skips it and goes to the next link) and leave the open orders as they are. ' +
     'A change of `baseUrl` to another origin (scheme, host or port), of `username` or of `driver` needs `apiKey` in the same request: a saved ' +
-    'key is only sent where it was saved for (`422` on `apiKey`, decision 051). A new path on the same origin does not.',
+    'key is only sent where it was saved for (`422` on `apiKey`, decision 051). A new path on the same origin does not. A `currency` ' +
+    'other than USD is `422` on `currency` (`unsupported`). A change of `status` recomputes the effective cost of the services ' +
+    'linked to the supplier (it follows the first link an order can use) and moves the catalog price version.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -352,7 +355,8 @@ export const syncSupplier = defineRoute({
   description:
     'Runs the supplier-sync job (the worker calls `imeiservicelist` and `accountinfo`) and answers its counts. The API waits up to ' +
     '`timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 ' +
-    'SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` ' +
+    'SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. A supplier whose `accountinfo` reports ' +
+    'another currency than its own is `409 SUPPLIER_UNAVAILABLE` and nothing is saved. The sync updates `supplier_services` ' +
     '(a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every ' +
     "linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose " +
     'only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial ' +

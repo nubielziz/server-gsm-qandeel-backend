@@ -47,7 +47,9 @@ feature 6.
   rejected, never logs a clear code; void only `available` codes, idempotent. `InventoryStock` (`application/inventory-stock.ts`,
   public, in `CatalogModule`) hands codes to an order at placement: `claim` locks the oldest available codes of a service
   (`FOR UPDATE SKIP LOCKED`) and decrypts them as the order's result, `sell` marks them sold with the order id (RULES orders 10).
-- **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`.
+- **`recomputeEffectiveCost(tx, serviceIds)`** (`application/effective-cost.ts`): the one writer of `services.effective_cost`:
+  `greatest(cost, credit x credit_rate)` of the first link an order can use (switched on, supplier `active`, service still listed),
+  else the highest of the switched-on links, else 0.
 
 ### TAC catalog (feature 14b)
 

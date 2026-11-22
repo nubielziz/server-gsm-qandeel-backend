@@ -5,10 +5,13 @@ import { Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db';
 import { EncryptionService } from '../../../infra/crypto';
+import { CatalogPriceVersion, recomputeEffectiveCost } from '../../catalog';
+import { BASE_CURRENCY } from '../../money';
 import { OrderSupplierMoves } from '../../orders';
 import { AuditService } from '../../platform';
 import { type Supplier, type SupplierDriver, type SupplierParamFormat, type SupplierStatus } from '../db/schema';
 import { apiKeyHintOf, keyBindingChanged } from '../domain/supplier-key';
+import { serviceIdsLinkedToSupplier } from '../infra/supplier-catalogue.repository';
 import {
   insertSupplier,
   lockSupplier,
@@ -54,6 +57,22 @@ function invalid(field: string, message: string, code = 'invalid'): AppError {
 const nameTaken = () => invalid('name', 'A supplier with this name already exists.', 'duplicate');
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No supplier has this id.' });
 
+/**
+ * Refuses a supplier currency other than the base currency (422 on `currency`, `unsupported`).
+ *
+ * Why: every cost is `credit x credit_rate` in the base currency, and no route sets `credit_rate` (it stays 1), so a supplier is
+ * only kept in the base currency: one of its credits is then worth one unit of it, which is what the price floors rely on.
+ */
+function assertBaseCurrency(currency: string): void {
+  if (currency !== BASE_CURRENCY) {
+    throw invalid(
+      'currency',
+      `Use ${BASE_CURRENCY}: only suppliers that price in ${BASE_CURRENCY} can be connected.`,
+      'unsupported',
+    );
+  }
+}
+
 /** The address without trailing slashes (`https://host/`). */
 const cleanUrl = (url: string): string => url.replace(/\/+$/, '');
 
@@ -86,14 +105,18 @@ function changeVerb(before: Supplier, after: Supplier, keys: readonly string[]):
  * Manages supplier connections.
  *
  * Why: orders-suppliers-9: server defaults for what the console leaves out, `driver` is `dhru` or `rest` (422 on the field), the
- * parameter format is derived from it; orders-suppliers-4: the key is AES-GCM text with a key id and `api_key_hint` is a masked form of it,
- * written together, never decrypted on read (decision 051: `••••`, and the key's last 2 characters when it has 16 or more; never its
+ * parameter format is derived from it; `currency` is the base currency (422 on the field otherwise: costs are `credit x credit_rate`
+ * and the rate stays 1); user rule 9: a change of `status` recomputes the effective cost of the services linked to the supplier,
+ * which follows the first link an order can use, and moves the catalog price version when one moved; orders-suppliers-4: the key is
+ * AES-GCM text with a key id and `api_key_hint` is a masked form of it, written together, never decrypted on read (decision 051: `••••`, and the key's last 2 characters when it has 16 or more; never its
  * first characters); decision 051: a saved key is only sent to the origin, username and driver it was saved with, so a change of any of
  * them needs the key again in the same request; orders-suppliers-8: delete is refused with `SUPPLIER_IN_USE` while an
  * order, a service link, an order call log row or an IMEI check refers to the supplier, and otherwise removes the logs of its
  * tests and syncs with it.
  *
- * Side effects: writes `suppliers` (and, on delete, `supplier_api_logs`) and `audit_logs` (entity `supplier`; the key is never in them).
+ * Side effects: writes `suppliers` (and, on delete, `supplier_api_logs`) and `audit_logs` (entity `supplier`; the key is never in
+ * them); a status change writes `services.effective_cost` (`recomputeEffectiveCost`) and moves the catalog price version after the
+ * commit.
  */
 @Injectable()
 export class SupplierAdminService {
@@ -103,6 +126,7 @@ export class SupplierAdminService {
     private readonly audit: AuditService,
     private readonly orders: OrderSupplierMoves,
     private readonly reader: SupplierReader,
+    private readonly priceVersion: CatalogPriceVersion,
   ) {}
 
   /**
@@ -110,10 +134,12 @@ export class SupplierAdminService {
    *
    * @param input the console's fields
    * @returns the new supplier's detail (active, balance 0, no history or links)
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`)
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`, on `currency` other than the base
+   *   currency)
    */
   async create(input: CreateSupplierInput): Promise<SupplierDetailView> {
     const driver = this.driverOf(input.driver);
+    assertBaseCurrency(input.currency);
     return this.db.runInTransaction(async ({ tx }) => {
       if (await supplierNameTaken(tx, input.name)) throw nameTaken();
       let supplier: Supplier;
@@ -153,12 +179,15 @@ export class SupplierAdminService {
    * @param id the supplier id
    * @param changes the keys to change
    * @returns the updated supplier's detail
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`, and on `apiKey` when
-   *   `baseUrl` moves to another origin, or `username` or `driver` changes, without a new key while one is saved)
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`, on `currency` other
+   *   than the base currency, and on `apiKey` when `baseUrl` moves to another origin, or `username` or `driver` changes, without a
+   *   new key while one is saved)
    */
   async update(id: number, changes: UpdateSupplierInput): Promise<SupplierDetailView> {
     const driver = changes.driver === undefined ? undefined : this.driverOf(changes.driver);
-    return this.db.runInTransaction(async ({ tx }) => {
+    if (changes.currency !== undefined) assertBaseCurrency(changes.currency);
+    return this.db.runInTransaction(async (work) => {
+      const { tx } = work;
       const before = await lockSupplier(tx, id);
       if (!before) throw notFound();
       // Decision 051: a saved key is only sent to the origin, username and driver it was saved with; moving it needs the key again.
@@ -194,6 +223,12 @@ export class SupplierAdminService {
       } catch (error) {
         if (isUniqueViolation(error)) throw nameTaken();
         throw error;
+      }
+      // User rule 9: the effective cost follows the first link an order can use, and a paused or disabled supplier takes none. The
+      // supplier row is held first, as the sync holds it, then the linked service rows the recompute changes.
+      if (after!.status !== before.status) {
+        const moved = await recomputeEffectiveCost(tx, await serviceIdsLinkedToSupplier(tx, id));
+        if (moved.length > 0) this.priceVersion.bumpAfterCommit(work);
       }
       const keys = Object.entries(changes)
         .filter(([, value]) => value !== undefined)

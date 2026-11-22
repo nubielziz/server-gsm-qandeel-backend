@@ -1,16 +1,20 @@
 // recomputeEffectiveCost: the one catalog function that keeps `services.effective_cost` right (RESOLUTIONS catalog-1, B117).
-// Feature 4a calls it on every service create and change; feature 6 calls it from the price sync, supplier import, link changes
-// and supplier `credit_rate` changes.
+// Feature 4a calls it on every service create and change; feature 6 calls it from the price sync, supplier import, link changes,
+// supplier `credit_rate` changes and a change of a supplier's status.
 import { sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
 /**
- * Recomputes the effective cost of some services from their cost and their first active supplier link.
+ * Recomputes the effective cost of some services from their cost and the first supplier link an order could be sent through.
  *
  * Why: user rule 9 (price protection): every price has a floor, and the floor starts from the effective cost,
- * `greatest(services.cost, credit x credit_rate of the first active supplier link by priority then id, 0 with no link)`
- * rounded half-up to four decimals. When the effective cost rises, `cost_was` keeps the first previous value
- * (`coalesce(cost_was, old effective cost)`), which is what the console shows as `costChangedFrom` until a base price is saved.
+ * `greatest(services.cost, credit x credit_rate of the link)` rounded half-up to four decimals. The link is the first by priority
+ * then id that the automatic dispatch could use (`pickLink` without its price test, the rule of `supplyStates`): the link is
+ * switched on, its supplier is `active` and the supplier still lists the service. So the floor is the cost of the supplier an order
+ * would really go to. With no such link it is the highest cost of the switched-on links (the careful value: whichever of them comes
+ * back, no price was accepted under its cost), and 0 with none switched on. When the effective cost rises, `cost_was` keeps the
+ * first previous value (`coalesce(cost_was, old effective cost)`), which is what the console shows as `costChangedFrom` until a
+ * base price is saved.
  * A service whose effective cost did not change is not touched. A change moves the price a merchant pays, so the caller moves the
  * catalog price version after its commit when the result is not empty (`CatalogPriceVersion.bumpAfterCommit`, decision 022).
  *
@@ -35,9 +39,18 @@ export async function recomputeEffectiveCost(db: DbExecutor, serviceIds: readonl
                  from ${s.serviceSupplierLinks} link
                  join ${s.supplierServices} remote on remote.id = link.supplier_service_id
                  join ${s.suppliers} supplier on supplier.id = remote.supplier_id
-                 where link.service_id = service.id and link.is_active
+                 where link.service_id = service.id
+                   and link.is_active
+                   and supplier.status = 'active'
+                   and remote.is_available
                  order by link.priority, link.id
                  limit 1
+               ), (
+                 select max(round(remote.credit * supplier.credit_rate, 4))
+                 from ${s.serviceSupplierLinks} link
+                 join ${s.supplierServices} remote on remote.id = link.supplier_service_id
+                 join ${s.suppliers} supplier on supplier.id = remote.supplier_id
+                 where link.service_id = service.id and link.is_active
                ), 0)
              )::numeric(18,4) as new_effective
       from ${s.services} service

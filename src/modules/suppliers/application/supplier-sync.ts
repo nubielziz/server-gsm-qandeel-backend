@@ -190,6 +190,10 @@ export async function writeCallLogSafely(
  * the fields the supplier requires that the import made optional (`ServiceImporter.requireFields`, feature 33). A field is never made
  * optional, so a staff member who makes one optional again sees the next sync make it required again.
  *
+ * The credits are only worth what `credit_rate` says if the supplier prices in the currency it is saved with: when `accountinfo`
+ * reports another currency (compared ignoring case and spaces; a supplier that reports none is taken at its word), the sync saves
+ * nothing and answers `SUPPLIER_UNAVAILABLE` with the two currencies.
+ *
  * Side effects: two `supplier_api_logs` rows; one transaction that writes `supplier_services`, `suppliers` (balance, check time,
  * `prices_synced_at`), `services` (effective cost; type and category of an adopted one), `service_fields` and `service_categories` (an
  * adoption; `required` of a repaired field), `outbox_events` (`catalog.services_changed` per adoption) and `audit_logs` (when asked, and
@@ -232,6 +236,17 @@ export class SupplierSync {
     const account = await this.client.accountInfo(supplier);
     await writeCallLogSafely(this.db.db, supplier.id, null, account.record, this.clock.now());
     if (!account.ok) return this.unavailable(supplier, account.message);
+    const reported = (account.value.currency ?? '').trim().toUpperCase();
+    if (reported !== '' && reported !== supplier.currency.toUpperCase()) {
+      this.logger.warn(
+        `Supplier ${supplier.id} reports another currency than ${supplier.currency}; the sync saved nothing.`,
+      );
+      return {
+        ok: false,
+        code: 'SUPPLIER_UNAVAILABLE',
+        detail: `${supplier.name} reports its account in ${reported}, not in ${supplier.currency}: nothing was saved. Only a supplier that prices in ${supplier.currency} can be synced.`,
+      };
+    }
 
     const { services, skipped } = list.value;
     const balance = account.value.credit;

@@ -11,7 +11,8 @@ export const replaceSupplierLinks = defineRoute({
   description:
     'The whole chain in one call: `links` in priority order (priorities are renumbered 1..n from the order given, then by the ' +
     'priority sent); `[]` unlinks the service, and its new orders wait for manual dispatch. A link that stays keeps its field map and ' +
-    "its switch. The service's effective cost is recomputed from the first active link and the catalog price version moves. An unknown " +
+    "its switch. The service's effective cost is recomputed from the first link an order can use (switched on, its supplier active and " +
+    'still listing the service) and the catalog price version moves. An unknown ' +
     'or repeated supplier service is `422` on `links`.',
   tags: ['suppliers'],
   surface: 'admin',
