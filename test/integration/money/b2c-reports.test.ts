@@ -2,6 +2,7 @@
 // the ledger (payments minus refunds, by country and month) and the payments report by method (volumes, fees, refunds, disputes, the strip).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
+import { Money } from '@src/common/money';
 import { type Database, schema as s } from '@src/infra/db';
 import { RefundProcessModule, RefundSender } from '@src/modules/money';
 import { type AdminApi, adminWith } from '../../support/admin-api';
@@ -15,13 +16,16 @@ import {
   b2cWorld,
   disputeEvent,
   hook,
+  json,
   openCheckout,
   pay,
   paidOrder,
+  storefrontEvent,
 } from '../../support/b2c';
 import { DAY, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
+import { systemBalance } from '../../support/orders';
 import { insertTaxWindow } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-07T12:00:00.000Z');
@@ -53,6 +57,54 @@ beforeEach(async () => {
 });
 
 const paymentRow = async (id: number) => (await db.select().from(s.payments).where(eq(s.payments.id, id)))[0]!;
+
+/** Sends the gateway's dispute event of a payment: opened, or closed as won or lost. */
+async function dispute(paid: PaidOrder, gatewayId: string, status?: 'won' | 'lost'): Promise<void> {
+  const body = disputeEvent(`evt_${gatewayId}_${status ?? 'open'}`, {
+    dispute: gatewayId,
+    intent: paid.intent,
+    ...(status === undefined ? {} : { type: 'charge.dispute.closed', status }),
+  });
+  expect((await hook(t, clock, 'disputes', world.gateway.code, body)).statusCode).toBe(200);
+}
+
+/** Asks for a refund of a whole storefront payment, as the customer would. */
+async function requestRefund(paid: PaidOrder): Promise<typeof s.refunds.$inferSelect> {
+  const customerId = (await db.select().from(s.orders).where(eq(s.orders.id, paid.orderId)))[0]!.customerId!;
+  const [row] = await db
+    .insert(s.refunds)
+    .values({
+      paymentId: paid.paymentId,
+      orderId: paid.orderId,
+      customerId,
+      amount: paid.charged,
+      currency: 'GBP',
+      reason: 'The code did not work',
+      method: 'original',
+      status: 'requested',
+      requestedByType: 'customer',
+      requestedById: customerId,
+      createdAt: clock.now(),
+      updatedAt: clock.now(),
+    })
+    .returning();
+  return row!;
+}
+
+/** What the books moved in a window: the VAT owed (`vat_payable`) and the net owed to buyers or earned (`customer_funds`, `revenue`). */
+async function ledgerMoved(from: string, to: string): Promise<{ taxable: string; vat: string }> {
+  const [row] = (
+    await db.execute<{ taxable: string; vat: string }>(sql`
+      select (-coalesce(sum(le.amount) filter (where la.kind in ('customer_funds', 'revenue')), 0))::numeric(20,4)::text as taxable,
+        (-coalesce(sum(le.amount) filter (where la.kind = 'vat_payable'), 0))::numeric(20,4)::text as vat
+      from ledger_entries le
+      join ledger_accounts la on la.id = le.account_id
+      join ledger_transactions lt on lt.id = le.transaction_id
+      where lt.ref_type = 'order' and lt.kind <> 'order_settle'
+        and lt.created_at >= ${new Date(from)} and lt.created_at < ${new Date(to)}`)
+  ).rows;
+  return { taxable: row!.taxable, vat: row!.vat };
+}
 
 /** The books of this file: two UK card orders (one refunded in full), a UK Apple Pay order that lost a dispute, and a US crypto order. */
 async function books(): Promise<{ card: PaidOrder; refunded: PaidOrder; wallet: PaidOrder; crypto: PaidOrder }> {
@@ -158,6 +210,36 @@ describe('GET /admin/reports/vat', () => {
       rows: [],
       totals: { orders: 0, taxable: '0.0000', vat: '0.0000' },
     });
+  });
+
+  it('keeps a month as it was: a refund stays in its month and its reversal at a later chargeback is in the month it was booked', async () => {
+    const paid = await paidOrder(t, clock, world, { email: 'a@mail.example' });
+    expect((await staff.post(`/admin/orders/${paid.orderId}/reject`, { reason: 'Cannot be unlocked' })).status).toBe(
+      204,
+    );
+    const [refund] = await db.select().from(s.refunds);
+    expect(refund!.ledgerTxId).not.toBeNull();
+    // The buyer disputes the payment: the refund is not sent while the dispute is open.
+    await dispute(paid, 'dp_month');
+    expect(await sender.send(refund!.id, false)).toBe('failed');
+    const filed = await staff.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
+    expect(filed.body.totals).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
+
+    // In December the dispute is lost: the refund is closed unsent and its journal reversed (decision 048).
+    clock.set('2026-12-10T12:00:00.000Z');
+    await dispute(paid, 'dp_month', 'lost');
+    expect((await db.select().from(s.refunds))[0]!.status).toBe('rejected');
+    await clearIdentityCaches(t);
+    staff = await adminWith(t, ['reports:finance'], { name: 'Layla Haddad' });
+    const november = await staff.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
+    expect(november.body).toEqual(filed.body);
+    const december = await staff.get('/admin/reports/vat?from=2026-12-01&to=2026-12-31');
+    const moved = await ledgerMoved('2026-12-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z');
+    expect(december.body.totals).toEqual({ orders: 0, ...moved });
+    // The two months together are what the books still owe.
+    expect(Money.of(november.body.totals.vat).add(Money.of(december.body.totals.vat)).toWire()).toBe(
+      await systemBalance(db, 'vat_payable'),
+    );
   });
 
   it('refuses a bad date, a missing date and a start after the end, and needs reports:finance', async () => {
@@ -379,5 +461,100 @@ describe('GET /admin/reports/payments', () => {
     expect(failed.body.totals.awaitingAmount).toBe('4.7900');
     expect(failed.body.total).toBe(3);
     expect((await paymentRow(card.paymentId)).status).toBe('failed');
+  });
+});
+
+describe('GET /admin/reports/profit (storefront orders)', () => {
+  const profitOf = async () => {
+    const reader = await adminWith(t, ['reports:read']);
+    const res = await reader.get('/admin/reports/profit?groupBy=client&from=2026-11-01&to=2026-11-30');
+    expect(res.status).toBe(200);
+    return res.body;
+  };
+
+  it('counts a delivered order net of what was refunded, as the books do', async () => {
+    const partly = await paidOrder(t, clock, world, { email: 'a@mail.example' });
+    const wholly = await paidOrder(t, clock, world, { email: 'b@mail.example' });
+    for (const paid of [partly, wholly]) {
+      expect((await staff.post(`/admin/orders/${paid.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
+    }
+    const part = await requestRefund(partly);
+    const approved = await staff.post(`/admin/refunds/${part.id}/approve`, { amount: '1.00' });
+    expect(approved.body).toMatchObject({ netAmount: '0.8277', taxAmount: '0.1700' });
+    expect(await sender.send(part.id, false)).toBe('completed');
+    const whole = await requestRefund(wholly);
+    expect((await staff.post(`/admin/refunds/${whole.id}/approve`, {})).status).toBe(200);
+    expect(await sender.send(whole.id, false)).toBe('completed');
+    // Both orders stay delivered: 3.99 - 0.8277 is left of the first one's revenue, nothing of the second one's.
+    const body = await profitOf();
+    expect(body.rows).toEqual([
+      { key: '0', label: 'Storefront customers', orders: 2, revenue: '3.1623', cost: '0.1600', profit: '3.0023' },
+    ]);
+    expect(body.totals.revenue).toBe(await systemBalance(db, 'revenue'));
+  });
+
+  it('takes a lost chargeback of a delivered order off its revenue, never below zero', async () => {
+    const kept = await paidOrder(t, clock, world, { email: 'a@mail.example' });
+    const disputed = await paidOrder(t, clock, world, { email: 'b@mail.example' });
+    for (const paid of [kept, disputed]) {
+      expect((await staff.post(`/admin/orders/${paid.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
+    }
+    await dispute(disputed, 'dp_delivered');
+    await dispute(disputed, 'dp_delivered', 'lost');
+    expect((await paymentRow(disputed.paymentId)).status).toBe('chargeback');
+    // The chargeback (4.79 and the dispute fee) is more than the order's revenue: that order adds nothing, and its cost stays.
+    const body = await profitOf();
+    expect(body.totals).toEqual({ orders: 2, revenue: '3.9900', cost: '0.1600', profit: '3.8300' });
+  });
+
+  it('keeps the whole revenue of a delivered order whose checkout was paid twice: the second payment and its refund are not a sale', async () => {
+    const { token } = await openCheckout(t, world, { email: 'a@mail.example' });
+    const first = json(await pay(t, token, undefined, 'k1')).payment;
+    const second = json(await pay(t, token, undefined, 'k2')).payment;
+    for (const [payment, intent] of [
+      [first, 'pi_twice_a'],
+      [second, 'pi_twice_b'],
+    ] as const) {
+      const body = storefrontEvent(`evt_${intent}`, payment.reference, { amount: payment.amount, intent });
+      expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
+    }
+    const orders = await db.select().from(s.orders);
+    expect(orders).toHaveLength(1);
+    // The second payment is refunded in full at once; the order is the first payment's.
+    expect((await db.select().from(s.refunds)).map((refund) => refund.paymentId)).toEqual([second.id]);
+    expect((await staff.post(`/admin/orders/${orders[0]!.id}/reply`, { code: 'Unlocked' })).status).toBe(204);
+    const body = await profitOf();
+    expect(body.totals).toEqual({ orders: 1, revenue: '3.9900', cost: '0.0800', profit: '3.9100' });
+    expect(body.totals.revenue).toBe(await systemBalance(db, 'revenue'));
+  });
+
+  it("keeps the whole revenue of a delivered order whose buyer paid twice and charged the second payment back: only a chargeback of the order's own payment takes from the sale", async () => {
+    const { token } = await openCheckout(t, world, { email: 'a@mail.example' });
+    const first = json(await pay(t, token, undefined, 'k1')).payment;
+    const second = json(await pay(t, token, undefined, 'k2')).payment;
+    for (const [payment, intent] of [
+      [first, 'pi_twice_a'],
+      [second, 'pi_twice_b'],
+    ] as const) {
+      const body = storefrontEvent(`evt_${intent}`, payment.reference, { amount: payment.amount, intent });
+      expect((await hook(t, clock, 'payments', world.gateway.code, body)).statusCode).toBe(200);
+    }
+    const [order] = await db.select().from(s.orders);
+    expect((await staff.post(`/admin/orders/${order!.id}/reply`, { code: 'Unlocked' })).status).toBe(204);
+    // The buyer disputes the second payment and the dispute is lost: the chargeback is booked against the order.
+    for (const closed of [false, true]) {
+      const event = disputeEvent(`evt_dp_twice_${closed ? 'lost' : 'open'}`, {
+        dispute: 'dp_twice',
+        intent: 'pi_twice_b',
+        ...(closed ? { type: 'charge.dispute.closed', status: 'lost' } : {}),
+      });
+      expect((await hook(t, clock, 'disputes', world.gateway.code, event)).statusCode).toBe(200);
+    }
+    const [lost] = await db.select().from(s.disputes);
+    expect(lost).toMatchObject({ paymentId: second.id, orderId: order!.id, status: 'lost' });
+    expect(lost!.ledgerTxId).not.toBeNull();
+    const body = await profitOf();
+    expect(body.totals).toEqual({ orders: 1, revenue: '3.9900', cost: '0.0800', profit: '3.9100' });
+    expect(body.totals.revenue).toBe(await systemBalance(db, 'revenue'));
   });
 });

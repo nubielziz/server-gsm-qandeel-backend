@@ -16,15 +16,16 @@ export interface VatRowRecord {
 /**
  * VAT per country and month from the ledger.
  *
- * Why: RESOLUTIONS money-4 and the endpoint doc: the report is worked out from the posted `vat_payable` lines of the storefront's
- * `b2c_pay` journals minus its `b2c_refund` journals and the VAT a chargeback of an order that was never delivered gave back (its
- * `b2c_chargeback` journal's `vat_payable` line; its taxable part is the journal's `customer_funds` line), never from invoices, so it
- * matches the books; the gross is the gateway line or, for a payment from the store balance and its refunds, the `customer_wallet` line
- * (feature 21, defect D1). Decision 048: a refund journal
- * that was reversed (a refund closed unsent when its payment was charged back) and its reversal (key `reverse:<journal id>`, the same
- * kind) are both left out, the rule `MerchantSpend` uses for a reversed settlement: together they returned nothing, and the reports
- * would otherwise count the money as going back twice. One row per tax country and month (UTC), newest month first, then country;
- * `taxable` is the net sales, `orders` the paid orders of the month, `rate` the rate of the latest order of the month.
+ * Why: RESOLUTIONS money-4 and the endpoint doc: the report is worked out from the posted lines of the storefront's payment, refund and
+ * chargeback journals, never from invoices, so it matches the books. Each month shows the signed movements booked in it: `vat` is what
+ * the month's journals moved on `vat_payable` (a payment adds, a refund takes off, and so does the chargeback of an order that was never
+ * delivered, which gives back the VAT of the disputed share), `taxable` what they moved on `customer_funds` and `revenue` (the net part,
+ * whatever paid it: the gateway or the store balance; that chargeback's `customer_funds` line takes its net off). A delivered order's
+ * chargeback moves neither and is not read. A month that was reported never changes afterwards: a refund journal that is reversed later
+ * (decision 048: a refund closed unsent when its payment was charged back; key `reverse:<journal id>`, the same kind) stays in the month
+ * it was booked, and its reversal counts in the month of the reversal, as does the chargeback booked with it, which gives back only what
+ * the refunds that went out left. One row per tax country and month (UTC), newest month first, then country; `orders` is the paid orders
+ * of the month, `rate` the rate of the latest order of the month.
  *
  * @param db the database or a transaction
  * @param from the start (inclusive)
@@ -42,28 +43,22 @@ export async function vatRows(db: DbExecutor, from: Date, to: Date): Promise<Vat
   }>(sql`
     with tx as (
       select lt.id, lt.kind, lt.ref_id as order_id, lt.created_at,
-        abs(coalesce(sum(le.amount) filter (where la.kind = 'vat_payable'), 0)) as vat,
-        abs(coalesce(sum(le.amount) filter (where la.kind in ('gateway_clearing', 'customer_wallet')), 0)) as gross,
-        abs(coalesce(sum(le.amount) filter (where la.kind = 'customer_funds'), 0)) as funds
+        -- Signed: the ledger stores a credit as a negative amount, so a payment and the reversal of a refund add, and a refund and the
+        -- chargeback of an order that was never delivered take off.
+        -coalesce(sum(le.amount) filter (where la.kind = 'vat_payable'), 0) as vat,
+        -coalesce(sum(le.amount) filter (where la.kind in ('customer_funds', 'revenue')), 0) as taxable
       from ledger_transactions lt
       join ledger_entries le on le.transaction_id = lt.id
-      join ledger_accounts la on la.id = le.account_id
+      join ledger_accounts la on la.id = le.account_id and la.kind in ('vat_payable', 'customer_funds', 'revenue')
       where lt.ref_type = 'order' and lt.kind in ('b2c_payment', 'refund', 'chargeback')
         and lt.created_at >= ${from} and lt.created_at < ${to}
-        -- A reversed journal and its reversal cancel out: neither is money paid or returned (decision 048).
-        and lt.idempotency_key not like 'reverse:%'
-        and not exists (select 1 from ledger_transactions rv where rv.idempotency_key = 'reverse:' || lt.id::text)
-      group by lt.id
-      -- A chargeback counts only when it gave back what a sale booked (an order that was never delivered).
-      having lt.kind <> 'chargeback'
-        or coalesce(sum(le.amount) filter (where la.kind in ('vat_payable', 'customer_funds')), 0) <> 0)
+      group by lt.id)
     select coalesce(o.tax_country, '') as country,
       to_char(tx.created_at at time zone 'UTC', 'YYYY-MM') as period,
       coalesce((array_agg(cs.tax_rate order by tx.created_at desc, tx.id desc))[1], 0)::text as rate,
       (count(distinct tx.order_id) filter (where tx.kind = 'b2c_payment'))::int as orders,
-      coalesce(sum(case when tx.kind = 'b2c_payment' then tx.gross - tx.vat when tx.kind = 'chargeback' then -tx.funds
-        else -(tx.gross - tx.vat) end), 0)::numeric(20,4)::text as taxable,
-      coalesce(sum(case when tx.kind = 'b2c_payment' then tx.vat else -tx.vat end), 0)::numeric(20,4)::text as vat
+      coalesce(sum(tx.taxable), 0)::numeric(20,4)::text as taxable,
+      coalesce(sum(tx.vat), 0)::numeric(20,4)::text as vat
     from tx
     join orders o on o.id = tx.order_id and o.customer_id is not null
     left join checkout_sessions cs on cs.id = o.checkout_session_id

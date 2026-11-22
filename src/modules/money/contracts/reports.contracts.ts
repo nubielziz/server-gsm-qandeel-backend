@@ -34,8 +34,9 @@ export const getProfitReport = defineRoute({
   key: 'GET /admin/reports/profit',
   summary: 'Profit by day, service, supplier or merchant',
   description:
-    'Completed orders counted by the day they completed (UTC days). `revenue` is the selling price without VAT, `cost` the supplier ' +
-    'cost, `profit` their difference. `groupBy` is `day` (default; oldest day first, days without orders left out), `service`, ' +
+    'Completed orders counted by the day they completed (UTC days). `revenue` is the selling price without VAT (for a storefront ' +
+    'order, less what its refund and chargeback journals took back, never below zero), `cost` the supplier cost, `profit` their ' +
+    'difference. `groupBy` is `day` (default; oldest day first, days without orders left out), `service`, ' +
     '`supplier` (key `0` is "No supplier") or `client` (key `0` is "Storefront customers"); the other splits rank by profit, highest ' +
     'first. `from` and `to` are days, both included; the default is the 30 days ending on `to` (today). The dates used are echoed ' +
     'back. `422` names `from` when it is after `to`.',

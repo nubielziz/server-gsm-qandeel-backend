@@ -5,7 +5,7 @@
 // DEVIATION to resolve later: decision 016 wants the reads of other modules' tables through the owning module's public service. orders,
 // clients, services, suppliers and the supplier call log export no reader for these figures, so this file reads them with plain selects,
 // like the other modules' foreign-read files. Nothing outside this file knows; the ledger accounts are the money module's own.
-import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gte, inArray, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { ledgerAccounts } from '../db/schema';
@@ -24,11 +24,34 @@ export interface ProfitSums {
 const REVENUE = (column: unknown) => sql<string>`coalesce(sum(${column}), 0)::numeric(18,4)::text`;
 
 /**
+ * What the books took back of a storefront order's sale, as a correlated subquery over the order id the SQL passes in: the signed
+ * `revenue` lines of the order's refund journals (a refund of the delivered order adds its net, the reversal of such a refund takes it
+ * off again) and the signed `customer_funds` and `chargeback_loss` lines of the chargeback journals of disputes on the order's own
+ * payment, the one with the order's receipt (what the chargeback booked, the dispute fee included). The `customer_funds` lines of a
+ * refund journal are left out: they return money that never became revenue (a second payment of a checkout already paid, refunded in
+ * full, or a refund before delivery), so they take nothing off the sale. For the same reason a chargeback of such a second payment (it
+ * is recorded without a receipt) takes nothing off the sale either, although its journal carries the order as reference.
+ */
+const takenBack = (orderId: unknown): SQL => sql`(
+  select coalesce(sum(le.amount), 0) from ledger_transactions lt
+  join ledger_entries le on le.transaction_id = lt.id
+  join ledger_accounts la on la.id = le.account_id
+  where lt.ref_type = 'order' and lt.ref_id = ${orderId}
+    and ((lt.kind = 'refund' and la.kind = 'revenue')
+      or (lt.kind = 'chargeback' and la.kind in ('customer_funds', 'chargeback_loss')
+        and exists (select 1 from disputes d
+          join payments p on p.id = d.payment_id
+          join invoices i on i.id = p.invoice_id and i.kind = 'receipt' and i.order_id = lt.ref_id
+          where d.ledger_tx_id = lt.id))))`;
+
+/**
  * Adds up completed orders by completion time, grouped by day, service, supplier or merchant.
  *
  * Why: `GET /admin/reports/profit`: revenue is the order's selling price without VAT, cost the supplier cost, both stored on the
  * order; only orders that are `completed` now count (a refunded or reopened order is not revenue), by the time they completed. A
- * storefront order has no merchant (key `0`, "Storefront customers") and an order no supplier executed has none (key `0`, "No supplier").
+ * delivered storefront order stays `completed` when it is refunded or charged back, so its revenue is the price less what the books
+ * took back of it ({@link takenBack}), never below zero; the supplier cost stays. A storefront order has no merchant (key `0`,
+ * "Storefront customers") and an order no supplier executed has none (key `0`, "No supplier").
  *
  * @param db the database
  * @param groupBy what to split by
@@ -58,7 +81,9 @@ export async function profitSums(db: DbExecutor, groupBy: ProfitGroup, start: Da
       key: group.key,
       label: group.label,
       orders: sql<number>`count(*)::int`,
-      revenue: REVENUE(o.totalPrice),
+      revenue: REVENUE(
+        sql`case when ${o.customerId} is null then ${o.totalPrice} else greatest(${o.totalPrice} - ${takenBack(o.id)}, 0) end`,
+      ),
       cost: REVENUE(o.totalCost),
     })
     .from(o)

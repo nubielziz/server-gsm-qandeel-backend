@@ -1,7 +1,7 @@
 // Integration tests of order-engine refunds of a payment the buyer disputed with the card network (decision 048): a staff reject, a supplier
 // rejection and a risk refund open a refund request instead of paying out; the request waits until the dispute is won; a refund opened
 // before the dispute is not sent to the gateway while the dispute is open; and a chargeback closes the refunds the gateway has not paid,
-// locking only those, while the VAT report leaves the reversed refund out.
+// locking only those, while the VAT report counts the reversed refund and its reversal each in the month it was booked.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { type Database, pgErrorInfo, schema as s } from '@src/infra/db';
@@ -252,8 +252,8 @@ describe('a chargeback closes the refunds the gateway has not paid (decision 048
     );
     // A closed refund cannot be sent again.
     expect((await staff.post(`/admin/refunds/${refund.id}/retry`, {})).status).toBe(409);
-    // The VAT report ties to the books: the refund and its reversal are left out, and the chargeback of the rejected order gave the
-    // payment's VAT back, so the report shows what vat_payable holds.
+    // The VAT report ties to the books: the refund and its reversal, booked in the same month, cancel out, and the chargeback of the
+    // rejected order gave the payment's VAT back, so the report shows what vat_payable holds.
     const finance = await adminWith(t, ['reports:finance'], { name: 'Omar Saleh' });
     const vat = await finance.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
     expect(vat.status).toBe(200);
