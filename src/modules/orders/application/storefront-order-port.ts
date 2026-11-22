@@ -1,9 +1,11 @@
 // StorefrontOrderPortImpl: what the orders module gives the money module for storefront refunds and disputes (feature 16): cancel an open
-// order because its refund was approved, and add a line to an order's timeline. Registered with money's port slot at boot.
+// order because its refund was approved, add a line to an order's timeline, and tell which orders are still open (the anonymize guard of
+// the store balance). Registered with money's port slot at boot.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 import { type PortActor, type PortTimelineLine, type StorefrontOrderPort, StorefrontOrderPorts } from '../../money';
-import { insertEvents } from '../infra/order.repository';
+import { isOpen } from '../domain/order-machine';
+import { insertEvents, statusesOf } from '../infra/order.repository';
 import { OrderTransitions } from './order-transitions';
 
 /**
@@ -14,7 +16,7 @@ import { OrderTransitions } from './order-transitions';
  * timeline lines of refunds and disputes are written here because `order_events` is orders' table.
  *
  * Side effects: registers itself with `StorefrontOrderPorts` at boot; `cancelForRefund` applies a transition (updates `orders`, writes
- * ledger rows, timeline lines and an `order.status_changed` outbox row); `addTimeline` inserts one `order_events` row.
+ * ledger rows, timeline lines and an `order.status_changed` outbox row); `addTimeline` inserts one `order_events` row; `openAmong` only reads.
  */
 @Injectable()
 export class StorefrontOrderPortImpl implements StorefrontOrderPort, OnModuleInit {
@@ -67,5 +69,17 @@ export class StorefrontOrderPortImpl implements StorefrontOrderPort, OnModuleIni
         data: { message: line.message, ...line.data },
       },
     ]);
+  }
+
+  /**
+   * Picks the open orders among the given ones (the state machine's `isOpen`).
+   *
+   * @param db the database or the caller's transaction
+   * @param orderIds the orders to look at
+   * @returns the ids of the open ones, in id order
+   */
+  async openAmong(db: DbExecutor, orderIds: readonly number[]): Promise<number[]> {
+    const rows = await statusesOf(db, orderIds);
+    return rows.filter((row) => isOpen(row.status)).map((row) => row.id);
   }
 }

@@ -337,7 +337,8 @@ or expired `INVALID_TRANSITION`, consents) → a friendly balance/hold pre-check
 `CustomerOrderPlacement.place` whose `onInserted` calls money's `CustomerWalletPayments.record` (payment row, `b2c_wallet_pay` guarded
 under the wallet lock, receipt) → `markSessionPaid` → mails, or `refundBlocked` (back to the balance). The checkout view has
 `balancePayable` (switch on and opened signed in; never the balance). Maintenance scope `checkout` covers the route. Anonymize calls
-`CustomerWallets.closeForErasure` last (refused while the balance is not zero, a top-up waits for review or a top-up dispute is open);
+`CustomerWallets.closeForErasure` last (refused while the balance is not zero, a top-up waits for review, a top-up dispute is open, an
+order paid from the balance is still open or a refund to the balance waits for staff);
 the data export adds `wallet`.
 
 ## Scenarios

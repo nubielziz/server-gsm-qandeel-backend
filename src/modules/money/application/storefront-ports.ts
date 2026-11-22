@@ -22,10 +22,11 @@ export interface PortTimelineLine {
 }
 
 /**
- * What money asks of the orders module for a storefront refund or dispute.
+ * What money asks of the orders module for a storefront refund or dispute, and for the anonymize guard of the store balance.
  *
- * Why: approving a refund of an order that was not delivered cancels the order through the state machine (decision 025), and every
- * refund and dispute writes a line on the order's timeline; both are orders' tables and rules.
+ * Why: approving a refund of an order that was not delivered cancels the order through the state machine (decision 025), every
+ * refund and dispute writes a line on the order's timeline, and the anonymize guard needs to know which orders are still open; all are
+ * orders' tables and rules.
  */
 export interface StorefrontOrderPort {
   /**
@@ -49,6 +50,17 @@ export interface StorefrontOrderPort {
    * @param line the line
    */
   addTimeline(tx: DbExecutor, orderId: number, actor: PortActor, line: PortTimelineLine): Promise<void>;
+  /**
+   * Picks the orders that are still open (`pending` or `processing`) among the given ones.
+   *
+   * Why: O12 and risk K11: a customer whose order paid from the store balance is still open is not anonymized, because its refund would
+   * go back to that balance; the order status is orders' table.
+   *
+   * @param db the database or the caller's transaction
+   * @param orderIds the orders to look at
+   * @returns the ids of the open ones, in id order
+   */
+  openAmong(db: DbExecutor, orderIds: readonly number[]): Promise<number[]>;
 }
 
 /**

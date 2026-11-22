@@ -12,6 +12,7 @@ import {
   ledgerTransactions,
   paymentGateways,
   payments,
+  refunds,
 } from '../db/schema';
 import { BASE_CURRENCY } from '../domain/accounts';
 import { openAccounts } from './ledger-accounts.repository';
@@ -201,6 +202,59 @@ export async function hasPendingTopUpPayment(db: DbExecutor, customerId: number)
     .where(and(eq(payments.purpose, 'topup'), eq(payments.customerId, customerId), eq(payments.status, 'pending')))
     .limit(1);
   return row !== undefined;
+}
+
+/**
+ * Reads the orders the customer paid from the store balance whose payment can still give money back.
+ *
+ * Why: O12 and risk K11: a refund of such an order goes back to the balance (plan 21 § 5.6.7), so the anonymize guard asks the orders
+ * module which of them are still open. A payment that was refunded in full has nothing left to give back.
+ *
+ * @param db the database or a transaction
+ * @param customerId the customer
+ * @returns the order ids, in id order
+ */
+export async function balancePaidOrderIds(db: DbExecutor, customerId: number): Promise<number[]> {
+  const rows = await db
+    .selectDistinct({ orderId: payments.orderId })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.purpose, 'order'),
+        eq(payments.methodType, 'balance'),
+        eq(payments.customerId, customerId),
+        inArray(payments.status, ['captured', 'partial_refund']),
+      ),
+    )
+    .orderBy(asc(payments.orderId));
+  return rows.flatMap((row) => (row.orderId === null ? [] : [row.orderId]));
+}
+
+/**
+ * Finds a refund to the store balance of the customer that is still open.
+ *
+ * Why: O12 and risk K11: a `requested` or `processing` refund of a balance payment can still post to the balance, so the customer is
+ * not anonymized before staff approve or decline it.
+ *
+ * @param db the database or a transaction
+ * @param customerId the customer
+ * @returns the id of the oldest such refund, or `undefined` when there is none
+ */
+export async function openBalanceRefundId(db: DbExecutor, customerId: number): Promise<number | undefined> {
+  const [row] = await db
+    .select({ id: refunds.id })
+    .from(refunds)
+    .innerJoin(payments, eq(payments.id, refunds.paymentId))
+    .where(
+      and(
+        eq(payments.methodType, 'balance'),
+        eq(payments.customerId, customerId),
+        inArray(refunds.status, ['requested', 'processing']),
+      ),
+    )
+    .orderBy(asc(refunds.id))
+    .limit(1);
+  return row?.id;
 }
 
 /**

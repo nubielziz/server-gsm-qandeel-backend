@@ -29,6 +29,27 @@ export async function findOrder(db: DbExecutor, id: number): Promise<Order | und
 }
 
 /**
+ * Reads the status of some orders.
+ *
+ * Why: the storefront port tells money which orders are still open (the anonymize guard of the store balance).
+ *
+ * @param db the database or a transaction
+ * @param ids the order ids (an empty list reads nothing)
+ * @returns the id and status of each order that exists, in id order
+ */
+export async function statusesOf(
+  db: DbExecutor,
+  ids: readonly number[],
+): Promise<Array<{ id: number; status: OrderStatus }>> {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: orders.id, status: orders.status })
+    .from(orders)
+    .where(inArray(orders.id, [...ids]))
+    .orderBy(asc(orders.id));
+}
+
+/**
  * Inserts an order and returns the stored row.
  *
  * Why: `placed_at` and `created_at` are never given: both take the same transaction time (decision 025, orders-suppliers-1).

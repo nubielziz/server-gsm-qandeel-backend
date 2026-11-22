@@ -30,11 +30,13 @@ import { ADJUST_WINDOW_MS, adjustmentNeedsOwner, adjustmentRefusalDetail } from 
 import { lockStaffAdjustments, staffCreditsSince } from '../infra/adjustment.repository';
 import {
   type CustomerWalletRow,
+  balancePaidOrderIds,
   countOpenTopUpDisputes,
   ensureLockedCustomerWallet,
   hasPendingTopUpPayment,
   listCustomerWallets,
   listWalletEntries,
+  openBalanceRefundId,
   readCustomerWallet,
   readTopUpFigures,
   voidUnpaidTopUps,
@@ -50,6 +52,7 @@ import { findJournal } from '../infra/ledger-read.repository';
 import { findHeaderByKey } from '../infra/ledger-writer.repository';
 import { CustomerWalletMails } from './customer-wallet-mails';
 import { LedgerPoster, type PostedTransaction } from './post-transaction';
+import { StorefrontOrderPorts } from './storefront-ports';
 
 /** The customer's wallet on the store wire. */
 export type StoreWallet = z.output<typeof StoreWalletSchema>;
@@ -142,6 +145,7 @@ export class CustomerWallets {
     private readonly audit: AuditService,
     private readonly settings: SettingsReader,
     private readonly mails: CustomerWalletMails,
+    private readonly orders: StorefrontOrderPorts,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -519,13 +523,16 @@ export class CustomerWallets {
    * Refuses to anonymize a customer while money is on or on its way to the balance, and voids the top-ups nobody can pay any more.
    *
    * Why: O12 and risk K11: a balance is never stranded on an anonymized customer. It runs as the last step of the anonymize transaction
-   * (it locks the wallet row, which must come after every other row: plan § 5.7).
+   * (it locks the wallet row, which must come after every other row: plan § 5.7). Money is on its way to the balance while a top-up waits,
+   * while an order paid from the balance is still open (its rejection refunds to the balance, plan § 5.6.7) and while a refund of a
+   * balance payment waits for staff; the orders module tells which orders are open (`StorefrontOrderPort.openAmong`).
    *
    * Side effects: locks the wallet row; voids the customer's open top-ups that have no payment.
    *
    * @param tx the anonymize transaction
    * @param customerId the customer
-   * @throws {AppError} `CONFLICT` while the balance is not zero, a top-up payment is pending or a top-up dispute is open
+   * @throws {AppError} `CONFLICT` while the balance is not zero, a top-up payment is pending, a top-up dispute is open, an order paid
+   *   from the balance is open or a refund to the balance is `requested` or `processing`
    */
   async closeForErasure(tx: DbExecutor, customerId: number): Promise<void> {
     const wallet = await readCustomerWallet(tx, customerId, true);
@@ -541,6 +548,20 @@ export class CustomerWallets {
     }
     if ((await countOpenTopUpDisputes(tx, customerId)) > 0) {
       throw new AppError('CONFLICT', { detail: 'A dispute of this customer’s top-up is still open.' });
+    }
+    const paidFromBalance = await balancePaidOrderIds(tx, customerId);
+    // Only a customer with a balance-paid order asks the orders module, so a process without it never reaches the port.
+    const [openOrderId] = paidFromBalance.length === 0 ? [] : await this.orders.get().openAmong(tx, paidFromBalance);
+    if (openOrderId !== undefined) {
+      throw new AppError('CONFLICT', {
+        detail: `Order ORD-${openOrderId} of this customer was paid from the store balance and is still open. Complete or reject it first.`,
+      });
+    }
+    const openRefundId = await openBalanceRefundId(tx, customerId);
+    if (openRefundId !== undefined) {
+      throw new AppError('CONFLICT', {
+        detail: `Refund RF-${openRefundId} to this customer’s store balance is still open. Approve or decline it first.`,
+      });
     }
     await voidUnpaidTopUps(tx, customerId, this.clock.now());
   }

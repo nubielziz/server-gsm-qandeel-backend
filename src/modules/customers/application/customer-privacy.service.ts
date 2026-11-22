@@ -45,7 +45,8 @@ export interface ExportFile {
  * Side effects: export updates `data_requests` and inserts `audit_logs`. Anonymize updates `customers`, `orders`, `checkout_sessions`,
  * `imei_checks`, `data_requests`; deletes `customer_credentials`; revokes `sessions`; voids `auth_tokens`; inserts `audit_logs`; clears
  * the sign-in lockout of the old address after the commit. Feature 21: anonymize is refused while the store balance is not zero or money
- * is in flight, and voids the unpaid top-ups; the export holds the store balance and its statement.
+ * is in flight (a top-up, an open order paid from the balance, a refund to the balance waiting for staff), and voids the unpaid top-ups;
+ * the export holds the store balance and its statement.
  */
 @Injectable()
 export class CustomerPrivacyService {
@@ -107,7 +108,8 @@ export class CustomerPrivacyService {
    * @param staffId the signed-in staff member
    * @param id the customer id
    * @throws {AppError} `NOT_FOUND` (404), `ANONYMIZED` (409, already anonymized), `CONFLICT` (409, the store balance is not zero, a
-   *   top-up waits for review or a top-up dispute is open: feature 21, O12)
+   *   top-up waits for review, a top-up dispute is open, an order paid from the balance is still open or a refund to the balance waits
+   *   for staff: feature 21, O12)
    */
   async anonymize(staffId: number, id: number): Promise<void> {
     const now = this.clock.now();
