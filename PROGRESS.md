@@ -4,6 +4,9 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**In progress (2026-11-22): the security fixes after the audit of 2026-11-20.** Status and next step: the section "Security fixes after the
+audit" below; the live state, briefs and reviews are outside the repositories (`/home/saifi/gsm-project/.security-audit/fix/`, read `STATE.md` first).
+
 **Job of 2026-11-10/11: DONE (2026-11-11, 13:00).** The owner's prompt (finish the roadmap, merchant management, a customer
 wallet, the storefront's backend needs and a notification center; backend and console only; the storefront read-only) is built,
 reviewed and merged. Flow per feature: Opus discovery (`.lead/w1/D1`…`D6`) → **Fable 5.2 plan, approved before any code**
@@ -70,6 +73,28 @@ another file had cached seconds before once both sat in one batch (it drops the 
 `bun run check` green in the worktree, 8117 pass, 1 skip, 0 fail; registered tests counted per file in both trees before the merge:
 equal for every moved file; on `main` after the merge: typecheck, `test:unit` (2803 pass) and the layout and lint-rule tests (61 pass).
 Not done, offered to the owner: tidying `src/modules/platform` (sub-features beside the layer folders) and `scripts/` (30 files flat).
+
+**Security fixes after the audit (started 2026-11-20, in progress).** Owner's order: close every finding of the security audit of 2026-11-20
+(3 high, 23 medium), then name the places that deserve another review. Backend only; the console and the website are read-only and their needs
+are collected for a handoff. Flow per feature: a plan by Opus 5.5 at max effort with the lead's rulings appended, an implementer in
+`../backend-<id>`, an adversarial review with one fix round and a re-review, then the lead (Fable 5.2) reads the diff, proves the fix (the new
+tests fail on the old code), runs the whole check and squash-merges. Briefs and reviews stay outside the repositories on purpose; decision files
+state each rule and its reason.
+
+| Feature | Commit | Decision | Migrations | What it guarantees |
+|---|---|---|---|---|
+| 34 dispatch state | `69b524a` | 044 | 0047 | An order being sent to a supplier waits for the answer: cancel, reject, reply, change of supplier and refund approval wait while the call is in flight; a sweep on the maintenance queue finds sends that were lost |
+| 35 origins per surface | `b043de5` | 045 | none | Browser origins are a property of the surface: `CONSOLE_ORIGINS` for the staff surface, `SHOP_ORIGINS` for the merchant and storefront surfaces, none for the machine surfaces |
+| 36 privilege ceiling | `8065e0c` | 046 | none | Staff act only inside the permissions they hold; stronger actions ask for a second permission or an Owner; a change of the IP rules by a non-Owner cannot refuse an address an active Owner uses, now or when a rule runs out |
+
+Checks: the whole `bun run check` on the tree of `8065e0c` (main with the three features): 8290 pass, 1 skip, 0 fail. Dev DB `gsm` migrated to 0047
+after a dump. **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
+`CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
+helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
+
+Next, in this order: 41 suppliers (decision 051), 44 logs and secrets (054) and 42 sign-in and mail limits (052) are being finished and reviewed in
+their worktrees; 38 payments integrity (048) has its brief and the lead's rulings and is built next, then 39 manual money and exchange rates (049),
+37 staff data access (047), 40 risk inputs (050), 43 public abuse limits (053) and 45 infrastructure (055).
 
 **Follow-ups (not blocking):** a test of a top-up dispute through `/webhooks/payments`; a same-instant refund.failed/complete race in
 `refund-settlement.ts`; `closeForErasure` should also refuse while a balance-paid order is not final (B191); no per-email lock on the
