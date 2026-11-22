@@ -35,12 +35,15 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `StaffAuthTokens` | `issue(work, { staffId, purpose: 'invite' \| 'reset', createdBy?, ip? })`: the one-hour, single-use link token of `POST /admin/auth/password/set` (feature 2a calls it when it adds a member by invitation or sends a reset; it voids the account's older links) |
 | `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
 | `OWNER_ROLE_NAME`, `OWNER_ROLE_PERMISSIONS`, `EmailField`, `NameField`, `temporaryPasswordFor` | what `bun run setup` (P4b) shares with the seed and the staff routes: the Owner role definition, the email and name rules, the temporary password |
+| `TEMPORARY_PASSWORD_TTL_MS`, `temporaryPasswordExpired` | a temporary password works 72 hours from `password_changed_at` (decision 052); the customers module checks its customers' passwords with it |
+| `SignInLockModule`, `SignInLock`, `SignInAccount`, `SignInScope` | the failed-sign-in lock of an email (decision 052, section "Sign-in lock" below); the customers module's store sign-in, smart sign-in and password use cases use it |
+| `takePublicMailPoint`, `NO_ACCOUNT_ID`, `MAX_LIVE_PUBLIC_LINKS` | the per-recipient budget of the mails a visitor can ask for, the id of "no account" of a run that is rolled back, and the three live links a visitor's requests may hold (decision 052) |
 | `STAFF_TOTP_AAD`, `CLIENT_TOTP_AAD`, `TOTP_ISSUER` | the encryption contexts of `staff_users.totp_secret_enc` and `clients.totp_secret_enc`, and the name authenticator apps show |
-| `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family and returns `{ token, id, expiresAt }` |
+| `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip?, keepEarlier? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family (with `keepEarlier`, only the visitor's own forgot request, all but the two newest: decision 052) and returns `{ token, id, expiresAt }` |
 | `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId })`: writes the outbox event of a merchant mail (ids only, never the token) in the caller's transaction; feature 2a writes `invited` with it |
 | `StaffMailModule`, `StaffMailOutbox`, `STAFF_MAIL_EVENTS` | feature 20: `enqueue(work, { kind: 'invited' \| 'password_reset', staffId, tokenId })` writes the outbox event of a staff mail (ids only); the module is loaded by the API (through `AccessAdminModule`) and by the worker |
 | `MerchantNotificationsModule` | the merchant's notification preferences, the Telegram link and the Telegram webhook (feature 12a) |
-| `CustomerAuthTokens`, `CUSTOMER_TOKEN_TTL_MS`, `isUsableLink`, `CustomerTokenRecord` | the one-time links of storefront customers (feature 14b; `auth_tokens` rows of subject type `customer`): `issue(work, { customerId, purpose: 'magic_link' \| 'invite' \| 'reset' \| 'verify_email', createdBy?, ip? })` returns `{ token, id, expiresAt }` (256 random bits, only the keyed hash stored, valid one hour, one use; it voids the customer's older unused links of the same family: `invite` and `reset` are one family), `find(token)`, `findById(id)`, `rotate(id)` (the customer mail job: a new token's hash on the same unused, unexpired row, the clear value returned), `consume(work, id)` (false when a parallel request used it first), `voidOpen(work, customerId, purposes, exceptId?)` and `passwordLinkSentAt(customerId)`; `isUsableLink(record, nowMs)` is the unused-and-not-expired test the link resolver and the use cases share |
+| `CustomerAuthTokens`, `CUSTOMER_TOKEN_TTL_MS`, `isUsableLink`, `CustomerTokenRecord` | the one-time links of storefront customers (feature 14b; `auth_tokens` rows of subject type `customer`): `issue(work, { customerId, purpose: 'magic_link' \| 'invite' \| 'reset' \| 'verify_email', createdBy?, ip?, keepEarlier? })` returns `{ token, id, expiresAt }` (256 random bits, only the keyed hash stored, valid one hour, one use; it voids the customer's older unused links of the same family: `invite` and `reset` are one family; with `keepEarlier`, for the links a visitor asks for, all but the two newest, decision 052), `find(token)`, `findById(id)`, `rotate(id)` (the customer mail job: a new token's hash on the same unused, unexpired row, the clear value returned), `consume(work, id)` (false when a parallel request used it first), `voidOpen(work, customerId, purposes, exceptId?)` and `passwordLinkSentAt(customerId)`; `isUsableLink(record, nowMs)` is the unused-and-not-expired test the link resolver and the use cases share |
 | `CustomerTokensModule` | provides and exports `CustomerAuthTokens` on its own (database, token hasher, clock), so the worker loads the customer mail job without the security stack; the customers module's `CustomersAccountsModule` and `CustomerMailModule` import it |
 | `CUSTOMER_TOKEN_PURPOSES`, `CUSTOMER_PASSWORD_LINK_PURPOSES`, `CustomerTokenPurpose` | the link purposes of a customer, and the two (`invite`, `reset`) that choose a password |
 | `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
@@ -200,7 +203,7 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
 
 | Route | Access | What it does |
 |---|---|---|
-| `POST /admin/auth/login` | public (Origin check) | email + password → `{ next }` and a pending session (10 min). Order: IP rules and the per-IP limit (pipeline) → sign-in limit (email + address) → credentials → suspended → session |
+| `POST /admin/auth/login` | public (Origin check) | email + password → `{ next }` and a pending session (10 min). Order: IP rules and the per-IP limit (pipeline) → sign-in limit (email + network) → account lookup → the email's lock (`SignInLock`, scope `staff`) → credentials (a temporary password older than 72 hours is a wrong one) → suspended → session |
 | `POST /admin/auth/2fa` | session, `pending_totp` / `pending_totp_setup` | six digits → `204`; rotates the session to `active`, stamps `last_login_at` / `last_login_ip`, turns `invited` into `active`, turns 2FA on when the code confirmed a pending secret |
 | `POST /admin/auth/2fa/setup` | session, `pending_totp_setup` | a fresh pending secret (encrypted) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once 2FA is on |
 | `POST /admin/auth/password/set` | public (Origin check) | `{ token, password }` (link) or `{ password }` on a `pending_password` session (then `X-CSRF-Token` is checked in the handler) → `204`; signs nobody in; ends every session of the account |
@@ -213,8 +216,17 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
   (same body), and each verifies one argon2 hash (a dummy one when there is no account to check), so timing does not tell them apart.
   `403 ACCOUNT_SUSPENDED` only follows a correct password.
 - **Rate limits** (`SignInLimiter`, limiter `sign-in`, 5 per 15 minutes then locked for 15; a success clears the count): login per email +
-  address; **codes per account** (not per session, or every new login would give a thief five more guesses); setups per account. The keys are
-  `HMAC(TOKEN_PEPPER, ...)` hashes, so Redis keys hold no email address. Trying links from one address uses the `token` limiter (30 a minute).
+  network (`RequestMeta.limitKey`: the IPv4 address or the IPv6 /64, decision 052); **codes per account** (not per session, or every new login
+  would give a thief five more guesses) on the limiter `sign-in-code`, which is never counted in process memory (while the cache Redis cannot
+  be reached the code step answers `429`); setups per account. The keys are `HMAC(TOKEN_PEPPER, ...)` hashes, so Redis keys hold no email
+  address. Trying links from one address uses the `token` limiter (30 a minute).
+- **The email's lock** (decision 052): every attempt is counted for its email before the password is checked; after ten failures, from
+  any networks, the next attempt is refused and the email is locked for 15 minutes for every network the account has not signed in from
+  (`SignInLock`, scope `staff`); a correct password takes back only its own count and keeps a running lock; a new password (link, forced
+  change, a temporary password set by another member) ends it. The attempts a familiar network is still allowed while the lock runs share
+  one budget per email and network (limiter `sign-in-familiar`, 5 in 15 minutes).
+- **Temporary passwords work 72 hours** from when they were set (`password_changed_at`); after that `login` refuses them like a wrong
+  password (and counts the failure). An open `pending_password` step may finish.
 - **TOTP.** otplib, SHA-1, 6 digits, 30 s, ±1 step. `staff_users.totp_last_step` (schema addition of P2.6, migration `0002`) holds the last accepted
   time step; one guarded `UPDATE` (`completeSignIn`) accepts a step only if it is newer, the account is not suspended and the secret is
   still the one that was checked, so a code works once even with parallel requests. A new setup clears the step.
@@ -324,38 +336,47 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 
 | Route | Access | What it does |
 |---|---|---|
-| `POST /client/auth/register` | public (Origin check; Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
+| `POST /client/auth/register` | public (Origin check; Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
 | `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; the status stays `pending`; signs nobody in |
-| `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
+| `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
 | `POST /client/auth/2fa` | session, `pending_totp` | six digits → `204`; rotates the session to `active` |
 | `POST /client/auth/logout` | session, `pending_totp` or `active` | revokes the session, clears both cookies, `204` |
-| `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on) | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset` |
-| `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link |
+| `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset`, at most five an hour; the earlier links keep working (at most three) |
+| `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link; on a merchant whose email was not verified before, it also turns two-factor sign-in off (decision 052) |
 | `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, kycStatus, emailVerifiedAt, twofaEnabled, referralCode, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
 | `PATCH /client/profile` | session | name, company, phone, country (partial) → `Me` |
 | `POST /client/security/password` | session | `{ currentPassword, newPassword }` → `204`; ends the other sessions |
-| `POST /client/security/2fa/setup` | session | a pending secret (encrypted, `twofa_enabled` stays false) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once on |
-| `POST /client/security/2fa/enable` | session | `{ code }` confirms the pending secret → `204`; ends the other sessions |
+| `POST /client/security/2fa/setup` | session | a pending secret (encrypted, `twofa_enabled` stays false) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once on; `409 CONFLICT` while the email is not confirmed |
+| `POST /client/security/2fa/enable` | session | `{ code }` confirms the pending secret → `204`; ends the other sessions; `409 CONFLICT` while the email is not confirmed |
 | `POST /client/security/2fa/disable` | session | `{ code }` → `204`; forgets the secret, ends the other sessions; `409 TWOFA_NOT_ENABLED` |
 | `GET /client/sessions` | session | the caller's live `active` sessions, newest first, `current` marked, simple-rest range and `x-total-count` |
 | `DELETE /client/sessions/:id` | session | `204`; `404 NOT_FOUND` for a session that is not the caller's, unknown or no longer live; ending the current one clears the cookies |
 
 **Rules worth knowing**
 
-- **No enumeration.** `register` and `password/forgot` answer `204` whatever the email; `register` always hashes the password
-  (the same work for a known email), and both are counted per address (`register`) or email + address (`forgot`) by the `sign-in`
-  limiter, known email or not. `login` is one `401` for an unknown email, a wrong password and a merchant with no password yet
+- **No enumeration.** `register` and `password/forgot` answer `204` whatever the email; `register` always hashes the password, and
+  both run the same statements for every email (decision 052: `DbService.runOrDiscard`; `forgot` writes for `NO_ACCOUNT_ID` and a known
+  email's `register` runs on a placeholder address, and the transaction is rolled back at its end when nothing may be kept). Both are
+  counted per network (`register`) or email + network (`forgot`) by the `sign-in` limiter, known email or not; `forgot` also spends one
+  point of the merchant's `account-mail` budget (kind `forgot_password`, five an hour; beyond it nothing is sent). `login` is one `401` for an unknown email, a wrong password and a merchant with no password yet
   (each verifies one argon2 hash); `403 ACCOUNT_SUSPENDED` only follows a correct password.
 - **A wrong current password or code is `422` on its field (`currentPassword`, `code`), never `401`**, which would sign the caller
   out (B121). `WEAK_PASSWORD` names `password` (register, reset) or `newPassword` (change).
 - **Rate limits** (`MerchantSignInLimiter`, keys are `HMAC(TOKEN_PEPPER, ...)` hashes under the prefix `merchant-sign-in`, so
-  counters do not mix with the staff ones): login per email + address; registration per address; forgot per email + address;
-  codes (sign-in, enable, disable), 2FA setups and password changes **per account**; emailed links (`verify-email`, `password/reset`)
+  counters do not mix with the staff ones): login per email + network; registration per network; forgot per email + network;
+  codes (sign-in, enable, disable; limiter `sign-in-code`, never counted in process memory), 2FA setups and password changes **per account**; emailed links (`verify-email`, `password/reset`)
   by the `token` limiter per address. The per-IP limit of the pipeline covers the public routes first.
 - **Links** (`auth_tokens`, purposes `verify_email`, `reset`, `invite`; `MerchantAuthTokens`): 256 random bits, only the keyed hash
-  stored, one hour, one use. A newer `reset` or `invite` voids the older ones; a newer `verify_email` voids the older one. Unknown,
+  stored, one hour, one use. A newer `reset` or `invite` voids the older ones, except a `reset` the visitor asked for on `forgot`, which
+  keeps the two newest unused ones (at most three work at once, decision 052); a newer `verify_email` voids the older one. Unknown,
   used, expired, superseded and suspended-merchant links are all `410 TOKEN_INVALID`. A weak password does not use the link up.
   Changing the password voids open `reset` and `invite` links.
+- **Two-step sign-in needs a confirmed email address** (decision 052; `MerchantTwoFactorService`): `2fa/setup` and `2fa/enable` answer
+  `409 CONFLICT` ("Confirm your email address first; two-step sign-in can be switched on after that.") while `clients.email_verified_at`
+  is empty; nothing is stored and no secret is made. The row is read under its lock (`lockClientById`) in the transaction that writes, so
+  a change landing at the same time cannot slip in between. Switching it off and using it at sign-in do not depend on the address; a
+  reset or invitation link keeps turning it off on an unconfirmed merchant (rows from before the rule). An address that nobody confirmed
+  therefore never carries a second step.
 - **TOTP.** The same `TotpService` as staff (SHA-1, 6 digits, 30 s, ±1 step) with the encryption context `CLIENT_TOTP_AAD`. A code
   is accepted only if its time step is newer than `clients.totp_last_step`, written by a guarded `UPDATE` (so a code works once
   even in parallel). Migration `0004` adds `clients.twofa_enabled`, `totp_last_step` and `password_changed_at` (MISMATCHES B116).
@@ -374,11 +395,35 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 `POST /client/auth/sign-in` (one form for merchants and customers) is hosted by the customers module, which may import identity (not
 the reverse, decision 032). Identity gives it one narrow class, `MerchantPasswordSignIn` (`application/merchant-password-sign-in.ts`,
 provided and exported by `MerchantAuthModule`, exported from `index.ts`): `charge` / `reset` spend and clear the same `sign-in`
-counter as `POST /client/auth/login` (one budget per email and address for both routes); `find(email)` returns a `MerchantCandidate`
-whose `verify(password)` runs one argon2 verify against the stored hash and whose `open(meta, staleToken?)` (only after a verified
+counter as `POST /client/auth/login` (one budget per email and network for both routes); `find(email)` returns a `MerchantCandidate`
+whose `shadowsCustomer` says whether it takes precedence over a customer with the same email (only when its email is verified,
+decision 052), whose `verify(password)` runs one argon2 verify against the stored hash (a temporary password older than 72 hours
+answers false) and whose `open(meta, staleToken?)` (only after a verified
 password) calls `MerchantSignInService.startSession` (suspension, stale merchant session, feature 20's step `password | totp | done`)
 and then upgrades the hash with the proven password (`upgradeClientPasswordHash`, `application/merchant-password-hash.ts`, shared
-with `login`). The hash never leaves identity. `POST /client/auth/login` keeps its own behaviour (no per-email lock).
+with `login`). The hash never leaves identity. `POST /client/auth/login` shares the shop lock of the email with this route and the
+store login (`SignInLock`, scope `shop`).
+
+### Sign-in lock (decision 052)
+
+`SignInLockModule` (`sign-in-lock.module.ts`, imported by `StaffAuthModule`, `MerchantAuthModule`, `AccessAdminModule`,
+`MerchantAdminModule` and the customers module) provides `SignInLock` (`application/sign-in-lock.ts`) on top of `SignInFailures`
+(`infra/sign-in-failures.ts`). Failed password sign-ins are counted per email in two scopes, `staff` (the console) and `shop` (merchant
+login, store login and the one sign-in form share one count), whether or not an account has the email. `assertMayTry(scope, email,
+account, meta)` counts the attempt before the password is checked (`SignInFailures.charge`: one `MULTI` that raises the count, renews
+the TTL and reads the lock, so parallel attempts each see their own count) and refuses it (`429 RATE_LIMITED`, `Retry-After` = the time
+left) while the email is locked, or when it is the first attempt beyond ten failures, which starts the 15-minute lock and the count again
+(`domain/sign-in-lock.ts`), unless the request's network (an IPv4 /24 or an IPv6 /64, `signInNetworkKey`) is one of the networks of the
+50 newest full (`active`) sessions of the account being signed into (`fullSignInAddresses`); it reads the sessions whenever the email is
+locked, with an id no account has when there is no account, so a locked email answers alike for every email. The attempts a familiar network is still allowed while the lock runs share one budget per scope, email and network:
+`takeFamiliarPoint` takes one point of the limiter `sign-in-familiar` (5 in 15 minutes; the key is a keyed hash of scope, email and network
+key, `gsm:{env}:ratelimit:sign-in-familiar:{hash}`), and the sixth attempt is refused like any other one on a locked email, before its password
+is checked; nothing of this runs while no lock runs. A refused attempt's count goes back while a lock runs. Every `401` stays counted; `giveBack` (a Lua script, never below 0) takes back the attempt of a correct
+password, before a `403` too, and never the failures of other attempts: the two shop accounts of one email may belong to two people (a
+merchant registration proves no mailbox). `clear` (after the commit of a new password from a link, a staff member's own or forced
+change, a customer's own change, a temporary password set by staff, a staff-created customer account, an anonymisation) deletes count and
+lock; a merchant's own or forced change does not. The state is the hash `gsm:{env}:identity:sign-in-failures:{hash}` (fields `n`, `until`; the hash is keyed on the scope and
+the email) on the cache Redis; while it cannot be reached each process counts in memory.
 
 ### Merchant mail
 
@@ -736,7 +781,10 @@ Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a 
 - `gsm:{env}:identity:session:{tokenHash}` (`CacheKeys.session`): the cached view of a session and the state of its account, 60 s (an unknown token 10 s). `SessionService` deletes it after the commit of a revoke or rotation; `invalidateSubject` does after a suspension, password change or role change.
 - `gsm:{env}:identity:role:{roleId}` (`CacheKeys.rolePermissions`): the permissions of a role, 300 s. `RolePermissions.invalidate(roleId)` after the commit of a role change.
 
-Both are listed in `docs/cache-keys.md`. Feature 2a added no key family: its routes clear the existing ones after their commit (`RolePermissions.invalidate`, `SessionService.invalidateSubject` / `revokeAllOf`, `IpRuleCache.invalidate`, `ApiKeyDirectory.invalidateClient`). The sign-in rate limits use the existing `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` families. Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
+Both are listed in `docs/cache-keys.md`, and so is the sign-in lock `gsm:{env}:identity:sign-in-failures:{emailHash}` (`CacheKeys.signInFailures`,
+decision 052: 16 minutes after the last attempt; a correct password takes back only its own count and keeps a running lock, a new
+password from a link or staff deletes it).
+Feature 2a added no key family: its routes clear the existing ones after their commit (`RolePermissions.invalidate`, `SessionService.invalidateSubject` / `revokeAllOf`, `IpRuleCache.invalidate`, `ApiKeyDirectory.invalidateClient`). The sign-in rate limits use the existing `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` families, and `...:sign-in-familiar:{hash}` (decision 052, listed in `docs/cache-keys.md`). Register every other key family there too (see `CONTRIBUTING.md` → "Add a cache key").
 
 | Key | What | TTL | Invalidation |
 |---|---|---|---|

@@ -18,8 +18,9 @@ export const requestMagicLink = defineRoute({
   description:
     'Answers `204` whatever the email is, so it cannot be used to find out who has an account. An email the store does not know ' +
     'yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. ' +
-    'The link is valid one hour, works once, and a newer link replaces the older one. Counted per address and email, whether ' +
-    'or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).',
+    'The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most ' +
+    'five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Counted per network and email, ' +
+    'whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'public',
@@ -60,8 +61,11 @@ export const loginCustomer = defineRoute({
     'Opens a session: a full one, or a `pending_password` one when the customer must change a temporary password first (`next` ' +
     '`password`: only `POST /store/v1/me/password` and logout work until then). One `401` answers an unknown email, a wrong ' +
     'password and an account with no password yet. A correct password on a suspended or blocked account is `403 ' +
-    'ACCOUNT_SUSPENDED`. Five attempts per email and address in 15 minutes, and ten wrong passwords in a row lock the email ' +
-    '(known or not, so the answer never shows who has an account) for 15 minutes: both answer `429 RATE_LIMITED` with `Retry-After`. ' +
+    'ACCOUNT_SUSPENDED`. Five attempts per email and network in 15 minutes, and ten failed attempts (a success in between does not cancel them) lock the email ' +
+    '(known or not, so the answer never shows who has an account) for 15 minutes for every network its account has not signed in ' +
+    'from: both answer `429 RATE_LIMITED` with `Retry-After`. While the lock runs, the attempts a network the account has signed in from is ' +
+    'still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that ' +
+    'it is refused like a wrong password. ' +
     'Needs the anti-bot token (`X-Turnstile-Token`). Accepted only with an `Origin` header that is one of the shop’s origins, like the ' +
     'public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).',
   tags: ['storefront-auth'],
@@ -85,7 +89,9 @@ export const forgotCustomerPassword = defineRoute({
   summary: 'Send a password reset link',
   description:
     'Answers `204` whether or not the email belongs to an account, so no registered email is revealed. An account that is active ' +
-    'gets a link valid one hour that works once; a newer link replaces an older one. Needs the anti-bot token (`X-Turnstile-Token`).',
+    'gets a link valid one hour that works once; up to three such links work at once (a fourth replaces the oldest), and at most ' +
+    'five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Needs the anti-bot token ' +
+    '(`X-Turnstile-Token`).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'public',

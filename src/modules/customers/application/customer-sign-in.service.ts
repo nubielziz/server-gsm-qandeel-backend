@@ -5,20 +5,24 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import {
   type CustomerPrincipal,
   CustomerAuthTokens,
   type IssuedSession,
+  NO_ACCOUNT_ID,
   type RequestMeta,
   SessionService,
+  SignInLock,
   isUsableLink,
+  takePublicMailPoint,
+  temporaryPasswordExpired,
 } from '../../identity';
 import { Blocklist } from '../../risk';
 import type { Customer, CustomerCredential } from '../db/schema';
 import { canSignIn } from '../domain/customer-status';
 import { normaliseEmail } from '../domain/customer-input';
 import { findCredentials, replacePasswordHash, upsertCredentials } from '../infra/customer-credentials.repository';
-import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import {
   findCustomerByEmail,
   findCustomerById,
@@ -49,17 +53,19 @@ const SIGN_IN_PURPOSES: readonly string[] = ['magic_link', 'verify_email'];
 /**
  * The storefront sign-in: the emailed link, the password, and sign-out.
  *
- * Why: decision 018 and the map. `login` runs in a fixed order: rate limit, then the email's lock (decided from the email alone,
- * so a known and an unknown email are locked alike), then credentials (one indistinguishable `401` for an unknown email, a
- * wrong password and an account with no password yet, with the same work done in each case, each one counted towards the lock),
- * then the status (`403 ACCOUNT_SUSPENDED`, scenario b2c-account step 8), then a session: `pending_password`
- * after a temporary password, `active` otherwise. The sign-in link answers `204` for every email and never says whether the
- * account exists; an email the store does not know becomes a customer (self-signup), because the storefront has no other
- * registration route.
+ * Why: decisions 018 and 052 and the map. `login` runs in a fixed order: rate limit per email and network, then the email's lock
+ * (decided from the email alone, so a known and an unknown email are locked alike; a network the account signed in from keeps a budget of its
+ * own: five attempts in 15 minutes per email and network), then credentials (one indistinguishable `401` for an unknown email, a wrong password, a temporary password older than 72
+ * hours and an account with no password yet, with the same work done in each case, each one counted towards the lock), then the
+ * status (`403 ACCOUNT_SUSPENDED`, scenario b2c-account step 8), then a session: `pending_password` after a temporary password,
+ * `active` otherwise. The sign-in link answers `204` for every email and never says whether the account exists; it spends one point of
+ * the recipient's mail budget (five an hour), runs the same statements for every email (a run that sends nothing is rolled back) and
+ * does not void the link sent before (up to three work at once). An email the store does not know becomes a customer (self-signup),
+ * because the storefront has no other registration route.
  *
  * Side effects: reads and writes `customers`, `customer_credentials` and `sessions`; writes `auth_tokens` and `outbox_events`
- * (the link mail); counts rate-limit attempts and wrong passwords (cache Redis); a failed attempt is logged without the email. Customer sign-ins write no audit
- * rows (the audit log records staff writes).
+ * (the link mail; rolled back when no mail is sent); counts rate-limit attempts, mail points and failed passwords (cache Redis); a failed
+ * attempt is logged without the email. Customer sign-ins write no audit rows (the audit log records staff writes).
  *
  * @see docs/contract/MISMATCHES.md (feature 14b specs)
  */
@@ -76,7 +82,8 @@ export class CustomerSignInService implements OnModuleInit {
     private readonly authTokens: CustomerAuthTokens,
     private readonly sessions: SessionService,
     private readonly limiter: CustomerSignInLimiter,
-    private readonly failures: CustomerSignInFailures,
+    private readonly lock: SignInLock,
+    private readonly limits: RateLimitService,
     private readonly links: CustomerLinks,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -90,21 +97,36 @@ export class CustomerSignInService implements OnModuleInit {
    * Emails a sign-in link; silent for every email that must not get one.
    *
    * @param email the normalised email
-   * @param meta the caller's address
-   * @throws {AppError} `RATE_LIMITED` (429); nothing else: a blocklisted, suspended, blocked or anonymized customer is silent
+   * @param meta the caller's address and network
+   * @throws {AppError} `RATE_LIMITED` (429: too many requests for this email from this network); nothing else: a blocklisted,
+   *   suspended, blocked or anonymized customer, or one whose mail budget (five an hour) is used up, is silent
    */
   async requestMagicLink(email: string, meta: RequestMeta): Promise<void> {
-    await this.limiter.enforceMagicLink(email, meta.ip);
+    await this.limiter.enforceMagicLink(email, meta);
     const now = this.clock.now();
-    if (await this.blocklist.isEmailBlocked(this.db.db, email)) return;
-    await this.db.runInTransaction(async (work) => {
+    const blocked = await this.blocklist.isEmailBlocked(this.db.db, email);
+    // The same statements for every email: a run that sends no mail writes for an id no account has and is rolled back (decision 052).
+    await this.db.runOrDiscard(async (work) => {
       const customer =
         (await findCustomerByEmail(work.tx, email)) ??
         // Self-signup: a guest row without a name; the link proves the address, and verifying it makes the account.
         (await insertCustomerIfAbsent(work.tx, { email, createdAt: now, updatedAt: now })) ??
         (await findCustomerByEmail(work.tx, email));
-      if (!customer || !canSignIn(customer.status)) return;
-      await this.links.send(work, { kind: 'magic_link', customerId: customer.id, ip: meta.ip });
+      const eligible = !blocked && customer !== undefined && canSignIn(customer.status);
+      const budget = await takePublicMailPoint(
+        this.limits,
+        'customer',
+        eligible ? customer.id : undefined,
+        'sign_in_link',
+      );
+      const deliver = eligible && budget;
+      await this.links.send(work, {
+        kind: 'magic_link',
+        customerId: deliver ? customer.id : NO_ACCOUNT_ID,
+        ip: meta.ip,
+        keepEarlier: true,
+      });
+      return deliver;
     });
   }
 
@@ -164,9 +186,10 @@ export class CustomerSignInService implements OnModuleInit {
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
    * @returns the next step (`password` after a temporary password, otherwise `done`) and the session
-   * @throws {AppError} `RATE_LIMITED` (429: too many tries, or the email is locked after ten wrong passwords: the same for an
-   *   email with an account and one without), `UNAUTHORIZED` (401: unknown email, wrong password or no password yet; each
-   *   counts towards the lock), `ACCOUNT_SUSPENDED` (403: correct password, suspended or blocked customer)
+   * @throws {AppError} `RATE_LIMITED` (429: too many tries from this network, or the email is locked after ten failed attempts and
+   *   the account has not signed in from this network: the same for an email with an account and one without), `UNAUTHORIZED`
+   *   (401: unknown email, wrong password, expired temporary password or no password yet; each stays counted towards the lock),
+   *   `ACCOUNT_SUSPENDED` (403: correct password, suspended or blocked customer)
    */
   async login(
     input: { readonly email: string; readonly password: string },
@@ -174,32 +197,40 @@ export class CustomerSignInService implements OnModuleInit {
     staleToken?: string,
   ): Promise<CustomerLoginResult> {
     const email = normaliseEmail(input.email);
-    await this.limiter.enforceLogin(email, meta.ip);
-    // The lock is read before the account, from the email alone: it must answer the same for an email without an account.
-    const lockedFor = await this.failures.lockedFor(email);
-    if (lockedFor > 0) {
-      this.logger.warn(`Sign-in refused: the email is locked after repeated failures (${meta.ip})`);
-      throw new AppError('RATE_LIMITED', {
-        detail: 'Too many failed attempts. Try again later.',
-        retryAfterSeconds: lockedFor,
-      });
-    }
+    await this.limiter.enforceLogin(email, meta);
     const customer = await findCustomerByEmail(this.db.db, email);
     const credentials = customer?.hasAccount ? await findCredentials(this.db.db, customer.id) : undefined;
+    // The lock is decided from the email alone (with the network exception of the account, if there is one): it must answer the same
+    // for an email without an account.
+    const account =
+      customer?.hasAccount && customer.status !== 'anonymized'
+        ? ({ subjectType: 'customer', subjectId: customer.id } as const)
+        : undefined;
+    await this.lock.assertMayTry('shop', email, account, meta);
 
-    const correct = await this.passwordMatches(credentials?.passwordHash ?? undefined, input.password);
-    if (!customer || !credentials || !correct || customer.status === 'anonymized') {
+    const verified = await this.passwordMatches(credentials?.passwordHash ?? undefined, input.password);
+    // A temporary password runs out after 72 hours and is then refused like a wrong one (decision 052).
+    const expired = credentials !== undefined && verified && temporaryPasswordExpired(credentials, this.clock.nowMs());
+    if (!customer || !credentials || !verified || expired || customer.status === 'anonymized') {
       this.logger.warn(
-        `Customer sign-in refused (${customer ? (credentials?.passwordHash ? 'wrong password' : 'no password yet') : 'unknown email'}) from ${meta.ip}`,
+        `Customer sign-in refused (${
+          customer
+            ? expired
+              ? 'temporary password expired'
+              : credentials?.passwordHash
+                ? 'wrong password'
+                : 'no password yet'
+            : 'unknown email'
+        }) from ${meta.ip}`,
       );
-      // Every 401 counts, whoever the email belongs to (or nobody): a lock only some emails reach would tell which have accounts.
-      await this.failures.recordFailure(email);
+      // The attempt stays counted, whoever the email belongs to (or nobody): a lock only some emails reach would tell which have accounts.
       throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
     }
+    // A correct password is no guess: only its own count goes back (a 403 below included); the failures of other attempts stay.
+    await this.lock.giveBack('shop', email);
     this.assertCanSignIn(customer, meta);
 
-    await this.limiter.resetLogin(email, meta.ip);
-    await this.failures.clear(email);
+    await this.limiter.resetLogin(email, meta);
     return this.startSession(customer, credentials, input.password, meta, staleToken);
   }
 

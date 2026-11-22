@@ -38,6 +38,22 @@ export async function findClientById(db: DbExecutor, id: number): Promise<Client
 }
 
 /**
+ * Reads a merchant and locks its row until the transaction ends.
+ *
+ * Why: switching two-step sign-in on is decided on the merchant's state at the moment of the write (decision 052): a change of the
+ * email address that lands at the same time must wait, so the second step never gets enrolled on an address that stopped being
+ * confirmed in between. Call it first in a transaction, before the write that depends on what it read.
+ *
+ * @param db the transaction
+ * @param id the merchant id
+ * @returns the merchant as it is now, or `undefined` when it does not exist
+ */
+export async function lockClientById(db: DbExecutor, id: number): Promise<Client | undefined> {
+  const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1).for('update');
+  return row;
+}
+
+/**
  * Finds the merchant that owns a referral code.
  *
  * Why: B122 stores `referred_by_id` from the code a new merchant typed; an unknown code is a validation error.
@@ -89,13 +105,19 @@ export interface SaveClientPassword {
   readonly now: Date;
   /** An invite link proves the email address, so it also verifies it (B128, resolution identity-platform-2). */
   readonly verifyEmail: boolean;
+  /**
+   * Turn two-factor sign-in off in the same write when the merchant's email was not verified before it (decision 052): the link proves the
+   * mailbox, so what an unverified registrant enrolled before it (a second factor nobody with the mailbox holds) must not outlive it.
+   */
+  readonly clearTwoFactor?: boolean;
 }
 
 /**
  * Stores a chosen password.
  *
  * Why: the reset, invite and change routes all end here. The write refuses a suspended merchant, so a suspension that lands
- * between the check and the write wins; an invite also fills `email_verified_at` when it is still empty.
+ * between the check and the write wins; an invite also fills `email_verified_at` when it is still empty; a link on a merchant whose
+ * email is not verified also turns its two-factor sign-in off (`clearTwoFactor`, decision 052).
  *
  * @param db the database or a transaction
  * @param input the merchant, the hash and the time
@@ -110,6 +132,14 @@ export async function saveClientPassword(db: DbExecutor, input: SaveClientPasswo
       // Any chosen password (reset link, invitation, change) ends a forced change (feature 20).
       mustChangePassword: false,
       ...(input.verifyEmail ? { emailVerifiedAt: sql`coalesce(${clients.emailVerifiedAt}, ${input.now})` } : {}),
+      // The right side of every SET reads the row as it was, so this sees the email before an invite verifies it.
+      ...(input.clearTwoFactor
+        ? {
+            twofaEnabled: sql`case when ${clients.emailVerifiedAt} is null then false else ${clients.twofaEnabled} end`,
+            totpSecretEnc: sql`case when ${clients.emailVerifiedAt} is null then null else ${clients.totpSecretEnc} end`,
+            totpLastStep: sql`case when ${clients.emailVerifiedAt} is null then null else ${clients.totpLastStep} end`,
+          }
+        : {}),
     })
     .where(and(eq(clients.id, input.id), sql`${clients.status} <> 'suspended'`))
     .returning({ id: clients.id });

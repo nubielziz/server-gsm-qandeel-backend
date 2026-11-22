@@ -5,19 +5,22 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import {
   type CustomerPrincipal,
   CUSTOMER_PASSWORD_LINK_PURPOSES,
   CustomerAuthTokens,
   type IssuedSession,
+  NO_ACCOUNT_ID,
   type RequestMeta,
   SessionService,
+  SignInLock,
   checkPasswordPolicy,
   isUsableLink,
+  takePublicMailPoint,
 } from '../../identity';
 import { canSignIn } from '../domain/customer-status';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
-import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import { findCustomerByEmail, findCustomerById, updateCustomerRow } from '../infra/customer.repository';
 import { weakPassword } from './customer-errors';
 import { CustomerLinks } from './customer-links';
@@ -31,12 +34,16 @@ export interface PasswordChangeResult {
 /**
  * Sends reset links, sets a password from a link, and changes the password of a signed-in customer.
  *
- * Why: the map. "Forgot password" answers `204` for any email, so it cannot be used to find out who has an account; a link
- * works once, for an hour, and the newest wins; choosing a password ends the customer's sessions (set) or the others (change),
- * and a wrong current password is `422` on its field, never `401`, which would sign the caller out.
+ * Why: the map and decision 052. "Forgot password" answers `204` for any email, so it cannot be used to find out who has an account, and it
+ * runs the same statements for every email (the ones that get no mail are rolled back); it spends one point of the customer's mail budget
+ * (five an hour), and a request beyond it answers `204` and sends nothing. A link works once, for an hour; links a visitor asked for do
+ * not void each other (up to three work at once, the oldest goes first); choosing a password ends the customer's sessions (set) or the
+ * others (change) and the email's failed-sign-in lock, and a wrong current password is `422` on its field, never `401`, which would
+ * sign the caller out.
  *
  * Side effects: updates `customers` and `customer_credentials`; inserts `auth_tokens` rows and the outbox event
- * `customer.password_reset`; marks links used; revokes sessions (their cached views are dropped after the commit).
+ * `customer.password_reset` (rolled back for an email that gets no mail); marks links used; revokes sessions (their cached views are
+ * dropped after the commit); counts one point of `account-mail`; deletes the sign-in lock key of the email after the commit of a new password.
  *
  * @see docs/contract/MISMATCHES.md (feature 14b specs)
  */
@@ -48,7 +55,8 @@ export class CustomerPasswordService {
     private readonly authTokens: CustomerAuthTokens,
     private readonly sessions: SessionService,
     private readonly limiter: CustomerSignInLimiter,
-    private readonly failures: CustomerSignInFailures,
+    private readonly lock: SignInLock,
+    private readonly limits: RateLimitService,
     private readonly links: CustomerLinks,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -57,16 +65,31 @@ export class CustomerPasswordService {
    * Sends a reset link when the email belongs to an active account.
    *
    * @param email the normalised email
-   * @param meta the caller's address
-   * @throws {AppError} `RATE_LIMITED` (429); nothing else: an unknown email, a guest or a suspended account is silent
+   * @param meta the caller's address and network
+   * @throws {AppError} `RATE_LIMITED` (429: too many requests for this email from this network); nothing else: an unknown email, a
+   *   guest, a suspended account, or an account whose mail budget (five an hour) is used up, is silent
    */
   async forgot(email: string, meta: RequestMeta): Promise<void> {
-    await this.limiter.enforceForgot(email, meta.ip);
+    await this.limiter.enforceForgot(email, meta);
     const customer = await findCustomerByEmail(this.db.db, email);
-    if (!customer || !customer.hasAccount || !canSignIn(customer.status)) return;
-    await this.db.runInTransaction((work) =>
-      this.links.send(work, { kind: 'password_reset', customerId: customer.id, ip: meta.ip }),
+    const eligible = customer?.hasAccount === true && canSignIn(customer.status);
+    const budget = await takePublicMailPoint(
+      this.limits,
+      'customer',
+      eligible ? customer.id : undefined,
+      'forgot_password',
     );
+    const deliver = eligible && budget;
+    // The same statements for every email: a run that gets no mail writes for an id no account has and is rolled back (decision 052).
+    await this.db.runOrDiscard(async (work) => {
+      await this.links.send(work, {
+        kind: 'password_reset',
+        customerId: deliver ? customer.id : NO_ACCOUNT_ID,
+        ip: meta.ip,
+        keepEarlier: true,
+      });
+      return deliver;
+    });
   }
 
   /**
@@ -109,8 +132,8 @@ export class CustomerPasswordService {
       });
       await this.authTokens.voidOpen(work, customer.id, CUSTOMER_PASSWORD_LINK_PURPOSES, link.id);
       await this.sessions.revokeAllOf('customer', customer.id, {}, work);
-      // The owner of the address chose a password: the wrong tries before it no longer count.
-      work.afterCommit(() => this.failures.clear(customer.email));
+      // The owner of the address chose a password: the failed tries before it no longer count.
+      work.afterCommit(() => this.lock.clear('shop', customer.email));
     });
   }
 
@@ -165,7 +188,7 @@ export class CustomerPasswordService {
       // An old reset link must not be able to undo the change.
       await this.authTokens.voidOpen(work, customer.id, CUSTOMER_PASSWORD_LINK_PURPOSES);
       await this.sessions.revokeAllOf('customer', customer.id, { exceptSessionId: principal.session.id }, work);
-      work.afterCommit(() => this.failures.clear(customer.email));
+      work.afterCommit(() => this.lock.clear('shop', customer.email));
       if (!pending) return {};
       // The forced change is done: the pending step becomes a full session with a new token (no fixation).
       const session = await this.sessions.rotate(

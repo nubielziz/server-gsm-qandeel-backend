@@ -22,6 +22,7 @@ import { SessionAuthenticator } from '../security/session-authenticator';
 import { SessionService } from '../security/session.service';
 import type { RequestMeta } from './request-meta';
 import { SignInLimiter } from './sign-in-limiter';
+import { SignInLock } from './sign-in-lock';
 
 /** The body of the route. */
 export interface SetPasswordInput {
@@ -36,10 +37,11 @@ export interface SetPasswordInput {
  * Why: B3. Two ways in, one rule set: a one-time link (public, single use, one hour) or the pending session of a member who
  * must change a temporary password (session cookie + CSRF token). Either way the password must pass the policy and differ
  * from the current one, the hash is argon2id, every session of the account ends (so the person signs in again with the new
- * password and then sets up 2FA if needed), and the status stays `invited` until the first full sign-in.
+ * password and then sets up 2FA if needed), and the status stays `invited` until the first full sign-in. A new password ends the
+ * failed-sign-in count and lock of the email (decision 052).
  *
  * Side effects: updates `staff_users`; marks the link used and voids the account's other unused links; revokes every session
- * of the account; writes an audit row `set a new password`.
+ * of the account; writes an audit row `set a new password`; deletes the sign-in lock key of the email after the commit.
  *
  * @see docs/contract/endpoints/identity.md (POST /admin/auth/password/set)
  */
@@ -53,6 +55,7 @@ export class StaffPasswordService {
     private readonly authenticator: SessionAuthenticator,
     private readonly csrf: CsrfService,
     private readonly limiter: SignInLimiter,
+    private readonly lock: SignInLock,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -147,6 +150,8 @@ export class StaffPasswordService {
       entityId: staff.id,
       entityLabel: staff.name,
     });
+    // The owner of the account chose a password: the failed tries before it no longer count (decision 052).
+    work.afterCommit(() => this.lock.clear('staff', staff.email));
   }
 }
 

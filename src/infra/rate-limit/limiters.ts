@@ -13,6 +13,11 @@ export interface LimiterConfig {
   readonly windowSeconds: number;
   /** After the points are used up, keep refusing for this many seconds (a lock-out); leave out for no lock-out. */
   readonly blockSeconds?: number;
+  /**
+   * Refuse instead of counting in process memory while the cache Redis cannot be reached; for budgets that guard a short secret
+   * (decision 052).
+   */
+  readonly failClosed?: true;
   /** What the limiter protects and who calls it, for the people who change these numbers. */
   readonly description: string;
 }
@@ -21,8 +26,9 @@ export interface LimiterConfig {
  * Every limiter, by name.
  *
  * Why: decision 021. The keys of the callers: `ip` the client IP; `api-key` the API key id (the points come from
- * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + IP (build the key
- * with `RateLimitService.compositeKey`), counted per attempt and reset on success; `token` the client IP; `supplier` the
+ * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + network (the IPv4 address or
+ * the IPv6 /64, `RequestMeta.limitKey`; build the key with `RateLimitService.compositeKey`), counted per attempt and reset on
+ * success; `sign-in-code` the account (the authenticator code steps, never counted in process memory, decision 052); `sign-in-familiar` scope + email + network, hashed (the attempts a familiar network is still allowed while an email is locked, decision 052); `token` the client IP; `supplier` the
  * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
  * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
  * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
@@ -48,7 +54,21 @@ export const RATE_LIMITERS = {
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
     description:
-      'Staff, merchant and customer sign-in: attempts per email + IP; the sixth locks that pair for 15 minutes; a success resets it.',
+      'Staff, merchant and customer sign-in, forgot password, sign-in link and registration: attempts per email and network (the IPv4 address or the IPv6 /64; registration per network only); the sixth locks that pair for 15 minutes; a success resets it.',
+  },
+  'sign-in-code': {
+    points: 5,
+    windowSeconds: 15 * 60,
+    blockSeconds: 15 * 60,
+    failClosed: true,
+    description:
+      'Authenticator codes of the staff and merchant sign-in and of the merchant 2FA enable and disable: attempts per account; the sixth locks the code step of that account for 15 minutes; a success resets it. Never counted in process memory: while the cache Redis cannot be reached the code is refused (decision 052).',
+  },
+  'sign-in-familiar': {
+    points: 5,
+    windowSeconds: 15 * 60,
+    description:
+      'Password sign-in attempts that are let through only because their network is one the account signed in from, while its email is locked after repeated failures: attempts per scope (console or shop), email and network (the IPv4 /24 or the IPv6 /64), hashed; the sixth in 15 minutes is refused like any other attempt on a locked email. Not used while no lock runs (decision 052).',
   },
   token: {
     points: 30,
@@ -94,7 +114,7 @@ export const RATE_LIMITERS = {
     points: 5,
     windowSeconds: 60 * 60,
     description:
-      'Account emails that staff or a merchant ask for (password link, verification, email change): five an hour per account and kind, so nobody can mail-bomb an inbox or use up the mail quota.',
+      'Account emails that staff or a merchant ask for (password link, verification, email change): five an hour per account and kind, so nobody can mail-bomb an inbox or use up the mail quota. Also the mails a visitor can ask for (the sign-in link, forgot password: kinds sign_in_link and forgot_password), per account: a request beyond the budget sends nothing and answers as usual (decision 052).',
   },
   'wallet-topup': {
     points: 10,

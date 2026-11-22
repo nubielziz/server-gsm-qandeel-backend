@@ -4,7 +4,7 @@ import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { APP_CONFIG, type AppConfig } from '../../config';
 import { type Database, createDrizzle, createPool } from './database';
-import { type TransactionContext, type TransactionOptions, runInTransaction } from './transaction';
+import { type TransactionContext, type TransactionOptions, runInTransaction, runOrDiscard } from './transaction';
 import { databaseUrlFor } from './url';
 
 /**
@@ -40,6 +40,21 @@ export class DbService implements OnApplicationShutdown {
    */
   runInTransaction<T>(fn: (context: TransactionContext) => Promise<T>, options?: TransactionOptions): Promise<T> {
     return runInTransaction(this.db, fn, options);
+  }
+
+  /**
+   * Runs `fn` in one transaction and keeps its changes only when it answers `true`.
+   *
+   * Why: see {@link runOrDiscard}; the forgot-password, sign-in link and registration routes run the same statements for every
+   * email and roll them back when nothing may be kept (decision 052).
+   *
+   * @param fn the work, given `tx` and `afterCommit`; answer `true` to commit, `false` to roll back
+   * @param options isolation level
+   * @returns `true` when committed, `false` when rolled back on purpose
+   * @throws whatever `fn` threw; the transaction is rolled back and no callback runs
+   */
+  runOrDiscard(fn: (context: TransactionContext) => Promise<boolean>, options?: TransactionOptions): Promise<boolean> {
+    return runOrDiscard(this.db, fn, options);
   }
 
   /**

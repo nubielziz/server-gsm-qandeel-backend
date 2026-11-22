@@ -11,6 +11,7 @@ import {
   CustomerAuthTokens,
   type SessionWork,
   SessionService,
+  SignInLock,
   type StaffPrincipal,
   temporaryPasswordFor,
 } from '../../identity';
@@ -18,7 +19,6 @@ import { AuditService } from '../../platform';
 import type { Customer } from '../db/schema';
 import { type SuspendReason, suspendedReasonText } from '../domain/customer-status';
 import { upsertCredentials } from '../infra/customer-credentials.repository';
-import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
 import { activeSessionCount } from '../infra/foreign-reads.repository';
 import { customerNotFound } from './customer-errors';
@@ -53,7 +53,7 @@ export class CustomerAccountAdminService {
     private readonly authTokens: CustomerAuthTokens,
     private readonly sessions: SessionService,
     private readonly links: CustomerLinks,
-    private readonly failures: CustomerSignInFailures,
+    private readonly signInLock: SignInLock,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -99,8 +99,8 @@ export class CustomerAccountAdminService {
           credential: temporary === undefined ? 'invite link emailed' : 'temporary password set',
         },
       });
-      // Wrong passwords tried for this email while it was a guest must not lock the new account.
-      work.afterCommit(() => this.failures.clear(locked.email));
+      // Failed passwords tried for this email while it was a guest must not lock the new account.
+      work.afterCommit(() => this.signInLock.clear('shop', locked.email));
     });
     return temporary === undefined ? {} : { temporaryPassword: temporary };
   }
@@ -143,7 +143,7 @@ export class CustomerAccountAdminService {
         // An older link must not undo the temporary password.
         await this.authTokens.voidOpen(work, id, CUSTOMER_PASSWORD_LINK_PURPOSES);
         // A customer who asked staff for help may be locked out: the new password opens the door again.
-        work.afterCommit(() => this.failures.clear(locked.email));
+        work.afterCommit(() => this.signInLock.clear('shop', locked.email));
       }
       const ended = input.revokeSessions ? await this.endSessions(work, id, now) : 0;
       await this.audit.record(work.tx, {

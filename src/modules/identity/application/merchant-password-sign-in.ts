@@ -1,8 +1,11 @@
 // MerchantPasswordSignIn: the narrow piece of the merchant sign-in that the smart sign-in of feature 24A (POST /client/auth/sign-in,
 // customers module) uses. The password hash never leaves identity: callers get closures that verify and open, never the hash.
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { CLOCK, type Clock } from '../../../common/clock';
 import { PasswordHasher } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { merchantShadowsCustomer } from '../domain/merchant-sign-in-step';
+import { temporaryPasswordExpired } from '../domain/temporary-password';
 import { findClientByEmail } from '../infra/merchant-auth.repository';
 import { upgradeClientPasswordHash } from './merchant-password-hash';
 import { type MerchantLoginResult, MerchantSignInService } from './merchant-sign-in.service';
@@ -21,10 +24,15 @@ export interface MerchantCandidate {
   /** False for a merchant that staff invited and that has not chosen a password yet: it cannot sign in with one. */
   readonly hasPassword: boolean;
   /**
-   * Runs one argon2 verify of a password against the stored hash.
+   * True when the merchant's email is verified, so it takes precedence over a customer account with the same email (decision 052).
+   * A merchant that registered but never proved its mailbox must not shadow the customer who owns that address.
+   */
+  readonly shadowsCustomer: boolean;
+  /**
+   * Runs one argon2 verify of a password against the stored hash, and refuses a temporary password older than 72 hours.
    *
    * @param password the password as typed
-   * @returns true when it is the merchant's password
+   * @returns true when it is the merchant's password and, if it is a temporary one, not older than 72 hours
    * @throws {Error} when the merchant has no password (`hasPassword` false): a caller's mistake, never an answer to a visitor
    */
   verify(password: string): Promise<boolean>;
@@ -45,7 +53,7 @@ export interface MerchantCandidate {
  * The merchant side of the smart sign-in: its rate-limit counter and a candidate per email.
  *
  * Why: feature 24A hosts `POST /client/auth/sign-in` in the customers module (customers may import identity, never the reverse,
- * decision 032). The route spends the same `sign-in` counter as `POST /client/auth/login` (D-2: one budget per email and address for
+ * decision 032). The route spends the same `sign-in` counter as `POST /client/auth/login` (D-2: one budget per email and network for
  * both routes) and reuses the merchant's step logic of feature 20 (`next: password | totp | done`) without duplicating it.
  *
  * Side effects: counter keys of `MerchantSignInLimiter` (`gsm:{env}:ratelimit:sign-in:{hash}`); `open` writes `sessions` and
@@ -62,27 +70,28 @@ export class MerchantPasswordSignIn {
     private readonly hasher: PasswordHasher,
     private readonly limiter: MerchantSignInLimiter,
     private readonly signIn: MerchantSignInService,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   /**
-   * Charges the login counter of `POST /client/auth/login` for an email from an address.
+   * Charges the login counter of `POST /client/auth/login` for an email from a network.
    *
    * @param email the email (normalised or as typed: the key trims and lower-cases it)
-   * @param ip the client address
+   * @param meta the caller (its network key: the IPv4 address or the IPv6 /64)
    * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth attempt in 15 minutes
    */
-  async charge(email: string, ip: string): Promise<void> {
-    await this.limiter.enforceLogin(email, ip);
+  async charge(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
+    await this.limiter.enforceLogin(email, meta);
   }
 
   /**
    * Clears that counter after a successful sign-in.
    *
    * @param email the email
-   * @param ip the client address
+   * @param meta the caller (its network key)
    */
-  async reset(email: string, ip: string): Promise<void> {
-    await this.limiter.resetLogin(email, ip);
+  async reset(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
+    await this.limiter.resetLogin(email, meta);
   }
 
   /**
@@ -100,9 +109,12 @@ export class MerchantPasswordSignIn {
     return {
       clientId: client.id,
       hasPassword: hash !== null,
+      shadowsCustomer: merchantShadowsCustomer(client),
       verify: async (password) => {
         if (hash === null) throw new Error(`Merchant ${client.id} has no password to verify`);
-        const correct = await this.hasher.verify(hash, password);
+        // A temporary password runs out after 72 hours and is then refused like a wrong one (decision 052).
+        const correct =
+          (await this.hasher.verify(hash, password)) && !temporaryPasswordExpired(client, this.clock.nowMs());
         proven = correct ? password : undefined;
         return correct;
       },

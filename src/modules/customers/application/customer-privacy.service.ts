@@ -5,14 +5,13 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { EncryptionService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
-import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, SessionService } from '../../identity';
+import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, SessionService, SignInLock } from '../../identity';
 import { CustomerWallets } from '../../money';
 import { AuditService } from '../../platform';
 import { DataRequestService, IMEI_CHECK_AAD, ImeiErasure } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
 import { buildCustomerExport } from '../domain/customer-export';
 import { ANONYMIZED_NAME, anonymizedEmail, exportFilename } from '../domain/customer-privacy';
-import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import { findCustomerById, updateCustomerRow } from '../infra/customer.repository';
 import {
   deleteCredentialsOf,
@@ -59,7 +58,7 @@ export class CustomerPrivacyService {
     private readonly imeiErasure: ImeiErasure,
     private readonly sessions: SessionService,
     private readonly authTokens: CustomerAuthTokens,
-    private readonly failures: CustomerSignInFailures,
+    private readonly lock: SignInLock,
     private readonly hooks: CustomerErasureHooks,
     private readonly audit: AuditService,
     private readonly wallets: CustomerWallets,
@@ -151,7 +150,7 @@ export class CustomerPrivacyService {
         before: { status: customer.status },
         after: { status: 'anonymized', name: ANONYMIZED_NAME, imei: 'removed (TAC kept)' },
       });
-      work.afterCommit(() => this.failures.clear(customer.email));
+      work.afterCommit(() => this.lock.clear('shop', customer.email));
     });
   }
 

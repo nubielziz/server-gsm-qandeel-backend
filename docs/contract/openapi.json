@@ -9261,7 +9261,7 @@
     },
     "/admin/auth/login": {
       "post": {
-        "description": "The first sign-in step. It creates a pending session (10 minutes) and answers which step follows. A failed attempt is logged and rate-limited but writes no audit row; the sign-in is audited when the second step completes.",
+        "description": "The first sign-in step. It creates a pending session (10 minutes) and answers which step follows. A failed attempt is logged and rate-limited but writes no audit row; the sign-in is audited when the second step completes. Five attempts per email and network (an IPv4 address or an IPv6 /64) in 15 minutes; ten failed attempts for one email (a success in between does not cancel them) lock it for 15 minutes for every network its account has not signed in from: both answer `429 RATE_LIMITED` with `Retry-After`, the same for every email. While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that it is refused like a wrong password.",
         "operationId": "postAdminAuthLogin",
         "parameters": [],
         "requestBody": {
@@ -24164,7 +24164,7 @@
     },
     "/admin/clients/{id}/password": {
       "post": {
-        "description": "`reset_link` emails the merchant a one-hour, one-use link (purpose `invite` while the merchant has no password, else `reset`; it replaces an older invitation or reset link) and answers which mail was sent in `link`; the current password keeps working until the link is used. The answer never carries the link. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in (the merchant meets `next: password` on `POST /client/auth/login`), cancels older links, emails the merchant a security notice and returns the password once in `temporaryPassword`. Always `Cache-Control: no-store`. `revokeSessions` (default false) ends every session of the merchant. A suspended merchant is `409 NOT_ACTIVE`. The link mode counts against five mails an hour per merchant (`429 RATE_LIMITED`).",
+        "description": "`reset_link` emails the merchant a one-hour, one-use link (purpose `invite` while the merchant has no password, else `reset`; it replaces an older invitation or reset link) and answers which mail was sent in `link`; the current password keeps working until the link is used. The answer never carries the link. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in (the merchant meets `next: password` on `POST /client/auth/login`), cancels older links, emails the merchant a security notice and returns the password once in `temporaryPassword`. Always `Cache-Control: no-store`. `revokeSessions` (default false) ends every session of the merchant. A suspended merchant is `409 NOT_ACTIVE`. The link mode counts against five mails an hour per merchant (`429 RATE_LIMITED`). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminClientsByIdPassword",
         "parameters": [
           {
@@ -42471,7 +42471,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and the customer must change at the first sign-in. `409 EMAIL_TAKEN` when another customer, guest or account, has the email; `422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else `422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password.",
+        "description": "Creates a customer with an account. `password.mode` `reset_link` emails a one-hour, single-use invitation to choose a password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and the customer must change at the first sign-in. `409 EMAIL_TAKEN` when another customer, guest or account, has the email; `422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else `422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminCustomers",
         "parameters": [],
         "requestBody": {
@@ -45085,7 +45085,7 @@
     },
     "/admin/customers/{id}/account": {
       "post": {
-        "description": "Turns a customer who bought as a guest into an account; the earlier orders already belong to the customer. `mode` `reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once (`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password.",
+        "description": "Turns a customer who bought as a guest into an account; the earlier orders already belong to the customer. `mode` `reset_link` emails a one-hour, single-use invitation; `temporary_password` answers a 14-character password once (`Cache-Control: no-store`) that must be changed at the first sign-in. Audited without any password. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminCustomersByIdAccount",
         "parameters": [
           {
@@ -46993,7 +46993,7 @@
     },
     "/admin/customers/{id}/password": {
       "post": {
-        "description": "For an account only (`409 NO_ACCOUNT` for a guest). `mode` `reset_link` emails a new one-hour, single-use link and voids the older ones; `temporary_password` sets a generated 14-character password that the answer shows once and that must be changed at the first sign-in, and voids outstanding links. `revokeSessions` ends every session of the customer. The current password is never shown and never enters the audit log.",
+        "description": "For an account only (`409 NO_ACCOUNT` for a guest). `mode` `reset_link` emails a new one-hour, single-use link and voids the older ones; `temporary_password` sets a generated 14-character password that the answer shows once and that must be changed at the first sign-in, and voids outstanding links. `revokeSessions` ends every session of the customer. The current password is never shown and never enters the audit log. A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminCustomersByIdPassword",
         "parameters": [
           {
@@ -168588,7 +168588,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`. The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).",
+        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`. The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminStaff",
         "parameters": [],
         "requestBody": {
@@ -170717,7 +170717,7 @@
     },
     "/admin/staff/{id}/password": {
       "post": {
-        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
+        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminStaffByIdPassword",
         "parameters": [
           {
@@ -212634,7 +212634,7 @@
     },
     "/client/auth/login": {
       "post": {
-        "description": "Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the merchant has two-factor sign-in on, a full one otherwise. A merchant waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, a wrong password and a merchant with no password yet. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
+        "description": "Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the merchant has two-factor sign-in on, a full one otherwise. A merchant waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, a wrong password and a merchant with no password yet. Five attempts per email and network (an IPv4 address or an IPv6 /64) in 15 minutes; ten failed attempts for one email (a success in between does not cancel them) lock it for 15 minutes for every network its account has not signed in from (the lock is shared with `POST /store/v1/auth/login` and `POST /client/auth/sign-in`): both answer `429 RATE_LIMITED` with `Retry-After`, the same for every email. While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that it is refused like a wrong password. Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).",
         "operationId": "postClientAuthLogin",
         "parameters": [
           {
@@ -214266,7 +214266,7 @@
     },
     "/client/auth/password/forgot": {
       "post": {
-        "description": "Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
+        "description": "Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for approval that has no password yet, gets a link valid for one hour; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per merchant; a request beyond that answers `204` and sends nothing. Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).",
         "operationId": "postClientAuthPasswordForgot",
         "parameters": [
           {
@@ -214633,7 +214633,7 @@
     },
     "/client/auth/password/reset": {
       "post": {
-        "description": "Accepts a reset link and the invitation link of a merchant that staff created. It sets the password, uses the link up, ends every session of the merchant and signs nobody in; an invitation also marks the email verified. The status stays `pending` until staff approve the merchant. A weak password does not use the link up.",
+        "description": "Accepts a reset link and the invitation link of a merchant that staff created. It sets the password, uses the link up, ends every session of the merchant and signs nobody in; an invitation also marks the email verified. The status stays `pending` until staff approve the merchant. A weak password does not use the link up. On a merchant whose email is not verified yet it also turns two-factor sign-in off.",
         "operationId": "postClientAuthPasswordReset",
         "parameters": [],
         "requestBody": {
@@ -215085,7 +215085,7 @@
     },
     "/client/auth/register": {
       "post": {
-        "description": "Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists. Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).",
+        "description": "Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists. Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).",
         "operationId": "postClientAuthRegister",
         "parameters": [
           {
@@ -215500,7 +215500,7 @@
     },
     "/client/auth/sign-in": {
       "post": {
-        "description": "One email and password form for both account kinds. An email that belongs to a merchant with a password always signs in as that merchant (the merchant wins, even when the email is also a customer: a wrong merchant password is `401`, and the customer area stays reachable through the emailed sign-in link); otherwise a customer account with a password signs in. The answer says which: `kind` `merchant` sets the `/client` session cookies and its `X-CSRF-Token`, `kind` `customer` the `/store/v1` ones. `next` is `password` after a temporary password (a `pending_password` session), `totp` for a merchant with two-factor sign-in on (a `pending_totp` session: continue with `POST /client/auth/2fa`), or `done`. A session of the other kind in the same browser stays signed in. One `401` answers an unknown email, a wrong password, an account with no password yet and an erased customer; `403 ACCOUNT_SUSPENDED` comes only after a correct password. Every attempt counts against the limits of both `POST /client/auth/login` and `POST /store/v1/auth/login` (5 per email and address in 15 minutes) and ten failures in a row lock the email for 15 minutes, whatever the email is: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`) and an `Origin` the API allows.",
+        "description": "One email and password form for both account kinds. An email that belongs to a merchant with a password and a verified email signs in as that merchant (the merchant wins over a customer with the same email: a wrong merchant password is `401`, and the customer area stays reachable through the emailed sign-in link); a merchant whose email is not verified signs in only when no customer account with a password has the email; otherwise a customer account with a password signs in. The answer says which: `kind` `merchant` sets the `/client` session cookies and its `X-CSRF-Token`, `kind` `customer` the `/store/v1` ones. `next` is `password` after a temporary password (a `pending_password` session), `totp` for a merchant with two-factor sign-in on (a `pending_totp` session: continue with `POST /client/auth/2fa`), or `done`. A session of the other kind in the same browser stays signed in. One `401` answers an unknown email, a wrong password, an account with no password yet and an erased customer; `403 ACCOUNT_SUSPENDED` comes only after a correct password. Every attempt counts against the limits of both `POST /client/auth/login` and `POST /store/v1/auth/login` (5 per email and network in 15 minutes) and ten failures (a success in between does not cancel them) lock the email for 15 minutes for every network the account being signed into has not signed in from, whatever the email is: both answer `429 RATE_LIMITED` with `Retry-After`. While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that it is refused like a wrong password. Needs the anti-bot token (`X-Turnstile-Token`) and an `Origin` the API allows.",
         "operationId": "postClientAuthSignIn",
         "parameters": [
           {
@@ -231472,7 +231472,7 @@
     },
     "/client/security/2fa/enable": {
       "post": {
-        "description": "Turns two-factor sign-in on and ends the merchant's other sessions (this one stays).",
+        "description": "Turns two-factor sign-in on and ends the merchant's other sessions (this one stays). Two-step sign-in can be switched on only for a confirmed email address: while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing changes.",
         "operationId": "postClientSecurity2faEnable",
         "parameters": [],
         "requestBody": {
@@ -231718,7 +231718,7 @@
             }
           },
           "409": {
-            "description": "TWOFA_ALREADY_ENABLED: Two-factor sign-in is already on for this account.",
+            "description": "TWOFA_ALREADY_ENABLED: Two-factor sign-in is already on for this account.\nCONFLICT: The request conflicts with the current state.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -231748,7 +231748,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "TWOFA_ALREADY_ENABLED"
+                        "TWOFA_ALREADY_ENABLED",
+                        "CONFLICT"
                       ]
                     },
                     "detail": {
@@ -231792,6 +231793,17 @@
                       "status": 409,
                       "code": "TWOFA_ALREADY_ENABLED",
                       "detail": "Two-factor sign-in is already on for this account.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CONFLICT": {
+                    "summary": "The request conflicts with the current state.",
+                    "value": {
+                      "type": "https://errors.gsm.example/conflict",
+                      "title": "The request conflicts with the current state.",
+                      "status": 409,
+                      "code": "CONFLICT",
+                      "detail": "The request conflicts with the current state.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -232015,7 +232027,7 @@
     },
     "/client/security/2fa/setup": {
       "post": {
-        "description": "Stores the secret as pending (two-factor sign-in stays off) and answers it once. Every call replaces the pending secret; `/client/security/2fa/enable` confirms it with a code.",
+        "description": "Stores the secret as pending (two-factor sign-in stays off) and answers it once. Every call replaces the pending secret; `/client/security/2fa/enable` confirms it with a code. Two-step sign-in can be switched on only for a confirmed email address: while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing is stored.",
         "operationId": "postClientSecurity2faSetup",
         "parameters": [],
         "responses": {
@@ -232264,7 +232276,7 @@
             }
           },
           "409": {
-            "description": "TWOFA_ALREADY_ENABLED: Two-factor sign-in is already on for this account.",
+            "description": "TWOFA_ALREADY_ENABLED: Two-factor sign-in is already on for this account.\nCONFLICT: The request conflicts with the current state.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -232294,7 +232306,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "TWOFA_ALREADY_ENABLED"
+                        "TWOFA_ALREADY_ENABLED",
+                        "CONFLICT"
                       ]
                     },
                     "detail": {
@@ -232338,6 +232351,17 @@
                       "status": 409,
                       "code": "TWOFA_ALREADY_ENABLED",
                       "detail": "Two-factor sign-in is already on for this account.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CONFLICT": {
+                    "summary": "The request conflicts with the current state.",
+                    "value": {
+                      "type": "https://errors.gsm.example/conflict",
+                      "title": "The request conflicts with the current state.",
+                      "status": 409,
+                      "code": "CONFLICT",
+                      "detail": "The request conflicts with the current state.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -244107,7 +244131,7 @@
     },
     "/store/v1/auth/login": {
       "post": {
-        "description": "Opens a session: a full one, or a `pending_password` one when the customer must change a temporary password first (`next` `password`: only `POST /store/v1/me/password` and logout work until then). One `401` answers an unknown email, a wrong password and an account with no password yet. A correct password on a suspended or blocked account is `403 ACCOUNT_SUSPENDED`. Five attempts per email and address in 15 minutes, and ten wrong passwords in a row lock the email (known or not, so the answer never shows who has an account) for 15 minutes: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
+        "description": "Opens a session: a full one, or a `pending_password` one when the customer must change a temporary password first (`next` `password`: only `POST /store/v1/me/password` and logout work until then). One `401` answers an unknown email, a wrong password and an account with no password yet. A correct password on a suspended or blocked account is `403 ACCOUNT_SUSPENDED`. Five attempts per email and network in 15 minutes, and ten failed attempts (a success in between does not cancel them) lock the email (known or not, so the answer never shows who has an account) for 15 minutes for every network its account has not signed in from: both answer `429 RATE_LIMITED` with `Retry-After`. While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that it is refused like a wrong password. Needs the anti-bot token (`X-Turnstile-Token`). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
         "operationId": "postStoreV1AuthLogin",
         "parameters": [
           {
@@ -244847,7 +244871,7 @@
     },
     "/store/v1/auth/magic-link": {
       "post": {
-        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. An email the store does not know yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. The link is valid one hour, works once, and a newer link replaces the older one. Counted per address and email, whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).",
+        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. An email the store does not know yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Counted per network and email, whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).",
         "operationId": "postStoreV1AuthMagicLink",
         "parameters": [
           {
@@ -245201,7 +245225,7 @@
     },
     "/store/v1/auth/password/forgot": {
       "post": {
-        "description": "Answers `204` whether or not the email belongs to an account, so no registered email is revealed. An account that is active gets a link valid one hour that works once; a newer link replaces an older one. Needs the anti-bot token (`X-Turnstile-Token`).",
+        "description": "Answers `204` whether or not the email belongs to an account, so no registered email is revealed. An account that is active gets a link valid one hour that works once; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Needs the anti-bot token (`X-Turnstile-Token`).",
         "operationId": "postStoreV1AuthPasswordForgot",
         "parameters": [
           {

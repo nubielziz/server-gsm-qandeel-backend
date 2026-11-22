@@ -143,8 +143,8 @@ export type NewCustomer = typeof customers.$inferInsert;
  * change at first sign-in, and nobody can read the current password.
  *
  * Why: Sign-in data kept apart from the profile: hash only (decision 018). The lockout counters moved to the cache Redis (keyed by
- * the email, so an email without an account locks like one with an account): `failed_attempts` and `locked_until` are no longer
- * written; a later migration can drop them.
+ * the email, so an email without an account locks like one with an account; identity's sign-in lock, decision 052): `failed_attempts`
+ * and `locked_until` are no longer written; a later migration can drop them.
  */
 export const customerCredentials = pgTable(
   'customer_credentials',

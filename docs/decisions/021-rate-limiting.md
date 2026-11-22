@@ -32,3 +32,12 @@ Status: accepted, 2026-10-31.
 
 **Consequences.** Limits are consistent across API instances; the pipeline order (decision 018) puts IP rules
 before the limiter and the limiter before authentication.
+
+**Amended (decision 052, feature 42).** The per-email sign-in counters (sign-in, forgot password, sign-in link) are keyed on the email and
+the network (`RequestMeta.limitKey`: the IPv4 address or the IPv6 /64), not the exact address. The customer email lock moved to identity
+(`SignInLock`) and became two locks, the console's and the shop's (merchants and customers share it), each with an exception for networks
+the account signed in from (the attempts such a network is still allowed while a lock runs share one budget per email and network, the limiter
+`sign-in-familiar`: 5 per 15 minutes); every attempt is counted before its password is checked and a correct password takes back only its own count. The authenticator code steps use their own limiter `sign-in-code` (5 per 15 minutes per account), marked
+`failClosed`: it has no in-memory insurance limiter and refuses (`Retry-After: 60`) while the cache Redis cannot be reached. The
+`account-mail` limiter also counts the mails a visitor can ask for, under kinds of their own (`sign_in_link`, `forgot_password`, and
+the subject `customer`); a request beyond that budget sends nothing and answers as usual.

@@ -15,4 +15,16 @@ describe('accountMailKey', () => {
     expect(accountMailKey('client', 7, 'verification')).not.toBe(base);
     expect(accountMailKey('client', 7, 'email_change')).not.toBe(base);
   });
+
+  it('keeps the mails a visitor asks for apart from the ones staff send, and customers apart from merchants', () => {
+    const staffLink = accountMailKey('client', 7, 'password_link');
+    const keys = new Set([
+      staffLink,
+      accountMailKey('client', 7, 'forgot_password'),
+      accountMailKey('customer', 7, 'forgot_password'),
+      accountMailKey('customer', 7, 'sign_in_link'),
+      accountMailKey('customer', 7, 'password_link'),
+    ]);
+    expect(keys.size).toBe(5);
+  });
 });

@@ -133,13 +133,13 @@ goes straight to the authenticator (TOTP) setup (two factors are mandatory). It 
 the line that says how to create the first admin. To create the admin without questions:
 
 ```bash
-bun run setup --email you@example.com --name "Your Full Name"                  # a temporary password is printed once
+bun run setup --email you@example.com --name "Your Full Name"                  # a temporary password is printed once (it works 72 hours)
 printf '%s\n' "$ADMIN_PASSWORD" | bun run setup --email you@example.com --name "Your Full Name" --password-stdin
 ```
 
 - With `--email` and `--name` the account is made the way the console makes a member with a temporary password: a strong generated
   password, stored only as a hash, a password change forced at the first sign-in. **The password is printed once on stdout and nowhere
-  else**: copy it before you close the terminal.
+  else**: copy it before you close the terminal. It works for 72 hours (decision 052); after that it is refused like a wrong password.
 - With `--password-stdin` as well, the password is read from standard input instead (one line; the trailing newline is removed), checked
   with the same rules, stored like a typed one (not temporary) and not printed. Standard input must be a pipe, not the keyboard.
 - Everything is created in one transaction: if an owner already exists, `setup` refuses with exit code 1 and changes nothing.
@@ -156,7 +156,8 @@ Then, at the console:
 3. Set the business up from the console: more currencies and their rates (USD is there), tax rates, payment gateways, suppliers,
    categories and services, and the other staff (Admins & access). The IP allow-list is optional and off until you add a rule.
 
-If the first admin's password is lost before the first sign-in (a temporary one that was not copied), nobody can sign in and `setup`
+If the first admin's password is lost or expired before the first sign-in (a temporary one that was not copied, or not used within 72
+hours), nobody can sign in and `setup`
 refuses to make another admin (an owner exists). Remove that never-used account with SQL
 (`delete from staff_users where email = 'you@example.com';`) and run `bun run setup` again.
 

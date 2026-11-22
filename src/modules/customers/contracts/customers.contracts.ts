@@ -189,7 +189,8 @@ export const createCustomer = defineRoute({
     'password; `temporary_password` makes a 14-character password that the answer shows once (`Cache-Control: no-store`) and ' +
     'the customer must change at the first sign-in. `409 EMAIL_TAKEN` when another customer, guest or account, has the email; ' +
     '`422` on `email` when it is on the blocklist. `country` must be one the storefront sells to (it has a current tax rate), else ' +
-    "`422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password.",
+    "`422` on `country`. The currency is the country's storefront currency, else USD. Audited without any password." +
+    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['customers'],
   surface: 'admin',
   access: 'staff-permission',

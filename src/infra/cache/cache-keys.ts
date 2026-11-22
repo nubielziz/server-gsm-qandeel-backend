@@ -183,13 +183,13 @@ export class CacheKeys {
   }
 
   /**
-   * The count of wrong sign-in attempts of one customer email, which decides the temporary lock (customers module).
+   * The count of failed sign-ins of one email in one scope (the console, or the shop), which decides the temporary lock (identity module).
    *
-   * @param emailHash the keyed hash of the normalised email (never the email itself)
-   * @returns `gsm:{env}:customers:sign-in-failures:{emailHash}`
+   * @param emailHash the keyed hash of the scope and the normalised email (never the email itself)
+   * @returns `gsm:{env}:identity:sign-in-failures:{emailHash}`
    */
-  customerSignInFailures(emailHash: string): CacheKey {
-    return `${this.keyspace}customers:sign-in-failures:${segment('email hash', emailHash)}` as CacheKey;
+  signInFailures(emailHash: string): CacheKey {
+    return `${this.keyspace}identity:sign-in-failures:${segment('email hash', emailHash)}` as CacheKey;
   }
 
   /**
@@ -454,12 +454,12 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     invalidation: 'MaintenanceService.invalidate() after the commit of a maintenance change',
   },
   {
-    builder: 'customerSignInFailures',
-    pattern: 'gsm:{env}:customers:sign-in-failures:{emailHash}',
-    owner: 'customers',
-    ttl: '15 min after the last wrong password, so the tenth failure locks the email for 15 min; a throttle, not truth: an evicted counter only loosens the lock',
+    builder: 'signInFailures',
+    pattern: 'gsm:{env}:identity:sign-in-failures:{emailHash}',
+    owner: 'identity',
+    ttl: '16 min after the last sign-in attempt (the lock itself lasts 15 min from the first attempt refused after ten failures); a throttle, not truth: an evicted count only loosens the lock',
     invalidation:
-      'deleted after a correct password, and after a password is set for the account (reset link, staff, own change); otherwise it expires',
+      "every attempt is counted before its password is checked and a correct password takes back only its own count (a running lock stays); a new password from an emailed link, set by staff or chosen by a customer or console member deletes it (a merchant's own change does not); otherwise it expires",
   },
   {
     builder: 'heartbeat',

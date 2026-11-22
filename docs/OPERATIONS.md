@@ -95,6 +95,9 @@ storefront.
    gsmc run --rm -e TYPESENSE_BOOTSTRAP_KEY -e TYPESENSE_INDEXER_KEY -e TYPESENSE_SEARCH_KEY -e TYPESENSE_PREFIX=gsm_production_ api bun scripts/search-keys.ts
    ```
 
+   A temporary password printed by `setup` works for 72 hours (decision 052). If it ran out before the first sign-in, remove the
+   never-used first owner and run `setup` again (root `README.md`, "First run on a server").
+
 4. **Start everything**: `gsmc up -d` (add `--profile site` once the storefront image exists).
 
 5. **Checks, all of them:**
@@ -395,6 +398,27 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - **Load test:** `bash scripts/with-slot.sh bun run test:load:realtime` in a development checkout opens 2000 streams against a
   test app and prints the table that `src/infra/realtime/README.md` keeps. Never point it at the production stack.
 
+### Sign-in protections (decision 052)
+
+- **A locked email.** Ten failed passwords for one email (from any networks; a success in between does not cancel them) lock it for
+  15 minutes on its side (the console, or the shop for merchants and customers): the sign-in answers `429` "Too many failed attempts.
+  Try again later." with `Retry-After`. A network the account signed in from before (the same IPv4 /24 or IPv6 /64 as one of its stored
+  sessions) can still sign in, with five attempts per 15 minutes shared by every address of that network while the lock runs (the
+  sixth gets the same `429`). Otherwise the person waits for the lock to end, or gets a new password, which lifts the lock at once:
+  customers can use the emailed sign-in link or a reset link; merchants a reset link (changing the password while signed in does not lift
+  the shop lock: a merchant registration proves no mailbox); staff ask an Owner (or a member allowed to act on them) for a password link
+  or a temporary password. The API log has one `Sign-in refused (staff|shop): the email is locked` line per refusal, with the address and without the email.
+- **Temporary passwords expire after 72 hours** (staff, merchants and customers): after that the sign-in refuses them like a wrong
+  password; set a new one from the console.
+- **The cache Redis holds the counters.** While it is down, the authenticator code step (staff and merchants with 2FA) is refused
+  (`429`, retry after 60 s), so nobody with 2FA can finish signing in until it is back; the other sign-in limits and the lock count in
+  memory per API process, so do not run more than one API process without the cache Redis.
+- **Mails a visitor asks for** (sign-in link, forgot password) are capped at five an hour per account and kind; a request beyond the cap
+  answers as usual and sends nothing. Mails staff send have their own budget.
+- **Two-step sign-in of a merchant needs a confirmed email address.** Starting the setup or confirming it answers `409` ("Confirm your
+  email address first; two-step sign-in can be switched on after that.") while the merchant's email is not confirmed: send the
+  verification link first. Switching it off and signing in with a code are not affected.
+
 ## 7. Owner checklists
 
 **Mail domain** (without it customers and merchants never receive links)
@@ -408,7 +432,9 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] `https://<SHOP_HOST>`, `https://<ADMIN_HOST>` and `https://<API_HOST>` open with a valid certificate (Caddy needs a minute after the first start; `gsmc logs caddy` shows why when not).
 
 **Provider accounts**
-- [ ] Cloudflare Turnstile: a widget for `SHOP_HOST`; the secret in `TURNSTILE_SECRET_KEY`, the site key given to the storefront.
+- [ ] Cloudflare Turnstile: a widget for `SHOP_HOST`; the secret in `TURNSTILE_SECRET_KEY`, the site key given to the storefront, which
+      shows it on the shop forms and on the merchant sign-in and forgot-password forms (`TURNSTILE_MERCHANT_AUTH` is on by default in
+      production, decision 052; `false` switches the merchant forms' check off).
 - [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`), or the rates are kept by hand.
 - [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`.
 - [ ] Object storage for backups on another provider, its keys in `deploy/.env`, and the two key holders named.

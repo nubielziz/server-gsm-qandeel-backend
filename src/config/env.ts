@@ -145,7 +145,8 @@ export interface AppConfig {
     readonly hostnames: readonly string[];
     /**
      * `TURNSTILE_MERCHANT_AUTH`: enforce the check on the public merchant sign-up, sign-in and forgot-password routes (feature 24A,
-     * `turnstileRollout: 'merchant-auth'`). Default false until the site sends the token; the storefront routes are always checked.
+     * `turnstileRollout: 'merchant-auth'`). On by default in production (the shop sends the token on its merchant forms, decision 052),
+     * off by default elsewhere; `false` switches it off. The storefront routes are always checked.
      */
     readonly merchantAuth: boolean;
   };
@@ -890,7 +891,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     turnstile: {
       secretKey: raw.TURNSTILE_SECRET_KEY,
       hostnames: turnstileHosts.ok ? turnstileHosts.value : [],
-      merchantAuth: raw.TURNSTILE_MERCHANT_AUTH ?? false,
+      merchantAuth: raw.TURNSTILE_MERCHANT_AUTH ?? production,
     },
     search: {
       enabled: searchEnabled,

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'bun:test';
 import { checkPasswordPolicy } from '@src/modules/identity/domain/password-policy';
 import {
   TEMPORARY_PASSWORD_LENGTH,
+  TEMPORARY_PASSWORD_TTL_MS,
   generateTemporaryPassword,
+  temporaryPasswordExpired,
   temporaryPasswordFor,
 } from '@src/modules/identity/domain/temporary-password';
 
@@ -43,5 +45,29 @@ describe('temporaryPasswordFor', () => {
   it('gives up with an error when the random source is stuck on a failing password', () => {
     // Always picking 0 gives "A" + "a" + "2" + the first alphabet character repeated: fewer than 5 different characters.
     expect(() => temporaryPasswordFor(() => 0, { email: 'x@y.example', name: 'X Y' })).toThrow(/policy/);
+  });
+});
+
+describe('temporaryPasswordExpired', () => {
+  const setAt = new Date('2026-11-07T10:00:00.000Z');
+  const temporary = { mustChangePassword: true, passwordChangedAt: setAt };
+
+  it('works for 72 hours: one millisecond less is fine, exactly 72 hours is expired', () => {
+    expect(TEMPORARY_PASSWORD_TTL_MS).toBe(72 * 60 * 60 * 1000);
+    expect(temporaryPasswordExpired(temporary, setAt.getTime())).toBe(false);
+    expect(temporaryPasswordExpired(temporary, setAt.getTime() + TEMPORARY_PASSWORD_TTL_MS - 1)).toBe(false);
+    expect(temporaryPasswordExpired(temporary, setAt.getTime() + TEMPORARY_PASSWORD_TTL_MS)).toBe(true);
+    expect(temporaryPasswordExpired(temporary, setAt.getTime() + 10 * TEMPORARY_PASSWORD_TTL_MS)).toBe(true);
+  });
+
+  it('never expires a password the owner chose', () => {
+    const chosen = { mustChangePassword: false, passwordChangedAt: setAt };
+    expect(temporaryPasswordExpired(chosen, setAt.getTime() + 100 * TEMPORARY_PASSWORD_TTL_MS)).toBe(false);
+  });
+
+  it('does not judge a temporary password with no time expired (data written outside the application)', () => {
+    expect(
+      temporaryPasswordExpired({ mustChangePassword: true, passwordChangedAt: null }, setAt.getTime() + 1e12),
+    ).toBe(false);
   });
 });

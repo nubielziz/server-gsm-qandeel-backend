@@ -8,6 +8,7 @@ import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import type { StaffUser } from '../db/schema';
 import { nextStepOf, stageOfStep, type SignInStep } from '../domain/sign-in-step';
+import { temporaryPasswordExpired } from '../domain/temporary-password';
 import {
   completeSignIn,
   findStaffByEmail,
@@ -21,6 +22,7 @@ import { SessionService } from '../security/session.service';
 import type { IssuedSession } from '../security/session.types';
 import type { RequestMeta } from './request-meta';
 import { SignInLimiter } from './sign-in-limiter';
+import { SignInLock } from './sign-in-lock';
 import { TotpService } from './totp.service';
 
 /** The answer of `login`: the next step and the pending session to put in the cookies. */
@@ -62,12 +64,16 @@ function invalidCode(detail: string): AppError {
 /**
  * The staff sign-in: password, authenticator code, authenticator setup, sign-out and the signed-in member.
  *
- * Why: ALIGNMENT § 3 and decision 018. The order of `login` is part of the contract with the console: rate limit, then
- * credentials (one indistinguishable `401` for an unknown email, a wrong password and an account with no password yet, with
- * the same work done in each case), then suspension, then a pending session. Reaching `active` rotates the session token.
+ * Why: ALIGNMENT § 3 and decisions 018 and 052. The order of `login` is part of the contract with the console: rate limit per email and
+ * network, then the account lookup, then the email's lock (the attempt is counted before the password is checked and refused while the
+ * email is locked, decided from the email alone, with an exception for networks the account signed in from), then credentials (one
+ * indistinguishable `401` for an unknown email, a wrong password, a temporary password older than 72 hours and an account with no
+ * password yet, with the same work done in each case, each one staying counted; a correct password takes its own count back), then
+ * suspension, then a pending session. Reaching `active` rotates the session token. The code step is limited per account on a budget
+ * that is never counted in process memory.
  *
- * Side effects: reads and writes `staff_users` and `sessions`; counts rate-limit attempts; the code step writes audit rows
- * (`logged in`, and `enabled two-factor sign-in` the first time); a failed attempt is logged without the email.
+ * Side effects: reads and writes `staff_users` and `sessions`; counts rate-limit attempts and sign-in attempts (cache Redis); the code
+ * step writes audit rows (`logged in`, and `enabled two-factor sign-in` the first time); a failed attempt is logged without the email.
  *
  * @see docs/contract/endpoints/identity.md (the six auth sections)
  */
@@ -82,6 +88,7 @@ export class StaffSignInService implements OnModuleInit {
     private readonly tokens: TokenService,
     private readonly sessions: SessionService,
     private readonly limiter: SignInLimiter,
+    private readonly lock: SignInLock,
     private readonly totp: TotpService,
     private readonly audit: AuditService,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -99,23 +106,43 @@ export class StaffSignInService implements OnModuleInit {
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
    * @returns the next step and the pending session
-   * @throws {AppError} `RATE_LIMITED` (429), `UNAUTHORIZED` (401: unknown email, wrong password or no password yet),
-   *   `ACCOUNT_SUSPENDED` (403: correct password, suspended account)
+   * @throws {AppError} `RATE_LIMITED` (429: too many tries from this network, or the email is locked after ten failures and the
+   *   account has not signed in from this network), `UNAUTHORIZED` (401: unknown email, wrong password, expired temporary password or
+   *   no password yet; each stays counted towards the lock), `ACCOUNT_SUSPENDED` (403: correct password, suspended account)
    */
   async login(
     input: { readonly email: string; readonly password: string },
     meta: RequestMeta,
     staleToken?: string,
   ): Promise<LoginResult> {
-    await this.limiter.enforceLogin(input.email, meta.ip);
+    await this.limiter.enforceLogin(input.email, meta);
     const staff = await findStaffByEmail(this.db.db, input.email);
-    const correct = await this.passwordMatches(staff, input.password);
-    if (!staff || !correct) {
+    await this.lock.assertMayTry(
+      'staff',
+      input.email,
+      staff ? { subjectType: 'staff', subjectId: staff.id } : undefined,
+      meta,
+    );
+    const verified = await this.passwordMatches(staff, input.password);
+    // A temporary password runs out after 72 hours and is then refused like a wrong one (decision 052).
+    const expired = staff !== undefined && verified && temporaryPasswordExpired(staff, this.clock.nowMs());
+    if (!staff || !verified || expired) {
       this.logger.warn(
-        `Staff sign-in refused (${staff ? (staff.passwordHash ? 'wrong password' : 'no password yet') : 'unknown email'}) from ${meta.ip}`,
+        `Staff sign-in refused (${
+          staff
+            ? expired
+              ? 'temporary password expired'
+              : staff.passwordHash
+                ? 'wrong password'
+                : 'no password yet'
+            : 'unknown email'
+        }) from ${meta.ip}`,
       );
+      // The attempt stays counted, whoever the email belongs to (or nobody): a lock only some emails reach would tell which have accounts.
       throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
     }
+    // A correct password is no guess: its own count goes back (a 403 below included); failures of other attempts stay.
+    await this.lock.giveBack('staff', input.email);
     if (staff.status === 'suspended') {
       this.logger.warn(`Staff ${staff.id} signed in with a correct password but is suspended (${meta.ip})`);
       throw new AppError('ACCOUNT_SUSPENDED', {
@@ -123,7 +150,7 @@ export class StaffSignInService implements OnModuleInit {
       });
     }
 
-    await this.limiter.resetLogin(input.email, meta.ip);
+    await this.limiter.resetLogin(input.email, meta);
     await this.upgradeHash(staff, input.password);
     await this.endStaleSession(staleToken);
     const next = nextStepOf(staff);

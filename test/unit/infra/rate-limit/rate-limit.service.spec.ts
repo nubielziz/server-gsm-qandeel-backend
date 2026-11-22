@@ -2,7 +2,7 @@
 // RATE_LIMITED error. The counting itself is in test/integration/infra/rate-limit.test.ts.
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
-import { RATE_LIMITERS } from '@src/infra/rate-limit/limiters';
+import { type LimiterConfig, RATE_LIMITERS } from '@src/infra/rate-limit/limiters';
 import { RateLimitService, rateLimitedError } from '@src/infra/rate-limit/rate-limit.service';
 
 describe('RATE_LIMITERS', () => {
@@ -27,6 +27,8 @@ describe('RATE_LIMITERS', () => {
       'media',
       'search-suggest',
       'sign-in',
+      'sign-in-code',
+      'sign-in-familiar',
       'stream-connect',
       'supplier',
       'ticket-chat',
@@ -42,6 +44,25 @@ describe('RATE_LIMITERS', () => {
 
   it('locks a sign-in pair out for as long as its window after five attempts', () => {
     expect(RATE_LIMITERS['sign-in']).toMatchObject({ points: 5, windowSeconds: 900, blockSeconds: 900 });
+  });
+
+  it('gives the authenticator code budget 5 attempts per 15 minutes, a 15 minute lock, and no process memory fallback (decision 052)', () => {
+    expect(RATE_LIMITERS['sign-in-code']).toMatchObject({
+      points: 5,
+      windowSeconds: 900,
+      blockSeconds: 900,
+      failClosed: true,
+    });
+    // Only the code budget fails closed: every other limiter keeps its in-memory insurance.
+    const closed = Object.entries(RATE_LIMITERS as Readonly<Record<string, LimiterConfig>>)
+      .filter(([, config]) => config.failClosed === true)
+      .map(([name]) => name);
+    expect(closed).toEqual(['sign-in-code']);
+  });
+
+  it('gives the attempts of a familiar network on a locked email 5 per 15 minutes, with no lock-out of its own (decision 052)', () => {
+    expect(RATE_LIMITERS['sign-in-familiar']).toMatchObject({ points: 5, windowSeconds: 900 });
+    expect(RATE_LIMITERS['sign-in-familiar']).not.toHaveProperty('blockSeconds');
   });
 
   it('lets one session open 20 live streams a minute (decision 037)', () => {

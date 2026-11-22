@@ -44,14 +44,19 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-/** Deletes the rate-limit counters of the three limiters the sign-in touches (the Redis instance outlives the tests). */
+/**
+ * Deletes the rate-limit counters of the limiters the sign-in touches (the code and mail budgets too) and the failed-sign-in counters and
+ * locks (the Redis instance outlives the tests; staff ids start again at 1 after every reset).
+ */
 async function clearRateLimits(): Promise<void> {
   const redis = t.app.get(RedisService).cache;
   const keys = t.app.get(CacheKeys);
-  for (const limiter of ['ip', 'sign-in', 'token'] as const) {
+  for (const limiter of ['ip', 'sign-in', 'sign-in-code', 'account-mail', 'token'] as const) {
     const found = await redis.keys(`${keys.rateLimit(limiter)}:*`);
     if (found.length > 0) await redis.del(...found);
   }
+  const failures = await redis.keys(`${keys.keyspace}identity:sign-in-failures:*`);
+  if (failures.length > 0) await redis.del(...failures);
 }
 
 beforeEach(async () => {

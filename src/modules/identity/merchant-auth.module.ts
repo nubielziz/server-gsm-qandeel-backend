@@ -17,6 +17,7 @@ import { TotpService } from './application/totp.service';
 import { MerchantAccountController } from './controllers/merchant-account.controller';
 import { MerchantAuthController } from './controllers/merchant-auth.controller';
 import { MerchantMailModule } from './merchant-mail.module';
+import { SignInLockModule } from './sign-in-lock.module';
 
 /**
  * Provides the 15 merchant portal routes of feature 2b, `MerchantAuthTokens`, (through `MerchantMailModule`) the mail outbox and
@@ -27,7 +28,7 @@ import { MerchantMailModule } from './merchant-mail.module';
  * of the app only through `index.ts`.
  */
 @Module({
-  imports: [CatalogModule, MerchantMailModule],
+  imports: [CatalogModule, MerchantMailModule, SignInLockModule],
   controllers: [MerchantAuthController, MerchantAccountController],
   providers: [
     TotpService,

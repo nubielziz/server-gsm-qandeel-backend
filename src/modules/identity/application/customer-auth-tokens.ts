@@ -5,7 +5,8 @@ import type { AuthToken } from '../db/schema';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { TokenService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
-import { insertAuthToken } from '../infra/auth-token.repository';
+import { MAX_LIVE_PUBLIC_LINKS } from '../domain/public-links';
+import { insertAuthToken, voidUnusedTokensBeyondNewest } from '../infra/auth-token.repository';
 import {
   CUSTOMER_PASSWORD_LINK_PURPOSES,
   type CustomerTokenPurpose,
@@ -30,6 +31,12 @@ export interface IssueCustomerTokenInput {
   readonly createdBy?: number | null;
   /** The IP of the request that created the link, for the record. */
   readonly ip?: string | null;
+  /**
+   * Keep the two newest unused links of the family instead of voiding every older one, so at most three work at once and the oldest
+   * goes first (decision 052). Only for a link the visitor asked for (the sign-in link, forgot password): a stranger who asks again must
+   * not void the link the owner was sent. Every other issue keeps "newest wins".
+   */
+  readonly keepEarlier?: boolean;
 }
 
 /** An issued link token. */
@@ -68,8 +75,9 @@ function familyOf(purpose: CustomerTokenPurpose): readonly CustomerTokenPurpose[
 /**
  * The one place that owns the token rules for storefront customers.
  *
- * Why: 256 random bits, only the keyed hash stored, one hour, one use, and only the newest link of a family works. The
- * customers module (store sign-in, the admin customer routes, the mail job) needs these rules but not the `auth_tokens` table.
+ * Why: 256 random bits, only the keyed hash stored, one hour, one use, and only the newest link of a family works, except links a
+ * visitor asked for: up to three of those work at once (decision 052). The customers module (store sign-in, the admin customer
+ * routes, the mail job) needs these rules but not the `auth_tokens` table.
  *
  * Side effects: reads and writes `auth_tokens` (rows of subject type `customer` only).
  *
@@ -84,7 +92,7 @@ export class CustomerAuthTokens {
   ) {}
 
   /**
-   * Issues a link and voids the customer's older unused ones of the same family.
+   * Issues a link and voids the customer's older unused ones of the same family (all of them, or all but the newest two with `keepEarlier`).
    *
    * @param work the caller's transaction, so the token and the change that needs it commit together
    * @param input the customer, the purpose and who sent it
@@ -94,7 +102,17 @@ export class CustomerAuthTokens {
     const now = this.clock.now();
     const token = this.tokens.random(32);
     // Void first: the unique hash index cannot clash, and "newest wins" holds even if two links are issued at once.
-    await voidOpenCustomerTokens(work.tx, input.customerId, familyOf(input.purpose), now);
+    if (input.keepEarlier) {
+      await voidUnusedTokensBeyondNewest(work.tx, {
+        subjectType: 'customer',
+        subjectId: input.customerId,
+        purposes: familyOf(input.purpose),
+        now,
+        keep: MAX_LIVE_PUBLIC_LINKS - 1,
+      });
+    } else {
+      await voidOpenCustomerTokens(work.tx, input.customerId, familyOf(input.purpose), now);
+    }
     const row = await insertAuthToken(work.tx, {
       purpose: input.purpose,
       subjectType: 'customer',

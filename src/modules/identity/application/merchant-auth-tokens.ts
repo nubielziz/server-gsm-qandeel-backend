@@ -4,7 +4,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { TokenService } from '../../../infra/crypto';
 import type { TransactionContext } from '../../../infra/db';
-import { insertAuthToken } from '../infra/auth-token.repository';
+import { MAX_LIVE_PUBLIC_LINKS } from '../domain/public-links';
+import { insertAuthToken, voidUnusedTokensBeyondNewest } from '../infra/auth-token.repository';
 import {
   type ClientTokenPurpose,
   PASSWORD_LINK_PURPOSES,
@@ -24,6 +25,12 @@ export interface IssueMerchantTokenInput {
   readonly createdBy?: number | null;
   /** The IP of the request that created the link, for the record. */
   readonly ip?: string | null;
+  /**
+   * Keep the two newest unused links of the family instead of voiding every older one, so at most three work at once and the oldest
+   * goes first (decision 052). Only for a link the visitor asked for (forgot password): a stranger who asks again must not void the
+   * link the owner was sent. Every other issue keeps "newest wins".
+   */
+  readonly keepEarlier?: boolean;
 }
 
 /** An issued link token. */
@@ -40,7 +47,7 @@ export interface IssuedMerchantToken {
  *
  * Why: one place owns the token rules for the merchant portal: 256 random bits, only the keyed hash stored, one hour, one use,
  * and only the newest link of a kind works (a reset or invite replaces an older reset or invite; a verification replaces an
- * older verification).
+ * older verification), except links a visitor asked for: up to three of those work at once (decision 052).
  *
  * Side effects: inserts an `auth_tokens` row and marks the merchant's older unused tokens of the same family used.
  *
@@ -54,7 +61,7 @@ export class MerchantAuthTokens {
   ) {}
 
   /**
-   * Issues a token and voids the merchant's older unused ones of the same family.
+   * Issues a token and voids the merchant's older unused ones of the same family (all of them, or all but the newest two with `keepEarlier`).
    *
    * @param work the caller's transaction (`runInTransaction`), so the token and the change that needs it commit together
    * @param input the merchant, the purpose and who sent it
@@ -66,7 +73,17 @@ export class MerchantAuthTokens {
     // Void first: the unique hash index cannot clash, and "newest wins" holds even if two links are issued at once.
     const family: readonly ClientTokenPurpose[] =
       input.purpose === 'verify_email' ? ['verify_email'] : PASSWORD_LINK_PURPOSES;
-    await voidOpenClientTokens(work.tx, input.clientId, family, now);
+    if (input.keepEarlier) {
+      await voidUnusedTokensBeyondNewest(work.tx, {
+        subjectType: 'client',
+        subjectId: input.clientId,
+        purposes: family,
+        now,
+        keep: MAX_LIVE_PUBLIC_LINKS - 1,
+      });
+    } else {
+      await voidOpenClientTokens(work.tx, input.clientId, family, now);
+    }
     const row = await insertAuthToken(work.tx, {
       purpose: input.purpose,
       subjectType: 'client',

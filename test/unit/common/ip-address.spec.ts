@@ -10,6 +10,7 @@ import {
   parseIpv6Bytes,
   parseNetwork,
   sharesPrefix,
+  signInNetworkKey,
 } from '@src/common/ip-address';
 
 const ip = (text: string) => {
@@ -164,5 +165,20 @@ describe('ipRateLimitKey', () => {
   it('gives a mapped address the key of its IPv4 address, and "unknown" for no address', () => {
     expect(ipRateLimitKey(ip('::ffff:203.0.113.9'))).toBe('203.0.113.9');
     expect(ipRateLimitKey(undefined)).toBe('unknown');
+  });
+});
+
+describe('signInNetworkKey', () => {
+  it('is the IPv4 /24 for IPv4 and the /64 text for IPv6', () => {
+    expect(signInNetworkKey(ip('203.0.113.9'))).toBe('203.0.113.0/24');
+    expect(signInNetworkKey(ip('203.0.113.200'))).toBe('203.0.113.0/24');
+    expect(signInNetworkKey(ip('203.0.114.9'))).toBe('203.0.114.0/24');
+    expect(signInNetworkKey(ip('2001:db8:1:2:aaaa:bbbb:cccc:dddd'))).toBe('2001:db8:1:2::/64');
+    expect(signInNetworkKey(ip('2001:db8:1:3::1'))).not.toBe(signInNetworkKey(ip('2001:db8:1:2::1')));
+  });
+
+  it('gives a mapped address the network of its IPv4 address, and nothing for no address', () => {
+    expect(signInNetworkKey(ip('::ffff:203.0.113.9'))).toBe('203.0.113.0/24');
+    expect(signInNetworkKey(undefined)).toBeUndefined();
   });
 });

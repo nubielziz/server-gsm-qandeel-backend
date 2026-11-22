@@ -55,7 +55,10 @@ export const staffLogin = defineRoute({
   summary: 'Sign in with email and password',
   description:
     'The first sign-in step. It creates a pending session (10 minutes) and answers which step follows. A failed attempt is ' +
-    'logged and rate-limited but writes no audit row; the sign-in is audited when the second step completes.',
+    'logged and rate-limited but writes no audit row; the sign-in is audited when the second step completes.' +
+    ' Five attempts per email and network (an IPv4 address or an IPv6 /64) in 15 minutes; ten failed attempts for one email (a success in between does not cancel them) lock it for 15 minutes for every network its account has not signed in from: both answer `429 RATE_LIMITED` with `Retry-After`, the same for every email.' +
+    ' While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt.' +
+    ' A temporary password works for 72 hours after it was set; after that it is refused like a wrong password.',
   tags: ['auth'],
   surface: 'admin',
   access: 'public',

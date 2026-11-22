@@ -16,7 +16,8 @@ export const setClientPassword = defineRoute({
     '(hash only), forces a change at the next sign-in (the merchant meets `next: password` on `POST /client/auth/login`), cancels ' +
     'older links, emails the merchant a security notice and returns the password once in `temporaryPassword`. Always ' +
     '`Cache-Control: no-store`. `revokeSessions` (default false) ends every session of the merchant. A suspended merchant is ' +
-    '`409 NOT_ACTIVE`. The link mode counts against five mails an hour per merchant (`429 RATE_LIMITED`).',
+    '`409 NOT_ACTIVE`. The link mode counts against five mails an hour per merchant (`429 RATE_LIMITED`).' +
+    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

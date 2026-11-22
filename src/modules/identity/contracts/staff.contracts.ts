@@ -100,7 +100,8 @@ export const createStaff = defineRoute({
     '(`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` ' +
     'generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. ' +
     'Only an owner can give the new account a role that grants `*`. ' +
-    'The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).',
+    'The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).' +
+    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -160,7 +161,8 @@ export const setStaffPassword = defineRoute({
     'current password keeps working until the link is used. `temporary_password` generates and stores a password (hash ' +
     'only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for ' +
     'the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. ' +
-    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046).",
+    "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046)." +
+    ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',

@@ -7,13 +7,18 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher } from '../../../infra/crypto';
 import { DbService, type DbExecutor, isUniqueViolation } from '../../../infra/db';
-import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, type StaffPrincipal, temporaryPasswordFor } from '../../identity';
+import {
+  CUSTOMER_TOKEN_PURPOSES,
+  CustomerAuthTokens,
+  SignInLock,
+  type StaffPrincipal,
+  temporaryPasswordFor,
+} from '../../identity';
 import { AuditService } from '../../platform';
 import { Blocklist } from '../../risk';
 import type { Customer } from '../db/schema';
 import { profileChanges } from '../domain/profile-edit';
 import { findCredentials, upsertCredentials } from '../infra/customer-credentials.repository';
-import { CustomerSignInFailures } from '../infra/customer-sign-in-failures';
 import {
   type CustomerSortField,
   findCustomerByEmail,
@@ -84,7 +89,7 @@ export class CustomerAdminService {
     private readonly blocklist: Blocklist,
     private readonly authTokens: CustomerAuthTokens,
     private readonly links: CustomerLinks,
-    private readonly failures: CustomerSignInFailures,
+    private readonly lock: SignInLock,
     private readonly rules: CustomerProfileRules,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -187,8 +192,8 @@ export class CustomerAdminService {
         if (isUniqueViolation(error, EMAIL_UNIQUE_INDEX)) throw new AppError('EMAIL_TAKEN');
         throw error;
       });
-    // Wrong passwords tried for this email before the account existed must not lock the new account.
-    await this.failures.clear(input.email);
+    // Failed passwords tried for this email before the account existed must not lock the new account.
+    await this.lock.clear('shop', input.email);
     const row = (await findCustomerRow(this.db.db, id))!;
     return { customer: toWireCustomer(row), ...(temporary === undefined ? {} : { temporaryPassword: temporary }) };
   }

@@ -11,6 +11,7 @@ import { RolesController } from './controllers/roles.controller';
 import { SessionsController } from './controllers/sessions.controller';
 import { StaffController } from './controllers/staff.controller';
 import { IpRulesModule } from './security/ip-rules/ip-rules.module';
+import { SignInLockModule } from './sign-in-lock.module';
 import { StaffAuthModule } from './staff-auth.module';
 import { StaffMailModule } from './staff-mail.module';
 
@@ -19,11 +20,11 @@ import { StaffMailModule } from './staff-mail.module';
  * `/admin/access/restriction`.
  *
  * Why: the routes need the global database, crypto, settings, audit and security providers (sessions, role permissions, the
- * permission catalog) plus the staff link tokens of `StaffAuthModule`, the invitation and reset mails of `StaffMailModule` and the IP rule
- * cache of `IpRulesModule`.
+ * permission catalog) plus the staff link tokens of `StaffAuthModule`, the invitation and reset mails of `StaffMailModule`, the IP rule
+ * cache of `IpRulesModule` and the sign-in lock (a temporary password set by staff lifts it, decision 052).
  */
 @Module({
-  imports: [StaffAuthModule, StaffMailModule, IpRulesModule],
+  imports: [StaffAuthModule, StaffMailModule, IpRulesModule, SignInLockModule],
   controllers: [StaffController, RolesController, SessionsController, IpRulesController],
   providers: [StaffAdminService, RoleAdminService, SessionAdminService, IpRuleAdminService],
 })

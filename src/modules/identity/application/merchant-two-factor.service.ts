@@ -3,12 +3,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
-import { DbService } from '../../../infra/db';
+import { type DbExecutor, DbService } from '../../../infra/db';
 import type { Client } from '../db/schema';
 import {
   disableClientTwoFactor,
   enableClientTwoFactor,
-  findClientById,
+  lockClientById,
   savePendingClientTotpSecret,
 } from '../infra/merchant-auth.repository';
 import type { MerchantPrincipal } from '../security/principal';
@@ -28,12 +28,15 @@ export interface MerchantTwoFactorSetup {
 /**
  * Sets up, enables and disables the authenticator of a merchant.
  *
- * Why: B132 to B134. A setup stores a pending secret (encrypted, `twofa_enabled` still false); a current code confirms it and
- * turns 2FA on; disabling needs a current code too. Every change of the 2FA state ends the merchant's other sessions (the one
- * making the change stays), and a wrong code is `422` on `code`, never `401`.
+ * Why: B132 to B134 and decision 052. A setup stores a pending secret (encrypted, `twofa_enabled` still false); a current code
+ * confirms it and turns 2FA on; disabling needs a current code too. Two-step sign-in can be switched on only for a confirmed email
+ * address (`email_verified_at` set): a setup and an enable on an unconfirmed address are refused with `409 CONFLICT`, so an address
+ * that nobody confirmed never carries a second step. Switching it off and using it at sign-in do not depend on the address. Every
+ * change of the 2FA state ends the merchant's other sessions (the one making the change stays), and a wrong code is `422` on
+ * `code`, never `401`.
  *
- * Side effects: updates `clients` (`totp_secret_enc`, `twofa_enabled`, `totp_last_step`); revokes the other sessions; counts
- * rate-limit attempts per account.
+ * Side effects: locks the merchant row and updates `clients` (`totp_secret_enc`, `twofa_enabled`, `totp_last_step`) in one
+ * transaction; revokes the other sessions; counts rate-limit attempts per account.
  *
  * @see docs/contract/MISMATCHES.md (B132, B133, B134)
  */
@@ -53,17 +56,23 @@ export class MerchantTwoFactorService {
    *
    * @param principal the signed-in merchant
    * @returns the key to type, the `otpauth://` link and the QR code
-   * @throws {AppError} `RATE_LIMITED` (429), `TWOFA_ALREADY_ENABLED` (409), `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403)
+   * @throws {AppError} `RATE_LIMITED` (429), `TWOFA_ALREADY_ENABLED` (409), `CONFLICT` (409: the email address is not confirmed
+   *   yet; nothing is stored and no secret is made), `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403)
    */
   async setup(principal: MerchantPrincipal): Promise<MerchantTwoFactorSetup> {
     await this.limiter.enforceSetup(principal.clientId);
     const client = await this.reader.current(principal.clientId);
     // A session alone must not enrol a new authenticator once 2FA is on.
     if (client.twofaEnabled) throw alreadyEnabled();
-    const secret = this.totp.newSecret();
-    if (!(await savePendingClientTotpSecret(this.db.db, client.id, this.totp.seal(secret, CLIENT_TOTP_AAD)))) {
-      throw alreadyEnabled();
-    }
+    const secret = await this.db.runInTransaction(async (work) => {
+      // The row is read under its lock before any secret exists, so a refusal leaves nothing behind.
+      await lockedForEnrolment(work.tx, client.id);
+      const fresh = this.totp.newSecret();
+      if (!(await savePendingClientTotpSecret(work.tx, client.id, this.totp.seal(fresh, CLIENT_TOTP_AAD)))) {
+        throw alreadyEnabled();
+      }
+      return fresh;
+    });
     const otpauthUrl = this.totp.uriFor(client.email, secret);
     return { secret, otpauthUrl, qrSvg: await this.totp.qrSvg(otpauthUrl) };
   }
@@ -73,22 +82,26 @@ export class MerchantTwoFactorService {
    *
    * @param principal the signed-in merchant
    * @param code the six digits from the authenticator
-   * @throws {AppError} `RATE_LIMITED` (429), `TWOFA_ALREADY_ENABLED` (409), `VALIDATION_FAILED` (422 on `code`: wrong, already
-   *   used, or no setup started), `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403)
+   * @throws {AppError} `RATE_LIMITED` (429), `TWOFA_ALREADY_ENABLED` (409), `CONFLICT` (409: the email address is not confirmed
+   *   yet; nothing is changed), `VALIDATION_FAILED` (422 on `code`: wrong, already used, or no setup started), `UNAUTHORIZED`
+   *   (401), `ACCOUNT_SUSPENDED` (403)
    */
   async enable(principal: MerchantPrincipal, code: string): Promise<void> {
     await this.limiter.enforceCode(principal.clientId);
     const client = await this.reader.current(principal.clientId);
     if (client.twofaEnabled) throw alreadyEnabled();
+    // Refused before the code is looked at (an unconfirmed address gets the same answer whatever it sends); the check that decides
+    // is the one under the row lock below.
+    if (client.emailVerifiedAt === null) throw emailNotConfirmed();
     if (client.totpSecretEnc === null)
       throw invalidCode('Start the setup first, then enter the code of your authenticator.');
     const secretEnc = client.totpSecretEnc;
     const step = await this.checkCode(client, secretEnc, code);
     await this.db.runInTransaction(async (work) => {
+      // Two tabs enabling at once: the second one finds 2FA on once the first has committed.
+      await lockedForEnrolment(work.tx, client.id);
       if (!(await enableClientTwoFactor(work.tx, { id: client.id, step, secretEnc }))) {
-        // Two tabs enabled it at once, or a new setup replaced the secret the code was checked against.
-        const now = await findClientById(work.tx, client.id);
-        if (now?.twofaEnabled) throw alreadyEnabled();
+        // A new setup replaced the secret the code was checked against.
         throw invalidCode('That code does not match the current setup. Scan the new key and try again.');
       }
       await this.sessions.revokeAllOf('client', client.id, { exceptSessionId: principal.session.id }, work);
@@ -136,4 +149,25 @@ export class MerchantTwoFactorService {
 
 function alreadyEnabled(): AppError {
   return new AppError('TWOFA_ALREADY_ENABLED', { detail: 'Two-factor sign-in is already on for this account.' });
+}
+
+function emailNotConfirmed(): AppError {
+  return new AppError('CONFLICT', {
+    detail: 'Confirm your email address first; two-step sign-in can be switched on after that.',
+  });
+}
+
+/**
+ * Locks the merchant row and refuses an enrolment unless the email address is confirmed and 2FA is still off.
+ *
+ * Why: decision 052. The state is read inside the transaction that writes the secret or the flag, under the row lock, so a change that
+ * lands at the same time cannot slip between the check and the write.
+ *
+ * @throws {AppError} `UNAUTHORIZED` (401: the merchant is gone), `TWOFA_ALREADY_ENABLED` (409), `CONFLICT` (409)
+ */
+async function lockedForEnrolment(tx: DbExecutor, clientId: number): Promise<void> {
+  const locked = await lockClientById(tx, clientId);
+  if (!locked) throw new AppError('UNAUTHORIZED');
+  if (locked.twofaEnabled) throw alreadyEnabled();
+  if (locked.emailVerifiedAt === null) throw emailNotConfirmed();
 }

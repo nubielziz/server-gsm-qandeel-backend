@@ -1,7 +1,7 @@
 // Drizzle queries on `auth_tokens` for the staff invite and reset links (identity module). Only keyed hashes are stored.
-import { and, eq, gt, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, ne, notInArray } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
-import { type AuthToken, type AuthTokenPurpose, type NewAuthToken, authTokens } from '../db/schema';
+import { type AuthToken, type AuthTokenPurpose, type NewAuthToken, type SubjectType, authTokens } from '../db/schema';
 
 /** The purposes a staff member's one-time token can have: the staff subset of {@link AuthTokenPurpose}. */
 export const STAFF_TOKEN_PURPOSES = ['invite', 'reset'] as const satisfies readonly AuthTokenPurpose[];
@@ -19,6 +19,60 @@ export type StaffTokenPurpose = (typeof STAFF_TOKEN_PURPOSES)[number];
 export async function insertAuthToken(db: DbExecutor, row: NewAuthToken): Promise<AuthToken> {
   const [created] = await db.insert(authTokens).values(row).returning();
   return created!;
+}
+
+/**
+ * Voids an account's unused links of a family except its newest few, so at most `keep` stay usable.
+ *
+ * Why: decision 052. A link a visitor asked for (the sign-in link, forgot password) must not void the one sent before, or a stranger
+ * who asks again and again would keep the owner's mailed link from working. Up to three work at once; the oldest goes first. The
+ * table has no "revoked" column, so a voided token is marked used.
+ *
+ * Side effects: updates `auth_tokens.used_at` of the older unused links (one statement).
+ *
+ * @param db the database or a transaction
+ * @param input the account, the purposes of the family, the time to write, and how many of the newest unused, unexpired links stay
+ * @returns how many links were voided
+ */
+export async function voidUnusedTokensBeyondNewest(
+  db: DbExecutor,
+  input: {
+    readonly subjectType: SubjectType;
+    readonly subjectId: number;
+    readonly purposes: readonly AuthTokenPurpose[];
+    readonly now: Date;
+    readonly keep: number;
+  },
+): Promise<number> {
+  const purposes = [...input.purposes];
+  const newest = db
+    .select({ id: authTokens.id })
+    .from(authTokens)
+    .where(
+      and(
+        eq(authTokens.subjectType, input.subjectType),
+        eq(authTokens.subjectId, input.subjectId),
+        inArray(authTokens.purpose, purposes),
+        isNull(authTokens.usedAt),
+        gt(authTokens.expiresAt, input.now),
+      ),
+    )
+    .orderBy(desc(authTokens.createdAt), desc(authTokens.id))
+    .limit(input.keep);
+  const rows = await db
+    .update(authTokens)
+    .set({ usedAt: input.now })
+    .where(
+      and(
+        eq(authTokens.subjectType, input.subjectType),
+        eq(authTokens.subjectId, input.subjectId),
+        inArray(authTokens.purpose, purposes),
+        isNull(authTokens.usedAt),
+        notInArray(authTokens.id, newest),
+      ),
+    )
+    .returning({ id: authTokens.id });
+  return rows.length;
 }
 
 /**

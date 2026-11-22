@@ -1,6 +1,6 @@
 // MerchantRegistrationService: the use cases of POST /client/auth/register and POST /client/auth/verify-email (map domain A,
 // stage 2; MISMATCHES B122, B123). A registration never tells whether the email was already known.
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -48,13 +48,15 @@ const MAX_NAME_ATTEMPTS = 5;
 /**
  * Registers merchants and verifies their email.
  *
- * Why: B122. A visitor registers, the merchant exists as `pending` until staff approve it (B153), and the portal's answer is
- * `204` for a new and for a known email alike: the password is always hashed (same work), the known email changes nothing and
- * sends nothing, and the 429 counts both. The merchant's ledger accounts are opened in the same transaction as the merchant
- * (RESOLUTIONS identity-platform-1), so no merchant exists without a wallet.
+ * Why: B122 and decision 052. A visitor registers, the merchant exists as `pending` until staff approve it (B153), and the portal's
+ * answer is `204` for a new and for a known email alike: the password is always hashed (same work), a known email runs the same
+ * statements as a new one on a placeholder address and they are rolled back (it changes nothing and sends nothing), and the 429 counts
+ * both. The merchant's ledger accounts are opened in the same transaction as the merchant (RESOLUTIONS identity-platform-1), so no
+ * merchant exists without a wallet.
  *
  * Side effects: `register` inserts `clients`, `ledger_accounts` (through `MerchantAccounts.open`), an `auth_tokens` row and the
- * outbox event `merchant.email_verification`; `verifyEmail` sets `clients.email_verified_at` and uses the link up.
+ * outbox event `merchant.email_verification` (all rolled back for a known email); `verifyEmail` sets `clients.email_verified_at` and
+ * uses the link up.
  *
  * @see docs/contract/MISMATCHES.md (B122, B123)
  */
@@ -99,11 +101,13 @@ export class MerchantRegistrationService {
 
     // Hash before looking the email up, so a known email costs the same time as a new one.
     const passwordHash = await this.hasher.hash(input.password);
-    if (await findClientByEmail(this.db.db, input.email)) return;
+    const known = (await findClientByEmail(this.db.db, input.email)) !== undefined;
+    // A known email runs the same statements on a placeholder address and rolls them back, so the work does not tell who is registered.
+    const attempted: RegisterInput = known ? { ...input, email: `discarded-${randomUUID()}@example.invalid` } : input;
 
     for (let attempt = 1; ; attempt++) {
       try {
-        await this.create(input, passwordHash, referredById, meta);
+        await this.create(attempted, passwordHash, referredById, meta, !known);
         return;
       } catch (error) {
         const constraint = uniqueViolationOf(error);
@@ -165,14 +169,15 @@ export class MerchantRegistrationService {
     });
   }
 
-  /** One attempt: the merchant, its accounts, the verification link and the mail event in one transaction. */
+  /** One attempt: the merchant, its accounts, the verification link and the mail event in one transaction (kept only when `keep`). */
   private async create(
     input: RegisterInput,
     passwordHash: string,
     referredById: number | undefined,
     meta: RequestMeta,
+    keep: boolean,
   ): Promise<void> {
-    await this.db.runInTransaction(async (work) => {
+    await this.db.runOrDiscard(async (work) => {
       const group = await this.groups.findDefault(work.tx);
       if (!group) throw new AppError('INTERNAL_ERROR', { detail: 'No default merchant group is configured.' });
       const client = await insertClient(work.tx, {
@@ -202,6 +207,7 @@ export class MerchantRegistrationService {
         clientId: client.id,
         tokenId: issued.id,
       });
+      return keep;
     });
   }
 }

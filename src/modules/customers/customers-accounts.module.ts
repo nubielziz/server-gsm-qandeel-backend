@@ -2,7 +2,7 @@
 // (/store/v1/me*) and the admin customer routes (/admin/customers*), with the use cases behind them. Separate from CustomersModule
 // so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
-import { CustomerTokensModule, MerchantAuthModule } from '../identity';
+import { CustomerTokensModule, MerchantAuthModule, SignInLockModule } from '../identity';
 import { MoneyAdminModule } from '../money';
 import { RiskServicesModule } from '../risk';
 import { CustomerAccountAdminService } from './application/customer-account-admin.service';
@@ -23,7 +23,6 @@ import { SmartSignInController } from './controllers/smart-sign-in.controller';
 import { StoreAccountController } from './controllers/store-account.controller';
 import { StoreAuthController } from './controllers/store-auth.controller';
 import { CustomerMailModule } from './customer-mail.module';
-import { CustomerSignInFailures } from './infra/customer-sign-in-failures';
 import { MarketingUnsubscribe } from './notifications/marketing-unsubscribe.service';
 import { UnsubscribeController } from './notifications/unsubscribe.controller';
 
@@ -34,11 +33,18 @@ import { UnsubscribeController } from './notifications/unsubscribe.controller';
  *
  * Why: the routes need the global database, crypto, rate-limit, audit and outbox providers and the security stack (sessions,
  * cookies, CSRF); the customer mails and the one-time link service come from their own modules because the worker loads those
- * without the routes. The smart sign-in takes the merchant side from identity's `MerchantAuthModule` (customers may import identity,
- * never the reverse, decision 032).
+ * without the routes. The smart sign-in takes the merchant side from identity's `MerchantAuthModule`, and the failed-sign-in lock comes from
+ * identity's `SignInLockModule` (customers may import identity, never the reverse, decisions 032 and 052).
  */
 @Module({
-  imports: [CustomerTokensModule, CustomerMailModule, RiskServicesModule, MoneyAdminModule, MerchantAuthModule],
+  imports: [
+    CustomerTokensModule,
+    CustomerMailModule,
+    RiskServicesModule,
+    MoneyAdminModule,
+    MerchantAuthModule,
+    SignInLockModule,
+  ],
   controllers: [
     StoreAuthController,
     StoreAccountController,
@@ -50,7 +56,6 @@ import { UnsubscribeController } from './notifications/unsubscribe.controller';
   ],
   providers: [
     CustomerSignInLimiter,
-    CustomerSignInFailures,
     CustomerLinks,
     CustomerSignInService,
     SmartSignInService,

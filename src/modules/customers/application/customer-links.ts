@@ -13,13 +13,16 @@ export interface SendLinkInput {
   readonly createdBy?: number;
   /** The IP of the request, for the record. */
   readonly ip?: string;
+  /** Keep the two newest unused links of the family instead of voiding all older ones: only for links the visitor asked for (decision 052). */
+  readonly keepEarlier?: boolean;
 }
 
 /**
  * Sends a customer one of the four links.
  *
  * Why: every flow that emails a link (sign-in link, forgot password, staff invitation, staff reset, email verification) does the
- * same two things in one transaction: a token row (newest wins, hash only) and an outbox event with ids only (decision 020). The
+ * same two things in one transaction: a token row (newest wins, hash only; a link the visitor asked for keeps the two newest earlier ones,
+ * decision 052) and an outbox event with ids only (decision 020). The
  * clear token of the mail is made later, inside the mail job, which rotates this row's token (`CustomerMailJobs`).
  *
  * Side effects: inserts an `auth_tokens` row, voids the customer's older unused links of the same family, and inserts an
@@ -45,6 +48,7 @@ export class CustomerLinks {
       purpose: PURPOSE_OF_KIND[input.kind],
       createdBy: input.createdBy ?? null,
       ip: input.ip ?? null,
+      ...(input.keepEarlier ? { keepEarlier: true } : {}),
     });
     // The issued token is a placeholder nobody receives: the mail job rotates it, so only the row's id goes on.
     await this.mail.enqueue(work, { kind: input.kind, customerId: input.customerId, tokenId: issued.id });

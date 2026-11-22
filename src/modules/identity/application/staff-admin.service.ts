@@ -32,6 +32,7 @@ import type { StaffPrincipal } from '../security/principal';
 import { SessionPolicy } from '../security/session-policy';
 import { SessionService } from '../security/session.service';
 import { StaffMailOutbox } from './mail/staff-mail-outbox';
+import { SignInLock } from './sign-in-lock';
 import { StaffAuthTokens } from './staff-auth-tokens';
 import { idleLimitsOf } from './idle-limits';
 
@@ -92,10 +93,11 @@ function invalid(field: string, message: string): AppError {
  * password reset with `revokeSessions`, "end all sessions" and a 2FA reset end the member's sessions in the same transaction.
  * Sensitive actions re-check the caller's account in the database, not the cached session. Privilege ceiling (decision 046): the
  * role given to a new member or by a role change, and the role of any other member the caller acts on, may hold nothing the caller
- * does not hold (an Owner passes always).
+ * does not hold (an Owner passes always). A temporary password works for 72 hours and lifts the failed-sign-in lock of the member's email
+ * (decision 052).
  *
- * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views after the
- * commit; never writes a password, token or secret to the audit log.
+ * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views and
+ * (a temporary password) the sign-in lock key of the email after the commit; never writes a password, token or secret to the audit log.
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/staff` sections)
  */
@@ -110,6 +112,7 @@ export class StaffAdminService {
     private readonly mail: StaffMailOutbox,
     private readonly audit: AuditService,
     private readonly limits: RateLimitService,
+    private readonly lock: SignInLock,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -194,6 +197,9 @@ export class StaffAdminService {
           ip: caller.ip,
         });
         await this.mail.enqueue(work, { kind: 'invited', staffId: created.id, tokenId: issued.id });
+      } else {
+        // A new password for the email ends what was counted against it before this account existed (decision 052).
+        work.afterCommit(() => this.lock.clear('staff', created.email));
       }
       await this.audit.record(work.tx, {
         action: 'added admin',
@@ -306,6 +312,8 @@ export class StaffAdminService {
         await updateStaffRow(work.tx, id, { passwordHash, mustChangePassword: true, passwordChangedAt: now });
         // An older link must not undo the temporary password.
         await voidOpenStaffTokens(work.tx, id, now);
+        // A new password lifts the failed-sign-in lock of the account's email (decision 052).
+        work.afterCommit(() => this.lock.clear('staff', target.staff.email));
       } else {
         const purpose = target.staff.status === 'invited' ? 'invite' : 'reset';
         const issued = await this.tokens.issue(work, {

@@ -80,7 +80,8 @@ export const merchantSetupTwoFactor = defineRoute({
   summary: 'A new TOTP secret with a QR code',
   description:
     'Stores the secret as pending (two-factor sign-in stays off) and answers it once. Every call replaces the pending secret; ' +
-    '`/client/security/2fa/enable` confirms it with a code.',
+    '`/client/security/2fa/enable` confirms it with a code. Two-step sign-in can be switched on only for a confirmed email address: ' +
+    "while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing is stored.",
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
@@ -92,6 +93,7 @@ export const merchantSetupTwoFactor = defineRoute({
     'IP_NOT_ALLOWED',
     'CSRF_FAILED',
     'TWOFA_ALREADY_ENABLED',
+    'CONFLICT',
     'RATE_LIMITED',
   ],
   examples: {
@@ -107,7 +109,9 @@ export const merchantSetupTwoFactor = defineRoute({
 export const merchantEnableTwoFactor = defineRoute({
   key: 'POST /client/security/2fa/enable',
   summary: 'Enable 2FA after confirming a code',
-  description: "Turns two-factor sign-in on and ends the merchant's other sessions (this one stays).",
+  description:
+    "Turns two-factor sign-in on and ends the merchant's other sessions (this one stays). Two-step sign-in can be switched on only " +
+    "for a confirmed email address: while the merchant's email is not confirmed yet the call is `409 CONFLICT` and nothing changes.",
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',
@@ -117,6 +121,7 @@ export const merchantEnableTwoFactor = defineRoute({
   errors: [
     'VALIDATION_FAILED',
     'TWOFA_ALREADY_ENABLED',
+    'CONFLICT',
     'UNAUTHORIZED',
     'ACCOUNT_SUSPENDED',
     'IP_NOT_ALLOWED',

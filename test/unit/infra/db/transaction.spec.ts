@@ -1,7 +1,13 @@
 // Unit tests of the transaction helper (decisions 022, 024, 037) with a fake database: when afterCommit and onCommit callbacks run.
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { Logger } from '@nestjs/common';
-import { type TransactionContext, type TransactionRunner, onCommit, runInTransaction } from '@src/infra/db/transaction';
+import {
+  type TransactionContext,
+  type TransactionRunner,
+  onCommit,
+  runInTransaction,
+  runOrDiscard,
+} from '@src/infra/db/transaction';
 import { rejectionOf } from '../../../support/rejection';
 
 /** A runner whose `transaction` behaves like Drizzle's: run the callback, then commit (or fail to). */
@@ -261,5 +267,43 @@ describe('onCommit (decision 037)', () => {
     onCommit(() => Promise.reject(new Error('publish failed')));
     await new Promise((resolve) => setImmediate(resolve));
     expect(logged).toEqual(['afterCommit callback failed: redis down', 'afterCommit callback failed: publish failed']);
+  });
+});
+
+describe('runOrDiscard (decision 052)', () => {
+  it('commits a run that answers true, runs its afterCommit callbacks and returns true', async () => {
+    const { runner, events } = fakeRunner();
+    const kept = await runOrDiscard(runner, ({ afterCommit }) => {
+      afterCommit(() => void events.push('callback'));
+      events.push('work');
+      return Promise.resolve(true);
+    });
+    expect(kept).toBe(true);
+    expect(events).toEqual(['begin', 'work', 'commit', 'callback']);
+  });
+
+  it('rolls back a run that answers false, runs no callback and returns false', async () => {
+    const { runner, events } = fakeRunner();
+    const kept = await runOrDiscard(runner, ({ afterCommit }) => {
+      afterCommit(() => void events.push('callback'));
+      onCommit(() => void events.push('on commit'));
+      events.push('work');
+      return Promise.resolve(false);
+    });
+    expect(kept).toBe(false);
+    expect(events).toEqual(['begin', 'work', 'rollback']);
+  });
+
+  it('rethrows an error of the work (the transaction is rolled back too)', async () => {
+    const { runner, events } = fakeRunner();
+    const error = await rejectionOf(runOrDiscard(runner, () => Promise.reject(new Error('boom'))));
+    expect((error as Error).message).toBe('boom');
+    expect(events).toEqual(['begin', 'rollback']);
+  });
+
+  it('rethrows the error of a commit that fails after a true answer', async () => {
+    const { runner } = fakeRunner({ commitFails: true });
+    const error = await rejectionOf(runOrDiscard(runner, () => Promise.resolve(true)));
+    expect((error as Error).message).toBe('commit failed');
   });
 });

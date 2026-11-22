@@ -83,6 +83,50 @@ export function onCommit(callback: () => void | Promise<void>): void {
   // A rolled-back transaction: the change never happened, so the callback is dropped.
 }
 
+/** Thrown inside the transaction of {@link runOrDiscard} to roll it back; never leaves that function. */
+class DiscardedTransaction extends Error {
+  constructor() {
+    super('The transaction was discarded on purpose.');
+    this.name = 'DiscardedTransaction';
+  }
+}
+
+/**
+ * Runs `fn` in one database transaction and keeps its changes only when it answers `true`.
+ *
+ * Why: decision 052. A use case that must not tell whether an email has an account runs the same statements for every
+ * email, and rolls them back at the end when nothing may be kept, so the work does not depend on the answer.
+ *
+ * Side effects: a `false` answer rolls the whole transaction back (rows, outbox events and their `pg_notify`); callbacks
+ * registered with `afterCommit` / `onCommit` do not run. A `true` answer commits and runs them.
+ *
+ * @param db the Drizzle database (or any object with `transaction`)
+ * @param fn the work; answer `true` to keep it, `false` to roll it back
+ * @param options isolation level
+ * @returns `true` when the work was committed, `false` when it was rolled back on purpose
+ * @throws whatever `fn` threw, or the database error of a failed commit (the transaction is rolled back)
+ */
+export async function runOrDiscard(
+  db: TransactionRunner,
+  fn: (context: TransactionContext) => Promise<boolean>,
+  options: TransactionOptions = {},
+): Promise<boolean> {
+  const discard = new DiscardedTransaction();
+  try {
+    await runInTransaction(
+      db,
+      async (context) => {
+        if (!(await fn(context))) throw discard;
+      },
+      options,
+    );
+    return true;
+  } catch (error) {
+    if (error === discard) return false;
+    throw error;
+  }
+}
+
 /**
  * Runs `fn` in one database transaction and then its post-commit callbacks.
  *

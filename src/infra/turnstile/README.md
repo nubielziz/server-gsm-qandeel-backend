@@ -32,7 +32,8 @@ export const openCheckoutSession = defineRoute({
 `turnstileRollout: 'merchant-auth'` (only with `turnstile: true`) makes the guard skip the check, without reading the token or calling
 the verifier, while `TURNSTILE_MERCHANT_AUTH` is off; OpenAPI then shows the header as optional and adds
 `x-gsm-turnstile-rollout`. It is on `POST /client/auth/register`, `/login` and `/password/forgot`, whose map rows get the flag from
-`rowFlags` in `scripts/map-additions/24a.mjs`, so callers that do not send the token yet keep working until the owner switches it on.
+`rowFlags` in `scripts/map-additions/24a.mjs`. The switch is on by default in production (the shop sends the token on its merchant
+forms, decision 052) and off by default elsewhere, so development and test callers that do not send the token keep working.
 The smart sign-in `POST /client/auth/sign-in` has no rollout: it is always checked. Remove the field and the variable one release after
 production runs with the switch on (decision 034, amendment).
 
@@ -57,7 +58,7 @@ production runs with the switch on (decision 034, amendment).
 | --- | --- |
 | `TURNSTILE_SECRET_KEY` | Required when `NODE_ENV=production` (the config refuses to start without it). Unset elsewhere: the dummy verifier. |
 | `TURNSTILE_HOSTNAMES` | Optional, comma-separated host names a token may be issued for (no scheme, port or path). |
-| `TURNSTILE_MERCHANT_AUTH` | `true` enforces the check on the routes with `turnstileRollout: 'merchant-auth'`; default `false` in every environment. |
+| `TURNSTILE_MERCHANT_AUTH` | `true` enforces the check on the routes with `turnstileRollout: 'merchant-auth'`; default `true` in production and `false` elsewhere (decision 052); `false` switches it off. |
 
 Cloudflare's test secrets work with the siteverify verifier for a manual check against the real API (`1x...AA` always passes,
 `2x...AA` always fails, `3x...AA` answers `timeout-or-duplicate`); the test sitekey `1x00000000000000000000AA` makes the widget
@@ -67,4 +68,5 @@ produce the dummy token, which the dummy verifier accepts.
 
 Tests send the dummy token through `TURNSTILE_HEADERS` / `withTurnstile()` of `test/support/storefront.ts`. Unit tests of the
 verifiers and the guard: `test/unit/infra/turnstile/turnstile.spec.ts`; wiring and the real routes: `test/integration/infra/turnstile.test.ts`,
-`imei-check.test.ts`, `checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on), `smart-sign-in.test.ts`.
+`imei-check.test.ts`, `checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on, and the production default),
+`smart-sign-in.test.ts`.

@@ -7,6 +7,7 @@ import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import type { Client } from '../db/schema';
 import { type MerchantSignInStep, merchantStageOfStep, nextMerchantStep } from '../domain/merchant-sign-in-step';
+import { temporaryPasswordExpired } from '../domain/temporary-password';
 import {
   acceptClientSignInStep,
   findClientByEmail,
@@ -21,6 +22,7 @@ import { invalidCode } from './merchant-errors';
 import { upgradeClientPasswordHash } from './merchant-password-hash';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
 import type { RequestMeta } from './request-meta';
+import { SignInLock } from './sign-in-lock';
 import { CLIENT_TOTP_AAD, TotpService } from './totp.service';
 
 /** The answer of `login` and `startSession`: the next step and the session to put in the cookies. */
@@ -34,9 +36,12 @@ const WRONG_CREDENTIALS = 'The email or password is not correct.';
 /**
  * The merchant sign-in: password, the optional authenticator code, and sign-out.
  *
- * Why: B124 to B126 and decision 018. The order of `login` is part of the contract: rate limit, then credentials (one
- * indistinguishable `401` for an unknown email, a wrong password and a merchant with no password yet, with the same work done in
- * each case), then suspension, then a session: pending when a new password or a code is still needed, active otherwise (the step logic
+ * Why: B124 to B126 and decisions 018 and 052. The order of `login` is part of the contract: rate limit per email and network, then the
+ * email's lock (shared with the storefront sign-in; the attempt is counted before the password is checked and refused while the email is
+ * locked, with an exception for networks the account signed in from), then credentials (one indistinguishable `401` for an unknown
+ * email, a wrong password, a temporary password older than 72 hours and a merchant with no password yet, with the same work done in each
+ * case, each staying counted; a correct password takes back only its own count), then suspension, then a session: pending when a
+ * new password or a code is still needed, active otherwise (the step logic
  * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). A
  * merchant waiting for approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
  *
@@ -56,6 +61,7 @@ export class MerchantSignInService implements OnModuleInit {
     private readonly tokens: TokenService,
     private readonly sessions: SessionService,
     private readonly limiter: MerchantSignInLimiter,
+    private readonly lock: SignInLock,
     private readonly totp: TotpService,
     private readonly reader: MerchantAccountReader,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -73,26 +79,47 @@ export class MerchantSignInService implements OnModuleInit {
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
    * @returns the next step (`password`, `totp` or `done`) and the session
-   * @throws {AppError} `RATE_LIMITED` (429), `UNAUTHORIZED` (401: unknown email, wrong password or no password yet),
-   *   `ACCOUNT_SUSPENDED` (403: correct password, suspended merchant)
+   * @throws {AppError} `RATE_LIMITED` (429: too many tries from this network, or the email is locked after ten failures and the
+   *   merchant has not signed in from this network), `UNAUTHORIZED` (401: unknown email, wrong password, expired temporary password
+   *   or no password yet; each stays counted towards the lock), `ACCOUNT_SUSPENDED` (403: correct password, suspended merchant)
    */
   async login(
     input: { readonly email: string; readonly password: string },
     meta: RequestMeta,
     staleToken?: string,
   ): Promise<MerchantLoginResult> {
-    await this.limiter.enforceLogin(input.email, meta.ip);
+    await this.limiter.enforceLogin(input.email, meta);
     const client = await findClientByEmail(this.db.db, input.email);
-    const correct = await this.passwordMatches(client, input.password);
-    if (!client || !correct) {
+    await this.lock.assertMayTry(
+      'shop',
+      input.email,
+      client ? { subjectType: 'client', subjectId: client.id } : undefined,
+      meta,
+    );
+    const verified = await this.passwordMatches(client, input.password);
+    // A temporary password runs out after 72 hours and is then refused like a wrong one (decision 052).
+    const expired = client !== undefined && verified && temporaryPasswordExpired(client, this.clock.nowMs());
+    if (!client || !verified || expired) {
       this.logger.warn(
-        `Merchant sign-in refused (${client ? (client.passwordHash ? 'wrong password' : 'no password yet') : 'unknown email'}) from ${meta.ip}`,
+        `Merchant sign-in refused (${
+          client
+            ? expired
+              ? 'temporary password expired'
+              : client.passwordHash
+                ? 'wrong password'
+                : 'no password yet'
+            : 'unknown email'
+        }) from ${meta.ip}`,
       );
+      // The attempt stays counted, whoever the email belongs to (or nobody): a lock only some emails reach would tell which have accounts.
       throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
     }
+    // A correct password is no guess: only its own count goes back (a 403 below included). The failures of other attempts stay, so
+    // a merchant registered on a customer's email cannot cancel the guesses at that customer's password by signing in (decision 052).
+    await this.lock.giveBack('shop', input.email);
     this.assertNotSuspended(client, meta);
 
-    await this.limiter.resetLogin(input.email, meta.ip);
+    await this.limiter.resetLogin(input.email, meta);
     await upgradeClientPasswordHash(this.db.db, this.hasher, this.logger, client, input.password);
     return this.startSession(client, meta, staleToken);
   }

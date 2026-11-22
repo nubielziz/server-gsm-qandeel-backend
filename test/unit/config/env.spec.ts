@@ -669,8 +669,12 @@ describe('Turnstile settings (decision 034)', () => {
     expect(parseEnv({}).turnstile).toEqual({ secretKey: undefined, hostnames: [], merchantAuth: false });
   });
 
-  it('keeps the merchant sign-in check off unless TURNSTILE_MERCHANT_AUTH is true, in every environment (feature 24A)', () => {
-    expect(parseEnv(production()).turnstile.merchantAuth).toBe(false);
+  it('turns the merchant sign-in check on by default in production only, and lets TURNSTILE_MERCHANT_AUTH set it either way (decision 052)', () => {
+    expect(parseEnv(production()).turnstile.merchantAuth).toBe(true);
+    expect(parseEnv({ ...production(), TURNSTILE_MERCHANT_AUTH: 'false' }).turnstile.merchantAuth).toBe(false);
+    expect(parseEnv({ ...production(), TURNSTILE_MERCHANT_AUTH: 'true' }).turnstile.merchantAuth).toBe(true);
+    expect(parseEnv({}).turnstile.merchantAuth).toBe(false);
+    expect(parseEnv({ NODE_ENV: 'test' }).turnstile.merchantAuth).toBe(false);
     expect(parseEnv({ TURNSTILE_MERCHANT_AUTH: 'true' }).turnstile.merchantAuth).toBe(true);
     expect(parseEnv({ TURNSTILE_MERCHANT_AUTH: 'false' }).turnstile.merchantAuth).toBe(false);
     expect(issuesOf({ TURNSTILE_MERCHANT_AUTH: 'maybe' }).map((i) => i.variable)).toEqual(['TURNSTILE_MERCHANT_AUTH']);

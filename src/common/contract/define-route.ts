@@ -112,7 +112,8 @@ export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
  * The switches that turn the anti-bot check on for routes whose callers are still learning to send the token.
  *
  * Why: feature 24A declares Turnstile on the public merchant sign-up, sign-in and forgot-password routes (decision 034 amendment) but
- * enforces it only when `TURNSTILE_MERCHANT_AUTH` is on, so the merge breaks no caller. A closed list: one value today.
+ * enforces it only when `TURNSTILE_MERCHANT_AUTH` is on (on by default in production, decision 052), so callers that do not send the
+ * token yet keep working elsewhere. A closed list: one value today.
  */
 export const TURNSTILE_ROLLOUTS = ['merchant-auth'] as const;
 
@@ -230,7 +231,7 @@ export interface RouteSpec<
   readonly turnstile?: boolean;
   /**
    * Names the switch that turns the `turnstile` check on for this route while its callers learn to send the token (feature 24A):
-   * `merchant-auth` is `TURNSTILE_MERCHANT_AUTH` (default off). While the switch is off the guard lets the route through
+   * `merchant-auth` is `TURNSTILE_MERCHANT_AUTH` (on by default in production, off elsewhere; decision 052). While the switch is off the guard lets the route through
    * unchecked; OpenAPI shows the header as optional. Only with `turnstile: true`. Removed once the switch is on everywhere.
    */
   readonly turnstileRollout?: TurnstileRollout;

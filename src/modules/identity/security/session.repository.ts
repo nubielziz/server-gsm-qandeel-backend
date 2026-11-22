@@ -1,6 +1,6 @@
 // Drizzle queries on `sessions` (identity module). Every function takes a DbExecutor, so a sign-in step can run several of
 // them in one transaction; times come from the caller, so the application and the tests share one clock.
-import { type SQL, and, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, gt, isNull, lte, ne, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type NewSession, type Session, type SubjectType, sessions } from '../db/schema';
 
@@ -136,6 +136,34 @@ export async function touchSession(db: DbExecutor, id: number, now: Date, minGap
     )
     .returning({ id: sessions.id });
   return rows.length > 0;
+}
+
+/**
+ * Reads the addresses of an account's newest full sign-ins, whatever state their sessions are in now.
+ *
+ * Why: decision 052. While an email is locked after repeated failures, the networks the account really signed in from keep their
+ * own budget. A full sign-in is a row with stage `active` (the staff 2FA step rotates into a new `active` row); ended rows stay stored
+ * until the purge job deletes them 30 days after they ended, so the networks are remembered as long as the sessions are kept.
+ *
+ * @param db the database or a transaction
+ * @param subjectType the kind of account
+ * @param subjectId the account id (an id no account has returns an empty list, with the same query)
+ * @param limit how many of the newest rows to read
+ * @returns the addresses as stored (text), newest first
+ */
+export async function fullSignInAddresses(
+  db: DbExecutor,
+  subjectType: SubjectType,
+  subjectId: number,
+  limit: number,
+): Promise<string[]> {
+  const rows = await db
+    .select({ ip: sessions.ip })
+    .from(sessions)
+    .where(and(eq(sessions.subjectType, subjectType), eq(sessions.subjectId, subjectId), eq(sessions.stage, 'active')))
+    .orderBy(desc(sessions.id))
+    .limit(limit);
+  return rows.map((row) => row.ip);
 }
 
 /** How long a full session of each subject type may sit unused, in milliseconds (`SessionPolicy.limits(...).idleMs`). */

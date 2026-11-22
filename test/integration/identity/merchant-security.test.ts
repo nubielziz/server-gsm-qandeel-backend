@@ -103,14 +103,15 @@ describe('POST /client/auth/password/forgot', () => {
     expect(await clientRow(invited.id)).toMatchObject({ status: 'pending' });
   });
 
-  it('lets only the newest link work, and counts requests per email and address', async () => {
+  it('keeps earlier links working (at most three), and counts requests per email and network', async () => {
     const merchant = await makeMerchant(t);
     const ip = freshClientIp();
     await portal(ip).forgot(merchant.email);
     await portal(ip).forgot(merchant.email);
     const [older, newer] = emailedLinks();
-    expect((await portal().reset(older!.token, NEW_PASSWORD)).statusCode).toBe(410);
-    expect((await portal().reset(newer!.token, NEW_PASSWORD)).statusCode).toBe(204);
+    // A second request does not void the first link (decision 052); using one spends the other.
+    expect((await portal().reset(older!.token, NEW_PASSWORD)).statusCode).toBe(204);
+    expect((await portal().reset(newer!.token, 'another-brand-new-password')).statusCode).toBe(410);
 
     for (let i = 0; i < 3; i++) expect((await portal(ip).forgot(merchant.email)).statusCode).toBe(204);
     const sixth = await portal(ip).forgot(merchant.email);
@@ -237,6 +238,43 @@ describe('POST /client/auth/password/reset', () => {
     ).toEqual(['password', 'token']);
   });
 
+  it('turns two-factor sign-in off when the link is used on a merchant whose email is not verified (decision 052)', async () => {
+    const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: null });
+    expect((await portal().login(merchant.email)).json()).toEqual({ next: 'totp' });
+    const token = await linkFor(merchant.email);
+    expect((await portal().reset(token, NEW_PASSWORD)).statusCode).toBe(204);
+    expect(await clientRow(merchant.id)).toMatchObject({
+      twofaEnabled: false,
+      totpSecretEnc: null,
+      totpLastStep: null,
+    });
+    // A reset link does not verify the email; the new password signs in without a code.
+    expect((await clientRow(merchant.id)).emailVerifiedAt).toBeNull();
+    expect((await portal().login(merchant.email, NEW_PASSWORD)).json()).toEqual({ next: 'done' });
+  });
+
+  it('turns two-factor sign-in off for an invitation link on an unverified merchant too, and verifies the email', async () => {
+    const merchant = await makeMerchant(t, { status: 'pending', twofa: true, emailVerifiedAt: null });
+    const issued = await t.app
+      .get(DbService)
+      .runInTransaction((work) =>
+        t.app.get(MerchantAuthTokens).issue(work, { clientId: merchant.id, purpose: 'invite' }),
+      );
+    expect((await portal().reset(issued.token, NEW_PASSWORD)).statusCode).toBe(204);
+    const row = await clientRow(merchant.id);
+    expect(row).toMatchObject({ twofaEnabled: false, totpSecretEnc: null });
+    expect(row.emailVerifiedAt?.getTime()).toBe(clock.nowMs());
+    expect((await portal().login(merchant.email, NEW_PASSWORD)).json()).toEqual({ next: 'done' });
+  });
+
+  it('keeps two-factor sign-in of a merchant whose email is verified', async () => {
+    const merchant = await makeMerchant(t, { twofa: true, emailVerifiedAt: new Date() });
+    const token = await linkFor(merchant.email);
+    expect((await portal().reset(token, NEW_PASSWORD)).statusCode).toBe(204);
+    expect(await clientRow(merchant.id)).toMatchObject({ twofaEnabled: true });
+    expect((await portal().login(merchant.email, NEW_PASSWORD)).json()).toEqual({ next: 'totp' });
+  });
+
   it('counts link tries per address: the 31st in a minute is 429', async () => {
     const ip = freshClientIp();
     for (let i = 0; i < 30; i++) expect((await portal(ip).reset('A'.repeat(43), NEW_PASSWORD)).statusCode).toBe(410);
@@ -318,7 +356,7 @@ describe('POST /client/security/password', () => {
 
 describe('the authenticator settings', () => {
   it('sets up a pending secret that is stored encrypted and leaves two-factor sign-in off', async () => {
-    const merchant = await makeMerchant(t);
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const p = await signedIn(merchant.email);
     const res = await p.setupTwoFactor();
     expect(res.statusCode).toBe(200);
@@ -345,7 +383,7 @@ describe('the authenticator settings', () => {
   });
 
   it('turns two-factor sign-in on with a current code, ends the other sessions and then asks for the code at sign-in', async () => {
-    const merchant = await makeMerchant(t);
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const here = await signedIn(merchant.email);
     const other = await signedIn(merchant.email);
     const { secret } = (await here.setupTwoFactor()).json<{ secret: string }>();
@@ -375,7 +413,7 @@ describe('the authenticator settings', () => {
   });
 
   it('refuses a second setup or enable once it is on (409 TWOFA_ALREADY_ENABLED), and an enable without a setup', async () => {
-    const plain = await makeMerchant(t);
+    const plain = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const a = await signedIn(plain.email);
     const noSetup = await a.enableTwoFactor('123456');
     expect(noSetup.statusCode).toBe(422);
@@ -396,7 +434,7 @@ describe('the authenticator settings', () => {
   });
 
   it('lets only one of two parallel enables win', async () => {
-    const merchant = await makeMerchant(t);
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const p = await signedIn(merchant.email);
     const { secret } = (await p.setupTwoFactor()).json<{ secret: string }>();
     const code = await codeNow(secret);
@@ -451,13 +489,113 @@ describe('the authenticator settings', () => {
   });
 
   it('counts code attempts per account and needs the CSRF token', async () => {
-    const merchant = await makeMerchant(t);
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date() });
     const p = await signedIn(merchant.email);
     await p.setupTwoFactor();
     expect(problem(await p.enableTwoFactor('123456', { csrf: false })).code).toBe('CSRF_FAILED');
     for (let i = 0; i < 5; i++) expect((await p.enableTwoFactor('000000')).statusCode).toBe(422);
     expect((await p.enableTwoFactor('000000')).statusCode).toBe(429);
     expect((await portal().setupTwoFactor({ cookies: false })).statusCode).toBe(401);
+  });
+});
+
+describe('two-step sign-in needs a confirmed email address (decision 052)', () => {
+  const REFUSAL = 'Confirm your email address first; two-step sign-in can be switched on after that.';
+  const detailOf = (res: { json: () => unknown }) => res.json() as { code: string; detail: string };
+
+  it('refuses a setup and an enable while the email is not verified, and stores no secret', async () => {
+    const merchant = await makeMerchant(t);
+    expect(merchant.row.emailVerifiedAt).toBeNull();
+    const p = await signedIn(merchant.email);
+
+    const setup = await p.setupTwoFactor();
+    expect(setup.statusCode).toBe(409);
+    expect(detailOf(setup)).toMatchObject({ code: 'CONFLICT', detail: REFUSAL });
+    const enable = await p.enableTwoFactor('123456');
+    expect(enable.statusCode).toBe(409);
+    expect(detailOf(enable)).toMatchObject({ code: 'CONFLICT', detail: REFUSAL });
+
+    expect(await clientRow(merchant.id)).toMatchObject({
+      twofaEnabled: false,
+      totpSecretEnc: null,
+      totpLastStep: null,
+    });
+    expect((await portal().login(merchant.email)).json()).toEqual({ next: 'done' });
+  });
+
+  it('refuses the confirmation of a secret that was stored before the rule, and leaves it as it was', async () => {
+    const merchant = await makeMerchant(t, { twofa: true });
+    const { db } = await testDb();
+    // A pending secret on an unconfirmed address, as rows from before the rule hold.
+    await db.update(s.clients).set({ twofaEnabled: false }).where(eq(s.clients.id, merchant.id));
+    const p = await signedIn(merchant.email);
+
+    const enable = await p.enableTwoFactor(await codeNow(merchant.secret));
+    expect(enable.statusCode).toBe(409);
+    expect(detailOf(enable)).toMatchObject({ code: 'CONFLICT', detail: REFUSAL });
+    const setup = await p.setupTwoFactor();
+    expect(setup.statusCode).toBe(409);
+    expect(await clientRow(merchant.id)).toMatchObject({
+      twofaEnabled: false,
+      totpSecretEnc: merchant.row.totpSecretEnc,
+      totpLastStep: null,
+    });
+  });
+
+  it('lets a merchant whose email is verified switch it on, as before', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date() });
+    const p = await signedIn(merchant.email);
+    const { secret } = (await p.setupTwoFactor()).json<{ secret: string }>();
+    expect((await p.enableTwoFactor(await codeNow(secret))).statusCode).toBe(204);
+    expect(await clientRow(merchant.id)).toMatchObject({ twofaEnabled: true });
+    expect((await portal().login(merchant.email)).json()).toEqual({ next: 'totp' });
+  });
+
+  it('keeps the existing second step of an unconfirmed address working: sign-in with a code, and switching it off', async () => {
+    // Rows from before the rule: 2FA is on and the address is not confirmed.
+    const merchant = await makeMerchant(t, { twofa: true });
+    const p = portal();
+    expect((await p.login(merchant.email)).json()).toEqual({ next: 'totp' });
+    expect((await p.code(await codeNow(merchant.secret))).statusCode).toBe(204);
+    clock.advance(30 * SECOND);
+    expect((await p.disableTwoFactor(await codeNow(merchant.secret))).statusCode).toBe(204);
+    expect(await clientRow(merchant.id)).toMatchObject({ twofaEnabled: false, totpSecretEnc: null });
+  });
+
+  it('from the registration to a reset by link: the address is never enrolled before it is confirmed, and the sign-in asks for no second step', async () => {
+    const email = 'registered-first@example.com';
+    const first = portal();
+    const registered = await first.register({
+      name: 'Registered First',
+      email,
+      password: 'a-long-password',
+      company: 'Some Co',
+      phone: '+962791234567',
+      country: 'jo',
+    });
+    expect(registered.statusCode).toBe(204);
+    const verification = emailedLinks().find((link) => link.kind === 'email_verification')!;
+    expect((await first.login(email, 'a-long-password')).json()).toEqual({ next: 'done' });
+
+    // Not confirmed yet: no enrolment.
+    expect((await first.setupTwoFactor()).statusCode).toBe(409);
+    expect((await first.enableTwoFactor('123456')).statusCode).toBe(409);
+
+    // The mailbox is proven through its link, then a password reset by link follows.
+    expect((await portal().verifyEmail(verification.token)).statusCode).toBe(204);
+    expect((await portal().forgot(email)).statusCode).toBe(204);
+    const reset = emailedLinks().findLast((link) => link.kind === 'password_reset')!;
+    expect((await portal().reset(reset.token, NEW_PASSWORD)).statusCode).toBe(204);
+    expect((await first.me()).statusCode).toBe(401);
+
+    const owner = portal();
+    const signIn = await owner.login(email, NEW_PASSWORD);
+    expect(signIn.statusCode).toBe(200);
+    expect(signIn.json()).toEqual({ next: 'done' });
+    const { db } = await testDb();
+    const [row] = await db.select().from(s.clients).where(eq(s.clients.id, verification.clientId));
+    expect(row).toMatchObject({ twofaEnabled: false, totpSecretEnc: null });
+    expect(row!.emailVerifiedAt).not.toBeNull();
   });
 });
 

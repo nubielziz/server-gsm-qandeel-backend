@@ -19,6 +19,7 @@ import { SessionService } from '../security/session.service';
 import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 import { MerchantMailOutbox } from './mail/merchant-mail-outbox';
 import { MerchantAuthTokens } from './merchant-auth-tokens';
+import { SignInLock } from './sign-in-lock';
 
 /** What `POST /admin/clients/:id/password` answers: which link was mailed, or the temporary password (shown once). */
 export interface SetClientPasswordResult {
@@ -42,8 +43,11 @@ function suspended(): AppError {
  * (lock order), writes one audit row under the merchant, and never returns or stores a link: the request makes a placeholder token whose clear
  * value is dropped, the outbox carries ids, and the mail job rotates the token and sends the real link (feature 12a).
  *
+ * A temporary password works for 72 hours and lifts the failed-sign-in lock of the merchant's email (decision 052).
+ *
  * Side effects: writes `clients`, `auth_tokens`, `sessions`, `outbox_events`, `notifications` and `audit_logs`; ending sessions drops their cached
- * views after the commit; the link and verification mails count against the `account-mail` limiter (five an hour per merchant and kind).
+ * views after the commit; a temporary password deletes the sign-in lock key of the email after the commit; the link and verification mails
+ * count against the `account-mail` limiter (five an hour per merchant and kind).
  *
  * @see docs/briefs/20-merchant-management.md
  */
@@ -58,6 +62,7 @@ export class ClientSecurityAdminService {
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
     private readonly limits: RateLimitService,
+    private readonly lock: SignInLock,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -113,6 +118,8 @@ export class ClientSecurityAdminService {
         // An older link must not undo the temporary password.
         await voidOpenClientTokens(work.tx, id, PASSWORD_LINK_PURPOSES, now);
         await this.lifecycleMails.securityNotice(work, client, 'temporary_password');
+        // A new password lifts the failed-sign-in lock of the merchant's email (decision 052).
+        work.afterCommit(() => this.lock.clear('shop', client.email));
       }
       const sessionsEnded = input.revokeSessions ? await this.sessions.revokeAllOf('client', id, {}, work) : 0;
       await this.audit.record(work.tx, {

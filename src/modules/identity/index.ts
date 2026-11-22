@@ -88,7 +88,14 @@ export type {
 export { CUSTOMER_PASSWORD_LINK_PURPOSES, CUSTOMER_TOKEN_PURPOSES } from './infra/customer-token.repository';
 export type { CustomerTokenPurpose } from './infra/customer-token.repository';
 export { CustomerTokensModule } from './customer-tokens.module';
-export { temporaryPasswordFor } from './domain/temporary-password';
+export { TEMPORARY_PASSWORD_TTL_MS, temporaryPasswordExpired, temporaryPasswordFor } from './domain/temporary-password';
+// The sign-in lock and the budget of the mails a visitor can ask for (decision 052): the customers module signs customers in and mails them.
+export { SignInLockModule } from './sign-in-lock.module';
+export { SignInLock } from './application/sign-in-lock';
+export type { SignInAccount } from './application/sign-in-lock';
+export type { SignInScope } from './domain/sign-in-lock';
+export { takePublicMailPoint } from './application/public-mail-budget';
+export { MAX_LIVE_PUBLIC_LINKS, NO_ACCOUNT_ID } from './domain/public-links';
 // The Owner role definition and the staff field rules `bun run setup` shares with the seed and the staff routes (P4b).
 export { OWNER_ROLE_NAME, OWNER_ROLE_PERMISSIONS } from './domain/owner-role';
 export { EmailField, NameField } from './contracts/shared';

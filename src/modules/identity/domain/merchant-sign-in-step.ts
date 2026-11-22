@@ -28,6 +28,19 @@ export function nextMerchantStep(facts: MerchantSignInFacts): MerchantSignInStep
 }
 
 /**
+ * Tells whether a merchant takes precedence over a customer account with the same email on the one sign-in form.
+ *
+ * Why: decision 052. A registration makes a merchant with a password before anyone proved the mailbox, so it must not shadow the
+ * password of a customer who owns that address. The merchant wins only once its email is verified (a link sent to the mailbox was used).
+ *
+ * @param merchant the merchant's email verification time
+ * @returns true when the merchant's email is verified
+ */
+export function merchantShadowsCustomer(merchant: { readonly emailVerifiedAt: Date | null }): boolean {
+  return merchant.emailVerifiedAt !== null;
+}
+
+/**
  * Names the session stage that holds a step.
  *
  * Why: the stage is what the guards check (`sessionStages` of each route): `password` waits in a pending session (10 minutes) that can

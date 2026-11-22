@@ -210,3 +210,19 @@ export function ipRateLimitKey(address: IpAddress | undefined): string {
   });
   return `${prefix}/64`;
 }
+
+/**
+ * The network a past sign-in vouches for: an IPv4 /24, or the /64 of an IPv6 address.
+ *
+ * Why: decision 052. While an email is locked after repeated failures, a request from a network the account already signed in
+ * from keeps its own budget; an owner's address moves inside its /24 or /64, so the exact address would be too narrow. An
+ * IPv4-mapped address is already IPv4 after `parseIpAddress`.
+ *
+ * @param address the parsed address, `undefined` when it could not be read
+ * @returns `203.0.113.0/24` or `2001:db8:1:2::/64`, or `undefined` when there is no address
+ */
+export function signInNetworkKey(address: IpAddress | undefined): string | undefined {
+  if (!address) return undefined;
+  if (address.family === 4) return `${address.bytes[0]}.${address.bytes[1]}.${address.bytes[2]}.0/24`;
+  return ipRateLimitKey(address);
+}

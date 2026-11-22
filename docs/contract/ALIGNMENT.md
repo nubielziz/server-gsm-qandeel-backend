@@ -156,7 +156,8 @@ Same JSON, id, money, time, error and header conventions; the map defines the ro
 - **Merchant portal** (`/client`): cookie session + CSRF like the console; simple-rest lists; CSV exports with
   `Content-Disposition`. Turnstile (`X-Turnstile-Token`, `403 TURNSTILE_FAILED`) guards the smart sign-in
   `POST /client/auth/sign-in` always, and `POST /client/auth/register`, `/login` and `/password/forgot` once
-  `TURNSTILE_MERCHANT_AUTH` is on (feature 24A; their OpenAPI header is optional until then). The smart sign-in answers
+  `TURNSTILE_MERCHANT_AUTH` is on (on by default in production, decision 052; feature 24A; their OpenAPI header is optional until the
+  switch is removed). The smart sign-in answers
   `{ kind: 'merchant' | 'customer', next }` and sets the cookies and `X-CSRF-Token` of that kind's surface (`merchant` → `/client`,
   `customer` → `/store/v1`).
 - **Storefront** (`/store/v1`): public routes protected by Turnstile (`403 TURNSTILE_FAILED`) and per-IP limits;

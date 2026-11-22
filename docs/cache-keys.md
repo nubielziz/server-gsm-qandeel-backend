@@ -37,7 +37,7 @@ The queue Redis holds BullMQ data only and has no keys in this list (see `docs/q
 | `gsm:{env}:identity:ip-rules:active` | identity | 60 s (+-15 %), then the old snapshot is served for up to 5 minutes while one refresh runs | `IpRuleCache.invalidate()` after the commit of any IP rule or access restriction change | `ipRules` |
 | `gsm:{env}:identity:ip-rule-hits:pending` | identity | 24 h, renewed by every hit; statistics only, so an evicted counter is just lost | emptied by the `ip_rule_hits_flush` job every minute; never deleted otherwise | `ipRuleHits` |
 | `gsm:{env}:platform:maintenance:state` | platform | 60 s (+-15 %), then the old state is served for up to 5 minutes while one refresh runs | `MaintenanceService.invalidate()` after the commit of a maintenance change | `maintenance` |
-| `gsm:{env}:customers:sign-in-failures:{emailHash}` | customers | 15 min after the last wrong password, so the tenth failure locks the email for 15 min; a throttle, not truth: an evicted counter only loosens the lock | deleted after a correct password, and after a password is set for the account (reset link, staff, own change); otherwise it expires | `customerSignInFailures` |
+| `gsm:{env}:identity:sign-in-failures:{emailHash}` | identity | 16 min after the last sign-in attempt (the lock itself lasts 15 min from the first attempt refused after ten failures); a throttle, not truth: an evicted count only loosens the lock | every attempt is counted before its password is checked and a correct password takes back only its own count (a running lock stays); a new password from an emailed link, set by staff or chosen by a customer or console member deletes it (a merchant's own change does not); otherwise it expires | `signInFailures` |
 | `gsm:{env}:support:typing:{ticketId}:{party}` | support | 2.5 s (`SET NX PX 2500`, no jitter: it is a throttle, not a cache); `{party}` is `r` (the requester) or `s<staffId>` | never; it expires, and while it lives a typing ping rings no doorbell (feature 28: `POST /store/v1/tickets/:token/typing`, `POST /admin/support-tickets/:id/typing`) | `supportTyping` |
 | `gsm:{env}:health:heartbeat:{name}` | health | 120 s; written by the API every 30 s | none; a missing heartbeat means the process is not running | `heartbeat` |
 | `gsm:{env}:health:snapshot:{current-or-last}` | health | current 10 s; last 1 day (the copy served when Postgres is down) | PUT /admin/system/maintenance deletes current after its commit; otherwise expiry | `healthSnapshot` |
@@ -72,6 +72,19 @@ Version counters in use (all under the `gsm:{env}:cache:version:{name}` family a
 Versioned keys are the base key plus `:v{n}`, where `{n}` is the current number of the version counter
 (`gsm:{env}:cache:version:{name}`). The counter is the larger of "previous + 1" and the current time in milliseconds, so a
 counter that the cache evicted and re-created can never reuse a number that old entries still carry.
+
+## Named limiter keys that a module drives
+
+`gsm:{env}:ratelimit:{limiter}:{key}` in the table above is one family for every named limiter in `src/infra/rate-limit/limiters.ts`.
+A limiter that a module drives with a key of its own is listed here with its owner and lifetime (the key-family test reads only the
+table above):
+
+- `gsm:{env}:ratelimit:sign-in-familiar:{hash}` (owner: identity, decision 052; `SignInLock` builds the key, `RateLimitService` counts
+  it). `{hash}` is the keyed hash (`TokenService.hash`) of the scope (`staff` or `shop`), the email and the network key (an IPv4 /24 or an
+  IPv6 /64) of an attempt that is let through only because its network is one the account signed in from while its email is locked,
+  so Redis shows no address. Lifetime: the limiter window, 15 minutes from the first point (a fixed window, no jitter and no lock-out
+  of its own: it is a rate-limit window, not a cache entry); five points, the sixth attempt is refused. Invalidation: none, it
+  expires; nothing writes it while no lock runs.
 
 ## Not keys
 

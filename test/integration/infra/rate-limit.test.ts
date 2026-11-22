@@ -8,9 +8,11 @@ import { z } from 'zod';
 import { type QueryOf, Route, defineRoute } from '@src/common/contract';
 import { AppError } from '@src/common/errors';
 import { CacheKeys, CacheService } from '@src/infra/cache';
+import { TokenService } from '@src/infra/crypto';
 import { MetricsService } from '@src/infra/metrics';
 import { RATE_LIMITERS, RateLimitService, rateLimitedError } from '@src/infra/rate-limit';
 import { RedisService } from '@src/infra/redis';
+import { SignInLimiter } from '@src/modules/identity/application/sign-in-limiter';
 import { type TestApp, createTestApp } from '../../support/app';
 import { type InfraHarness, createInfra, deadRedisUrl } from '../../support/infra';
 import { metricValue } from '../../support/metrics';
@@ -40,6 +42,7 @@ afterAll(async () => {
   }
   // Sign-in keys are hashes (no readable prefix); the test database is ours alone.
   await cache.delByPrefix(keys.prefix('ratelimit', 'sign-in'));
+  await cache.delByPrefix(keys.prefix('ratelimit', 'sign-in-code'));
   await harness.close();
 });
 
@@ -441,6 +444,42 @@ describe('while the cache Redis is down', () => {
     } finally {
       await down.close();
     }
+  });
+
+  it('refuses the authenticator code budget instead of counting it in memory (decision 052)', async () => {
+    const down = await createInfra({ env: { REDIS_CACHE_URL_TEST: await deadRedisUrl() } });
+    try {
+      const service = down.get(RateLimitService);
+      const key = caller();
+      for (let i = 0; i < 6; i++) {
+        expect(await service.consume('sign-in-code', key), `attempt ${i + 1}`).toMatchObject({
+          allowed: false,
+          retryAfterSeconds: 60,
+        });
+      }
+      // A reset after a correct code never fails the sign-in: the counter expires by itself.
+      expect(await service.reset('sign-in-code', key)).toBeUndefined();
+      // The code step of the staff sign-in is refused at once, with Retry-After.
+      const refusal = await expectRejection(
+        new SignInLimiter(service, down.get(TokenService)).enforceCode(1),
+        AppError,
+      );
+      expect(refusal).toMatchObject({ code: 'RATE_LIMITED', retryAfterSeconds: 60 });
+      // The password budget still counts in memory.
+      expect((await service.consume('sign-in', caller())).allowed).toBe(true);
+    } finally {
+      await down.close();
+    }
+  });
+
+  it('counts the authenticator code budget on Redis while it is up: five tries, then a 15-minute lock', async () => {
+    const key = caller();
+    for (let i = 0; i < 5; i++) expect((await limiter.consume('sign-in-code', key)).allowed).toBe(true);
+    const refused = await limiter.consume('sign-in-code', key);
+    expect(refused.allowed).toBe(false);
+    expect(refused.retryAfterSeconds).toBeGreaterThan(14 * 60);
+    await limiter.reset('sign-in-code', key);
+    expect((await limiter.consume('sign-in-code', key)).allowed).toBe(true);
   });
 
   it('answers fast, without waiting for the dead connection', async () => {

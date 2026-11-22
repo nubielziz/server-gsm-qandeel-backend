@@ -2,17 +2,19 @@
 import { Injectable } from '@nestjs/common';
 import { TokenService } from '../../../infra/crypto';
 import { RateLimitService } from '../../../infra/rate-limit';
+import type { RequestMeta } from './request-meta';
 
 /**
- * Applies the `sign-in` and `token` limiters to the merchant portal.
+ * Applies the `sign-in`, `sign-in-code` and `token` limiters to the merchant portal.
  *
- * Why: decision 021 gives sign-in 5 attempts per email + address per 15 minutes and clears the count on success. Like the staff
- * limiter, keys that hold an email are keyed hashes (`HMAC-SHA256(TOKEN_PEPPER, ...)`) so Redis shows no address, and the code,
- * setup and password steps are limited per account, not per session, so a new login does not give a thief fresh guesses. The
- * `merchant-sign-in` prefix keeps these counters apart from the staff ones. Registration and "forgot password" are counted
+ * Why: decision 021 gives sign-in 5 attempts per email + network per 15 minutes and clears the count on success; the network is the
+ * IPv4 address or the IPv6 /64 (`RequestMeta.limitKey`, decision 052). Like the staff limiter, keys that hold an email are keyed hashes
+ * (`HMAC-SHA256(TOKEN_PEPPER, ...)`) so Redis shows no address, and the code, setup and password steps are limited per account, not per
+ * session, so a new login does not give a thief fresh guesses; the code step uses `sign-in-code`, which is never counted in process
+ * memory. The `merchant-sign-in` prefix keeps these counters apart from the staff ones. Registration and "forgot password" are counted
  * whether or not the email exists, so a 429 reveals nothing.
  *
- * Side effects: counter keys `gsm:{env}:ratelimit:sign-in:{hash}` and `...:token:{address}` on the cache Redis.
+ * Side effects: counter keys `gsm:{env}:ratelimit:sign-in:{hash}`, `...:sign-in-code:{hash}` and `...:token:{address}` on the cache Redis.
  */
 @Injectable()
 export class MerchantSignInLimiter {
@@ -22,24 +24,24 @@ export class MerchantSignInLimiter {
   ) {}
 
   /**
-   * Counts a login attempt of an email from an address.
+   * Counts a login attempt of an email from a network.
    *
    * @param email the email as typed
-   * @param ip the client address
+   * @param meta the caller (its network key: the IPv4 address or the IPv6 /64)
    * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth attempt in 15 minutes
    */
-  async enforceLogin(email: string, ip: string): Promise<void> {
-    await this.limits.enforce('sign-in', this.key('login', email, ip));
+  async enforceLogin(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
+    await this.limits.enforce('sign-in', this.key('login', email, meta.limitKey));
   }
 
   /**
    * Clears the login counter after a correct password.
    *
    * @param email the email as typed
-   * @param ip the client address
+   * @param meta the caller (its network key)
    */
-  async resetLogin(email: string, ip: string): Promise<void> {
-    await this.limits.reset('sign-in', this.key('login', email, ip));
+  async resetLogin(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
+    await this.limits.reset('sign-in', this.key('login', email, meta.limitKey));
   }
 
   /**
@@ -53,24 +55,25 @@ export class MerchantSignInLimiter {
   }
 
   /**
-   * Counts a "forgot password" request for an email from an address.
+   * Counts a "forgot password" request for an email from a network.
    *
    * @param email the email as typed
-   * @param ip the client address
+   * @param meta the caller (its network key)
    * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth request in 15 minutes
    */
-  async enforceForgot(email: string, ip: string): Promise<void> {
-    await this.limits.enforce('sign-in', this.key('forgot', email, ip));
+  async enforceForgot(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
+    await this.limits.enforce('sign-in', this.key('forgot', email, meta.limitKey));
   }
 
   /**
    * Counts an authenticator code attempt of an account.
    *
    * @param clientId the merchant id
-   * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth attempt in 15 minutes
+   * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth attempt in 15 minutes, and at once (60 seconds)
+   *   while the cache Redis cannot be reached
    */
   async enforceCode(clientId: number): Promise<void> {
-    await this.limits.enforce('sign-in', this.key('code', String(clientId)));
+    await this.limits.enforce('sign-in-code', this.key('code', String(clientId)));
   }
 
   /**
@@ -79,7 +82,7 @@ export class MerchantSignInLimiter {
    * @param clientId the merchant id
    */
   async resetCode(clientId: number): Promise<void> {
-    await this.limits.reset('sign-in', this.key('code', String(clientId)));
+    await this.limits.reset('sign-in-code', this.key('code', String(clientId)));
   }
 
   /**

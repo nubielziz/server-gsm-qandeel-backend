@@ -58,3 +58,8 @@ counters and hashing. OpenAPI shows their header as optional (`x-gsm-turnstile-r
 the site sends the token on those forms. **Remove `turnstileRollout` and the variable one release after production runs with it on**
 (the three contracts then keep plain `turnstile: true` and the header becomes required). The CORS allow list does not carry
 `X-Turnstile-Token`: the site calls the API through its same-origin proxy (feature 24D).
+
+**Amendment (decision 052, feature 42): on by default in production.** The storefront sends the token on every merchant form it has (the
+one sign-in form and the forgot-password form; there is no merchant sign-up form), so `TURNSTILE_MERCHANT_AUTH` defaults to `true` when
+`NODE_ENV=production` and stays `false` elsewhere; an explicit `false` still switches it off, and `.env.production.example` names it.
+`turnstileRollout` stays until production has run with the check on for one release, as above.

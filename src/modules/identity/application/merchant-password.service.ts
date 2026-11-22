@@ -5,7 +5,9 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import type { Client } from '../db/schema';
+import { NO_ACCOUNT_ID } from '../domain/public-links';
 import { checkPasswordPolicy } from '../domain/password-policy';
 import { consumeAuthToken } from '../infra/auth-token.repository';
 import { nextMerchantStep, merchantStageOfStep } from '../domain/merchant-sign-in-step';
@@ -30,18 +32,25 @@ import { MerchantAccountReader } from './merchant-account-reader';
 import { MerchantAuthTokens } from './merchant-auth-tokens';
 import { weakPassword } from './merchant-errors';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
+import { takePublicMailPoint } from './public-mail-budget';
 import type { RequestMeta } from './request-meta';
+import { SignInLock } from './sign-in-lock';
 
 /**
  * Sends reset links, sets a password from a link, and changes the password of a signed-in merchant.
  *
- * Why: B127, B128 and B131 (with the invite link of identity-platform-2). "Forgot password" answers `204` for any email, so it
- * cannot be used to find out who is registered; a link works once, for an hour, and the newest wins; choosing a password ends
- * the merchant's sessions (reset, invite) or the others (change), and a wrong current password is `422` on its field, never
- * `401`, which would sign the caller out.
+ * Why: B127, B128 and B131 (with the invite link of identity-platform-2) and decision 052. "Forgot password" answers `204` for any
+ * email, so it cannot be used to find out who is registered, and it runs the same statements for every email (the ones that get
+ * no mail are rolled back); it spends one point of the merchant's mail budget (five an hour), and a request beyond it answers `204`
+ * and sends nothing. A link works once, for an hour; links a visitor asked for do not void each other (up to three work at once, the
+ * oldest goes first); choosing a password ends the merchant's sessions (reset, invite) or the others (change). A password from a link
+ * ends the email's shop sign-in lock and, when the email was never verified, turns two-factor sign-in off (the link proves the
+ * mailbox); an own or forced change leaves the lock running, because a registration proves no mailbox and the customer of the same
+ * email may be someone else. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
  *
- * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event `merchant.password_reset`; marks links used;
- * revokes sessions (their cached views are dropped after the commit).
+ * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event `merchant.password_reset` (rolled back for an email
+ * that gets no mail); marks links used; revokes sessions (their cached views are dropped after the commit); counts one point of
+ * `account-mail`; deletes the sign-in lock key of the email after the commit of a password from a link.
  *
  * @see docs/contract/MISMATCHES.md (B127, B128, B131)
  */
@@ -56,6 +65,8 @@ export class MerchantPasswordService {
     private readonly limiter: MerchantSignInLimiter,
     private readonly reader: MerchantAccountReader,
     private readonly mail: MerchantMailOutbox,
+    private readonly lock: SignInLock,
+    private readonly limits: RateLimitService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -63,21 +74,33 @@ export class MerchantPasswordService {
    * Sends a reset link when the email belongs to a merchant that is not suspended.
    *
    * @param email the email as typed (lower-cased by the contract)
-   * @param meta the caller's address
-   * @throws {AppError} `RATE_LIMITED` (429); nothing else: an unknown or suspended email is silent
+   * @param meta the caller's address and network
+   * @throws {AppError} `RATE_LIMITED` (429: too many requests for this email from this network); nothing else: an unknown or
+   *   suspended email, or a merchant whose mail budget (five an hour) is used up, is silent
    */
   async forgot(email: string, meta: RequestMeta): Promise<void> {
-    await this.limiter.enforceForgot(email, meta.ip);
+    await this.limiter.enforceForgot(email, meta);
     const client = await findClientByEmail(this.db.db, email);
     // A pending merchant without a password yet is allowed: this is how an expired invitation is renewed (identity-platform-2).
-    if (!client || client.status === 'suspended') return;
-    await this.db.runInTransaction(async (work) => {
-      const issued = await this.authTokens.issue(work, { clientId: client.id, purpose: 'reset', ip: meta.ip });
-      await this.mail.enqueue(work, {
-        kind: 'password_reset',
-        clientId: client.id,
-        tokenId: issued.id,
+    const eligible = client !== undefined && client.status !== 'suspended';
+    const budget = await takePublicMailPoint(
+      this.limits,
+      'client',
+      eligible ? client.id : undefined,
+      'forgot_password',
+    );
+    const deliver = eligible && budget;
+    const subject = deliver ? client.id : NO_ACCOUNT_ID;
+    // The same statements for every email: a run that gets no mail writes for an id no account has and is rolled back (decision 052).
+    await this.db.runOrDiscard(async (work) => {
+      const issued = await this.authTokens.issue(work, {
+        clientId: subject,
+        purpose: 'reset',
+        ip: meta.ip,
+        keepEarlier: true,
       });
+      await this.mail.enqueue(work, { kind: 'password_reset', clientId: subject, tokenId: issued.id });
+      return deliver;
     });
   }
 
@@ -109,19 +132,23 @@ export class MerchantPasswordService {
       // A parallel request used the link first.
       if (!(await consumeAuthToken(work.tx, link.id, now))) throw new AppError('TOKEN_INVALID');
       // An invite link proves the email address (identity-platform-2); a reset link does not.
+      // The link proves the mailbox: a merchant whose email was never verified loses the two-factor sign-in it enrolled before (decision 052).
       const saved = await saveClientPassword(work.tx, {
         id: client.id,
         passwordHash,
         now,
         verifyEmail: link.purpose === 'invite',
+        clearTwoFactor: client.emailVerifiedAt === null,
       });
       // The merchant was suspended since it was read: the change must not land.
       if (!saved) throw new AppError('TOKEN_INVALID');
-      // An invitation proves the email address, so a pending verification link is moot too; a plain reset does not, and
-      // there is no way to ask for a new verification mail, so it keeps that link.
+      // An invitation proves the email address, so a pending verification link is moot too; a plain reset does not, so
+      // it keeps that link (a new one can be asked for through the resend route).
       const spent = link.purpose === 'invite' ? CLIENT_TOKEN_PURPOSES : PASSWORD_LINK_PURPOSES;
       await voidOpenClientTokens(work.tx, client.id, spent, now, link.id);
       await this.sessions.revokeAllOf('client', client.id, {}, work);
+      // The owner of the mailbox chose a password: the failed tries before it no longer count (decision 052).
+      work.afterCommit(() => this.lock.clear('shop', client.email));
     });
   }
 
@@ -157,6 +184,7 @@ export class MerchantPasswordService {
       // An old reset link must not be able to undo the change.
       await voidOpenClientTokens(work.tx, client.id, PASSWORD_LINK_PURPOSES, now);
       await this.sessions.revokeAllOf('client', client.id, { exceptSessionId: principal.session.id }, work);
+      // The shop lock of the email stays: a registration proves no mailbox, so the email's customer may be someone else (decision 052).
     });
   }
 
@@ -196,6 +224,7 @@ export class MerchantPasswordService {
       if (!saved) throw new AppError('UNAUTHORIZED');
       await voidOpenClientTokens(work.tx, client.id, PASSWORD_LINK_PURPOSES, now);
       await this.sessions.revokeAllOf('client', client.id, { exceptSessionId: principal.session.id }, work);
+      // The shop lock stays, as after an own change; the staff action that set the temporary password ended it (decision 052).
       const next = nextMerchantStep({ mustChangePassword: false, twofaEnabled: saved.twofaEnabled });
       // `done` or `totp` here: `password` cannot come back after the flag was cleared.
       const stepAfter = next === 'password' ? 'done' : next;

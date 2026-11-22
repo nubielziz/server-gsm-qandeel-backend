@@ -13,7 +13,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { freshClientIp } from '../../support/pipeline-routes';
+import { freshClientIp, freshClientPrefix } from '../../support/pipeline-routes';
 import { insertBlock } from '../../support/risk';
 import {
   CUSTOMER_PASSWORD,
@@ -190,21 +190,22 @@ describe('POST /store/v1/auth/login', () => {
     for (const answer of answers) expect(answer).toEqual(answers[0]!);
   });
 
-  it('keeps no address in Redis, and a correct password clears the count', async () => {
+  it('keeps no address in Redis, and a correct password takes back only its own attempt', async () => {
     const customer = await makeCustomer(t);
     for (let i = 0; i < 9; i++) await store().login(customer.email, 'wrong-password');
     const redis = t.app.get(RedisService).cache;
-    const pattern = `${t.app.get(CacheKeys).keyspace}customers:sign-in-failures:*`;
+    const pattern = `${t.app.get(CacheKeys).keyspace}identity:sign-in-failures:*`;
     const found = await redis.keys(pattern);
     expect(found).toHaveLength(1);
     expect(found[0]).not.toContain(customer.email.split('@')[0]!);
     expect(await redis.hget(found[0]!, 'n')).toBe('9');
 
     expect((await store().login(customer.email)).statusCode).toBe(200);
-    expect(await redis.keys(pattern)).toEqual([]);
-    // Nine more wrong ones are the first nine again: the tenth overall would have locked without the reset.
-    for (let i = 0; i < 9; i++) await store().login(customer.email, 'wrong-password');
-    expect((await store().login(customer.email)).statusCode).toBe(200);
+    // The success is counted before the password check and given back after it: the nine failures before it stay (decision 052).
+    expect(await redis.hget(found[0]!, 'n')).toBe('9');
+    expect((await store().login(customer.email, 'wrong-password')).statusCode).toBe(401);
+    // From a network the account never signed in from (every `freshClientIp` of this run shares the /24 of the success above).
+    expect((await store(`${freshClientPrefix()}::1`).login(customer.email)).statusCode).toBe(429);
   });
 
   it('does not count a correct password on a suspended customer (a 403 is not a failure)', async () => {
@@ -306,11 +307,11 @@ describe('POST /store/v1/auth/magic-link and /auth/verify', () => {
     const { db } = await testDb();
     const rows = await db.select().from(s.customers).where(eq(s.customers.email, 'twin@example.com'));
     expect(rows).toHaveLength(1);
-    // Newest link wins: the first one was voided.
+    // A link the visitor asked for does not void the one sent before (decision 052): the first still works, and using it spends the other.
     const [first, second] = customerLinks();
-    expect((await store().verify(first!.token)).statusCode).toBe(410);
     const client = store();
-    expect((await client.verify(second!.token)).statusCode).toBe(200);
+    expect((await client.verify(first!.token)).statusCode).toBe(200);
+    expect((await store().verify(second!.token)).statusCode).toBe(410);
     expect(await customerRow(rows[0]!.id)).toMatchObject({ hasAccount: true });
     const [credentials] = await db.select().from(s.customerCredentials);
     expect(credentials).toMatchObject({ customerId: rows[0]!.id, passwordHash: null });
@@ -452,15 +453,20 @@ describe('POST /store/v1/auth/password/forgot and /auth/password/set', () => {
     expect((await store().setPassword(magic.token, 'yet-another-passphrase')).statusCode).toBe(410);
   });
 
-  it('lets the newest of two reset links win, and refuses the link of a suspended customer', async () => {
+  it('keeps both reset links working until one is used, and refuses the link of a suspended customer', async () => {
     const customer = await makeCustomer(t);
     await store().forgot(customer.email);
     await store().forgot(customer.email);
     const [older, newer] = customerLinks();
-    expect((await store().setPassword(older!.token, 'a-much-longer-passphrase')).statusCode).toBe(410);
+    // The second request did not void the first (decision 052); using one spends the other.
+    expect((await store().setPassword(older!.token, 'a-much-longer-passphrase')).statusCode).toBe(204);
+    expect((await store().setPassword(newer!.token, 'another-long-passphrase')).statusCode).toBe(410);
+
+    await store().forgot(customer.email);
+    const [, , third] = customerLinks();
     const { db } = await testDb();
     await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customer.id));
-    expect((await store().setPassword(newer!.token, 'a-much-longer-passphrase')).statusCode).toBe(410);
+    expect((await store().setPassword(third!.token, 'a-third-long-passphrase')).statusCode).toBe(410);
   });
 
   it('lets only one of two parallel requests use the link', async () => {

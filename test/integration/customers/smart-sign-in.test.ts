@@ -6,8 +6,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bu
 import { randomUUID } from 'node:crypto';
 import { asc, eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
+import { CacheKeys } from '@src/infra/cache';
 import { PasswordHasher, TokenService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
+import { RedisService } from '@src/infra/redis';
 import { CSRF_COOKIE_NAMES, SESSION_COOKIE_NAMES, csrfTokenFor } from '@src/modules/identity';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -22,7 +24,7 @@ import {
   makeMerchant,
   seedPortalBasics,
 } from '../../support/merchant-portal';
-import { freshClientIp } from '../../support/pipeline-routes';
+import { freshClientIp, freshClientPrefix } from '../../support/pipeline-routes';
 import { codeFor } from '../../support/staff-console';
 import { TURNSTILE_TEST_TOKEN, clearStoreRateLimits, makeCustomer } from '../../support/store';
 
@@ -87,7 +89,8 @@ async function fourKinds(): Promise<Array<{ kind: string; email: string; passwor
   const merchant = await makeMerchant(t, { email: uniqueEmail('merchant-only') });
   const customer = await makeCustomer(t, { email: uniqueEmail('customer-only'), password: CUSTOMER_PASSWORD });
   const both = uniqueEmail('both');
-  await makeMerchant(t, { email: both });
+  // A verified merchant takes precedence over the customer with the same email (decision 052).
+  await makeMerchant(t, { email: both, emailVerifiedAt: new Date() });
   await makeCustomer(t, { email: both, password: CUSTOMER_PASSWORD });
   return [
     { kind: 'merchant only', email: merchant.email, password: MERCHANT_PASSWORD },
@@ -174,9 +177,9 @@ describe('POST /client/auth/sign-in: customers', () => {
 });
 
 describe('POST /client/auth/sign-in: an email in both tables', () => {
-  it('signs in as the merchant with the merchant password; the customer password is a 401 and opens nothing', async () => {
+  it('signs in as the verified merchant with the merchant password; the customer password is a 401 and opens nothing', async () => {
     const email = uniqueEmail('both');
-    const merchant = await makeMerchant(t, { email });
+    const merchant = await makeMerchant(t, { email, emailVerifiedAt: new Date() });
     await makeCustomer(t, { email, password: CUSTOMER_PASSWORD });
 
     const wrong = await signIn(browser(), email, CUSTOMER_PASSWORD);
@@ -187,6 +190,35 @@ describe('POST /client/auth/sign-in: an email in both tables', () => {
     const right = await signIn(browser(), email, MERCHANT_PASSWORD);
     expect(right.json()).toEqual({ kind: 'merchant', next: 'done' });
     expect(await sessionsOf('client', merchant.id)).toHaveLength(1);
+  });
+
+  it('signs in as the customer when the merchant registration is not verified (pending, decision 052)', async () => {
+    const email = uniqueEmail('squatter');
+    const merchant = await makeMerchant(t, { email, status: 'pending', emailVerifiedAt: null });
+    const customer = await makeCustomer(t, { email, password: CUSTOMER_PASSWORD });
+    const res = await signIn(browser(), email, CUSTOMER_PASSWORD);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toEqual({ kind: 'customer', next: 'done' });
+    expect(await sessionsOf('customer', customer.id)).toHaveLength(1);
+    // The merchant password does not open the merchant either: one verify, against the customer hash.
+    expect((await signIn(browser(), email, MERCHANT_PASSWORD)).statusCode).toBe(401);
+    expect(await sessionsOf('client', merchant.id)).toEqual([]);
+  });
+
+  it('signs in as the customer when an active merchant never verified its email either', async () => {
+    const email = uniqueEmail('unverified');
+    await makeMerchant(t, { email, status: 'active', emailVerifiedAt: null });
+    const customer = await makeCustomer(t, { email, password: CUSTOMER_PASSWORD });
+    const res = await signIn(browser(), email, CUSTOMER_PASSWORD);
+    expect(res.json()).toEqual({ kind: 'customer', next: 'done' });
+    expect(await sessionsOf('customer', customer.id)).toHaveLength(1);
+  });
+
+  it('still signs an unverified merchant in when no customer account with a password has the email', async () => {
+    const email = uniqueEmail('alone');
+    await makeMerchant(t, { email, status: 'pending', emailVerifiedAt: null });
+    await makeCustomer(t, { email, noPassword: true });
+    expect((await signIn(browser(), email, MERCHANT_PASSWORD)).json()).toEqual({ kind: 'merchant', next: 'done' });
   });
 
   it('signs in as the customer when the merchant has no password yet (it does not shadow the customer)', async () => {
@@ -340,7 +372,7 @@ describe('POST /client/auth/sign-in: every kind of email is treated alike', () =
 describe('POST /client/auth/sign-in: one budget with the two old login routes', () => {
   it('after five smart failures both old routes answer 429 for that email and address', async () => {
     const email = uniqueEmail('both');
-    await makeMerchant(t, { email });
+    await makeMerchant(t, { email, emailVerifiedAt: new Date() });
     await makeCustomer(t, { email, password: CUSTOMER_PASSWORD });
     const ip = freshClientIp();
     for (let i = 0; i < 5; i++) expect((await signIn(browser(ip), email, 'wrong-password')).statusCode).toBe(401);
@@ -356,7 +388,7 @@ describe('POST /client/auth/sign-in: one budget with the two old login routes', 
     expect((await browser().login(email)).statusCode).toBe(200);
   });
 
-  it('a success resets both counters and the lock', async () => {
+  it('a success resets both login counters, and takes back only its own count of the lock', async () => {
     const email = uniqueEmail('merchant');
     await makeMerchant(t, { email });
     const ip = freshClientIp();
@@ -364,6 +396,11 @@ describe('POST /client/auth/sign-in: one budget with the two old login routes', 
     expect((await signIn(browser(ip), email, MERCHANT_PASSWORD)).statusCode).toBe(200);
     // Both counters start again: five wrong tries on each old route are 401, not 429.
     for (let i = 0; i < 5; i++) expect((await browser(ip).login(email, 'wrong-password')).statusCode).toBe(401);
+    // The email's lock keeps every failure before and after the success (it is checked below); emptied here so that only the
+    // per-network counter of the store login can refuse.
+    const redis = t.app.get(RedisService).cache;
+    const failures = await redis.keys(`${t.app.get(CacheKeys).keyspace}identity:sign-in-failures:*`);
+    if (failures.length > 0) await redis.del(...failures);
     for (let i = 0; i < 5; i++) {
       const res = await browser(ip).call(
         'POST',
@@ -373,12 +410,16 @@ describe('POST /client/auth/sign-in: one budget with the two old login routes', 
       );
       expect(res.statusCode).toBe(401);
     }
-    // The lock starts again too: nine failures, a success, nine more failures, and the email is still open.
+    // The lock's count does not start again (decision 052): nine failures, a success, one more failure, and the next attempt from a
+    // network the merchant never signed in from is refused; the network of the success still signs in.
     const other = uniqueEmail('merchant');
     await makeMerchant(t, { email: other });
     for (let i = 0; i < 9; i++) await signIn(browser(), other, 'wrong-password');
     expect((await signIn(browser(), other, MERCHANT_PASSWORD)).statusCode).toBe(200);
-    for (let i = 0; i < 9; i++) expect((await signIn(browser(), other, 'wrong-password')).statusCode).toBe(401);
+    expect((await signIn(browser(), other, 'wrong-password')).statusCode).toBe(401);
+    const locked = await signIn(browser(`${freshClientPrefix()}::1`), other, MERCHANT_PASSWORD);
+    expect(locked.statusCode).toBe(429);
+    expect(Number(locked.headers['retry-after'])).toBe(15 * 60);
     expect((await signIn(browser(), other, MERCHANT_PASSWORD)).statusCode).toBe(200);
   });
 });

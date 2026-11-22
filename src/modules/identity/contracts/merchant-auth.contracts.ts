@@ -94,7 +94,7 @@ export const merchantRegister = defineRoute({
     'Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A ' +
     'new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. ' +
     'An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists.' +
-    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
+    ' Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
@@ -143,7 +143,10 @@ export const merchantLogin = defineRoute({
     'merchant has two-factor sign-in on, a full one otherwise. A merchant ' +
     'waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, ' +
     'a wrong password and a merchant with no password yet.' +
-    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
+    ' Five attempts per email and network (an IPv4 address or an IPv6 /64) in 15 minutes; ten failed attempts for one email (a success in between does not cancel them) lock it for 15 minutes for every network its account has not signed in from (the lock is shared with `POST /store/v1/auth/login` and `POST /client/auth/sign-in`): both answer `429 RATE_LIMITED` with `Retry-After`, the same for every email.' +
+    ' While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt.' +
+    ' A temporary password works for 72 hours after it was set; after that it is refused like a wrong password.' +
+    ' Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
@@ -242,8 +245,9 @@ export const merchantForgotPassword = defineRoute({
   summary: 'Send a password reset link',
   description:
     'Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for ' +
-    'approval that has no password yet, gets a link valid for one hour; a newer link replaces an older one.' +
-    ' Send `X-Turnstile-Token`: it is required once the server enforces the anti-bot check on merchant sign-up and sign-in (`TURNSTILE_MERCHANT_AUTH`).',
+    'approval that has no password yet, gets a link valid for one hour; up to three such links work at once (a fourth replaces the ' +
+    'oldest), and at most five are mailed an hour per merchant; a request beyond that answers `204` and sends nothing.' +
+    ' Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).',
   tags: ['auth'],
   surface: 'client',
   access: 'public',
@@ -263,7 +267,8 @@ export const merchantResetPassword = defineRoute({
   description:
     'Accepts a reset link and the invitation link of a merchant that staff created. It sets the password, uses the link up, ends ' +
     'every session of the merchant and signs nobody in; an invitation also marks the email verified. The status stays `pending` ' +
-    'until staff approve the merchant. A weak password does not use the link up.',
+    'until staff approve the merchant. A weak password does not use the link up. On a merchant whose email is not verified yet it ' +
+    'also turns two-factor sign-in off.',
   tags: ['auth'],
   surface: 'client',
   access: 'public',

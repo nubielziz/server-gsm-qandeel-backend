@@ -17,17 +17,20 @@ export const smartSignIn = defineRoute({
   key: 'POST /client/auth/sign-in',
   summary: 'Sign in as a merchant or a customer with one form',
   description:
-    'One email and password form for both account kinds. An email that belongs to a merchant with a password always signs in as ' +
-    'that merchant (the merchant wins, even when the email is also a customer: a wrong merchant password is `401`, and the customer ' +
-    'area stays reachable through the emailed sign-in link); otherwise a customer account with a password signs in. The answer says ' +
+    'One email and password form for both account kinds. An email that belongs to a merchant with a password and a verified email ' +
+    'signs in as that merchant (the merchant wins over a customer with the same email: a wrong merchant password is `401`, and the ' +
+    'customer area stays reachable through the emailed sign-in link); a merchant whose email is not verified signs in only when no ' +
+    'customer account with a password has the email; otherwise a customer account with a password signs in. The answer says ' +
     'which: `kind` `merchant` sets the `/client` session cookies and its `X-CSRF-Token`, `kind` `customer` the `/store/v1` ones. `next` ' +
     'is `password` after a temporary password (a `pending_password` session), `totp` for a merchant with two-factor sign-in on (a ' +
     '`pending_totp` session: continue with `POST /client/auth/2fa`), or `done`. A session of the other kind in the same browser stays ' +
     'signed in. One `401` answers an unknown email, a wrong password, an account with no password yet and an erased customer; ' +
     '`403 ACCOUNT_SUSPENDED` comes only after a correct password. Every attempt counts against the limits of both ' +
-    '`POST /client/auth/login` and `POST /store/v1/auth/login` (5 per email and address in 15 minutes) and ten failures in a row lock ' +
-    'the email for 15 minutes, whatever the email is: both answer `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token ' +
-    '(`X-Turnstile-Token`) and an `Origin` the API allows.',
+    '`POST /client/auth/login` and `POST /store/v1/auth/login` (5 per email and network in 15 minutes) and ten failures (a success in between does not cancel them) lock ' +
+    'the email for 15 minutes for every network the account being signed into has not signed in from, whatever the email is: both ' +
+    'answer `429 RATE_LIMITED` with `Retry-After`. While the lock runs, the attempts a network the account has signed in from is still ' +
+    'allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt. A temporary password works for 72 hours after it was set; after that it is ' +
+    'refused like a wrong password. Needs the anti-bot token (`X-Turnstile-Token`) and an `Origin` the API allows.',
   tags: ['auth'],
   surface: 'client',
   access: 'public',

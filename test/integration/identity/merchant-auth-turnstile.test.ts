@@ -1,10 +1,11 @@
 // Integration tests of the anti-bot check on the public merchant sign-up, sign-in and forgot-password routes (feature 24A, decision 034
 // amendment) with TURNSTILE_MERCHANT_AUTH on: a missing or bad token is refused before anything else, the dummy token passes. With the
-// switch off (the default) the routes answer as before: the existing merchant tests and test/integration/customers/smart-sign-in.test.ts show it.
+// switch off (the default outside production) the routes answer as before: the existing merchant tests and
+// test/integration/customers/smart-sign-in.test.ts show it. In production the switch is on unless it is set to false (decision 052).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { PasswordHasher } from '@src/infra/crypto';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches } from '../../support/auth';
+import { clearIdentityCaches, productionEnvOnTestInstances } from '../../support/auth';
 import { closeTestDb, resetDb } from '../../support/db';
 import {
   MerchantPortal,
@@ -96,5 +97,54 @@ describe('TURNSTILE_MERCHANT_AUTH=true', () => {
     const p = new MerchantPortal(t, freshClientIp());
     expect(code(await p.verifyEmail('no-such-token'))).toBe('TOKEN_INVALID');
     expect(code(await p.reset('no-such-token', 'a-long-enough-password-1'))).toBe('TOKEN_INVALID');
+  });
+});
+
+describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
+  /** A production app on the test instances; `extra` may set the switch. */
+  const productionApp = (extra: Record<string, string> = {}) =>
+    createTestApp({ env: productionEnvOnTestInstances({ SHOP_ORIGINS: PORTAL_ORIGIN, ...extra }) });
+
+  it('is on by default: register, login and forgot without a token are 403 TURNSTILE_FAILED before any counter or hash', async () => {
+    const production = await productionApp();
+    const hasher = production.app.get(PasswordHasher);
+    const verify = spyOn(hasher, 'verify');
+    const hash = spyOn(hasher, 'hash');
+    try {
+      const merchant = await makeMerchant(production);
+      verify.mockClear();
+      hash.mockClear();
+      const p = new MerchantPortal(production, freshClientIp());
+      for (const res of [
+        await p.register(registration('new-merchant@example.com')),
+        await p.login(merchant.email),
+        await p.forgot(merchant.email),
+      ]) {
+        expect(res.statusCode).toBe(403);
+        expect(code(res)).toBe('TURNSTILE_FAILED');
+        expect(res.cookies).toEqual([]);
+      }
+      expect(verify).not.toHaveBeenCalled();
+      expect(hash).not.toHaveBeenCalled();
+    } finally {
+      verify.mockRestore();
+      hash.mockRestore();
+      await production.close();
+    }
+  });
+
+  it('answers as before without a token when TURNSTILE_MERCHANT_AUTH is false', async () => {
+    const production = await productionApp({ TURNSTILE_MERCHANT_AUTH: 'false' });
+    try {
+      const merchant = await makeMerchant(production);
+      const p = new MerchantPortal(production, freshClientIp());
+      expect((await p.register(registration('another-merchant@example.com'))).statusCode).toBe(204);
+      expect((await p.forgot(merchant.email)).statusCode).toBe(204);
+      const login = await p.login(merchant.email);
+      expect(login.statusCode, login.body).toBe(200);
+      expect(login.json()).toEqual({ next: 'done' });
+    } finally {
+      await production.close();
+    }
   });
 });

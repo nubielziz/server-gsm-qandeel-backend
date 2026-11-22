@@ -533,7 +533,8 @@ describe('PATCH /client/profile', () => {
 
 describe('a merchant waiting for approval (user decision B153)', () => {
   it('reaches its own account routes and no others, and a refusal never signs it out', async () => {
-    const merchant = await makeMerchant(t, { status: 'pending' });
+    // A confirmed address (staff invited it and it accepted): the 2FA routes answer as they do for any merchant that may enrol.
+    const merchant = await makeMerchant(t, { status: 'pending', emailVerifiedAt: new Date() });
     const p = portal();
     await p.login(merchant.email);
 

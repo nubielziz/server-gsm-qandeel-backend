@@ -6,7 +6,10 @@
 | ---------- | ---------------------------------------------------- | --------------------------------------------------- |
 | `ip`       | client IP                                            | 300 per minute                                      |
 | `api-key`  | API key id                                           | 60 per minute, or `api_keys.rate_limit_per_min`     |
-| `sign-in`  | `RateLimitService.compositeKey(email, ip)`           | 5 attempts per 15 minutes, then locked for 15 min   |
+| `sign-in`  | `RateLimitService.compositeKey(email, network)`: the network is `RequestMeta.limitKey` (the IPv4 address or the IPv6 /64); registration per network only | 5 attempts per 15 minutes, then locked for 15 min (sign-in, forgot password, sign-in link, registration) |
+| `sign-in-code` | the account (staff or merchant id, hashed) | 5 authenticator codes per 15 minutes, then locked for 15 min; `failClosed`: never counted in process memory (decision 052) |
+| `sign-in-familiar` | scope (console or shop) + email + network (the IPv4 /24 or IPv6 /64), keyed hash | 5 attempts per 15 minutes (no lock-out of its own): the password attempts of a network the account signed in from that are let through while the email is locked (`SignInLock`, decision 052) |
+| `account-mail` | `compositeKey(subject, id, kind)` | 5 an hour per account and kind: staff-sent links, verification, email change, and the mails a visitor asks for (`sign_in_link`, `forgot_password`; beyond the budget nothing is sent and the answer is the usual one, decision 052) |
 | `token`    | client IP                                            | 30 per minute                                       |
 | `supplier` | supplier id                                          | 60 per minute, or `suppliers.rate_limit_per_min`    |
 | `broadcast-email` | `all` (system-wide) | 5 per second, or the setting `notifications.broadcast_email_per_second` (feature 23) |
@@ -27,8 +30,8 @@ await this.limits.enforce('ip', request.ip); // throws 429 RATE_LIMITED with Ret
 // A per-key limit (the console shows it as "requests per minute"):
 await this.limits.enforce('api-key', String(apiKey.id), 1, { limit: apiKey.rateLimitPerMin });
 
-// Sign-in: count every attempt, clear the counter on success.
-const key = RateLimitService.compositeKey(email, ip);
+// Sign-in: count every attempt per email and network, clear the counter on success.
+const key = RateLimitService.compositeKey(email, meta.limitKey);
 await this.limits.enforce('sign-in', key);
 if (await this.verify(email, password)) await this.limits.reset('sign-in', key);
 
@@ -50,7 +53,9 @@ try {
 - Counters are `gsm:{env}:ratelimit:{limiter}:{key}`, shared by every limit of one limiter, so raising a key's limit
   mid-window keeps its count. Keys with personal data (email) go through `compositeKey`, which hashes them.
 - **Redis down:** each process falls back to an in-memory limiter with the same numbers (per instance), so limits and
-  sign-in lock-outs keep working. `acquire` throws instead: a place that cannot be counted is not handed out.
+  sign-in lock-outs keep working. Except limiters marked `failClosed` in `limiters.ts` (`sign-in-code`, decision 052): they have no
+  in-memory insurance and refuse (`retryAfterSeconds` 60, a throttled warning) until Redis answers again, and their `reset` only logs.
+  `acquire` throws instead: a place that cannot be counted is not handed out.
 - **Semaphore:** a sorted set of leases on Redis's own clock. A lease expires after `ttlMs` (a crashed holder frees its
   place), and `release` only removes its own lease. Make `ttlMs` longer than the longest call it covers.
 - Metric: `rate_limit_denied_total{limiter}`.

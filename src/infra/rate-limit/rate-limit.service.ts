@@ -5,10 +5,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Counter } from 'prom-client';
 import { RateLimiterMemory, RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 import { AppError } from '../../common/errors';
+import { LogThrottle } from '../../common/log-throttle';
 import { CacheKeys } from '../cache';
 import { MetricsService } from '../metrics';
-import { RedisService } from '../redis';
-import { type LimiterName, RATE_LIMITERS } from './limiters';
+import { RedisService, withoutCredentials } from '../redis';
+import { type LimiterConfig, type LimiterName, RATE_LIMITERS } from './limiters';
 import { type SemaphoreLease, acquireSemaphore, releaseSemaphore } from './semaphore';
 
 /**
@@ -38,6 +39,16 @@ export interface RateLimitOptions {
 /** The most limiter instances kept (one per limiter and distinct per-key limit); the map restarts when it is full. */
 const MAX_LIMITER_INSTANCES = 500;
 const MAX_KEY_LENGTH = 256;
+/** What a fail-closed limiter tells a caller to wait while the cache Redis cannot be reached (decision 052). */
+const FAIL_CLOSED_RETRY_SECONDS = 60;
+/** One log line per interval while a fail-closed limiter refuses (every attempt would repeat it). */
+const FAIL_CLOSED_LOG_INTERVAL_MS = 30_000;
+
+/** True for a limiter that refuses, instead of counting in process memory, while the cache Redis cannot be reached. */
+function isFailClosed(name: LimiterName): boolean {
+  const config: LimiterConfig = RATE_LIMITERS[name];
+  return config.failClosed === true;
+}
 
 /**
  * Builds the `429 RATE_LIMITED` error with its `Retry-After`.
@@ -62,7 +73,8 @@ export function rateLimitedError(retryAfterSeconds: number): AppError {
  * Why: decision 021 gives every kind of traffic its own budget and keeps counts consistent across API instances.
  * Counters live on the cache Redis: if an entry is evicted a limit loosens briefly, nothing here is a source of truth.
  * While Redis is down each process falls back to an in-memory limiter with the same numbers, so limits (and sign-in
- * lock-outs) keep working per instance instead of switching off.
+ * lock-outs) keep working per instance instead of switching off, except limiters marked `failClosed`, which refuse
+ * (decision 052: a budget that guards a six-digit code must not reset with a restart).
  *
  * Side effects: counter keys `gsm:{env}:ratelimit:{limiter}:{key}` and semaphore keys on the cache Redis, with TTLs;
  * `rate_limit_denied_total{limiter}` counts refusals.
@@ -74,6 +86,7 @@ export class RateLimitService {
   private readonly logger = new Logger(RateLimitService.name);
   private readonly limiters = new Map<string, RateLimiterRedis>();
   private readonly denied: Counter<'limiter'>;
+  private readonly failClosedLog = new LogThrottle(FAIL_CLOSED_LOG_INTERVAL_MS);
 
   constructor(
     private readonly redis: RedisService,
@@ -130,7 +143,24 @@ export class RateLimitService {
       };
     } catch (rejection) {
       // The library rejects with a RateLimiterRes when the budget is used up, and with an Error for anything else.
-      if (!(rejection instanceof RateLimiterRes)) throw rejection;
+      if (!(rejection instanceof RateLimiterRes)) {
+        if (!isFailClosed(name)) throw rejection;
+        // A budget that guards a short secret is never counted in process memory: no answer from Redis is a refusal.
+        this.denied.inc({ limiter: name });
+        const logged = this.failClosedLog.attempt(`fail-closed:${name}`);
+        if (logged) {
+          this.logger.warn(
+            `The cache Redis could not be reached; ${name} refuses until it is back (${logged.suppressed} similar lines dropped): ${withoutCredentials(String(rejection))}`,
+          );
+        }
+        return {
+          allowed: false,
+          remaining: 0,
+          limit,
+          retryAfterSeconds: FAIL_CLOSED_RETRY_SECONDS,
+          resetSeconds: FAIL_CLOSED_RETRY_SECONDS,
+        };
+      }
       this.denied.inc({ limiter: name });
       const seconds = Math.max(1, Math.ceil(rejection.msBeforeNext / 1000));
       return { allowed: false, remaining: 0, limit, retryAfterSeconds: seconds, resetSeconds: seconds };
@@ -162,7 +192,8 @@ export class RateLimitService {
    *
    * Why: a successful sign-in clears the failed attempts of that email + IP (decision 021).
    *
-   * Side effects: deletes the counter key.
+   * Side effects: deletes the counter key. A fail-closed limiter whose Redis cannot be reached only logs (the counter expires by
+   * itself), so a correct code is never turned into an error after the sign-in already succeeded.
    *
    * @param name the limiter
    * @param key who was being limited
@@ -170,7 +201,17 @@ export class RateLimitService {
    */
   async reset(name: LimiterName, key: string): Promise<void> {
     this.assertInput(key, 1, {});
-    await this.limiterFor(name, RATE_LIMITERS[name].points).delete(key);
+    if (!isFailClosed(name)) {
+      await this.limiterFor(name, RATE_LIMITERS[name].points).delete(key);
+      return;
+    }
+    try {
+      await this.limiterFor(name, RATE_LIMITERS[name].points).delete(key);
+    } catch (error) {
+      this.logger.warn(
+        `Resetting the ${name} counter failed; it expires by itself: ${withoutCredentials(String(error))}`,
+      );
+    }
   }
 
   /**
@@ -237,9 +278,9 @@ export class RateLimitService {
     const limiter = new RateLimiterRedis({
       ...shared,
       storeClient: this.redis.cache,
-      // Do not wait for a dead connection: go straight to the in-memory limiter below.
+      // Do not wait for a dead connection: go straight to the in-memory limiter below (or refuse, for a fail-closed limiter).
       rejectIfRedisNotReady: true,
-      insuranceLimiter: new RateLimiterMemory(shared),
+      ...(isFailClosed(name) ? {} : { insuranceLimiter: new RateLimiterMemory(shared) }),
     });
     this.limiters.set(id, limiter);
     return limiter;

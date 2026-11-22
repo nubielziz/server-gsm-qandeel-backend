@@ -12,6 +12,7 @@ import { ClientSecurityController } from './controllers/client-security.controll
 import { ClientsController } from './controllers/clients.controller';
 import { MerchantAuthModule } from './merchant-auth.module';
 import { MerchantMailModule } from './merchant-mail.module';
+import { SignInLockModule } from './sign-in-lock.module';
 
 /**
  * Provides `/admin/clients` and the merchant group member counts the catalog's group routes read.
@@ -21,7 +22,7 @@ import { MerchantMailModule } from './merchant-mail.module';
  */
 @Global()
 @Module({
-  imports: [MerchantMailModule, MerchantAuthModule],
+  imports: [MerchantMailModule, MerchantAuthModule, SignInLockModule],
   controllers: [ClientsController, ClientSecurityController],
   providers: [
     ClientAdminService,

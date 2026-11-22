@@ -247,7 +247,8 @@ describe('POST /client/auth/register', () => {
     expect(text).not.toContain('verify-email?token');
 
     const production = await createTestApp({
-      env: productionEnvOnTestInstances({ SHOP_ORIGINS: PORTAL_ORIGIN }),
+      // This test is about the log: the anti-bot check (on by default in production, decision 052) is tested in merchant-auth-turnstile.
+      env: productionEnvOnTestInstances({ SHOP_ORIGINS: PORTAL_ORIGIN, TURNSTILE_MERCHANT_AUTH: 'false' }),
       clock,
     });
     try {

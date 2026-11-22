@@ -88,7 +88,7 @@ a contract is refused:
 6. **CSRF** on every cookie-authenticated mutation (`403 CSRF_FAILED`); a mutation without a session on `/admin` or `/client` (and the
    `/store/v1` sign-in routes) needs an `Origin` of its surface, and an `originCheck` GET needs `Sec-Fetch-Site: same-origin` or such an `Origin`.
 7. **Permission**: the contract's `permission` (`resource:action`; `x:*` and `*` grant all actions of a resource); some use cases also ask for a second permission (decision 046).
-   **Anti-bot** (D034): a `/store/v1` or public `/client` route with `turnstile: true` needs a passing `X-Turnstile-Token` (`403 TURNSTILE_FAILED`; the merchant sign-up, sign-in and forgot routes only while `TURNSTILE_MERCHANT_AUTH` is on); the
+   **Anti-bot** (D034): a `/store/v1` or public `/client` route with `turnstile: true` needs a passing `X-Turnstile-Token` (`403 TURNSTILE_FAILED`; the merchant sign-up, sign-in and forgot routes only while `TURNSTILE_MERCHANT_AUTH` is on, the default in production, decision 052); the
    verifier is Cloudflare's siteverify through `OutboundHttp`, or a dummy one without `TURNSTILE_SECRET_KEY` outside production.
 8. **Validation**: zod contract pipes (`422 VALIDATION_FAILED`).
 9. **Handler**; the response passes the response schema; admin writes are written to `audit_logs` (actor, action,
@@ -153,7 +153,11 @@ webhooks HMAC-signed, incoming verified with replay protection; parameterized SQ
 errors; logs redacted (D012). Admin guards are enforced server-side: no self-suspension or self role change, at
 least one active Owner, no self-lockout through IP rules, IP ranges no wider than /16, and a privilege ceiling: nobody grants,
 assigns or acts on permissions they do not hold, and only an Owner edits the role they hold; payment method secrets, merchant API
-keys made by staff and IP changes that would shut out an Owner are kept for Owners (decision 046).
+keys made by staff and IP changes that would shut out an Owner are kept for Owners (decision 046). Sign-in counters count per email
+and network, every password attempt is counted for its email before the check (a correct one takes back only its own count), and ten
+failed passwords lock an email for 15 minutes for every network its account has not signed in from (while the lock runs, each of the account's own networks
+keeps a budget of five attempts per 15 minutes); temporary passwords expire after 72 hours; the mails a visitor can ask for are capped per
+recipient (decision 052).
 
 ## 10. Observability and testing
 

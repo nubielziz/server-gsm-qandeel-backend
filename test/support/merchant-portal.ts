@@ -6,7 +6,7 @@ import type { LightMyRequestResponse } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
 import { PasswordHasher } from '@src/infra/crypto';
-import { schema as s } from '@src/infra/db';
+import { onCommit, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { MerchantAuthTokens } from '@src/modules/identity';
 import { CLIENT_TOTP_AAD, TotpService } from '@src/modules/identity/application/totp.service';
@@ -272,7 +272,10 @@ export function captureEmailedLinks(t: TestApp): void {
   const issue = tokens.issue.bind(tokens);
   spyOn(tokens, 'issue').mockImplementation(async (work, input) => {
     const issued = await issue(work, input);
-    emailed.push({ kind: MAIL_KIND[input.purpose], clientId: input.clientId, token: issued.token });
+    // Recorded at the commit: a link of a run that is rolled back on purpose (an email that gets no mail) was never sent.
+    onCommit(
+      () => void emailed.push({ kind: MAIL_KIND[input.purpose], clientId: input.clientId, token: issued.token }),
+    );
     return issued;
   });
 }
@@ -305,15 +308,18 @@ export async function seedPortalBasics(): Promise<number> {
 }
 
 /**
- * Deletes the rate-limit counters of the limiters the portal's sign-in family touches (the Redis instance outlives the tests).
+ * Deletes the rate-limit counters of the limiters the portal's sign-in family touches (the code and mail budgets too) and the
+ * failed-sign-in counters and locks (the Redis instance outlives the tests).
  *
  * @param t the running test app
  */
 export async function clearPortalRateLimits(t: TestApp): Promise<void> {
   const redis = t.app.get(RedisService).cache;
   const keys = t.app.get(CacheKeys);
-  for (const limiter of ['ip', 'sign-in', 'token'] as const) {
+  for (const limiter of ['ip', 'sign-in', 'sign-in-code', 'sign-in-familiar', 'account-mail', 'token'] as const) {
     const found = await redis.keys(`${keys.rateLimit(limiter)}:*`);
     if (found.length > 0) await redis.del(...found);
   }
+  const failures = await redis.keys(`${keys.keyspace}identity:sign-in-failures:*`);
+  if (failures.length > 0) await redis.del(...failures);
 }

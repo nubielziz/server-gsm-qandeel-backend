@@ -64,8 +64,8 @@ export const SETUP_USAGE = [
   '  full name and a password (typed twice, never shown). The first sign-in then asks for the authenticator (TOTP) setup.',
   '',
   '  For a deploy script (no terminal):',
-  '  --email, --name   create the first admin without asking. A temporary password is generated and printed once; the first',
-  '                    sign-in forces a new password, then asks for the authenticator (TOTP) setup.',
+  '  --email, --name   create the first admin without asking. A temporary password is generated and printed once; it works',
+  '                    for 72 hours, and the first sign-in forces a new password, then asks for the authenticator (TOTP) setup.',
   '  --password-stdin  with --email and --name: read the password from standard input (one line) instead; it is checked with',
   '                    the staff password rules, it is not temporary, and it is not printed.',
   '',
@@ -464,7 +464,7 @@ export function describeFirstAdmin(owner: NonNullable<FirstRunReport['firstOwner
     ? [`✓ First admin created: ${owner.email}`, '  Sign in at the console; you will set up 2FA (TOTP) first.']
     : [
         `✓ First admin created: ${owner.email}`,
-        '  Sign in at the console with the temporary password below, choose a new password, then set up 2FA (TOTP).',
+        '  Sign in at the console within 72 hours with the temporary password below, choose a new password, then set up 2FA (TOTP).',
       ];
 }
 

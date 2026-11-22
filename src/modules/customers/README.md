@@ -79,15 +79,20 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
 - **Store sign-in** (`CustomerSignInService`, `CustomerPasswordService`, decision 018): session cookie `gsm_store_session`, CSRF
   cookie `csrf_token_store` and the `X-CSRF-Token` header, like staff and merchants. `POST /store/v1/auth/login` answers `{ next:
   'done' | 'password' }`: `pending_password` (10 minutes) after a temporary password, when only `POST /store/v1/me/password` and
-  logout work. Order of `login`: 5 attempts per email and address in 15 minutes (`429`), then the email lock (ten wrong
-  passwords in a row lock the email for 15 minutes: `429` with `Retry-After`, `domain/lockout.ts`; the count is in the cache Redis
-  under a keyed hash of the email, `infra/customer-sign-in-failures.ts`, and every `401` charges it, so an email without an account
-  locks and answers exactly like one with an account; a correct password or a new password clears it), then one `401` for
-  an unknown email, a wrong password, a guest and an account with no password (a dummy hash makes the work equal), then `403
-  ACCOUNT_SUSPENDED` for a suspended or blocked customer (after a correct password only). The sign-in link
-  (`POST /auth/magic-link`) and "forgot password" always answer `204`; an email the store does not know becomes a guest customer
-  (self-signup, `created_by` null) and the link turns it into an account holder when it is used; a suspended, blocked or anonymized
-  customer and a blocklisted email get nothing. Links are one hour, single use, newest of a family wins, stored as a keyed hash
+  logout work. Order of `login`: 5 attempts per email and network in 15 minutes (`429`; the network is the IPv4 address or the IPv6
+  /64, decision 052), then the email lock (identity's `SignInLock`, scope `shop`, shared with the merchant login and the one sign-in
+  form: every attempt is counted before the password is checked, and after ten failures the email is locked for 15 minutes for every
+  network the account has not signed in from: `429` with `Retry-After`; every `401` stays counted, so an email without an account
+  locks and answers exactly like one with an account; a correct password takes back only its own count and keeps a running lock; a new
+  password, from a link, the customer's own change or staff, clears it; a merchant's own change on the same email does not),
+  then one `401` for an unknown email, a wrong password, a temporary password older than 72 hours, a guest and an account with no
+  password (a dummy hash makes the work equal), then `403 ACCOUNT_SUSPENDED` for a suspended or blocked customer (after a correct
+  password only). The sign-in link (`POST /auth/magic-link`) and "forgot password" always answer `204` and run the same statements for
+  every email (a run that sends nothing is rolled back, decision 052); each spends one point of the customer's mail budget (`account-mail`,
+  kinds `sign_in_link` and `forgot_password`, five an hour; beyond it nothing is sent); an email the store does not know becomes a guest
+  customer (self-signup, `created_by` null) and the link turns it into an account holder when it is used; a suspended, blocked or
+  anonymized customer and a blocklisted email get nothing. Links are one hour, single use, newest of a family wins (except the links a
+  visitor asks for: up to three work at once, the oldest goes first), stored as a keyed hash
   (`CustomerAuthTokens` of identity); `POST /auth/verify` accepts sign-in and verification links, `POST /auth/password/set`
   invitations and resets (an invitation also verifies the email; neither signs anybody in; both end every session). The two `link-token`
   routes are opened by the resolver `CustomerIdentityRegistrar` registers with identity's `CapabilityTokenResolvers`; the same class
@@ -282,12 +287,14 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 The route sits under `/client` for the Origin check (login CSRF), the per-IP limit and no shop-maintenance scope, and lives here
 because customers may import identity (`MerchantPasswordSignIn`, the merchant side) and not the reverse. Every attempt, whatever
 the email: both login counters (the merchant one of `POST /client/auth/login` and the customer one of `POST /store/v1/auth/login`,
-always both, in that order), then the customer per-email lock, then both lookups, then **exactly one** argon2 verify: the
-merchant's hash when a merchant with a password has the email (the merchant wins, even when the email is also a customer), else the
-customer's hash (an account with a password, not anonymized), else a dummy hash made at boot. Every `401` is one answer and counts
-towards the lock; `403 ACCOUNT_SUSPENDED` only after a correct password and leaves the counters; a success opens the session through
+always both, in that order), then both lookups, then the email's shop lock (identity's `SignInLock`; a network the account being
+signed into has signed in from keeps a budget of its own: five attempts in 15 minutes per email and network), then **exactly one** argon2 verify: the merchant's hash when a merchant with a
+password has the email and either its email is verified or no customer account with a password has the email (decision 052: a
+merchant that never proved its mailbox does not shadow the customer), else the customer's hash (an account with a password, not
+anonymized), else a dummy hash made at boot. A temporary password older than 72 hours is refused like a wrong one. Every `401` is one
+answer and stays counted towards the lock; a correct password takes back its own count (`403 ACCOUNT_SUSPENDED` comes only after one); a success opens the session through
 that side's `startSession` (`CustomerSignInService.startSession` is the part of `login` after the proven password), ends only the
-stale session of the same kind (the other kind's session stays) and clears both counters and the lock. No audit row, outbox, cache key
+stale session of the same kind (the other kind's session stays) and clears both login counters (the lock keeps the failures of other attempts). No audit row, outbox, cache key
 or job. Tests: `test/integration/customers/smart-sign-in.test.ts`.
 
 ### Paying from the store balance (feature 21)
@@ -357,9 +364,9 @@ Both are documented in `docs/queues.md`.
 
 ## Cache keys
 
-One of its own: `gsm:{env}:customers:sign-in-failures:{emailHash}` (`customerSignInFailures`, the count of wrong passwords behind
-the 15-minute email lock; a throttle, not truth: `docs/cache-keys.md`). Customer sessions use identity's session keys
-(`gsm:{env}:identity:session:{hash}`), and the per-email-and-address sign-in limit uses the rate-limit keys of decision 021
+None of its own. The email lock is identity's (`SignInLock`, key `gsm:{env}:identity:sign-in-failures:{emailHash}`, decision 052; it
+replaced this module's own lock key). Customer sessions use identity's session keys
+(`gsm:{env}:identity:session:{hash}`), and the per-email-and-network sign-in limit uses the rate-limit keys of decision 021
 (`customer-sign-in` prefix inside the hashed key). A checkout session, its consents and the guest customer are decision-making
 state and are read from Postgres every time. The `abandonedMinutes` setting of the recovery is read through `SettingsReader` (the settings snapshot,
 `docs/cache-keys.md`).
