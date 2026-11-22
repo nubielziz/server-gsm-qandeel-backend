@@ -210,7 +210,7 @@ describe('POST /admin/customers/:id/wallet/adjust', () => {
     expect(refused.status).toBe(409);
     expect(refused.body).toMatchObject({
       code: 'APPROVAL_REQUIRED',
-      detail: 'Credits over $500 in 24 hours need an owner: yours would come to $500.00.',
+      detail: 'Credits over $500 in 24 hours need an owner: yours would come to $500.0001.',
     });
     const owner = await adminWith(t, ['*']);
     expect((await adjustOf(owner, first.id, '600.0000')).status).toBe(200);

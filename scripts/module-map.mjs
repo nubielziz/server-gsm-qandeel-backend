@@ -49,6 +49,8 @@ export const modules = [
       'currencies', 'ledger_accounts', 'ledger_transactions', 'ledger_entries', 'invoices', 'payment_gateways',
       'payments', 'withdrawal_requests', 'refunds', 'disputes', 'tax_rates',
     ],
+    // Decision 049: the record of credit-limit raises, read for a staff member's 24-hour sum.
+    additionalTables: ['credit_limit_raises'],
     rows: [
       /^admin \S+ \/admin\/clients\/:id\/(wallet|statement|credit-limit)(\/|$)/,
       /^admin \S+ \/admin\/(ledger|currencies|payment-gateways|invoices|payments|tax-rates|refunds|disputes)(\/|$)/,

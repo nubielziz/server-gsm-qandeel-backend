@@ -195,5 +195,23 @@ export function isIssuedBy(
   return invoice.kind === 'manual' && invoice.issuedBy !== null && invoice.issuedBy === staffId;
 }
 
+/**
+ * Tells whether approving a payment credits a top-up that a merchant or customer made through a manual method (a transfer receipt).
+ *
+ * Why: decision 049: these approvals count towards the staff member's 24-hour limit `wallet.receipt_approval_limit`; an automatic
+ * gateway's top-up sent to review (the gateway confirmed the money) and the payment of a staff-issued invoice (the issuer rule applies)
+ * do not.
+ *
+ * @param invoice the invoice the payment pays (its kind)
+ * @param gateway the gateway the payment came through
+ * @returns true when the approval counts
+ */
+export function isTransferTopUp(
+  invoice: { readonly kind: InvoiceKind },
+  gateway: { readonly isManual: boolean },
+): boolean {
+  return invoice.kind === 'topup' && gateway.isManual;
+}
+
 /** The refusal of the issuer's own approval (`403 FORBIDDEN`, decision 049). */
 export const SELF_APPROVAL_DETAIL = 'You issued this invoice: another staff member, or an owner, approves its payment.';

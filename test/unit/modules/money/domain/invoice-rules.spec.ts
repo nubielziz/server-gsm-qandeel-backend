@@ -6,6 +6,7 @@ import {
   dueAtOf,
   invoiceNumber,
   isIssuedBy,
+  isTransferTopUp,
   manualInvoiceTotals,
   MERCHANT_OPEN_TOPUPS,
   OPEN_TOPUPS_DETAIL,
@@ -96,5 +97,11 @@ describe('the limits of decision 049', () => {
     expect(isIssuedBy({ kind: 'manual', issuedBy: 7 }, 8)).toBe(false);
     expect(isIssuedBy({ kind: 'manual', issuedBy: null }, 7)).toBe(false);
     expect(isIssuedBy({ kind: 'topup', issuedBy: 7 }, 7)).toBe(false);
+  });
+
+  it('isTransferTopUp is true only for a top-up through a manual method', () => {
+    expect(isTransferTopUp({ kind: 'topup' }, { isManual: true })).toBe(true);
+    expect(isTransferTopUp({ kind: 'topup' }, { isManual: false })).toBe(false);
+    expect(isTransferTopUp({ kind: 'manual' }, { isManual: true })).toBe(false);
   });
 });

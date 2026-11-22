@@ -48,11 +48,13 @@ export const updateSettings = defineRoute({
     'Only keys of the settings registry (`settings/settings-registry.ts`) are accepted, each with its validator (for example ' +
     '`imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent ' +
     'from 0 to 100, default 10; `fx.max_refresh_move_percent`, a whole number of percent from 1 to 100, default 20, and ' +
-    '`fx.max_rate_age_hours`, a whole number of hours from 1 to 720, default 48, decision 049). Any other ' +
+    '`fx.max_rate_age_hours`, a whole number of hours from 1 to 720, default 48, and `wallet.receipt_approval_limit`, a whole number ' +
+    'of dollars, default 10000, decision 049). Any other ' +
     'key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the ' +
     'storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change. ' +
-    'A key reserved to Owners (`suppliers.allowPlainHttp`, decision 051; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and ' +
-    '`wallet.customer.adjust_approval_limit`, decision 049) is `403 FORBIDDEN` for any other caller, and nothing in the patch is stored; ' +
+    'A key reserved to Owners (`suppliers.allowPlainHttp`, decision 051; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, ' +
+    '`wallet.customer.adjust_approval_limit` and `wallet.receipt_approval_limit`, decision 049) is `403 FORBIDDEN` for any other caller, ' +
+    'and nothing in the patch is stored; ' +
     'the route itself keeps `settings:update`.',
   tags: ['settings'],
   surface: 'admin',

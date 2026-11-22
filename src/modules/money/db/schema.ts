@@ -864,3 +864,32 @@ export type TaxRate = typeof taxRates.$inferSelect;
 
 /** A row to insert into `tax_rates`. */
 export type NewTaxRate = typeof taxRates.$inferInsert;
+
+/**
+ * The raises of merchant credit limits that staff made: one row per raise, holding the part by which the new limit exceeds the one it
+ * replaced (the whole limit for a new merchant).
+ *
+ * Why: decision 049: a credit limit is money the merchant can spend, so what one staff member raises within 24 hours counts in the same
+ * sum as their credit adjustments against `wallet.adjust_approval_limit`. A lowering, or a limit sent unchanged, adds no row. Rows are
+ * only inserted (by the credit-limit route and the merchant invitation) and read only for that sum.
+ */
+export const creditLimitRaises = pgTable(
+  'credit_limit_raises',
+  {
+    id: pk(),
+    clientId: fk((): AnyPgColumn => clients.id).notNull(),
+    staffId: fk((): AnyPgColumn => staffUsers.id).notNull(),
+    /** the new limit minus the limit it replaced; always above zero */
+    amount: money().notNull(),
+    /** written from the clock, as the 24-hour window is measured on it */
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('credit_limit_raises_amount_check', sql`${t.amount} > 0`),
+    index('credit_limit_raises_staff_created_idx').on(t.staffId, t.createdAt.desc()),
+    index('credit_limit_raises_client_id_idx').on(t.clientId),
+  ],
+);
+
+/** A row read from `credit_limit_raises`. */
+export type CreditLimitRaise = typeof creditLimitRaises.$inferSelect;

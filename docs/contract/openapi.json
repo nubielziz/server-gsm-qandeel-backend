@@ -19349,7 +19349,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Creates the merchant as `pending` with a generated Dhru username and referral code, opens its wallet and hold accounts in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with `POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` (`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049).",
+        "description": "Creates the merchant as `pending` with a generated Dhru username and referral code, opens its wallet and hold accounts in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with `POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` (`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049), and so does one that takes the staff member's credits to merchant wallets and credit-limit raises within 24 hours above it.",
         "operationId": "postAdminClients",
         "parameters": [],
         "requestBody": {
@@ -23653,7 +23653,7 @@
     },
     "/admin/clients/{id}/credit-limit": {
       "patch": {
-        "description": "Sets the overdraft limit of the merchant wallet; `0.0000` removes the credit. A limit above zero needs a merchant group that allows credit (`422` on `creditLimit` otherwise). Lowering the limit below the credit in use is allowed: new orders are refused until a top-up. Raising the limit above the approval limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) needs an Owner (`403 FORBIDDEN`, decision 049); lowering it never does. No ledger entry; audited.",
+        "description": "Sets the overdraft limit of the merchant wallet; `0.0000` removes the credit. A limit above zero needs a merchant group that allows credit (`422` on `creditLimit` otherwise). Lowering the limit below the credit in use is allowed: new orders are refused until a top-up. Raising the limit above the approval limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) needs an Owner (`403 FORBIDDEN`, decision 049), and so does a raise that takes the staff member's credits to merchant wallets and credit-limit raises within 24 hours above it (the raised part counts); lowering it never does. A group move of the same merchant and this change are judged one after the other. No ledger entry; audited.",
         "operationId": "patchAdminClientsByIdCreditLimit",
         "parameters": [
           {
@@ -27124,7 +27124,7 @@
     },
     "/admin/clients/{id}/wallet/adjust": {
       "post": {
-        "description": "Posts the map money event `adjust` (credit: Dr adjustments / Cr client_wallet; debit: the mirror) with the reason in the memo, and audits it. A staff member's credits to merchant wallets within 24 hours, this one included, above the approval limit (setting `wallet.adjust_approval_limit`, default $10,000), or a single debit above it, are refused with `409 APPROVAL_REQUIRED`; an Owner is not limited and a retry of an accepted adjustment is answered as before (decision 049). A debit below the credit limit is refused with `CREDIT_LIMIT_EXCEEDED`. The optional `Idempotency-Key` header makes a retry post once; without it each request posts.",
+        "description": "Posts the map money event `adjust` (credit: Dr adjustments / Cr client_wallet; debit: the mirror) with the reason in the memo, and audits it. A staff member's credits to merchant wallets within 24 hours, this one included and counted with the parts by which they raised credit limits, above the approval limit (setting `wallet.adjust_approval_limit`, default $10,000), or a single debit above it, are refused with `409 APPROVAL_REQUIRED`; an Owner is not limited and a retry of an accepted adjustment is answered as before (decision 049). A debit below the credit limit is refused with `CREDIT_LIMIT_EXCEEDED`. The optional `Idempotency-Key` header makes a retry post once; without it each request posts.",
         "operationId": "postAdminClientsByIdWalletAdjust",
         "parameters": [
           {
@@ -111174,7 +111174,7 @@
     },
     "/admin/payments/{id}/approve": {
       "post": {
-        "description": "Approves a top-up and credits the wallet in one transaction: the money event `deposit` (Dr bank for a manual gateway or gateway_clearing for an automatic one, Cr client_wallet net, Cr fee_income fee, idempotency key `deposit:payment:<id>`), the linked invoice becomes paid, `invoice.paid` is queued for the merchant webhook, and the decision is audited. Only a pending top-up can be decided, and only when its gateway is manual or the payment was sent to review (`409 PAYMENT_AUTO_CREDIT_PENDING` otherwise: an automatic gateway credits by itself after the gateway check). A decided payment is `409 PAYMENT_ALREADY_REVIEWED`. An order (storefront) payment is `404`. Approving is `409 CONFLICT` when the gateway confirmed another amount or currency than the invoice (reject it and adjust the wallet by hand), when the gateway event can no longer be read, or when the invoice is no longer open. The answer's `client.walletBalance` already includes the credit. `403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049).",
+        "description": "Approves a top-up and credits the wallet in one transaction: the money event `deposit` (Dr bank for a manual gateway or gateway_clearing for an automatic one, Cr client_wallet net, Cr fee_income fee, idempotency key `deposit:payment:<id>`), the linked invoice becomes paid, `invoice.paid` is queued for the merchant webhook, and the decision is audited. Only a pending top-up can be decided, and only when its gateway is manual or the payment was sent to review (`409 PAYMENT_AUTO_CREDIT_PENDING` otherwise: an automatic gateway credits by itself after the gateway check). A decided payment is `409 PAYMENT_ALREADY_REVIEWED`. An order (storefront) payment is `404`. Approving is `409 CONFLICT` when the gateway confirmed another amount or currency than the invoice (reject it and adjust the wallet by hand), when the gateway event can no longer be read, or when the invoice is no longer open. The answer's `client.walletBalance` already includes the credit. `403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049). A top-up that a merchant or customer made through a manual method whose credit takes what the caller approved of such top-ups within 24 hours above `wallet.receipt_approval_limit` (default $10,000) is `409 APPROVAL_REQUIRED` and nothing is posted; an Owner is not limited (decision 049).",
         "operationId": "postAdminPaymentsByIdApprove",
         "parameters": [
           {
@@ -111988,7 +111988,7 @@
             }
           },
           "409": {
-            "description": "PAYMENT_ALREADY_REVIEWED: This payment was already reviewed.\nPAYMENT_AUTO_CREDIT_PENDING: This payment is credited automatically.\nCONFLICT: The request conflicts with the current state.",
+            "description": "PAYMENT_ALREADY_REVIEWED: This payment was already reviewed.\nPAYMENT_AUTO_CREDIT_PENDING: This payment is credited automatically.\nCONFLICT: The request conflicts with the current state.\nAPPROVAL_REQUIRED: This adjustment needs a second approval.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -112020,7 +112020,8 @@
                       "enum": [
                         "PAYMENT_ALREADY_REVIEWED",
                         "PAYMENT_AUTO_CREDIT_PENDING",
-                        "CONFLICT"
+                        "CONFLICT",
+                        "APPROVAL_REQUIRED"
                       ]
                     },
                     "detail": {
@@ -112086,6 +112087,17 @@
                       "status": 409,
                       "code": "CONFLICT",
                       "detail": "The request conflicts with the current state.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "APPROVAL_REQUIRED": {
+                    "summary": "This adjustment needs a second approval.",
+                    "value": {
+                      "type": "https://errors.gsm.example/approval-required",
+                      "title": "This adjustment needs a second approval.",
+                      "status": 409,
+                      "code": "APPROVAL_REQUIRED",
+                      "detail": "This adjustment needs a second approval.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }
@@ -168409,7 +168421,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only keys of the settings registry (`settings/settings-registry.ts`) are accepted, each with its validator (for example `imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10; `fx.max_refresh_move_percent`, a whole number of percent from 1 to 100, default 20, and `fx.max_rate_age_hours`, a whole number of hours from 1 to 720, default 48, decision 049). Any other key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change. A key reserved to Owners (`suppliers.allowPlainHttp`, decision 051; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`, decision 049) is `403 FORBIDDEN` for any other caller, and nothing in the patch is stored; the route itself keeps `settings:update`.",
+        "description": "Only keys of the settings registry (`settings/settings-registry.ts`) are accepted, each with its validator (for example `imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10; `fx.max_refresh_move_percent`, a whole number of percent from 1 to 100, default 20, and `fx.max_rate_age_hours`, a whole number of hours from 1 to 720, default 48, and `wallet.receipt_approval_limit`, a whole number of dollars, default 10000, decision 049). Any other key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change. A key reserved to Owners (`suppliers.allowPlainHttp`, decision 051; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit` and `wallet.receipt_approval_limit`, decision 049) is `403 FORBIDDEN` for any other caller, and nothing in the patch is stored; the route itself keeps `settings:update`.",
         "operationId": "patchAdminSettings",
         "parameters": [],
         "requestBody": {

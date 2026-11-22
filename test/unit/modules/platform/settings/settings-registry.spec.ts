@@ -16,6 +16,7 @@ import {
   LOG_RETENTION_DAYS_KEY,
   logRetentionDaysProblem,
   PRICE_CHANGE_TOLERANCE_KEY,
+  RECEIPT_APPROVAL_LIMIT_KEY,
   ownerOnlySettingKeys,
   priceChangeTolerancePercentProblem,
   settingsPatchProblems,
@@ -151,9 +152,10 @@ describe('owner-only settings (decisions 051 and 049)', () => {
     'fx.max_refresh_move_percent',
     'fx.max_rate_age_hours',
     'wallet.customer.adjust_approval_limit',
+    'wallet.receipt_approval_limit',
   ];
 
-  it('reserves exactly four keys to Owners', () => {
+  it('reserves exactly five keys to Owners', () => {
     expect(
       EDITABLE_SETTINGS.filter((setting) => setting.ownerOnly === true)
         .map((setting) => setting.key)
@@ -162,6 +164,7 @@ describe('owner-only settings (decisions 051 and 049)', () => {
     expect(FX_GUARD_SETTINGS.maxRefreshMovePercent.key).toBe('fx.max_refresh_move_percent');
     expect(FX_GUARD_SETTINGS.maxRateAgeHours.key).toBe('fx.max_rate_age_hours');
     expect(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit).toBe('wallet.customer.adjust_approval_limit');
+    expect(RECEIPT_APPROVAL_LIMIT_KEY).toBe('wallet.receipt_approval_limit');
     expect(ownerOnlySettingKeys(Object.fromEntries(OWNER_ONLY.map((key) => [key, 1])))).toEqual(OWNER_ONLY);
   });
 
@@ -179,6 +182,15 @@ describe('owner-only settings (decisions 051 and 049)', () => {
     expect(settingsPatchProblems({ 'suppliers.allowPlainHttp': 'yes' })).toHaveLength(1);
     expect(settingsPatchProblems({ 'fx.max_refresh_move_percent': 0, 'fx.max_rate_age_hours': 721 })).toHaveLength(2);
     expect(settingsPatchProblems({ 'wallet.customer.adjust_approval_limit': 10_001 })).toHaveLength(1);
+  });
+
+  it('accepts the receipt approval limit as a whole number of dollars a money column holds', () => {
+    for (const value of [0, 10_000, 99_999_999_999_999]) {
+      expect(settingsPatchProblems({ [RECEIPT_APPROVAL_LIMIT_KEY]: value }), String(value)).toEqual([]);
+    }
+    for (const value of [-1, 100_000_000_000_000, 10.5, '10000', null]) {
+      expect(settingsPatchProblems({ [RECEIPT_APPROVAL_LIMIT_KEY]: value }), String(value)).toHaveLength(1);
+    }
   });
 });
 

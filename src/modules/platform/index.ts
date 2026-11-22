@@ -70,6 +70,7 @@ export {
   INBOX_RETENTION_DAYS_KEY,
   LOG_RETENTION_DAYS_KEY,
   NOTIFICATION_RETENTION,
+  RECEIPT_APPROVAL_LIMIT_KEY,
   SUPPORT_SETTINGS,
 } from './settings/settings-registry';
 export { OutboxModule } from './outbox/outbox.module';

@@ -620,12 +620,15 @@ once per hold. Check the rate; if the move is real, enter the new rate on the Cu
 older than `fx.max_rate_age_hours` (default 48) is not offered either; a shop that keeps rates by hand (`FX_PROVIDER=manual`) confirms them
 at least that often or raises the setting (`PATCH /admin/settings`, 1 to 720 hours). A checkout keeps the rate it locked. The held rate's
 line in the refresh answer (`failed`) names the provider's rate, the stored rate, the move judged and the bound. `fx.max_refresh_move_percent`,
-`fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit` are changed by an Owner only; another staff member with `settings:update`
-gets 403.
+`fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit` and `wallet.receipt_approval_limit` are changed by an Owner only; another
+staff member with `settings:update` gets 403.
 
 **Manual money limits** (decision 049). A staff member's credits within 24 hours, per kind of wallet, and any single debit, are capped by
 the approval limit (`wallet.adjust_approval_limit` for merchants, `wallet.customer.adjust_approval_limit` for customers); above it only an
-Owner adjusts. A credit limit above the merchant limit, and approving the payment of an invoice one issued oneself, also need an Owner.
+Owner adjusts. The parts by which a staff member raises merchant credit limits (also at an invitation) count in the same merchant sum. A
+credit limit above the merchant limit, and approving the payment of an invoice one issued oneself, also need an Owner. What one staff
+member credits by approving transfer receipts on top-ups within 24 hours is capped by `wallet.receipt_approval_limit` (default $10,000);
+above it an Owner approves.
 A merchant holds at most five unpaid top-up invoices younger than 24 hours or with a receipt in review, and five receipts in review.
 Commissions never pay more than an order's margin.
 

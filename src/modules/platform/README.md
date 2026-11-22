@@ -144,9 +144,9 @@ it accepts only the keys of a settings registry in this module, each with its va
 integer 0 to 3650, shared with `PATCH /admin/storefront/settings`, and `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
 default 10 when never saved, read by the catalog's price guard, user rule 9; and, from feature 28, `support.replyEmailDelayMinutes`, a JSON integer 0 to 1440, default 5, and `support.attachmentRetentionDays`, a JSON integer 0 to 3650, default 180, both read by the support module through `SettingsReader.integer` and kept in `SUPPORT_SETTINGS`; and, from decision 049, the exchange-rate guards of `FX_GUARD_SETTINGS`: `fx.max_refresh_move_percent`, a JSON integer 1 to 100, default 20, and `fx.max_rate_age_hours`, a JSON integer 1 to 720, default 48, read by the money module); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
-Four keys are changed by an Owner only (the registry's `ownerOnly` mark; any other caller with `settings:update` gets `403 FORBIDDEN`):
-`suppliers.allowPlainHttp` (decision 051), `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`
-(decision 049: limits on money).
+Five keys are changed by an Owner only (the registry's `ownerOnly` mark; any other caller with `settings:update` gets `403 FORBIDDEN`):
+`suppliers.allowPlainHttp` (decision 051), `fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit`
+and `wallet.receipt_approval_limit` (a JSON integer of dollars, default 10000, read by the money module; decision 049: limits on money).
 A feature that needs another key editable there adds it to the registry with its validator.
 
 **Maintenance** (scenario `system-integrity`, `docs/contract/endpoints/health.md` `PUT /admin/system/maintenance`) is the settings
@@ -200,7 +200,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
   `body`. A key the registry marks `ownerOnly` (`suppliers.allowPlainHttp`, decision 051: it lowers the protection of supplier
-  calls; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours` and `wallet.customer.adjust_approval_limit`, decision 049: limits on money) is then `403 FORBIDDEN` unless the caller is an Owner (identity's `requireOwner`, the helper of decision 046); the route keeps
+  calls; `fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit` and `wallet.receipt_approval_limit`, decision 049: limits on money) is then `403 FORBIDDEN` unless the caller is an Owner (identity's `requireOwner`, the helper of decision 046); the route keeps
   `settings:update`. The service and the controller reach identity through one late read, `infra/identity-access.ts` (decision 032's
   "late reads"): identity imports this module, so a static import of identity from here would close a load-time cycle. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
   `before` and `after` of the changed keys, secrets masked) in the same transaction. After the commit it calls `SettingsReader.invalidate()`

@@ -270,11 +270,12 @@ describe('PATCH /admin/settings', () => {
     expect((await auditRows()).filter((row) => row.action === 'changed settings')).toHaveLength(2);
   });
 
-  it('lets only an Owner change the exchange-rate guards and the customer adjustment limit (decision 049)', async () => {
+  it('lets only an Owner change the exchange-rate guards, the customer adjustment limit and the receipt approval limit (decision 049)', async () => {
     const keys: Array<[string, number]> = [
       ['fx.max_refresh_move_percent', 35],
       ['fx.max_rate_age_hours', 72],
       ['wallet.customer.adjust_approval_limit', 500],
+      ['wallet.receipt_approval_limit', 25_000],
     ];
     const limited = await adminWith(t, ['settings:update']);
     for (const [key, value] of keys) {
@@ -312,6 +313,7 @@ describe('PATCH /admin/settings', () => {
       'fx.max_refresh_move_percent',
       'fx.max_rate_age_hours',
       'wallet.customer.adjust_approval_limit',
+      'wallet.receipt_approval_limit',
     ]);
   });
 

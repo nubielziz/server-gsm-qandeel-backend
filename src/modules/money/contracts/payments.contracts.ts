@@ -160,7 +160,10 @@ export const approvePayment = defineRoute({
     'gateway_clearing for an automatic one, Cr client_wallet net, Cr fee_income fee, idempotency key `deposit:payment:<id>`), the ' +
     'linked invoice becomes paid, `invoice.paid` is queued for the merchant webhook, and the decision is audited. ' +
     `${REVIEW_RULES} The answer's \`client.walletBalance\` already includes the credit. ` +
-    '`403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049).',
+    '`403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049). ' +
+    'A top-up that a merchant or customer made through a manual method whose credit takes what the caller approved of such top-ups ' +
+    'within 24 hours above `wallet.receipt_approval_limit` (default $10,000) is `409 APPROVAL_REQUIRED` and nothing is posted; an ' +
+    'Owner is not limited (decision 049).',
   tags: ['finance'],
   surface: 'admin',
   access: 'staff-permission',
@@ -175,6 +178,7 @@ export const approvePayment = defineRoute({
     'PAYMENT_ALREADY_REVIEWED',
     'PAYMENT_AUTO_CREDIT_PENDING',
     'CONFLICT',
+    'APPROVAL_REQUIRED',
     'VALIDATION_FAILED',
   ],
   examples: {

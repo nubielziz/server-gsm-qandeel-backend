@@ -163,7 +163,8 @@ export const createClient = defineRoute({
     'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. ' +
     'A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` ' +
     '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval ' +
-    'limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049).',
+    'limit of adjustments (`wallet.adjust_approval_limit`, default $10,000) also needs an Owner (`403 FORBIDDEN`, decision 049), and ' +
+    "so does one that takes the staff member's credits to merchant wallets and credit-limit raises within 24 hours above it.",
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

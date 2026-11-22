@@ -10,7 +10,10 @@ import {
   checkCreditLimit,
   creditLimitNeedsOwner,
   creditLimitOwnerDetail,
+  creditLimitRaise,
+  creditSumRefusalDetail,
   dollarsText,
+  receiptApprovalRefusalDetail,
 } from '@src/modules/money/domain/wallet-rules';
 
 const fieldErrors = (run: () => unknown) => {
@@ -105,9 +108,11 @@ describe('adjustmentRefusalDetail (decision 049)', () => {
     expect(`${credit} ${debit}`.toLowerCase()).not.toContain('split');
   });
 
-  it('writes cents only when there are some', () => {
-    expect(dollarsText(Money.of('10000.0001'))).toBe('$10,000.00');
+  it('writes cents only when there are some, and every place that is not zero', () => {
+    expect(dollarsText(Money.of('10000.0001'))).toBe('$10,000.0001');
+    expect(dollarsText(Money.of('10000.0010'))).toBe('$10,000.001');
     expect(dollarsText(Money.of('500.5000'))).toBe('$500.50');
+    expect(dollarsText(Money.of('500.1200'))).toBe('$500.12');
     expect(dollarsText(Money.of('1234567'))).toBe('$1,234,567');
   });
 });
@@ -124,5 +129,25 @@ describe('creditLimitNeedsOwner (decision 049)', () => {
 
   it('says who may set it', () => {
     expect(creditLimitOwnerDetail(limit)).toBe('Only an owner can set a credit limit above $10,000.');
+  });
+});
+
+describe('creditLimitRaise (decision 049)', () => {
+  it('is the part above the limit it replaces, and zero for a lowering or an unchanged limit', () => {
+    expect(creditLimitRaise(Money.of('10000'), Money.zero()).toWire()).toBe('10000.0000');
+    expect(creditLimitRaise(Money.of('3000'), Money.of('1000')).toWire()).toBe('2000.0000');
+    expect(creditLimitRaise(Money.of('1000'), Money.of('3000')).toWire()).toBe('0.0000');
+    expect(creditLimitRaise(Money.of('3000'), Money.of('3000')).toWire()).toBe('0.0000');
+  });
+});
+
+describe('the refusals of the 24-hour sums (decision 049)', () => {
+  it('name the limit and the total the sum would reach', () => {
+    expect(creditSumRefusalDetail(Money.of('10000'), Money.of('10000.0001'))).toBe(
+      'Credits and credit-limit raises over $10,000 in 24 hours need an owner: yours would come to $10,000.0001.',
+    );
+    expect(receiptApprovalRefusalDetail(Money.of('10000'), Money.of('12500'))).toBe(
+      'Approved transfer top-ups over $10,000 in 24 hours need an owner: yours would come to $12,500.',
+    );
   });
 });

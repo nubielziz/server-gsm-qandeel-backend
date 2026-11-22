@@ -33,13 +33,23 @@ export function ownerKey(ownerType: string, ownerId: number): string {
  *
  * Why: user rule 2 must hold when staff turn `overdraftAllowed` off for a group at the same moment as another request gives
  * one of its merchants a credit limit; the group routes lock the row `FOR UPDATE` (catalog module), so one of the two waits and
- * then sees the other's result. Called inside a transaction, as the lock lasts until it ends.
+ * then sees the other's result. With `lockMerchant` the merchant row is locked `FOR SHARE` first, in its own statement: a group move
+ * (and the nightly promotion) locks that row `FOR UPDATE`, so a move and a credit-limit change wait for each other, and the group is
+ * read only once the lock is held, after any move that held it. Called inside a transaction, as the locks last until it ends.
  *
  * @param db the database or a transaction
  * @param id the merchant id
+ * @param options `lockMerchant`: also lock the merchant row (the credit-limit route)
  * @returns the merchant, or `undefined` when there is none
  */
-export async function findMerchant(db: DbExecutor, id: number): Promise<MerchantRecord | undefined> {
+export async function findMerchant(
+  db: DbExecutor,
+  id: number,
+  options: { readonly lockMerchant?: boolean } = {},
+): Promise<MerchantRecord | undefined> {
+  if (options.lockMerchant) {
+    await db.select({ id: s.clients.id }).from(s.clients).where(eq(s.clients.id, id)).limit(1).for('share');
+  }
   const [row] = await db
     .select({ id: s.clients.id, name: s.clients.name, overdraftAllowed: s.clientGroups.overdraftAllowed })
     .from(s.clients)

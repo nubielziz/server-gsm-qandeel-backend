@@ -237,6 +237,18 @@ export const FX_GUARD_SETTINGS = {
 } as const;
 
 /**
+ * The key of the limit on what one staff member credits by approving transfer top-ups within 24 hours (decision 049).
+ *
+ * Why: a receipt on a top-up that a merchant or customer made through a manual method is approved on one person's word, so those
+ * approvals are capped per staff member like the manual adjustments; above the limit an Owner approves. The money module reads it with
+ * the reader of `wallet.adjust_approval_limit`, so a value never saved, or one it cannot read, means the same default ($10,000).
+ */
+export const RECEIPT_APPROVAL_LIMIT_KEY = 'wallet.receipt_approval_limit';
+
+/** The largest whole number of dollars a money column holds (`numeric(18,4)`: 14 digits before the point, decision 049). */
+const MAX_WHOLE_DOLLARS = 99_999_999_999_999;
+
+/**
  * Builds the validator of a whole-number setting.
  *
  * @param min the smallest accepted value
@@ -286,6 +298,8 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   walletRange(CUSTOMER_WALLET_SETTINGS.topUpAmountPerDay, 'dollars'),
   // Decision 049: it sets how much one staff member may credit to customers without a second person, so an Owner changes it.
   { ...walletRange(CUSTOMER_WALLET_SETTINGS.adjustApprovalLimit, 'dollars'), ownerOnly: true },
+  // Decision 049: it sets how much one staff member may credit by approving transfer receipts without a second person: an Owner's.
+  { key: RECEIPT_APPROVAL_LIMIT_KEY, validate: wholeNumberProblem(0, MAX_WHOLE_DOLLARS, 'dollars'), ownerOnly: true },
   {
     key: SUPPORT_SETTINGS.replyEmailDelayMinutes.key,
     validate: wholeNumberProblem(
@@ -349,8 +363,8 @@ export function settingsPatchProblems(patch: Readonly<Record<string, unknown>>):
  * The keys of a settings patch that only an Owner may change.
  *
  * Why: decisions 051 and 049: a setting that lowers the protection of supplier calls (`suppliers.allowPlainHttp`) or sets a limit on money
- * (`fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit`) is an Owner's decision, while the
- * route itself keeps `settings:update` (the console reads that permission).
+ * (`fx.max_refresh_move_percent`, `fx.max_rate_age_hours`, `wallet.customer.adjust_approval_limit`, `wallet.receipt_approval_limit`) is
+ * an Owner's decision, while the route itself keeps `settings:update` (the console reads that permission).
  *
  * @param patch the flat object the client sent
  * @returns the patch's keys, in patch order, whose registry entry is marked `ownerOnly`

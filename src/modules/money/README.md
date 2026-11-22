@@ -34,7 +34,11 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   adjustments (`adjust` event, ref type `client`, reason in the memo, `APPROVAL_REQUIRED` when a staff member's credits to merchant
   wallets within 24 hours, or a single debit, exceed `wallet.adjust_approval_limit` (an Owner is not limited; the sum is read under the
   staff member's advisory lock, `infra/adjustment.repository.ts`), `CREDIT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`) and the credit
-  limit (a limit above that approval limit needs an Owner when it is a raise, decision 049).
+  limit (a limit above that approval limit needs an Owner when it is a raise, decision 049). The part by which a staff member raises a
+  credit limit, on the credit-limit route or at an invitation (`MerchantAccounts.open` with a `grant`), is recorded in
+  `credit_limit_raises` and counts in the same 24-hour sum as their credit adjustments (`staffMerchantCreditSince`); a raise above the
+  sum is `403 FORBIDDEN` for anyone but an Owner. The credit-limit route locks the merchant row first (`findMerchant` with
+  `lockMerchant`), so a group move of the same merchant and the change wait for each other (user rule 2).
 - **Ledger screens.** `LedgerReadService` lists journals (wire `refType` through `toWireRefType`: stored `client` goes out as
   `system`, resolutions money-1/6; numeric and text `q`, money-15) and accounts with their owners' names.
 - **Reconciliation.** `ReconcileService.run` compares every stored balance with the sum of its entries in one repeatable-read
@@ -121,6 +125,9 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
     receipt content lock); a merchant holds at most five live unpaid top-up invoices and five top-up receipts in review
     (`MERCHANT_OPEN_TOPUPS`, counted under `lockMerchantTopUps`; the invoice is reserved before an automatic method's page is opened and
     voided when the gateway fails); a staff-issued invoice records `issued_by` and its issuer cannot approve its payment unless an Owner;
+    what one staff member who is not an Owner credits by approving top-ups that merchants or customers made through a manual method
+    within 24 hours (net of fees; `isTransferTopUp`, summed by `staffReceiptApprovalsSince` under the staff member's adjustment lock)
+    is capped by `wallet.receipt_approval_limit` (default $10,000; `409 APPROVAL_REQUIRED` above it);
     card top-ups ask for 3-D Secure under `require3ds` (`asks3ds`, also used by shop card payments); an amount an automatic method
     cannot charge exactly (a card page takes two decimals at most) is `422` on `amount` (`not_chargeable`, `checkChargeableAmount`)
     before an invoice or a customer top-up is reserved or a page is asked for, while a manual method keeps the amount as typed.

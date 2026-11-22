@@ -67,17 +67,20 @@ export function approvalLimitOf(value: unknown): Money {
 }
 
 /**
- * Writes a dollar amount for a refusal: `$10,000` for whole dollars, `$10,000.50` otherwise.
+ * Writes a dollar amount for a refusal: `$10,000` for whole dollars, `$10,000.50` for whole cents, and every place that is not zero
+ * otherwise (`$10,000.0001`).
  *
- * Why: the adjustment and credit-limit refusals name the limit the way the console shows it (ANSWERS merchants Q4).
+ * Why: the adjustment and credit-limit refusals name the limit the way the console shows it (ANSWERS merchants Q4); a total just above
+ * the limit must not read as the limit itself.
  *
  * @param amount the amount
  * @returns the text with a dollar sign and thousands separators
  */
 export function dollarsText(amount: Money): string {
-  const [whole = '0', cents = '00'] = amount.toWire().split('.');
+  const [whole = '0', places = '0000'] = amount.toWire().split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return /^0+$/.test(cents) ? `$${grouped}` : `$${grouped}.${cents.slice(0, 2)}`;
+  if (/^0+$/.test(places)) return `$${grouped}`;
+  return `$${grouped}.${places.replace(/0+$/, '').padEnd(2, '0')}`;
 }
 
 /** How far back a staff member's credits count towards the approval limit: 24 hours (decision 049). */
@@ -137,6 +140,48 @@ export function adjustmentRefusalDetail(facts: Omit<AdjustmentFacts, 'owner'>): 
  */
 export function creditLimitNeedsOwner(next: Money, current: Money, approvalLimit: Money): boolean {
   return next.cmp(approvalLimit) > 0 && next.cmp(current) > 0;
+}
+
+/**
+ * The part by which a new credit limit exceeds the limit it replaces: what a raise adds to the staff member's 24-hour sum.
+ *
+ * Why: decision 049: a credit limit is money the merchant can spend, so the raised part counts with the staff member's credit
+ * adjustments; a lowering, or a limit sent unchanged, counts nothing (and gives nothing back).
+ *
+ * @param next the new limit
+ * @param current the limit it replaces (zero for a new merchant)
+ * @returns the difference when the limit goes up, zero otherwise
+ */
+export function creditLimitRaise(next: Money, current: Money): Money {
+  return next.cmp(current) > 0 ? next.sub(current) : Money.zero();
+}
+
+/**
+ * The refusal of a credit-limit raise that takes the staff member's 24-hour sum above the approval limit (`403 FORBIDDEN`).
+ *
+ * Why: decision 049: the console shows the detail on the credit-limit dialog and on the merchant invitation; it names the limit and the
+ * total the sum of credits and raises would reach.
+ *
+ * @param approvalLimit `wallet.adjust_approval_limit`
+ * @param total the staff member's credits and raises within 24 hours, this raise included
+ * @returns the detail the console shows
+ */
+export function creditSumRefusalDetail(approvalLimit: Money, total: Money): string {
+  return `Credits and credit-limit raises over ${dollarsText(approvalLimit)} in 24 hours need an owner: yours would come to ${dollarsText(total)}.`;
+}
+
+/**
+ * The refusal of a receipt approval that takes the staff member's 24-hour total above the limit (`409 APPROVAL_REQUIRED`).
+ *
+ * Why: decision 049: what one staff member credits by approving transfer receipts within 24 hours is capped like their adjustments; the
+ * console shows the detail, so it names the limit and the total it would reach.
+ *
+ * @param limit `wallet.receipt_approval_limit`
+ * @param total what the staff member's approvals of transfer top-ups credited within 24 hours, this one included
+ * @returns the detail the console shows
+ */
+export function receiptApprovalRefusalDetail(limit: Money, total: Money): string {
+  return `Approved transfer top-ups over ${dollarsText(limit)} in 24 hours need an owner: yours would come to ${dollarsText(total)}.`;
 }
 
 /**

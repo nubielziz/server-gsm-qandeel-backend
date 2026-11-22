@@ -6,10 +6,17 @@ import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
-import { type StaffPrincipal, customerContactOf, requireOwner } from '../../identity';
-import { AuditService } from '../../platform';
-import { SELF_APPROVAL_DETAIL, isIssuedBy, paymentRef } from '../domain/invoice-rules';
+import { type StaffPrincipal, customerContactOf, isOwner, requireOwner } from '../../identity';
+import { AuditService, RECEIPT_APPROVAL_LIMIT_KEY, SettingsReader } from '../../platform';
+import { SELF_APPROVAL_DETAIL, isIssuedBy, isTransferTopUp, paymentRef } from '../domain/invoice-rules';
 import { reviewRefusal } from '../domain/payment-rules';
+import {
+  ADJUST_WINDOW_MS,
+  adjustmentNeedsOwner,
+  approvalLimitOf,
+  receiptApprovalRefusalDetail,
+} from '../domain/wallet-rules';
+import { lockStaffAdjustments, staffReceiptApprovalsSince } from '../infra/adjustment.repository';
 import { findWalletCustomer, loadBillingMerchants } from '../infra/foreign-directory.repository';
 import { findGateway } from '../infra/gateway.repository';
 import { findInvoice, updateInvoice } from '../infra/invoice.repository';
@@ -37,7 +44,8 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No top-up payment ha
  * review (user rule 6) waits here too. Both decisions lock the payment row first and re-check it under the lock (RESOLUTIONS
  * money-3), so a staff decision racing the automatic credit or another staff member changes nothing: the loser gets
  * `409 PAYMENT_ALREADY_REVIEWED`. An order (storefront) payment is not served here (money-2). The payment of a manual invoice is not
- * approved by the staff member who issued it, unless they are an Owner (decision 049).
+ * approved by the staff member who issued it, unless they are an Owner, and what one staff member credits by approving transfer
+ * top-ups within 24 hours is capped by `wallet.receipt_approval_limit` unless they are an Owner (decision 049).
  *
  * Side effects: `approve` posts the deposit and writes payment, invoice, outbox and audit rows (see {@link PaymentCrediting});
  * `reject` updates the payment, voids a top-up invoice and writes an audit row.
@@ -52,6 +60,7 @@ export class PaymentReviewService {
     private readonly crediting: PaymentCrediting,
     private readonly audit: AuditService,
     private readonly walletMails: CustomerWalletMails,
+    private readonly settings: SettingsReader,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -93,15 +102,30 @@ export class PaymentReviewService {
    * @returns the payment after the decision, with the wallet balance that already includes the credit
    * @throws {AppError} `NOT_FOUND`; `PAYMENT_ALREADY_REVIEWED` when it is not pending; `PAYMENT_AUTO_CREDIT_PENDING` when its
    *   gateway is automatic and it was not sent to review; `CONFLICT` when its invoice is no longer open; `FORBIDDEN` (403: the caller
-   *   issued the manual invoice and is not an Owner, decision 049)
+   *   issued the manual invoice and is not an Owner, decision 049); `APPROVAL_REQUIRED` (409: a transfer top-up that takes what the
+   *   caller's approvals of transfer top-ups credited within 24 hours above `wallet.receipt_approval_limit`, and the caller is not an
+   *   Owner, decision 049)
    */
   async approve(caller: StaffPrincipal, id: number): Promise<WirePayment> {
+    const limit = approvalLimitOf(await this.settings.get(RECEIPT_APPROVAL_LIMIT_KEY));
+    const owner = isOwner(caller);
     await this.db.runInTransaction(async (work) => {
+      // Lock order: this staff member's adjustment lock first (decision 049), then the payment, its invoice and the ledger accounts.
+      if (!owner) await lockStaffAdjustments(work.tx, caller.staffId);
       const { payment, gateway } = await this.lockForReview(work.tx, id);
       // A plain read: PaymentCrediting locks the invoice next, so the lock order payment, invoice, ledger is unchanged.
       const invoice = payment.invoiceId === null ? undefined : await findInvoice(work.tx, payment.invoiceId);
       // Decision 049: who issued a manual invoice does not also approve its payment; an Owner may.
       if (invoice && isIssuedBy(invoice, caller.staffId)) requireOwner(caller, SELF_APPROVAL_DETAIL);
+      const net = Money.of(payment.amount).sub(Money.of(payment.feeAmount));
+      if (!owner && invoice && isTransferTopUp(invoice, gateway) && net.isPositive()) {
+        // Decision 049: what this staff member's approvals of transfer top-ups credited within 24 hours, read under the lock above.
+        const since = new Date(this.clock.nowMs() - ADJUST_WINDOW_MS);
+        const approved = await staffReceiptApprovalsSince(work.tx, caller.staffId, since);
+        if (adjustmentNeedsOwner({ direction: 'credit', amount: net, creditedInWindow: approved, limit, owner })) {
+          throw new AppError('APPROVAL_REQUIRED', { detail: receiptApprovalRefusalDetail(limit, approved.add(net)) });
+        }
+      }
       await this.crediting.credit(work, payment, gateway, { kind: 'staff', staffId: caller.staffId });
     });
     return this.get(id, customerContactOf(caller));

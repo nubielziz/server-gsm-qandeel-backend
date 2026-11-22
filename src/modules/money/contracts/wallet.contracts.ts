@@ -94,7 +94,8 @@ export const adjustClientWallet = defineRoute({
   summary: 'Add to or deduct from a merchant wallet',
   description:
     'Posts the map money event `adjust` (credit: Dr adjustments / Cr client_wallet; debit: the mirror) with the reason in the ' +
-    "memo, and audits it. A staff member's credits to merchant wallets within 24 hours, this one included, above the approval " +
+    "memo, and audits it. A staff member's credits to merchant wallets within 24 hours, this one included and counted with the " +
+    'parts by which they raised credit limits, above the approval ' +
     'limit (setting `wallet.adjust_approval_limit`, default $10,000), or a single debit above it, are refused with ' +
     '`409 APPROVAL_REQUIRED`; an Owner is not limited and a retry of an accepted adjustment is answered as before (decision 049). ' +
     'A debit below the credit limit is refused with `CREDIT_LIMIT_EXCEEDED`. The optional ' +
@@ -131,7 +132,9 @@ export const setClientCreditLimit = defineRoute({
     'Sets the overdraft limit of the merchant wallet; `0.0000` removes the credit. A limit above zero needs a merchant group ' +
     'that allows credit (`422` on `creditLimit` otherwise). Lowering the limit below the credit in use is allowed: new orders ' +
     'are refused until a top-up. Raising the limit above the approval limit of adjustments (`wallet.adjust_approval_limit`, ' +
-    'default $10,000) needs an Owner (`403 FORBIDDEN`, decision 049); lowering it never does. No ledger entry; audited.',
+    "default $10,000) needs an Owner (`403 FORBIDDEN`, decision 049), and so does a raise that takes the staff member's credits " +
+    'to merchant wallets and credit-limit raises within 24 hours above it (the raised part counts); lowering it never does. A group ' +
+    'move of the same merchant and this change are judged one after the other. No ledger entry; audited.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

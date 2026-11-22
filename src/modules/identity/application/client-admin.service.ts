@@ -37,7 +37,7 @@ import {
   updateClientRow,
   usernameTaken,
 } from '../infra/client-admin.repository';
-import { requireOwner, requirePermission } from '../security/principal';
+import { isOwner, requireOwner, requirePermission } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { SessionService } from '../security/session.service';
@@ -87,7 +87,8 @@ const MAX_CREATE_ATTEMPTS = 4;
  * Second permissions (decision 046, checked here, not by the route's guard): a credit limit above zero at invitation needs
  * `wallet:credit_limit`; a group other than the default one at invitation, and a group move, need `groups:update`; suspending,
  * declining and reactivating need `clients:security`; changing the email address needs `clients:security` too (decision 047). A credit
- * limit above the approval limit of adjustments at invitation needs an Owner (decision 049).
+ * limit above the approval limit of adjustments at invitation needs an Owner, and so does one that takes the inviting staff member's
+ * 24-hour sum of credits and credit-limit raises above it (decision 049).
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/clients` sections)
  */
@@ -147,21 +148,22 @@ export class ClientAdminService {
    *   `creditLimit` for a negative limit or a group without credit), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a `creditLimit` above
    *   zero needs `wallet:credit_limit`; a `groupId` other than the default group needs `groups:update`, checked after the group is
    *   found and before any write, decision 046; a `creditLimit` above the approval limit of adjustments needs an Owner, before any
-   *   write, decision 049)
+   *   write, and so does one that takes the caller's 24-hour sum of credits and credit-limit raises above it, decision 049)
    */
   async create(caller: StaffPrincipal, input: CreateClientInput): Promise<ClientView> {
     // Decision 046: credit at invitation is a credit-limit decision, as on the credit-limit route. Decision 049: above the approval limit
     // of adjustments it is an Owner's decision. Both before anything is written.
+    let ceiling: Money | undefined;
     if (input.creditLimit !== undefined && Money.of(input.creditLimit).isPositive()) {
       requirePermission(caller, 'wallet:credit_limit');
-      const ceiling = approvalLimitOf(await this.settings.get(ADJUST_APPROVAL_LIMIT_KEY));
+      ceiling = approvalLimitOf(await this.settings.get(ADJUST_APPROVAL_LIMIT_KEY));
       if (creditLimitNeedsOwner(Money.of(input.creditLimit), Money.zero(), ceiling)) {
         requireOwner(caller, creditLimitOwnerDetail(ceiling));
       }
     }
     for (let attempt = 1; ; attempt++) {
       try {
-        return await this.createOnce(caller, input);
+        return await this.createOnce(caller, input, ceiling);
       } catch (error) {
         // Two merchants invited at the same moment may draw the same username or code: draw again.
         if (!(error instanceof GeneratedValueTaken) || attempt >= MAX_CREATE_ATTEMPTS) throw error;
@@ -206,9 +208,15 @@ export class ClientAdminService {
     });
   }
 
-  private async createOnce(caller: StaffPrincipal, input: CreateClientInput): Promise<ClientView> {
+  private async createOnce(
+    caller: StaffPrincipal,
+    input: CreateClientInput,
+    ceiling: Money | undefined,
+  ): Promise<ClientView> {
     const name = input.name.replace(/\s+/g, ' ').trim();
     return this.db.runInTransaction(async (work) => {
+      // Decision 049: a credit limit given here counts in the caller's 24-hour sum, judged under their lock, which comes before any row lock.
+      if (ceiling) await this.accounts.lockStaffCredit(work.tx, caller.staffId);
       const group =
         input.groupId === undefined
           ? await this.groups.findDefault(work.tx)
@@ -256,6 +264,10 @@ export class ClientAdminService {
         currency: 'USD',
         creditLimit: input.creditLimit ?? '0.0000',
         overdraftAllowed: group.overdraftAllowed,
+        grant:
+          ceiling === undefined
+            ? undefined
+            : { staffId: caller.staffId, owner: isOwner(caller), approvalLimit: ceiling, at: this.clock.now() },
       });
       const invite = await this.invites.issue(work, { clientId: client.id, createdBy: caller.staffId, ip: caller.ip });
       // The invitation mail is a real mail job: MerchantMailOutbox owns the route and the payload (ids only); the worker mails the link.

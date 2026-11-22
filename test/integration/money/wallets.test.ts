@@ -323,7 +323,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({
       code: 'APPROVAL_REQUIRED',
-      detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.00.',
+      detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.0001.',
     });
     expect((await send(staff, 'POST', url, adjustBody({ amount: '10000.0000' }))).statusCode).toBe(200);
   });
@@ -353,7 +353,7 @@ describe('POST /admin/clients/:id/wallet/adjust', () => {
       expect(third.statusCode).toBe(409);
       expect(third.json()).toMatchObject({
         code: 'APPROVAL_REQUIRED',
-        detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.00.',
+        detail: 'Credits over $10,000 in 24 hours need an owner: yours would come to $10,000.0001.',
       });
       // Debits are not summed and do not lower the sum.
       expect((await debit(a, z.id, '9000.0000')).statusCode).toBe(200);
