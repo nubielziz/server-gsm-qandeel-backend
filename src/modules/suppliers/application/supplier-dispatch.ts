@@ -16,7 +16,7 @@ import { dispatchTarget, routingLinks } from '../infra/supplier-catalogue.reposi
 import { findSupplier } from '../infra/supplier.repository';
 import { SupplierClient, SupplierThrottle } from './supplier-client';
 import type { PlaceOrderInput } from './supplier-driver';
-import { writeCallLog } from './supplier-sync';
+import { writeCallLogSafely } from './supplier-sync';
 
 /** What one run of the dispatch job did. */
 export type DispatchOutcome =
@@ -67,8 +67,9 @@ export class SupplierBusyError extends Error {
  * reference stored once); an explicit refusal or a timeout moves it to `needs_attention` with the reason, the hold kept and nothing
  * re-sent. The answer applies only to its own claim (`sent_at` unchanged): an answer that finds the order moved on is not applied, and
  * a supplier's acceptance is recorded on its own (the reference where the order has none, a `review` line, a waiting order to
- * `needs_attention`, an error report). A log row that cannot be written is logged and reported and never stops the answer from being
- * recorded; when the answer's own transaction fails for another reason and the supplier accepted, the acceptance is kept the same way (the
+ * `needs_attention`, an error report). The call's log row is written by `writeCallLogSafely`, so a log failure never keeps the answer from
+ * being recorded (decision 051; a record that cannot be stored in full is reported, and a row that cannot be written at all is also
+ * logged); when the answer's own transaction fails for another reason and the supplier accepted, the acceptance is kept the same way (the
  * reference, a `review` line saying the answer could not be recorded; the order keeps its claim and the sweep moves it later) and the
  * original error then ends the job, so no retry sends again. No eligible link, or a supplier too busy on the last attempt, stops a waiting order in
  * `needs_attention`; a cache Redis error in the call limits counts as busy (the queue retries, the last attempt stops the order). A
@@ -153,13 +154,11 @@ export class SupplierDispatch {
       const claimedAt = claimed.sentAt ?? at;
 
       const call = await this.client.placeOrder(supplier, input);
-      // The call is made and cannot be undone: a log row that cannot be written never stands in the way of recording the answer.
-      try {
-        await writeCallLog(this.db.db, supplier.id, order.id, call.record, this.clock.now());
-      } catch (error) {
-        this.logger.error(`Order ${order.id}: the call to ${supplier.name} could not be logged.`);
-        this.reporter.capture(error, REPORT_CONTEXT);
-      }
+      // The call is made and cannot be undone: a log row that cannot be written never stands in the way of recording the answer
+      // (the safe writer falls back to a minimal row and logs when even that cannot be written; a record not stored in full is reported).
+      await writeCallLogSafely(this.db.db, supplier.id, order.id, call.record, this.clock.now(), (error) =>
+        this.reporter.capture(error, REPORT_CONTEXT),
+      );
       try {
         return await this.db.runInTransaction(async ({ tx }) => {
           if (call.ok) {

@@ -1,10 +1,10 @@
 // SupplierSync: the logic of the supplier-sync jobs (stage 6): the price sync (services and balance of one supplier), the balance check
 // and the one-call log writer every supplier call uses. The worker's processors and the staff's `POST /admin/suppliers/:id/sync` (which
 // waits for the job) both run `run`; a sync is one transaction and safe to repeat (resolution orders-suppliers-6, user rule 9).
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
-import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { DbService, type DbExecutor, type TransactionContext, pgErrorInfo } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService } from '../../platform';
 import type { Supplier } from '../db/schema';
@@ -70,7 +70,14 @@ const needsAlignment = (row: AlignmentCandidate): boolean => adoptable(row) || t
 
 /** How a sync ended. A failure is a value, not an exception, so the API can answer with the right code. */
 export type SyncOutcome =
-  | { readonly ok: true; readonly result: SyncResult }
+  | {
+      readonly ok: true;
+      readonly result: SyncResult;
+      /** Service entries left out of this sync: no id, no name, or no price from 0 to 1000000000 (decision 051). */
+      readonly skipped: number;
+      /** True when the supplier reported a balance outside -1000000000 to 1000000000, so the stored balance was kept (decision 051). */
+      readonly balanceSkipped: boolean;
+    }
   | {
       readonly ok: false;
       readonly code: 'NOT_FOUND' | 'SUPPLIER_DISABLED' | 'SUPPLIER_UNAVAILABLE';
@@ -111,6 +118,65 @@ export function writeCallLog(
   });
 }
 
+/** The error text of a call log row stored without its bodies (decision 051). */
+export const CALL_RECORD_NOT_STORED = 'The record of this call could not be stored in full.';
+
+const callLogger = new Logger('SupplierCallLog');
+
+/**
+ * Writes one supplier call to the log without ever failing the caller.
+ *
+ * Why: decision 051: the call is made and cannot be undone, so a log row that the database refuses (text it cannot hold, for example) must
+ * never keep the answer from being recorded on its order. The record is written; when that fails a minimal row is written (the action,
+ * status, time and outcome, no bodies, a fixed error text); when that fails too, one error line names the SQLSTATE and the function goes
+ * on. For the pool only, never inside a transaction (a failed statement poisons it).
+ *
+ * @param db the pool (`this.db.db`)
+ * @param supplierId the supplier
+ * @param orderId the order the call belongs to, or `null` for a test or a sync
+ * @param record what the driver left behind
+ * @param at the clock's time
+ * @param onNotStored called once with the error of the full record when it could not be written, whether or not the minimal row then
+ *   was (the dispatch hands it to the error reporter, as it did before decision 051); a hook that throws is ignored
+ * @returns the log row's id, or `null` when no row could be written
+ */
+export async function writeCallLogSafely(
+  db: DbExecutor,
+  supplierId: number,
+  orderId: number | null,
+  record: CallRecord,
+  at: Date,
+  onNotStored?: (error: unknown) => void,
+): Promise<number | null> {
+  try {
+    return await writeCallLog(db, supplierId, orderId, record, at);
+  } catch (error) {
+    // Retried below with a minimal row. Nothing of the error is logged here (its text may hold the values that were refused); the caller
+    // may hand it to its error reporter.
+    try {
+      onNotStored?.(error);
+    } catch {
+      // A failing hook must not stop the order path either.
+    }
+  }
+  try {
+    return await writeCallLog(
+      db,
+      supplierId,
+      orderId,
+      { ...record, request: { action: record.action }, response: null, error: CALL_RECORD_NOT_STORED },
+      at,
+    );
+  } catch (error) {
+    callLogger.error(
+      `The call log row of supplier ${supplierId}${orderId === null ? '' : ` for order ${orderId}`} could not be written (SQLSTATE ${
+        pgErrorInfo(error)?.code ?? 'unknown'
+      }).`,
+    );
+    return null;
+  }
+}
+
 /**
  * Syncs suppliers.
  *
@@ -129,9 +195,15 @@ export function writeCallLog(
  * adoption; `required` of a repaired field), `outbox_events` (`catalog.services_changed` per adoption) and `audit_logs` (when asked, and
  * one row per adoption and one per service whose fields were made required);
  * the catalog price version after the commit.
+ *
+ * Decision 051: a service whose price is not a number from 0 to 1000000000 is left out of the list (so the sync marks the stored row
+ * unavailable), and a balance outside -1000000000 to 1000000000 is not saved (the stored balance stays); each is counted in one warning of
+ * the log, and neither stops the sync. The two calls' log rows go through `writeCallLogSafely`.
  */
 @Injectable()
 export class SupplierSync {
+  private readonly logger = new Logger(SupplierSync.name);
+
   constructor(
     private readonly db: DbService,
     private readonly client: SupplierClient,
@@ -155,54 +227,82 @@ export class SupplierSync {
       return { ok: false, code: 'SUPPLIER_DISABLED', detail: `${supplier.name} is disabled: enable it to sync.` };
     }
     const list = await this.client.serviceList(supplier);
-    await writeCallLog(this.db.db, supplier.id, null, list.record, this.clock.now());
+    await writeCallLogSafely(this.db.db, supplier.id, null, list.record, this.clock.now());
     if (!list.ok) return this.unavailable(supplier, list.message);
     const account = await this.client.accountInfo(supplier);
-    await writeCallLog(this.db.db, supplier.id, null, account.record, this.clock.now());
+    await writeCallLogSafely(this.db.db, supplier.id, null, account.record, this.clock.now());
     if (!account.ok) return this.unavailable(supplier, account.message);
 
+    const { services, skipped } = list.value;
+    const balance = account.value.credit;
+    if (skipped > 0) {
+      this.logger.warn(
+        `Supplier ${supplier.id}: ${skipped} service ${skipped === 1 ? 'entry was' : 'entries were'} left out of the sync (no id, no name, or no price from 0 to 1000000000).`,
+      );
+    }
+    if (balance === null) {
+      this.logger.warn(
+        `Supplier ${supplier.id} reported a balance outside -1000000000 to 1000000000; the stored balance is kept.`,
+      );
+    }
+
     const now = this.clock.now();
-    const counts = await this.db.runInTransaction(async (work) => {
+    const done = await this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const locked = await lockSupplier(tx, supplier.id);
       if (!locked) throw new Error('The supplier disappeared during its sync.');
       const stored = await storedSupplierServices(tx, supplier.id);
-      const found = syncCounts(stored, list.value);
-      await upsertSupplierServices(tx, supplier.id, list.value, now);
+      const found = syncCounts(stored, services);
+      await upsertSupplierServices(tx, supplier.id, services, now);
       const moved = await recomputeEffectiveCost(tx, await serviceIdsLinkedToSupplier(tx, supplier.id));
       if (moved.length > 0) this.priceVersion.bumpAfterCommit(work);
       const adopted = await this.alignServices(work, supplier.id);
-      await updateSupplier(tx, supplier.id, {
-        balance: account.value.credit,
-        balanceCheckedAt: now,
-        pricesSyncedAt: now,
-      });
+      await updateSupplier(
+        tx,
+        supplier.id,
+        balance === null ? { pricesSyncedAt: now } : { balance, balanceCheckedAt: now, pricesSyncedAt: now },
+      );
       if (options.audit) {
         await this.audit.record(tx, {
           action: 'synced services from',
           entityType: 'supplier',
           entityId: supplier.id,
           entityLabel: supplier.name,
-          after: { ...found, adopted, balance: account.value.credit },
+          after: { ...found, adopted, balance: balance ?? locked.balance, skipped, balanceSkipped: balance === null },
         });
       }
-      return { ...found, adopted };
+      return { counts: { ...found, adopted }, balance: locked.balance, balanceCheckedAt: locked.balanceCheckedAt };
     });
-    return { ok: true, result: { ...counts, balance: account.value.credit, balanceCheckedAt: now.toISOString() } };
+    return {
+      ok: true,
+      result: {
+        ...done.counts,
+        balance: balance ?? done.balance,
+        balanceCheckedAt: (balance === null ? (done.balanceCheckedAt ?? now) : now).toISOString(),
+      },
+      skipped,
+      balanceSkipped: balance === null,
+    };
   }
 
   /**
    * Asks a supplier for our balance and saves it (the 30-minute check).
    *
    * @param supplierId the supplier
-   * @returns true when the balance was refreshed
+   * @returns true when the balance was refreshed (false when the call failed or the supplier reported a balance outside the range)
    */
   async checkBalance(supplierId: number): Promise<boolean> {
     const supplier = await findSupplier(this.db.db, supplierId);
     if (!supplier || supplier.status === 'disabled') return false;
     const account = await this.client.accountInfo(supplier);
-    await writeCallLog(this.db.db, supplier.id, null, account.record, this.clock.now());
+    await writeCallLogSafely(this.db.db, supplier.id, null, account.record, this.clock.now());
     if (!account.ok) return false;
+    if (account.value.credit === null) {
+      this.logger.warn(
+        `Supplier ${supplier.id} reported a balance outside -1000000000 to 1000000000; the stored balance is kept.`,
+      );
+      return false;
+    }
     await updateSupplier(this.db.db, supplier.id, {
       balance: account.value.credit,
       balanceCheckedAt: this.clock.now(),

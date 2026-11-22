@@ -48,22 +48,3 @@ export function duplicateOptionValues(options: ReadonlyArray<{ list: string; val
   });
   return problems;
 }
-
-/**
- * Tells whether a text compiles as a JavaScript regular expression.
- *
- * Why: a custom field's `regex` validates what a merchant types in the order form; one that cannot compile would fail on
- * every order, so the save refuses it. An empty text means "no pattern".
- *
- * @param pattern the pattern text
- * @returns true when it is empty or compiles
- */
-export function isValidPattern(pattern: string): boolean {
-  if (pattern === '') return true;
-  try {
-    new RegExp(pattern, 'u');
-    return true;
-  } catch {
-    return false;
-  }
-}

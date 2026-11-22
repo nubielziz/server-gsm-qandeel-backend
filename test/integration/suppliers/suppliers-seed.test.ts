@@ -56,7 +56,7 @@ describe.skipIf(!frontendPresent)('the suppliers seed', () => {
       driver: 'dhru',
       paramFormat: 'dhru_xml',
       baseUrl: 'https://api.nordicgsm.example',
-      apiKeyHint: 'sk_57',
+      apiKeyHint: '••••',
     });
     expect(rows.find((row) => row.name === 'Rapid IMEI')).toMatchObject({ driver: 'rest', paramFormat: 'json' });
     const encryption = t.app.get(EncryptionService, { strict: false });
@@ -127,7 +127,7 @@ describe.skipIf(!frontendPresent)('the suppliers seed', () => {
     expect(list.total).toBe(6);
     const gulf = list.body.find((row: { name: string }) => row.name === 'Gulf Server Hub');
     // 38.40 left, alert 150: low.
-    expect(gulf).toMatchObject({ lowBalance: true, balance: '38.4000', apiKeyHint: 'sk_91' });
+    expect(gulf).toMatchObject({ lowBalance: true, balance: '38.4000', apiKeyHint: '••••' });
     for (const row of list.body) {
       expect(['up', 'degraded', 'down']).toContain(row.health);
       expect(row.creditRate).toMatch(/^\d+\.\d{8}$/);

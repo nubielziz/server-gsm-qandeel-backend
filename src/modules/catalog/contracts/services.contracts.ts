@@ -91,7 +91,7 @@ const FieldRow = z.object({
   fieldType: z.enum(SERVICE_FIELD_TYPES),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
-  regex: z.string().describe('`""` when there is no pattern.'),
+  regex: z.string().describe('`""` when there is no pattern. A pattern is in the supported form of decision 051.'),
   supplierKey: z.string().describe('The field name the supplier expects; `""` when none.'),
 });
 
@@ -348,8 +348,9 @@ export const replaceServiceFields = defineRoute({
   summary: 'Replace the custom fields of a service',
   description:
     'The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A key that is empty or ' +
-    'repeated, an empty label, an unknown field type or a pattern that does not compile is `422` on `fields.N.<name>`. An ' +
-    'unknown or archived service is `404`.',
+    'repeated, an empty label, an unknown field type or a pattern outside the supported form (decision 051: literals, classes, the escapes ' +
+    '`\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work ' +
+    'of a 500-character value) is `422` on `fields.N.<name>`. An unknown or archived service is `404`.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',

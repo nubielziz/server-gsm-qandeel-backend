@@ -218,7 +218,7 @@ export const previewBulkReply = defineRoute({
   summary: 'Match pasted lines to orders',
   description:
     `Reads the pasted text (at most ${MAX_BULK_ITEMS} lines): each non-blank line is an input followed by a code, separated by ` +
-    'whitespace, a comma or a semicolon. The input is matched to `orders.imei` with whitespace removed (a blank input never ' +
+    'whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never ' +
     'matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` ' +
     '(several open orders) or `matched` (with the order id). Changes nothing, so it writes no audit row.',
   tags: ['orders'],

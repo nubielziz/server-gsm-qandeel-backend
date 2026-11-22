@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { type SupplierCallParamsOf, defineSupplierCall } from '../../../common/contract';
 import { amountText } from '../domain/amount-text';
+import { SUPPLIER_REFERENCE_MAX, supplierLine } from '../domain/supplier-text';
 
 /**
  * A text or a number; any other value counts as absent.
@@ -28,7 +29,7 @@ const Status = z.union([z.string(), z.number()]).refine((value) => {
 /** The block `accountinfo` answers with. */
 const AccountDetails = z.looseObject({
   credit: Credit.describe(
-    'Our prepaid balance at the supplier, in its own currency. Read as a number: `"$1,200.50"` is accepted.',
+    'Our prepaid balance at the supplier, in its own currency. Read as a number: `"$1,200.50"` is accepted. Outside -1000000000 to 1000000000 it is not saved.',
   ),
   currency: Loose.describe('The currency of the balance, for example `USD`. Optional.'),
   mail: Loose.describe('The e-mail of our account at the supplier. Optional.'),
@@ -45,7 +46,8 @@ export const accountInfoCall = defineSupplierCall({
   description:
     'Asks the supplier how much prepaid credit we have. The standard spells the answer key `AccoutInfo` (sic); `AccountInfo` is accepted too ' +
     '(when both come, a well-formed `AccoutInfo` wins and a malformed one gives way to `AccountInfo`). ' +
-    'A missing block or a credit that is not a number is an unusable answer: the call is logged as failed. Extra fields are ignored.',
+    'A missing block or a credit that is not a number is an unusable answer: the call is logged as failed. Extra fields are ignored. ' +
+    'An answer larger than 256 KiB is not read. A balance outside -1000000000 to 1000000000 is read but not saved (decision 051).',
   success: z
     .looseObject({
       message: Loose.describe('`Your Accout Info`. Not read.'),
@@ -74,7 +76,9 @@ const ServiceEntry = z.looseObject({
   SERVICEID: Loose.describe("The supplier's service id; the key of the entry in `SERVICES` when it is missing."),
   SERVICETYPE: Loose.describe('`IMEI`, `SERVER` or `REMOTE`; used when the group has no `GROUPTYPE`.'),
   SERVICENAME: Loose.describe('The name (kept to 300 characters). A service without a name is left out.'),
-  CREDIT: Loose.describe('The price in supplier credits. A service without a readable price is left out.'),
+  CREDIT: Loose.describe(
+    'The price in supplier credits. A service without a readable price, or with a price outside 0 to 1000000000, is left out.',
+  ),
   TIME: Loose.describe('The delivery time as text, for example `1-2 hours`.'),
   QNT: Loose.describe(
     '`1` when the service takes a quantity, `0` when it does not. Kept in the synced entry; the import reads it (B213).',
@@ -124,7 +128,9 @@ export const serviceListCall = defineSupplierCall({
   description:
     'Asks for the whole catalogue: `LIST` is an object of groups, each with a `SERVICES` object of services. The client keeps each service once ' +
     '(the first one wins when an id repeats) and leaves out a service without an id, a name or a readable price; a field of the wrong type counts ' +
-    'as missing, and every `Requires.*` flag is kept. The log keeps the count of services, not the list.',
+    'as missing, and every `Requires.*` flag is kept. The log keeps the count of services, not the list. ' +
+    'The answer is read up to 16 MiB. Texts are kept without control characters: ids to 200 characters; names, groups, types and times to 300. ' +
+    'A service whose price is not a number from 0 to 1000000000 is left out like one without a price, and counted (decision 051).',
   success: z.looseObject({
     MESSAGE: Loose.describe('`IMEI Service List`. Not read.'),
     LIST: z
@@ -193,19 +199,20 @@ export const placeOrderCall = defineSupplierCall({
   key: 'SUPPLIER placeimeiorder+placeimeiorderbulk',
   summary: 'Send an order to the supplier',
   description:
-    'Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a ' +
+    'Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters, without control characters) as the supplier reference. An answer without a ' +
     'REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters ' +
     'keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never ' +
     'stops another order and every order has its own log row. The parameters are sent in the form the supplier reads (`param_format`, ' +
     'decision 042): the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` (`dhru_xml`, the default ' +
-    'of a Dhru supplier) or base64 of a JSON object (`json`).',
+    'of a Dhru supplier) or base64 of a JSON object (`json`). ' +
+    'An answer larger than 256 KiB is not read; the order then goes to attention like any unusable answer (decision 051).',
   sendsBulk: false,
   params: PlaceOrderParams,
   success: z.looseObject({
     MESSAGE: Loose.describe('`Order received`. Not read.'),
     REFERENCEID: z
       .union([z.string(), z.number()])
-      .refine((value) => String(value).trim() !== '', 'Must not be blank')
+      .refine((value) => supplierLine(value, SUPPLIER_REFERENCE_MAX) !== '', 'Must hold a reference')
       .describe("The supplier's reference of the order."),
   }),
   examples: {
@@ -235,7 +242,8 @@ export const getOrderCall = defineSupplierCall({
     '`STATUS` 4 is completed and 3 rejected; `CODE` is the result of a completed order or the reason of a rejected one. 0 and 1 mean the order is ' +
     'still running (2 is accepted as running too; the standard does not use it) and the CODE is ignored. A missing or unknown STATUS is an ' +
     'unusable answer: the order stays as it is and is asked again. The bulk variant `getimeiorderbulk` is described by the Dhru standard but ' +
-    'this backend never sends it: each poll job asks about one order.',
+    'this backend never sends it: each poll job asks about one order. ' +
+    '`CODE` is kept without control characters, to 20000 characters; an answer larger than 256 KiB is not read (decision 051).',
   sendsBulk: false,
   params: GetOrderParams,
   success: z.looseObject({

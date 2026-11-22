@@ -3,9 +3,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { APP_CONFIG, type AppConfig } from '../../../config';
+import { OutboundHttp } from '../../../infra/http';
 
 /** The longest a Prometheus call may take: the console polls these routes, so a slow Prometheus must not hang a page. */
 export const PROMETHEUS_TIMEOUT_MS = 2_000;
+
+/** The most bytes of a Prometheus answer that are read (decision 051): 4 MiB. */
+export const PROMETHEUS_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
 /** One series of an instant query. */
 export interface PromVector {
@@ -32,14 +36,21 @@ interface PromResponse {
  * and the worker and keeps the history; the System health routes read it with PromQL. The URL may carry basic-auth credentials
  * (`http://user:pass@host:9090`): they are sent as an `Authorization` header, because `fetch` refuses credentials in a URL.
  *
- * Side effects: outbound HTTP to the configured Prometheus only (an internal address from configuration, never user input).
+ * Decision 051: the calls go through `OutboundHttp`, so no redirect is followed and the answer is bounded to 4 MiB; any failure, a 3xx
+ * included, is `MONITORING_UNAVAILABLE`.
+ *
+ * Side effects: outbound HTTP to the configured Prometheus only (an internal address from configuration, never user input), counted
+ * under the target `prometheus`.
  */
 @Injectable()
 export class PrometheusClient {
   private readonly base: URL | undefined;
   private readonly authorization: string | undefined;
 
-  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) config: AppConfig,
+    private readonly http: OutboundHttp,
+  ) {
     const raw = config.observability.prometheusUrl;
     if (raw === undefined) return;
     const url = new URL(raw);
@@ -107,12 +118,18 @@ export class PrometheusClient {
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     let body: PromResponse;
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(PROMETHEUS_TIMEOUT_MS),
+      const result = await this.http.request({
+        url,
+        timeoutMs: PROMETHEUS_TIMEOUT_MS,
         headers: this.authorization ? { authorization: this.authorization } : {},
+        // Prometheus is our own service at an address from configuration: a private address is expected.
+        allowPrivateNetwork: true,
+        maxResponseBytes: PROMETHEUS_MAX_RESPONSE_BYTES,
+        target: 'prometheus',
+        operation: 'prometheus.query',
       });
-      if (!response.ok) throw new Error(`Prometheus answered ${response.status}`);
-      body = (await response.json()) as PromResponse;
+      if (!result.ok) throw new Error(`Prometheus answered ${result.status}`);
+      body = result.json<PromResponse>();
     } catch (cause) {
       throw new AppError('MONITORING_UNAVAILABLE', { detail: 'Prometheus does not answer.', cause });
     }

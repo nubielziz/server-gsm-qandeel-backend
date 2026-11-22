@@ -1,6 +1,6 @@
-// Unit tests of the replace-all list checks: repeated field keys, repeated option values and the pattern check.
+// Unit tests of the replace-all list checks: repeated field keys and repeated option values (the pattern check lives in field-pattern.spec.ts).
 import { describe, expect, it } from 'bun:test';
-import { duplicateFieldKeys, duplicateOptionValues, isValidPattern } from '@src/modules/catalog/domain/service-parts';
+import { duplicateFieldKeys, duplicateOptionValues } from '@src/modules/catalog/domain/service-parts';
 
 describe('duplicateFieldKeys', () => {
   it('names the later occurrence of a repeated key', () => {
@@ -24,13 +24,5 @@ describe('duplicateOptionValues', () => {
       { list: 'model', value: 'iphone15' },
     ]);
     expect(problems).toEqual([{ field: 'options.2.value', message: 'Duplicate in the model list' }]);
-  });
-});
-
-describe('isValidPattern', () => {
-  it('accepts an empty text and a compiling pattern, refuses a broken one', () => {
-    expect(isValidPattern('')).toBe(true);
-    expect(isValidPattern('^[0-9]{15}$')).toBe(true);
-    expect(isValidPattern('([0-9')).toBe(false);
   });
 });

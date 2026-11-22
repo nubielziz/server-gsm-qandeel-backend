@@ -82,11 +82,18 @@ describe('inputProblems', () => {
     expect(inputProblems([field({})], { username: 'x'.repeat(501) }).map((p) => p.code)).toEqual(['too_long']);
   });
 
-  it('refuses a key the service does not define, and treats a broken pattern as a mismatch instead of failing', () => {
+  it('refuses a key the service does not define, and does not run a pattern outside the supported form', () => {
     expect(inputProblems([field({})], { username: 'a', extra: 'b' }).map((p) => [p.field, p.code])).toEqual([
       ['inputs.extra', 'unknown_field'],
     ]);
-    expect(inputProblems([field({ regex: '(' })], { username: 'a' }).map((p) => p.code)).toEqual(['invalid_format']);
+    expect(inputProblems([field({ regex: '(' })], { username: 'a' })).toEqual([]);
+  });
+
+  it('answers at once for a nested repeat and a long hard value: the field has no pattern', () => {
+    const started = performance.now();
+    const problems = inputProblems([field({ regex: '^(a+)+$' })], { username: `${'a'.repeat(30)}!` });
+    expect(problems).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(50);
   });
 });
 

@@ -1,6 +1,7 @@
 // Unit tests of the Dhru client protocol: the request body, the endpoint, each answer's reading and the redaction of stored bodies.
 import { describe, expect, it } from 'bun:test';
 import {
+  BALANCE_OUT_OF_RANGE_MESSAGE,
   amountText,
   dhruEndpoint,
   dhruParametersXml,
@@ -203,7 +204,9 @@ describe('readServiceList', () => {
   };
 
   it('normalises the services of every group and drops the ones without an id, a name or a price', () => {
-    const services = readServiceList(payload);
+    const { services, skipped } = readServiceList(payload);
+    // An empty name and a missing price are left out and counted; the repeated id is not counted.
+    expect(skipped).toBe(2);
     expect(services.map((service) => service.remoteId)).toEqual(['4411', '10']);
     expect(services[0]).toMatchObject({
       group: 'Server tools',
@@ -218,12 +221,12 @@ describe('readServiceList', () => {
   });
 
   it('answers an empty list for a payload without LIST', () => {
-    expect(readServiceList({})).toEqual([]);
+    expect(readServiceList({})).toEqual({ services: [], skipped: 0 });
   });
 
   it('archives the entry as the supplier sent it, a field of an unexpected type included', () => {
     const sent = { SERVICEID: '7', SERVICENAME: 'Odd time', CREDIT: '3', TIME: ['not', 'text'], EXTRA: { a: 1 } };
-    const [service] = readServiceList({ LIST: { G: { GROUPNAME: 'G', SERVICES: { '7': sent } } } });
+    const [service] = readServiceList({ LIST: { G: { GROUPNAME: 'G', SERVICES: { '7': sent } } } }).services;
     expect(service?.raw).toEqual(sent);
     expect(service?.time).toBe('');
   });
@@ -233,6 +236,22 @@ describe('readPlacedOrder and readOrderStatus', () => {
   it('reads the REFERENCEID as text', () => {
     expect(readPlacedOrder({ REFERENCEID: 88121 })).toBe('88121');
     expect(readPlacedOrder({ REFERENCEID: ' ' })).toBeUndefined();
+  });
+
+  it('drops a reference that holds nothing but control characters', () => {
+    expect(readPlacedOrder({ REFERENCEID: '\u0000\u0001' })).toBeUndefined();
+    expect(readPlacedOrder({ REFERENCEID: 'R\u0000-7' })).toBe('R-7');
+  });
+
+  it('keeps a CODE to 20,000 characters with its line breaks, and an ERROR message to 500', () => {
+    const code = readOrderStatus({ STATUS: 4, CODE: `line one\r\nline two\u2028${'z'.repeat(25_000)}` });
+    expect(code?.state).toBe('completed');
+    expect(code?.code?.startsWith('line one\nline two\nzzz')).toBe(true);
+    // The cap counts the raw text (20,000 code units); the CRLF inside it then becomes one line feed.
+    expect(code?.code).toHaveLength(19_999);
+    expect(readOrderStatus({ STATUS: 4, CODE: 'z'.repeat(25_000) })?.code).toHaveLength(20_000);
+    const refused = parseDhruAnswer({ ERROR: [{ MESSAGE: `${'x'.repeat(600)}\n` }] });
+    expect(refused).toEqual({ kind: 'error', message: 'x'.repeat(500) });
   });
 
   it('maps STATUS 4 to completed, 3 to rejected, 0, 1 and 2 to running and keeps the CODE', () => {
@@ -245,6 +264,61 @@ describe('readPlacedOrder and readOrderStatus', () => {
       expect(readOrderStatus({ STATUS: status })).toEqual({ state: 'running', code: null });
     expect(readOrderStatus({ STATUS: 9 })).toBeUndefined();
     expect(readOrderStatus({})).toBeUndefined();
+  });
+});
+
+describe('amounts out of range (decision 051)', () => {
+  it('leaves out and counts a service whose price is out of range, and reads a balance out of range as not saved', () => {
+    const service = (id: string, credit: unknown) => ({ SERVICEID: id, SERVICENAME: `Service ${id}`, CREDIT: credit });
+    const { services, skipped } = readServiceList({
+      LIST: {
+        G: {
+          GROUPNAME: 'G',
+          SERVICES: {
+            a: service('a', '-5'),
+            b: service('b', 1e20),
+            c: service('c', '1000000000.0001'),
+            d: service('d', '1e3'),
+            e: service('e', '0'),
+            f: service('f', '1000000000'),
+          },
+        },
+      },
+    });
+    expect(skipped).toBe(4);
+    expect(services.map((entry) => [entry.remoteId, entry.credit])).toEqual([
+      ['e', '0.0000'],
+      ['f', '1000000000.0000'],
+    ]);
+    expect(readAccountInfo({ AccoutInfo: { credit: '100000000000000000000' } })).toEqual({
+      ok: true,
+      value: { credit: null, currency: null, mail: null },
+    });
+    expect(readAccountInfo({ AccoutInfo: { credit: '-1000000000' } })).toMatchObject({
+      value: { credit: '-1000000000.0000' },
+    });
+    expect(readAccountInfo({ AccoutInfo: { credit: 'abc' } }).ok).toBe(false);
+    expect(BALANCE_OUT_OF_RANGE_MESSAGE).toContain('1000000000');
+  });
+
+  it('bounds each text a service list keeps', () => {
+    const long = 'n'.repeat(400);
+    const { services } = readServiceList({
+      LIST: {
+        G: {
+          GROUPNAME: `${long}\u0000`,
+          GROUPTYPE: `\ttype\n${long}`,
+          SERVICES: { k: { SERVICEID: 's'.repeat(300), SERVICENAME: long, CREDIT: '1', TIME: `${long}\u0000` } },
+        },
+      },
+    });
+    const [service] = services;
+    expect(service?.remoteId).toHaveLength(200);
+    expect(service?.name).toHaveLength(300);
+    expect(service?.group).toHaveLength(300);
+    expect(service?.type).toHaveLength(300);
+    expect(service?.time).toHaveLength(300);
+    expect(service?.type.startsWith('type n')).toBe(true);
   });
 });
 
@@ -264,5 +338,18 @@ describe('redactBody', () => {
 
   it('replaces a body that is too large by a note', () => {
     expect(redactBody({ data: 'x'.repeat(30_000) })).toMatchObject({ truncated: true });
+  });
+
+  it('keeps the last four whole characters of a device number that ends in characters outside the basic plane', () => {
+    // Four UTF-16 units from the end would start inside the first of the two characters U+1F600 / U+10348.
+    const redacted = redactBody({
+      parameters: { IMEI: '3569\u{1F600}1\u{1F600}' },
+      SUCCESS: [{ SN: 'ab\u{10348}c\u{10348}' }],
+    });
+    expect(redacted).toEqual({
+      parameters: { IMEI: '••••••••9\u{1F600}1\u{1F600}' },
+      SUCCESS: [{ SN: '••••••••b\u{10348}c\u{10348}' }],
+    });
+    expect(JSON.stringify(redacted).isWellFormed()).toBe(true);
   });
 });

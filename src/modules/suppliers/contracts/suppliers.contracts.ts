@@ -21,7 +21,12 @@ const SupplierRow = z.object({
   currency: z.string(),
   creditRate: zDecimal.describe('Base-currency value of one supplier credit, as stored: 8 decimals (`1.00000000`).'),
   status: Status,
-  apiKeyHint: z.string().nullable().describe('The first 5 characters of the saved key; the key itself is never sent.'),
+  apiKeyHint: z
+    .string()
+    .nullable()
+    .describe(
+      'A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.',
+    ),
   balance: zMoney.describe('Our prepaid balance at the supplier, in its own currency.'),
   balanceCheckedAt: zIsoDateTime.nullable(),
   lowBalanceAlert: zMoney,
@@ -79,7 +84,7 @@ const SUPPLIER_EXAMPLE = {
   currency: 'USD',
   creditRate: '1.00000000',
   status: 'active',
-  apiKeyHint: 'gsh_l',
+  apiKeyHint: '••••78',
   balance: '1240.5000',
   balanceCheckedAt: '2026-11-07T08:30:00.000Z',
   lowBalanceAlert: '150.0000',
@@ -200,7 +205,8 @@ export const createSupplier = defineRoute({
   key: 'POST /admin/suppliers',
   summary: 'Add a supplier',
   description:
-    'Saves a supplier. The key is stored encrypted (AES-GCM with a key id) and `apiKeyHint` is its first 5 characters. Left out: ' +
+    "Saves a supplier. The key is stored encrypted (AES-GCM with a key id) and `apiKeyHint` is a masked form (`••••`, and the key's last 2 characters " +
+    'when it has 16 or more). Left out: ' +
     '`lowBalanceAlert` 150, `maxConcurrency` 5, `rateLimitPerMin` 60, `timeoutMs` 15000. `driver` is `dhru` or `rest` (`rest` cannot ' +
     'be called yet); the parameter format follows from it. A name already used (ignoring case) is `422` on `name`.',
   tags: ['suppliers'],
@@ -227,7 +233,7 @@ export const createSupplier = defineRoute({
       driver: 'dhru',
       baseUrl: 'https://gulfserverhub.example',
       username: 'gsm-supply',
-      apiKey: 'gsh_live_123456',
+      apiKey: 'gsh_live_12345678',
       currency: 'USD',
     },
     response: {
@@ -247,7 +253,9 @@ export const updateSupplier = defineRoute({
   summary: 'Change a supplier',
   description:
     'Only the keys sent change. `apiKey` replaces the key (and its hint); an omitted key keeps both. `status` switches the supplier: ' +
-    '`paused` and `disabled` stop new orders (routing skips it and goes to the next link) and leave the open orders as they are.',
+    '`paused` and `disabled` stop new orders (routing skips it and goes to the next link) and leave the open orders as they are. ' +
+    'A change of `baseUrl` to another origin (scheme, host or port), of `username` or of `driver` needs `apiKey` in the same request: a saved ' +
+    'key is only sent where it was saved for (`422` on `apiKey`, decision 051). A new path on the same origin does not.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -298,7 +306,7 @@ export const testSupplier = defineRoute({
   description:
     'Calls `accountinfo` (logged with no order) and, when it works, saves the balance and its time. A failure on the supplier side ' +
     '(refused key, timeout, an error answer) is still `200` with `ok: false` and a readable `message`; problems are only for our ' +
-    'side (`404`, `403`).',
+    'side (`404`, `403`). A balance the supplier reports outside -1000000000 to 1000000000 answers `ok: false` and is not saved (decision 051).',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -341,7 +349,10 @@ export const syncSupplier = defineRoute({
     'only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial ' +
     'number) becomes a server service with that box as its first field. On every service whose only active link points at this ' +
     'supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `"required": "on"`) that were imported ' +
-    'as optional; it never makes a field optional. `adopted` counts the services brought in line, each once.',
+    'as optional; it never makes a field optional. `adopted` counts the services brought in line, each once. A service whose price cannot be ' +
+    'read or is outside 0 to 1000000000 is left out (unavailable until the supplier lists it with a usable price); a balance outside ' +
+    "-1000000000 to 1000000000 is not saved: the sync goes on and answers the stored balance and its time (the sync's time when none was ever " +
+    'stored). Both are counted in a warning of the log (decision 051).',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',

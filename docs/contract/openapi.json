@@ -95578,7 +95578,7 @@
     },
     "/admin/orders/bulk-reply/preview": {
       "post": {
-        "description": "Reads the pasted text (at most 500 lines): each non-blank line is an input followed by a code, separated by whitespace, a comma or a semicolon. The input is matched to `orders.imei` with whitespace removed (a blank input never matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` (several open orders) or `matched` (with the order id). Changes nothing, so it writes no audit row.",
+        "description": "Reads the pasted text (at most 500 lines): each non-blank line is an input followed by a code, separated by whitespace, a comma or a semicolon (a line ends at a line feed, a carriage return, CRLF, U+2028 or U+2029). The input is matched to `orders.imei` with whitespace removed (a blank input never matches). Status per line: `invalid` (no input or no code), `not_found`, `not_open` (only closed orders carry it), `ambiguous` (several open orders) or `matched` (with the order id). Changes nothing, so it writes no audit row.",
         "operationId": "postAdminOrdersBulkReplyPreview",
         "parameters": [],
         "requestBody": {
@@ -161912,7 +161912,7 @@
                           },
                           "regex": {
                             "type": "string",
-                            "description": "`\"\"` when there is no pattern."
+                            "description": "`\"\"` when there is no pattern. A pattern is in the supported form of decision 051."
                           },
                           "supplierKey": {
                             "type": "string",
@@ -163648,7 +163648,7 @@
     },
     "/admin/services/{id}/fields": {
       "put": {
-        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A key that is empty or repeated, an empty label, an unknown field type or a pattern that does not compile is `422` on `fields.N.<name>`. An unknown or archived service is `404`.",
+        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A key that is empty or repeated, an empty label, an unknown field type or a pattern outside the supported form (decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`. An unknown or archived service is `404`.",
         "operationId": "putAdminServicesByIdFields",
         "parameters": [
           {
@@ -163790,7 +163790,7 @@
                       },
                       "regex": {
                         "type": "string",
-                        "description": "`\"\"` when there is no pattern."
+                        "description": "`\"\"` when there is no pattern. A pattern is in the supported form of decision 051."
                       },
                       "supplierKey": {
                         "type": "string",
@@ -167464,7 +167464,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only keys of the settings registry are accepted (today `imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10). Any other key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change.",
+        "description": "Only keys of the settings registry (`settings/settings-registry.ts`) are accepted, each with its validator (for example `imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10). Any other key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies), is `422` with `errors[].field` set to the key. Answers the whole settings object after the change. A key reserved to Owners (today `suppliers.allowPlainHttp`, decision 051) is `403 FORBIDDEN` for any other caller; the route itself keeps `settings:update`.",
         "operationId": "patchAdminSettings",
         "parameters": [],
         "requestBody": {
@@ -175197,7 +175197,7 @@
                         ]
                       },
                       "apiKeyHint": {
-                        "description": "The first 5 characters of the saved key; the key itself is never sent.",
+                        "description": "A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.",
                         "type": [
                           "string",
                           "null"
@@ -175371,7 +175371,7 @@
                     "currency": "USD",
                     "creditRate": "1.00000000",
                     "status": "active",
-                    "apiKeyHint": "gsh_l",
+                    "apiKeyHint": "••••78",
                     "balance": "1240.5000",
                     "balanceCheckedAt": "2026-11-07T08:30:00.000Z",
                     "lowBalanceAlert": "150.0000",
@@ -175697,7 +175697,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Saves a supplier. The key is stored encrypted (AES-GCM with a key id) and `apiKeyHint` is its first 5 characters. Left out: `lowBalanceAlert` 150, `maxConcurrency` 5, `rateLimitPerMin` 60, `timeoutMs` 15000. `driver` is `dhru` or `rest` (`rest` cannot be called yet); the parameter format follows from it. A name already used (ignoring case) is `422` on `name`.",
+        "description": "Saves a supplier. The key is stored encrypted (AES-GCM with a key id) and `apiKeyHint` is a masked form (`••••`, and the key's last 2 characters when it has 16 or more). Left out: `lowBalanceAlert` 150, `maxConcurrency` 5, `rateLimitPerMin` 60, `timeoutMs` 15000. `driver` is `dhru` or `rest` (`rest` cannot be called yet); the parameter format follows from it. A name already used (ignoring case) is `422` on `name`.",
         "operationId": "postAdminSuppliers",
         "parameters": [],
         "requestBody": {
@@ -175773,7 +175773,7 @@
                     "driver": "dhru",
                     "baseUrl": "https://gulfserverhub.example",
                     "username": "gsm-supply",
-                    "apiKey": "gsh_live_123456",
+                    "apiKey": "gsh_live_12345678",
                     "currency": "USD"
                   }
                 }
@@ -175834,7 +175834,7 @@
                       ]
                     },
                     "apiKeyHint": {
-                      "description": "The first 5 characters of the saved key; the key itself is never sent.",
+                      "description": "A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.",
                       "type": [
                         "string",
                         "null"
@@ -176168,7 +176168,7 @@
                   "currency": "USD",
                   "creditRate": "1.00000000",
                   "status": "active",
-                  "apiKeyHint": "gsh_l",
+                  "apiKeyHint": "••••78",
                   "balance": "0.0000",
                   "balanceCheckedAt": null,
                   "lowBalanceAlert": "150.0000",
@@ -176572,7 +176572,7 @@
                       ]
                     },
                     "apiKeyHint": {
-                      "description": "The first 5 characters of the saved key; the key itself is never sent.",
+                      "description": "A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.",
                       "type": [
                         "string",
                         "null"
@@ -176906,7 +176906,7 @@
                   "currency": "USD",
                   "creditRate": "1.00000000",
                   "status": "active",
-                  "apiKeyHint": "gsh_l",
+                  "apiKeyHint": "••••78",
                   "balance": "1240.5000",
                   "balanceCheckedAt": "2026-11-07T08:30:00.000Z",
                   "lowBalanceAlert": "150.0000",
@@ -177253,7 +177253,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. `apiKey` replaces the key (and its hint); an omitted key keeps both. `status` switches the supplier: `paused` and `disabled` stop new orders (routing skips it and goes to the next link) and leave the open orders as they are.",
+        "description": "Only the keys sent change. `apiKey` replaces the key (and its hint); an omitted key keeps both. `status` switches the supplier: `paused` and `disabled` stop new orders (routing skips it and goes to the next link) and leave the open orders as they are. A change of `baseUrl` to another origin (scheme, host or port), of `username` or of `driver` needs `apiKey` in the same request: a saved key is only sent where it was saved for (`422` on `apiKey`, decision 051). A new path on the same origin does not.",
         "operationId": "patchAdminSuppliersById",
         "parameters": [
           {
@@ -177398,7 +177398,7 @@
                       ]
                     },
                     "apiKeyHint": {
-                      "description": "The first 5 characters of the saved key; the key itself is never sent.",
+                      "description": "A masked form of the saved key: •••• and, for a key of 16 or more characters, its last 2 characters (decision 051). The key itself is never sent.",
                       "type": [
                         "string",
                         "null"
@@ -177732,7 +177732,7 @@
                   "currency": "USD",
                   "creditRate": "1.00000000",
                   "status": "paused",
-                  "apiKeyHint": "gsh_l",
+                  "apiKeyHint": "••••78",
                   "balance": "1240.5000",
                   "balanceCheckedAt": "2026-11-07T08:30:00.000Z",
                   "lowBalanceAlert": "150.0000",
@@ -182601,7 +182601,7 @@
     },
     "/admin/suppliers/{id}/sync": {
       "post": {
-        "description": "Runs the supplier-sync job (the worker calls `imeiservicelist` and `accountinfo`) and answers its counts. The API waits up to `timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` (a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial number) becomes a server service with that box as its first field. On every service whose only active link points at this supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `\"required\": \"on\"`) that were imported as optional; it never makes a field optional. `adopted` counts the services brought in line, each once.",
+        "description": "Runs the supplier-sync job (the worker calls `imeiservicelist` and `accountinfo`) and answers its counts. The API waits up to `timeoutMs` + 5 s: a supplier failure is `409 SUPPLIER_UNAVAILABLE`; a wait that runs out while the job goes on is `504 SUPPLIER_TIMEOUT`. A paused supplier may sync; a disabled one is `409 SUPPLIER_DISABLED`. The sync updates `supplier_services` (a changed credit sets `price_changed_at`; a service no longer listed becomes unavailable), recomputes the effective cost of every linked service and moves the catalog price version. It also adopts the supplier's main box (decision 042): an IMEI service whose only active link points at a service of this supplier whose main box asks for something other than an IMEI (an ECID, a serial number) becomes a server service with that box as its first field. On every service whose only active link points at this supplier it also makes required the fields the supplier requires (a Dhru Fusion site writes `\"required\": \"on\"`) that were imported as optional; it never makes a field optional. `adopted` counts the services brought in line, each once. A service whose price cannot be read or is outside 0 to 1000000000 is left out (unavailable until the supplier lists it with a usable price); a balance outside -1000000000 to 1000000000 is not saved: the sync goes on and answers the stored balance and its time (the sync's time when none was ever stored). Both are counted in a warning of the log (decision 051).",
         "operationId": "postAdminSuppliersByIdSync",
         "parameters": [
           {
@@ -183197,7 +183197,7 @@
     },
     "/admin/suppliers/{id}/test": {
       "post": {
-        "description": "Calls `accountinfo` (logged with no order) and, when it works, saves the balance and its time. A failure on the supplier side (refused key, timeout, an error answer) is still `200` with `ok: false` and a readable `message`; problems are only for our side (`404`, `403`).",
+        "description": "Calls `accountinfo` (logged with no order) and, when it works, saves the balance and its time. A failure on the supplier side (refused key, timeout, an error answer) is still `200` with `ok: false` and a readable `message`; problems are only for our side (`404`, `403`). A balance the supplier reports outside -1000000000 to 1000000000 answers `ok: false` and is not saved (decision 051).",
         "operationId": "postAdminSuppliersByIdTest",
         "parameters": [
           {
@@ -284291,7 +284291,7 @@
       "key": "SUPPLIER accountinfo",
       "action": "accountinfo",
       "summary": "Our balance at the supplier",
-      "description": "Asks the supplier how much prepaid credit we have. The standard spells the answer key `AccoutInfo` (sic); `AccountInfo` is accepted too (when both come, a well-formed `AccoutInfo` wins and a malformed one gives way to `AccountInfo`). A missing block or a credit that is not a number is an unusable answer: the call is logged as failed. Extra fields are ignored.",
+      "description": "Asks the supplier how much prepaid credit we have. The standard spells the answer key `AccoutInfo` (sic); `AccountInfo` is accepted too (when both come, a well-formed `AccoutInfo` wins and a malformed one gives way to `AccountInfo`). A missing block or a credit that is not a number is an unusable answer: the call is logged as failed. Extra fields are ignored. An answer larger than 256 KiB is not read. A balance outside -1000000000 to 1000000000 is read but not saved (decision 051).",
       "transport": {
         "method": "POST",
         "path": "<supplier>/api/index.php",
@@ -284315,7 +284315,7 @@
             "type": "object",
             "properties": {
               "credit": {
-                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted.",
+                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted. Outside -1000000000 to 1000000000 it is not saved.",
                 "type": [
                   "string",
                   "number"
@@ -284346,7 +284346,7 @@
             "type": "object",
             "properties": {
               "credit": {
-                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted.",
+                "description": "Our prepaid balance at the supplier, in its own currency. Read as a number: `\"$1,200.50\"` is accepted. Outside -1000000000 to 1000000000 it is not saved.",
                 "type": [
                   "string",
                   "number"
@@ -284414,7 +284414,7 @@
       "key": "SUPPLIER imeiservicelist",
       "action": "imeiservicelist",
       "summary": "The supplier's services and their cost",
-      "description": "Asks for the whole catalogue: `LIST` is an object of groups, each with a `SERVICES` object of services. The client keeps each service once (the first one wins when an id repeats) and leaves out a service without an id, a name or a readable price; a field of the wrong type counts as missing, and every `Requires.*` flag is kept. The log keeps the count of services, not the list.",
+      "description": "Asks for the whole catalogue: `LIST` is an object of groups, each with a `SERVICES` object of services. The client keeps each service once (the first one wins when an id repeats) and leaves out a service without an id, a name or a readable price; a field of the wrong type counts as missing, and every `Requires.*` flag is kept. The log keeps the count of services, not the list. The answer is read up to 16 MiB. Texts are kept without control characters: ids to 200 characters; names, groups, types and times to 300. A service whose price is not a number from 0 to 1000000000 is left out like one without a price, and counted (decision 051).",
       "transport": {
         "method": "POST",
         "path": "<supplier>/api/index.php",
@@ -284487,7 +284487,7 @@
                         ]
                       },
                       "CREDIT": {
-                        "description": "The price in supplier credits. A service without a readable price is left out.",
+                        "description": "The price in supplier credits. A service without a readable price, or with a price outside 0 to 1000000000, is left out.",
                         "type": [
                           "string",
                           "number"
@@ -284601,7 +284601,7 @@
       "key": "SUPPLIER placeimeiorder+placeimeiorderbulk",
       "action": "placeimeiorder",
       "summary": "Send an order to the supplier",
-      "description": "Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters) as the supplier reference. An answer without a REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never stops another order and every order has its own log row. The parameters are sent in the form the supplier reads (`param_format`, decision 042): the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` (`dhru_xml`, the default of a Dhru supplier) or base64 of a JSON object (`json`).",
+      "description": "Places one order and keeps the `REFERENCEID` of the answer (kept to 200 characters, without control characters) as the supplier reference. An answer without a REFERENCEID is unusable: the order goes to attention, it is never sent again by itself. The bulk variant `placeimeiorderbulk` (parameters keyed by a request id) is described by the Dhru standard but this backend never sends it: each order is its own job, so a refusal never stops another order and every order has its own log row. The parameters are sent in the form the supplier reads (`param_format`, decision 042): the classic XML string `<PARAMETERS><ID>..</ID><IMEI>..</IMEI><QNT>..</QNT></PARAMETERS>` (`dhru_xml`, the default of a Dhru supplier) or base64 of a JSON object (`json`). An answer larger than 256 KiB is not read; the order then goes to attention like any unusable answer (decision 051).",
       "transport": {
         "method": "POST",
         "path": "<supplier>/api/index.php",
@@ -284712,7 +284712,7 @@
       "key": "SUPPLIER getimeiorder+getimeiorderbulk",
       "action": "getimeiorder",
       "summary": "Ask the supplier for the status of an order",
-      "description": "`STATUS` 4 is completed and 3 rejected; `CODE` is the result of a completed order or the reason of a rejected one. 0 and 1 mean the order is still running (2 is accepted as running too; the standard does not use it) and the CODE is ignored. A missing or unknown STATUS is an unusable answer: the order stays as it is and is asked again. The bulk variant `getimeiorderbulk` is described by the Dhru standard but this backend never sends it: each poll job asks about one order.",
+      "description": "`STATUS` 4 is completed and 3 rejected; `CODE` is the result of a completed order or the reason of a rejected one. 0 and 1 mean the order is still running (2 is accepted as running too; the standard does not use it) and the CODE is ignored. A missing or unknown STATUS is an unusable answer: the order stays as it is and is asked again. The bulk variant `getimeiorderbulk` is described by the Dhru standard but this backend never sends it: each poll job asks about one order. `CODE` is kept without control characters, to 20000 characters; an answer larger than 256 KiB is not read (decision 051).",
       "transport": {
         "method": "POST",
         "path": "<supplier>/api/index.php",

@@ -8,6 +8,7 @@ import { EncryptionService } from '../../../infra/crypto';
 import { OrderSupplierMoves } from '../../orders';
 import { AuditService } from '../../platform';
 import { type Supplier, type SupplierDriver, type SupplierParamFormat, type SupplierStatus } from '../db/schema';
+import { apiKeyHintOf, keyBindingChanged } from '../domain/supplier-key';
 import {
   insertSupplier,
   lockSupplier,
@@ -36,8 +37,13 @@ export interface CreateSupplierInput {
 /** The fields `PATCH /admin/suppliers/:id` may change. */
 export type UpdateSupplierInput = Partial<CreateSupplierInput> & { readonly status?: SupplierStatus | undefined };
 
-/** How many characters of the key the console is shown. */
-const KEY_HINT_LENGTH = 5;
+/**
+ * The message of the 422 on `apiKey` when a change would send the saved key somewhere else.
+ *
+ * Why: decision 051: a saved key is only sent to the origin, username and API type it was saved with; moving it needs the key again.
+ */
+export const KEY_AGAIN_MESSAGE =
+  'Enter the API key again: a saved key is only sent to the address, username and API type it was saved with.';
 
 const PARAM_FORMATS: Readonly<Record<SupplierDriver, SupplierParamFormat>> = { dhru: 'dhru_xml', rest: 'json' };
 
@@ -80,8 +86,10 @@ function changeVerb(before: Supplier, after: Supplier, keys: readonly string[]):
  * Manages supplier connections.
  *
  * Why: orders-suppliers-9: server defaults for what the console leaves out, `driver` is `dhru` or `rest` (422 on the field), the
- * parameter format is derived from it; orders-suppliers-4: the key is AES-GCM text with a key id and `api_key_hint` is its first 5
- * characters, written together, never decrypted on read; orders-suppliers-8: delete is refused with `SUPPLIER_IN_USE` while an
+ * parameter format is derived from it; orders-suppliers-4: the key is AES-GCM text with a key id and `api_key_hint` is a masked form of it,
+ * written together, never decrypted on read (decision 051: `••••`, and the key's last 2 characters when it has 16 or more; never its
+ * first characters); decision 051: a saved key is only sent to the origin, username and driver it was saved with, so a change of any of
+ * them needs the key again in the same request; orders-suppliers-8: delete is refused with `SUPPLIER_IN_USE` while an
  * order, a service link, an order call log row or an IMEI check refers to the supplier, and otherwise removes the logs of its
  * tests and syncs with it.
  *
@@ -116,7 +124,7 @@ export class SupplierAdminService {
           baseUrl: cleanUrl(input.baseUrl),
           username: input.username,
           apiKeyEnc: this.encryption.encrypt(input.apiKey, SUPPLIER_KEY_AAD),
-          apiKeyHint: input.apiKey.slice(0, KEY_HINT_LENGTH),
+          apiKeyHint: apiKeyHintOf(input.apiKey),
           paramFormat: PARAM_FORMATS[driver],
           currency: input.currency,
           ...(input.lowBalanceAlert === undefined ? {} : { lowBalanceAlert: input.lowBalanceAlert }),
@@ -145,13 +153,23 @@ export class SupplierAdminService {
    * @param id the supplier id
    * @param changes the keys to change
    * @returns the updated supplier's detail
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`)
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `name` for a name already used, on `driver`, and on `apiKey` when
+   *   `baseUrl` moves to another origin, or `username` or `driver` changes, without a new key while one is saved)
    */
   async update(id: number, changes: UpdateSupplierInput): Promise<SupplierDetailView> {
     const driver = changes.driver === undefined ? undefined : this.driverOf(changes.driver);
     return this.db.runInTransaction(async ({ tx }) => {
       const before = await lockSupplier(tx, id);
       if (!before) throw notFound();
+      // Decision 051: a saved key is only sent to the origin, username and driver it was saved with; moving it needs the key again.
+      const moved = keyBindingChanged(before, {
+        ...(changes.baseUrl === undefined ? {} : { baseUrl: cleanUrl(changes.baseUrl) }),
+        ...(changes.username === undefined ? {} : { username: changes.username }),
+        ...(driver === undefined ? {} : { driver }),
+      });
+      if (moved && changes.apiKey === undefined && before.apiKeyEnc !== null) {
+        throw invalid('apiKey', KEY_AGAIN_MESSAGE, 'required');
+      }
       if (changes.name !== undefined && (await supplierNameTaken(tx, changes.name, id))) throw nameTaken();
       let after: Supplier | undefined;
       try {
@@ -164,7 +182,7 @@ export class SupplierAdminService {
             ? {}
             : {
                 apiKeyEnc: this.encryption.encrypt(changes.apiKey, SUPPLIER_KEY_AAD),
-                apiKeyHint: changes.apiKey.slice(0, KEY_HINT_LENGTH),
+                apiKeyHint: apiKeyHintOf(changes.apiKey),
               }),
           ...(changes.currency === undefined ? {} : { currency: changes.currency }),
           ...(changes.lowBalanceAlert === undefined ? {} : { lowBalanceAlert: changes.lowBalanceAlert }),

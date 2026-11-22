@@ -4,7 +4,7 @@ Map domain D. One order engine for B2B merchants and B2C storefront customers: p
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41). Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -39,7 +39,8 @@ the one `POST /api/index.php` transport route.
 - **Placement** (`application/order-placement.ts`, `OrderPlacement.place`): the one shared path (portal now; Dhru, REST v1 and the
   storefront call it later). Steps in the caller's transaction: the merchant and the service it may see (`MerchantCatalog.find`:
   archived, disabled or hidden is not orderable: `NOT_FOUND`, or `SERVICE_DISABLED` for a disabled one), validation (IMEI 15 digits
-  with Luhn: `INVALID_IMEI`; custom field values against the service's fields; quantity against `min_qty`, `max_qty` and
+  with Luhn: `INVALID_IMEI`; custom field values against the service's fields, where a
+  pattern outside the supported form of decision 051 is not run (the field then has no pattern, `compileFieldPattern`); quantity against `min_qty`, `max_qty` and
   `qty_options`: `422` with the field path), the price from `PriceResolver` for this merchant, the price guard (`checkPriceChange`
   against `ListedPrices`, tolerance setting `pricing.price_change_tolerance_percent`: `409 PRICE_CHANGED` with `listedPrice` and
   `currentPrice`, or charge and record `raised` in `pricing_snapshot`), the duplicate rule (`services.duplicate_rule = block_open`:
@@ -81,7 +82,8 @@ the one `POST /api/index.php` transport route.
   `services` on `orders.service_id`. `q` searches the input, supplier reference, service, merchant and customer names, and the id
   exactly when it is all digits.
 - **Bulk reply** (`application/bulk-reply.service.ts`, `domain/bulk-reply.ts`): preview matches pasted lines (first token is the
-  input, the rest the code; whitespace-insensitive, non-empty inputs only, index `orders_imei_squashed_idx`) and refuses a paste of
+  input, the rest the code; a line ends at CRLF, CR, LF, U+2028 or U+2029, so reading a line takes time in proportion to its length,
+  decision 051; whitespace-insensitive, non-empty inputs only, index `orders_imei_squashed_idx`) and refuses a paste of
   more than 500 lines; apply runs each item as its own `reply` transaction and reports refusals in `failed`, plus one summary audit row
   for the request (so an apply where every item failed is still audited).
 - **Export** (`application/order-export.service.ts`): counts first (more than 100,000 rows: `422`), writes one `audit_logs` row

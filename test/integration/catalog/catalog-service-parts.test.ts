@@ -1,6 +1,7 @@
 // Integration tests of the replace-all lists of a service (feature 4a): PUT /admin/services/:id/fields and /options.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
+import { FIELD_PATTERN_MESSAGES } from '@src/common/field-pattern';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -145,6 +146,30 @@ describe('PUT /admin/services/:id/fields', () => {
     expect(pattern.body.errors).toEqual([expect.objectContaining({ field: 'fields.0.regex' })]);
     // Nothing was changed by the refused calls.
     expect(await (await testDb()).db.select().from(s.serviceFields)).toEqual([]);
+  });
+
+  it('refuses a pattern outside the supported form with its reason, and saves one inside it', async () => {
+    const nested = await admin.put(`/admin/services/${serviceId}/fields`, {
+      fields: [field('d', { regex: '^(a+)+$' })],
+    });
+    expect(nested.status).toBe(422);
+    expect(nested.body.errors).toEqual([
+      expect.objectContaining({ field: 'fields.0.regex', message: FIELD_PATTERN_MESSAGES.nested }),
+    ]);
+    const complex = await admin.put(`/admin/services/${serviceId}/fields`, {
+      fields: [field('ok'), field('d', { regex: '\\d+\\d+$' })],
+    });
+    expect(complex.body.errors).toEqual([
+      expect.objectContaining({ field: 'fields.1.regex', message: FIELD_PATTERN_MESSAGES.too_complex }),
+    ]);
+    // Nothing was stored by the refused calls.
+    expect(await (await testDb()).db.select().from(s.serviceFields)).toEqual([]);
+
+    const saved = await admin.put(`/admin/services/${serviceId}/fields`, {
+      fields: [field('d', { regex: '^[A-Z]{2}\\d{4}$' })],
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body[0]).toMatchObject({ key: 'd', regex: '^[A-Z]{2}\\d{4}$' });
   });
 
   it('trims keys, so a key repeated after trimming is a duplicate', async () => {

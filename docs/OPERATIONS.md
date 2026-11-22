@@ -195,6 +195,16 @@ step 3: delete the `CORS_ORIGINS` line from `.env.production` (the origins now c
 `STORE_BASE_URL`, `PORTAL_BASE_URL` and `ERRORS_BASE_URL` start with `https://`. After step 4, load the new page headers with `gsmc
 exec caddy caddy reload --config /etc/caddy/Caddyfile`, then run the two checks of section 2.5 named above.
 
+### Release 41: supplier connections and field patterns (decision 051)
+
+Additive; the usual order applies. What staff and the owner notice:
+- The hint of a supplier's API key shows `••••` after the migration; saving the key again shows its last 2 characters (for a key of 16
+  or more characters).
+- Moving a supplier to another address (scheme, host or port), account (username) or API type needs its API key in the same save.
+- After the migration the worker reviews the stored field patterns once. A pattern outside the supported form is cleared and recorded in
+  the audit log ("cleared an unsupported field pattern of <service>", with the old pattern); enter a simpler pattern where it still matters.
+- Only an Owner can change `suppliers.allowPlainHttp`.
+
 ## 4. Backups and the restore drill
 
 What is saved, every night: a full dump of the database (`pg_dump`, custom format), encrypted with `age` for the public key
@@ -447,6 +457,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] `ENCRYPTION_KEYS` and the backup private key exist offline in two places, with two people.
 - [ ] `COOKIE_SECURE=true`, `REFERENCE_DOCS=staff`, the dev seed was never run on this database.
 - [ ] `.env.production` has no `CORS_ORIGINS`, and the four base URLs are https (decision 045).
+- [ ] Every supplier address starts with https://, and suppliers.allowPlainHttp is not true (only an Owner can change it).
 - [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
 - [ ] Docker log rotation is set, and the host has disk space for the volumes (database, files, Prometheus).
 

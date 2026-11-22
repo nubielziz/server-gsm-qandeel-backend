@@ -1,10 +1,17 @@
 // The Dhru Fusion client side (decisions 026 and 042): the request an outbound supplier call sends and how each answer is read. Pure,
 // so the fake supplier of the tests and the real one are judged by the same code. Serves the supplier calls of stage 6; every answer is
 // read through the schema of its contract (`contracts/supplier-calls.contracts.ts`).
-import { Decimal } from 'decimal.js';
 import { accountInfoCall, getOrderCall, placeOrderCall, serviceListCall } from '../contracts/supplier-calls.contracts';
 import type { SupplierParamFormat } from '../db/schema';
-import { amountText } from './amount-text';
+import { SUPPLIER_BALANCE_RANGE, SUPPLIER_PRICE_RANGE, amountText, supplierAmount } from './amount-text';
+import {
+  SUPPLIER_LABEL_MAX,
+  SUPPLIER_MESSAGE_MAX,
+  SUPPLIER_REFERENCE_MAX,
+  SUPPLIER_RESULT_MAX,
+  supplierBlock,
+  supplierLine,
+} from './supplier-text';
 
 export { amountText };
 
@@ -145,6 +152,7 @@ function firstOf(value: unknown): Record<string, unknown> | undefined {
   return Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
 }
 
+/** The text of a STATUS: a string or a number, trimmed. */
 function textOf(value: unknown): string {
   return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
 }
@@ -153,7 +161,8 @@ function textOf(value: unknown): string {
  * Reads a Dhru answer body.
  *
  * Why: decision 026: `{ "SUCCESS": [ ... ] }` or `{ "ERROR": [ { "MESSAGE": "..." } ] }` (HTTP 200 either way); an `ERROR` is
- * the supplier's refusal, anything else that is not a success is an unusable answer.
+ * the supplier's refusal, anything else that is not a success is an unusable answer. Decision 051: the message is one line of at most
+ * 500 characters without control characters, because it is stored in events and call logs and shown to staff.
  *
  * @param body the parsed JSON body
  * @returns the first success entry, the error message, or why the body is unusable
@@ -163,7 +172,11 @@ export function parseDhruAnswer(body: unknown): DhruAnswer {
   if (!root) return { kind: 'invalid', message: 'The supplier answered with something that is not a Dhru answer.' };
   if (root.ERROR !== undefined) {
     const entry = firstOf(root.ERROR);
-    const message = textOf(entry?.MESSAGE) || textOf(entry?.message) || textOf(root.ERROR) || 'The supplier refused.';
+    const message =
+      supplierLine(entry?.MESSAGE, SUPPLIER_MESSAGE_MAX) ||
+      supplierLine(entry?.message, SUPPLIER_MESSAGE_MAX) ||
+      supplierLine(root.ERROR, SUPPLIER_MESSAGE_MAX) ||
+      'The supplier refused.';
     return { kind: 'error', message };
   }
   const success = firstOf(root.SUCCESS);
@@ -173,11 +186,18 @@ export function parseDhruAnswer(body: unknown): DhruAnswer {
 
 /** The supplier account as `accountinfo` reports it. */
 export interface AccountInfo {
-  /** Our prepaid balance at the supplier, 4 decimals, in the supplier's own currency. */
-  readonly credit: string;
+  /**
+   * Our prepaid balance at the supplier, 4 decimals, in the supplier's own currency; `null` when the supplier reported a balance outside
+   * -1000000000 to 1000000000 (it is not saved, decision 051).
+   */
+  readonly credit: string | null;
   readonly currency: string | null;
   readonly mail: string | null;
 }
+
+/** Why a balance outside the range is not saved: shown by the connection test (decision 051). */
+export const BALANCE_OUT_OF_RANGE_MESSAGE =
+  'The supplier reported a balance outside -1000000000 to 1000000000; it was not saved.';
 
 /** A member the object itself holds (never one it inherits, such as `__proto__`), or `undefined`. */
 function ownMember(value: unknown, key: string): unknown {
@@ -213,9 +233,10 @@ function sentEntry(
  * Reads the answer of `accountinfo`.
  *
  * Why: the schema of `SUPPLIER accountinfo` decides whether the answer is usable; an answer it refuses has no readable credit.
+ * Decision 051: a balance outside -1000000000 to 1000000000 is read (the call worked) but its `credit` is `null`, so nothing saves it.
  *
  * @param payload the success entry
- * @returns the balance and who the account is, or the reason it cannot be read
+ * @returns the balance (or `null` when out of range) and who the account is, or the reason it cannot be read
  */
 export function readAccountInfo(
   payload: Record<string, unknown>,
@@ -223,11 +244,16 @@ export function readAccountInfo(
   const entry = accountInfoCall.success.safeParse(payload);
   // The standard spells the key `AccoutInfo` (sic); a corrected spelling is accepted too.
   const info = entry.success ? (entry.data.AccoutInfo ?? entry.data.AccountInfo) : undefined;
-  const credit = amountText(info?.credit);
-  if (!info || credit === undefined) return { ok: false, message: 'The supplier answer has no readable credit.' };
+  const balance = supplierAmount(info?.credit, SUPPLIER_BALANCE_RANGE);
+  if (!info || balance.kind === 'unreadable')
+    return { ok: false, message: 'The supplier answer has no readable credit.' };
   return {
     ok: true,
-    value: { credit, currency: textOf(info.currency) || null, mail: textOf(info.mail) || null },
+    value: {
+      credit: balance.kind === 'ok' ? balance.text : null,
+      currency: supplierLine(info.currency, SUPPLIER_LABEL_MAX) || null,
+      mail: supplierLine(info.mail, SUPPLIER_LABEL_MAX) || null,
+    },
   };
 }
 
@@ -247,62 +273,86 @@ export interface RemoteService {
   readonly raw: Record<string, unknown>;
 }
 
-const MAX_NAME = 300;
+/** What {@link readServiceList} found: the services it keeps and how many entries it left out. */
+export interface ServiceListReading {
+  readonly services: RemoteService[];
+  /** Entries left out: no id, no name, no readable price or a price outside 0 to 1000000000 (a repeated id is not counted). */
+  readonly skipped: number;
+}
 
 /**
  * Reads the answer of `imeiservicelist`.
  *
  * Why: decision 026: `LIST: { <group>: { GROUPNAME, GROUPTYPE, SERVICES: { <id>: { SERVICEID, SERVICENAME, CREDIT, TIME,
- * Requires.* } } } }`. A service with no id, no name or no readable price is left out (it cannot be imported or priced).
+ * Requires.* } } } }`. A service with no id, no name or no readable price is left out (it cannot be imported or priced). Decision 051: so
+ * is one whose price is outside 0 to 1000000000, and the number left out is counted; every text it keeps is bounded (ids 200 characters,
+ * names, groups, types and times 300). The payload is expected to have gone through `cleanSupplierJson` (the driver does it).
  *
  * @param payload the success entry
- * @returns the services, each once (the first one wins when an id repeats)
+ * @returns the services, each once (the first one wins when an id repeats), and how many entries were left out
  */
-export function readServiceList(payload: Record<string, unknown>): RemoteService[] {
+export function readServiceList(payload: Record<string, unknown>): ServiceListReading {
   // The schema of `SUPPLIER imeiservicelist` is lenient on purpose: a group or service of the wrong shape arrives as `undefined` and is skipped.
   const entry = serviceListCall.success.safeParse(payload);
   const list = entry.success ? entry.data.LIST : undefined;
   const found = new Map<string, RemoteService>();
+  let skipped = 0;
   for (const [groupKey, group] of Object.entries(list ?? {})) {
     const services = group?.SERVICES;
     if (!group || !services) continue;
-    const groupName = textOf(group.GROUPNAME) || groupKey;
-    const groupType = textOf(group.GROUPTYPE);
+    const groupName = supplierLine(group.GROUPNAME, SUPPLIER_LABEL_MAX) || supplierLine(groupKey, SUPPLIER_LABEL_MAX);
+    const groupType = supplierLine(group.GROUPTYPE, SUPPLIER_LABEL_MAX);
     for (const [serviceKey, service] of Object.entries(services)) {
-      if (!service) continue;
-      const remoteId = textOf(service.SERVICEID) || serviceKey;
-      const name = textOf(service.SERVICENAME).slice(0, MAX_NAME);
-      const credit = amountText(service.CREDIT);
-      if (remoteId === '' || name === '' || credit === undefined || found.has(remoteId)) continue;
+      if (!service) {
+        skipped += 1;
+        continue;
+      }
+      const remoteId =
+        supplierLine(service.SERVICEID, SUPPLIER_REFERENCE_MAX) || supplierLine(serviceKey, SUPPLIER_REFERENCE_MAX);
+      const name = supplierLine(service.SERVICENAME, SUPPLIER_LABEL_MAX);
+      const price = supplierAmount(service.CREDIT, SUPPLIER_PRICE_RANGE);
+      if (remoteId === '' || name === '' || price.kind !== 'ok') {
+        skipped += 1;
+        continue;
+      }
+      if (found.has(remoteId)) continue;
       const requires: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(service)) {
-        if (key !== 'Requires.Custom' && key.startsWith('Requires.')) requires[key.slice('Requires.'.length)] = value;
+        if (key === 'Requires.Custom' || !key.startsWith('Requires.')) continue;
+        const flag = key.slice('Requires.'.length);
+        // A flag named `__proto__` would set the object's prototype instead of a member.
+        if (flag !== '__proto__') requires[flag] = value;
       }
       found.set(remoteId, {
         remoteId,
         group: groupName,
-        type: groupType || textOf(service.SERVICETYPE) || 'IMEI',
+        type: groupType || supplierLine(service.SERVICETYPE, SUPPLIER_LABEL_MAX) || 'IMEI',
         name,
-        credit: Decimal.max(credit, 0).toFixed(4),
-        time: textOf(service.TIME),
+        credit: price.text,
+        time: supplierLine(service.TIME, SUPPLIER_LABEL_MAX),
         requires,
         customFields: service['Requires.Custom'] ?? [],
         raw: sentEntry(payload, groupKey, serviceKey) ?? service,
       });
     }
   }
-  return [...found.values()];
+  return { services: [...found.values()], skipped };
 }
 
 /**
  * Reads the answer of `placeimeiorder`.
  *
+ * Why: decision 051: the reference is kept to 200 characters without control characters, so it can always be stored and sent back to the
+ * supplier as it was kept.
+ *
  * @param payload the success entry
- * @returns the supplier's reference of the order, or `undefined` when the answer has none
+ * @returns the supplier's reference of the order, or `undefined` when the answer has none (or only characters that are removed)
  */
 export function readPlacedOrder(payload: Record<string, unknown>): string | undefined {
   const entry = placeOrderCall.success.safeParse(payload);
-  return entry.success ? textOf(entry.data.REFERENCEID).slice(0, 200) : undefined;
+  if (!entry.success) return undefined;
+  const reference = supplierLine(entry.data.REFERENCEID, SUPPLIER_REFERENCE_MAX);
+  return reference === '' ? undefined : reference;
 }
 
 /** What a supplier says about one order. */
@@ -316,6 +366,9 @@ export interface SupplierOrderStatus {
 /**
  * Reads the answer of `getimeiorder`.
  *
+ * Why: decision 051: the CODE becomes the order's result and reaches webhooks, mails and tracking, so it is kept to 20,000 characters
+ * without control characters (line breaks stay).
+ *
  * @param payload the success entry
  * @returns the state and the CODE, or `undefined` when the STATUS is missing or unknown
  */
@@ -323,7 +376,7 @@ export function readOrderStatus(payload: Record<string, unknown>): SupplierOrder
   const entry = getOrderCall.success.safeParse(payload);
   if (!entry.success) return undefined;
   const status = Number(textOf(entry.data.STATUS));
-  const code = textOf(entry.data.CODE);
+  const code = supplierBlock(entry.data.CODE, SUPPLIER_RESULT_MAX);
   if (status === 4) return { state: 'completed', code: code === '' ? null : code };
   if (status === 3) return { state: 'rejected', code: code === '' ? null : code };
   if (status === 0 || status === 1 || status === 2) return { state: 'running', code: null };
@@ -339,7 +392,8 @@ const MAX_STORED_CHARS = 20_000;
  * Masks what must not be kept in a stored call body.
  *
  * Why: orders-suppliers-3 and decision 023: credentials are never stored (replaced by bullets) and IMEIs are redacted (only the
- * last four characters stay, so support can still match a call to an order). A body that is too large is replaced by a note.
+ * last four characters stay, so support can still match a call to an order). The four are whole characters (decision 051): a character
+ * outside the basic plane is never cut in half, so the stored text stays valid. A body that is too large is replaced by a note.
  *
  * @param value the request or response as JSON
  * @returns a copy with the secrets and IMEIs masked
@@ -361,7 +415,7 @@ function redactValue(value: unknown, depth: number): unknown {
   for (const [key, inner] of Object.entries(object)) {
     if (SECRET_KEY.test(key)) out[key] = BULLETS;
     else if (DEVICE_KEY.test(key) && typeof inner === 'string' && inner !== '')
-      out[key] = `${BULLETS}${inner.slice(-4)}`;
+      out[key] = `${BULLETS}${[...inner].slice(-4).join('')}`; // by code point: never half of a surrogate pair
     else out[key] = redactValue(inner, depth + 1);
   }
   return out;

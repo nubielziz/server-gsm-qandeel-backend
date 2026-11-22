@@ -12,6 +12,7 @@ export {
   toPageHealth,
 } from './domain/supplier-health';
 export type { CallCounts, LatestCheck, SupplierHealthWord, SupplierPageHealth } from './domain/supplier-health';
+export { KEY_HINT_MASK, apiKeyHintOf } from './domain/supplier-key';
 export { linkUnitCost, pickLink } from './domain/link-selection';
 export type { LinkChoice, RoutingLink } from './domain/link-selection';
 export { SUPPLIER_CALLS } from './contracts/supplier-calls.contracts';

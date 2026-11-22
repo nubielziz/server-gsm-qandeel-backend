@@ -242,6 +242,34 @@ describe('PATCH /admin/settings', () => {
     expect((await auditRows())[0]!.before).toEqual({ imeiRetentionDays: null });
   });
 
+  it('lets only an Owner change suppliers.allowPlainHttp; the other keys keep settings:update', async () => {
+    const limited = await adminWith(t, ['settings:*']);
+    const refused = await limited.patch('/admin/settings', { 'suppliers.allowPlainHttp': true });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'Only an owner can change suppliers.allowPlainHttp.',
+    });
+    expect(await settingRows()).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+
+    // The value is judged first: a refused value is a 422 whoever sends it.
+    expect((await limited.patch('/admin/settings', { 'suppliers.allowPlainHttp': 'yes' })).status).toBe(422);
+    // A patch that mixes an ordinary key with the reserved one changes nothing.
+    expect(
+      (await limited.patch('/admin/settings', { imeiRetentionDays: 30, 'suppliers.allowPlainHttp': true })).status,
+    ).toBe(403);
+    expect(await settingRows()).toHaveLength(0);
+    expect((await limited.patch('/admin/settings', { imeiRetentionDays: 30 })).status).toBe(200);
+
+    const owner = await adminWith(t, ['*']);
+    const done = await owner.patch('/admin/settings', { 'suppliers.allowPlainHttp': true });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ 'suppliers.allowPlainHttp': true });
+    expect((await settingRows()).find((row) => row.key === 'suppliers.allowPlainHttp')?.value).toBe(true);
+    expect((await auditRows()).filter((row) => row.action === 'changed settings')).toHaveLength(2);
+  });
+
   it('needs settings:update and a CSRF token', async () => {
     const reader = await adminWith(t, ['settings:read']);
     const refused = await reader.patch('/admin/settings', { imeiRetentionDays: 30 });

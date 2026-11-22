@@ -4,7 +4,7 @@ Map domain G. Cross-cutting services: system settings, the audit log, files, not
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 004 file storage, 017 API documentation, 020 outbox and queues. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 004 file storage, 017 API documentation, 020 outbox and queues, 032 import cycles (late reads), 051 Owner-only settings. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -196,11 +196,15 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
   `imeiRetentionDays` (a JSON integer 0 to 3650), `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28). Every key of the patch is judged first; any other key (the keys of the stricter routes
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
-  `body`. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
+  `body`. A key the registry marks `ownerOnly` (today `suppliers.allowPlainHttp`, decision 051: it lowers the protection of supplier
+  calls) is then `403 FORBIDDEN` unless the caller is an Owner (identity's `requireOwner`, the helper of decision 046); the route keeps
+  `settings:update`. The service and the controller reach identity through one late read, `infra/identity-access.ts` (decision 032's
+  "late reads"): identity imports this module, so a static import of identity from here would close a load-time cycle. A valid patch upserts the rows and writes one audit row (`action: changed settings`, `entityType: setting`, `entityLabel` the keys,
   `before` and `after` of the changed keys, secrets masked) in the same transaction. After the commit it calls `SettingsReader.invalidate()`
   and `MaintenanceService.invalidate()`. No registry key feeds the IP rule cache; a key added later that does must also clear
   `IpRuleCache` (identity module, by a seam, since this module may not import identity).
-- **Adding an editable setting:** add `{ key, validate }` to `EDITABLE_SETTINGS` with a unit test, name the cache it feeds and clear it after the commit.
+- **Adding an editable setting:** add `{ key, validate }` to `EDITABLE_SETTINGS` with a unit test, name the cache it feeds and clear it after the commit;
+  mark it `ownerOnly` when only an Owner may change it (decision 051).
 
 ## File downloads (feature 5, MISMATCHES B154)
 

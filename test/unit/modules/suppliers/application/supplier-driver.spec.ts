@@ -7,6 +7,8 @@ import {
   type DriverHttp,
   DhruDriver,
   RestDriver,
+  SUPPLIER_ANSWER_LIMITS,
+  answerTooLargeMessage,
 } from '@src/modules/suppliers/application/supplier-driver';
 
 const context: DriverContext = {
@@ -165,8 +167,64 @@ describe('DhruDriver', () => {
       ],
     };
     const call = await new DhruDriver(http(answer(list))).serviceList(context);
-    expect(call).toMatchObject({ ok: true, value: [{ remoteId: '1', name: 'One' }] });
-    expect(call.record.response).toEqual({ services: 1 });
+    expect(call).toMatchObject({ ok: true, value: { services: [{ remoteId: '1', name: 'One' }], skipped: 0 } });
+    expect(call.record.response).toEqual({ services: 1, skipped: 0 });
+  });
+
+  it('reads each answer up to its limit', async () => {
+    const calls: Array<[string, (driver: DhruDriver, stand: DriverHttp) => Promise<unknown>]> = [
+      ['accountinfo', (driver) => driver.accountInfo(context)],
+      ['imeiservicelist', (driver) => driver.serviceList(context)],
+      [
+        'placeimeiorder',
+        (driver) => driver.placeOrder(context, { remoteServiceId: '1', input: null, quantity: 1, customFields: {} }),
+      ],
+      ['getimeiorder', (driver) => driver.getOrder(context, '1')],
+    ];
+    const seen: Record<string, unknown> = {};
+    for (const [action, run] of calls) {
+      const stand = http(answer({ SUCCESS: [{}] }));
+      await run(new DhruDriver(stand), stand);
+      seen[action] = stand.sent[0]?.maxResponseBytes;
+    }
+    expect(seen).toEqual({
+      accountinfo: 262_144,
+      imeiservicelist: 16_777_216,
+      placeimeiorder: 262_144,
+      getimeiorder: 262_144,
+    });
+    expect(SUPPLIER_ANSWER_LIMITS.imeiservicelist).toBe(16 * 1024 * 1024);
+  });
+
+  it('turns an answer over the limit into an unusable answer that names the limit', async () => {
+    const stand = http(new HttpRequestError('too_large', 'The response is larger than 262144 bytes.'));
+    const call = await new DhruDriver(stand).getOrder(context, '1');
+    expect(call).toMatchObject({
+      ok: false,
+      kind: 'invalid',
+      message: "The supplier's answer is larger than 256 KiB; it was not read.",
+    });
+    expect(call.record).toMatchObject({ outcome: 'error', httpStatus: 0, response: null });
+    expect(answerTooLargeMessage(16 * 1024 * 1024)).toBe(
+      "The supplier's answer is larger than 16384 KiB; it was not read.",
+    );
+  });
+
+  it('keeps no NUL and no lone surrogate anywhere in what a call returns or records', async () => {
+    const poisoned = JSON.stringify({
+      ERROR: [{ MESSAGE: 'refused\u0000 for \ud800 reasons', extra: 'a\u0000b\ud800', ['k\u0000ey']: 1 }],
+    });
+    const refused = await new DhruDriver(http(answer(poisoned))).getOrder(context, '1');
+    const accepted = await new DhruDriver(
+      http(answer(JSON.stringify({ SUCCESS: [{ STATUS: 4, CODE: 'done\u0000\ud800', extra: 'x\u0000' }] }))),
+    ).getOrder(context, '1');
+    for (const call of [refused, accepted]) {
+      const text = JSON.stringify([call, call.record]);
+      expect(text).not.toContain('\\u0000');
+      expect(text.toLowerCase()).not.toContain('\\ud800');
+    }
+    expect(refused).toMatchObject({ ok: false, message: 'refused for  reasons' });
+    expect(accepted).toMatchObject({ ok: true, value: { state: 'completed', code: 'done' } });
   });
 
   it('refuses an answer without a REFERENCEID or a STATUS as unusable', async () => {

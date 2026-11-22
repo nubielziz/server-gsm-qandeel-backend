@@ -86,7 +86,7 @@ export const suppliers = pgTable(
     username: text().notNull().default(''),
     /** write-only key, AES-GCM text of decision 019 */
     apiKeyEnc: text(),
-    /** last characters of the key so the console can show which one is set; null until a key is saved (orders-suppliers-4) */
+    /** masked form of the key (decision 051: the mask, and the last 2 characters of a key of 16 or more) so the console can show that one is set; null until a key is saved (orders-suppliers-4) */
     apiKeyHint: text(),
     /** how the driver sends parameters; the writer derives it from the driver, so there is no default */
     paramFormat: text().$type<SupplierParamFormat>().notNull(),

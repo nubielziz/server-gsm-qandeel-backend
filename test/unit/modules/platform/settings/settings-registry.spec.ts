@@ -14,6 +14,7 @@ import {
   inboxReadRetentionDaysProblem,
   inboxRetentionDaysProblem,
   logRetentionDaysProblem,
+  ownerOnlySettingKeys,
   priceChangeTolerancePercentProblem,
   settingsPatchProblems,
 } from '@src/modules/platform/settings/settings-registry';
@@ -139,6 +140,18 @@ describe('the supplier settings', () => {
       }).map((problem) => problem.key),
     ).toEqual(['catalog.importDefaultSlaMinutes', 'orders.poll_slow_after_hours', 'suppliers.allowPlainHttp']);
     expect(settingsPatchProblems({ 'catalog.importDefaultSlaMinutes': 1.5 })).toHaveLength(1);
+  });
+});
+
+describe('owner-only settings (decision 051)', () => {
+  it('reserves suppliers.allowPlainHttp to Owners', () => {
+    expect(ownerOnlySettingKeys({ 'suppliers.allowPlainHttp': true, imeiRetentionDays: 30 })).toEqual([
+      'suppliers.allowPlainHttp',
+    ]);
+    expect(ownerOnlySettingKeys({ imeiRetentionDays: 30 })).toEqual([]);
+    expect(ownerOnlySettingKeys({ 'not.a.setting': 1 })).toEqual([]);
+    // The validator still judges the value first: the key stays an ordinary registry entry.
+    expect(settingsPatchProblems({ 'suppliers.allowPlainHttp': 'yes' })).toHaveLength(1);
   });
 });
 

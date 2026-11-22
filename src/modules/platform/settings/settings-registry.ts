@@ -7,6 +7,8 @@ export interface EditableSetting {
   readonly key: string;
   /** Checks a value; returns the sentence for the field, or `undefined` when the value is acceptable. */
   validate(value: unknown): string | undefined;
+  /** Only an Owner may change it (decision 051): `PATCH /admin/settings` answers 403 to any other caller. */
+  readonly ownerOnly?: boolean;
 }
 
 /** The longest retention the console offers: ten years. */
@@ -256,7 +258,8 @@ export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
   { key: PRICE_CHANGE_TOLERANCE_KEY, validate: priceChangeTolerancePercentProblem },
   { key: IMPORT_DEFAULT_SLA_KEY, validate: importDefaultSlaMinutesProblem },
   { key: POLL_SLOW_AFTER_HOURS_KEY, validate: pollSlowAfterHoursProblem },
-  { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem },
+  // Decision 051: it lowers the protection of supplier calls, so only an Owner changes it.
+  { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem, ownerOnly: true },
   { key: BROADCAST_EMAIL_PER_SECOND_KEY, validate: broadcastRateProblem },
   { key: BROADCAST_TELEGRAM_PER_SECOND_KEY, validate: broadcastRateProblem },
   { key: INBOX_READ_RETENTION_DAYS_KEY, validate: inboxReadRetentionDaysProblem },
@@ -312,4 +315,19 @@ export function settingsPatchProblems(patch: Readonly<Record<string, unknown>>):
     if (message) problems.push({ key, message });
   }
   return problems;
+}
+
+/**
+ * The keys of a settings patch that only an Owner may change.
+ *
+ * Why: decision 051: a setting that lowers the protection of supplier calls (`suppliers.allowPlainHttp`) is an Owner's decision, while the
+ * route itself keeps `settings:update` (the console reads that permission).
+ *
+ * @param patch the flat object the client sent
+ * @returns the patch's keys, in patch order, whose registry entry is marked `ownerOnly`
+ */
+export function ownerOnlySettingKeys(patch: Readonly<Record<string, unknown>>): string[] {
+  return Object.keys(patch).filter((key) =>
+    EDITABLE_SETTINGS.some((setting) => setting.key === key && setting.ownerOnly === true),
+  );
 }

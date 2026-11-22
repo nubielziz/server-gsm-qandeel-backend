@@ -11,7 +11,7 @@ import {
   type AccountInfo,
   type DhruAction,
   type DhruParamFormat,
-  type RemoteService,
+  type ServiceListReading,
   type SupplierOrderStatus,
   dhruEndpoint,
   dhruRequestBody,
@@ -22,6 +22,32 @@ import {
   readServiceList,
   redactBody,
 } from '../domain/dhru-protocol';
+import { cleanSupplierJson } from '../domain/supplier-text';
+
+/**
+ * The most bytes of an answer each call reads.
+ *
+ * Why: decision 051: an account, an order and its status are small answers, so 256 KiB is far more than they need; the service list is the
+ * whole catalogue of a supplier, and 16 MiB leaves more than three times the largest list seen. An answer over its limit is not read.
+ */
+export const SUPPLIER_ANSWER_LIMITS: Readonly<Record<DhruAction, number>> = {
+  accountinfo: 256 * 1024,
+  imeiservicelist: 16 * 1024 * 1024,
+  placeimeiorder: 256 * 1024,
+  getimeiorder: 256 * 1024,
+};
+
+/**
+ * The message of a call whose answer was over its limit.
+ *
+ * Why: decision 051: the answer did arrive but is unusable, so staff see the limit instead of a connection failure.
+ *
+ * @param limit the call's limit in bytes
+ * @returns the sentence the log and the staff see
+ */
+export function answerTooLargeMessage(limit: number): string {
+  return `The supplier's answer is larger than ${limit / 1024} KiB; it was not read.`;
+}
 
 /** What a driver needs to reach one supplier. */
 export interface DriverContext {
@@ -79,7 +105,7 @@ export interface SupplierDriver {
   /** Asks for our balance (`accountinfo`). */
   accountInfo(context: DriverContext): Promise<DriverCall<AccountInfo>>;
   /** Asks for the supplier's services (`imeiservicelist`). */
-  serviceList(context: DriverContext): Promise<DriverCall<RemoteService[]>>;
+  serviceList(context: DriverContext): Promise<DriverCall<ServiceListReading>>;
   /** Places an order (`placeimeiorder`). */
   placeOrder(context: DriverContext, order: PlaceOrderInput): Promise<DriverCall<{ reference: string }>>;
   /** Asks for the status of an order (`getimeiorder`). */
@@ -104,7 +130,12 @@ function failure<T>(
   };
 }
 
-/** The Dhru Fusion driver: the parameters in the supplier's own form (decision 042). */
+/**
+ * The Dhru Fusion driver: the parameters in the supplier's own form (decision 042).
+ *
+ * Why: decision 051: every answer is size-limited, cleaned of control characters and lone surrogates, and bounded before anything reads
+ * it, so the readers, the call log and everything downstream only see text the database accepts.
+ */
 export class DhruDriver implements SupplierDriver {
   constructor(private readonly http: DriverHttp) {}
 
@@ -125,16 +156,16 @@ export class DhruDriver implements SupplierDriver {
    * Asks for the supplier's services with `imeiservicelist`.
    *
    * @param context the supplier's address and credentials
-   * @returns the services, or why the call failed, with the record for the log
+   * @returns the services and how many entries were left out, or why the call failed, with the record for the log
    */
-  serviceList(context: DriverContext): Promise<DriverCall<RemoteService[]>> {
-    // A service list can be megabytes: the log keeps the count, not the list.
+  serviceList(context: DriverContext): Promise<DriverCall<ServiceListReading>> {
+    // A service list can be megabytes: the log keeps the counts, not the list.
     return this.call(
       context,
       DHRU_ACTIONS.serviceList,
       undefined,
       (payload) => ({ ok: true, value: readServiceList(payload) }),
-      (services) => ({ services: services.length }),
+      (reading) => ({ services: reading.services.length, skipped: reading.skipped }),
     );
   }
 
@@ -214,6 +245,7 @@ export class DhruDriver implements SupplierDriver {
               }),
         }),
         timeoutMs: context.timeoutMs,
+        maxResponseBytes: SUPPLIER_ANSWER_LIMITS[action],
         target: 'supplier',
         operation: `dhru.${action}`,
         ...context.policy,
@@ -229,6 +261,9 @@ export class DhruDriver implements SupplierDriver {
           });
         }
         if (error.kind === 'blocked') return failure('blocked', error.message, base);
+        if (error.kind === 'too_large') {
+          return failure('invalid', answerTooLargeMessage(SUPPLIER_ANSWER_LIMITS[action]), base);
+        }
         return failure('network', error.kind === 'network' ? 'Connection failed' : error.message, base);
       }
       throw error;
@@ -245,7 +280,7 @@ export class DhruDriver implements SupplierDriver {
     }
     let json: unknown;
     try {
-      json = result.json();
+      json = cleanSupplierJson(result.json());
     } catch {
       return failure('invalid', 'The supplier answer is not JSON.', {
         action,
@@ -290,7 +325,7 @@ export class RestDriver implements SupplierDriver {
    * @param context the supplier's address and credentials
    * @returns a failed call with a clear message
    */
-  serviceList(context: DriverContext): Promise<DriverCall<RemoteService[]>> {
+  serviceList(context: DriverContext): Promise<DriverCall<ServiceListReading>> {
     return Promise.resolve(this.unsupported(DHRU_ACTIONS.serviceList, context));
   }
 

@@ -16,7 +16,12 @@ import { RealtimeModule } from './infra/realtime';
 import { RedisModule } from './infra/redis';
 import { SearchModule } from './infra/search';
 import { StorageModule } from './infra/storage';
-import { CategoryNameCleanupModule, PriceChangeScanModule, RetailPriceFollowModule } from './modules/catalog';
+import {
+  CategoryNameCleanupModule,
+  FieldPatternReviewModule,
+  PriceChangeScanModule,
+  RetailPriceFollowModule,
+} from './modules/catalog';
 import { CommissionsEngineModule } from './modules/commissions';
 import { CheckoutRecoveryModule, CustomerMailModule, CustomerNotificationsModule } from './modules/customers';
 import { HealthJobsModule, JobRunsModule } from './modules/health';
@@ -87,6 +92,7 @@ import { SupportEventsModule, SupportJobsModule, SupportMailModule } from './mod
     PriceChangeScanModule,
     RetailPriceFollowModule,
     CategoryNameCleanupModule,
+    FieldPatternReviewModule,
     PaymentAutoCreditModule,
     FxRefreshJobModule,
     RefundProcessModule,

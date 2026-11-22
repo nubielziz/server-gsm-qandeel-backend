@@ -1,7 +1,7 @@
 // Drizzle queries of the service routes on `services` and the parts of a service (`service_fields`, `service_options`,
 // `service_group_prices`): the list and the single row with the figures worked out in SQL, the locks and writes, and the
 // pricing-rule switches of the archive and delete paths.
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
@@ -467,4 +467,59 @@ export async function replaceGroupPriceRows(
     .values(rows.map((row) => ({ ...row, serviceId })))
     .returning();
   return saved.sort((a, b) => a.groupId - b.groupId);
+}
+
+/** A stored field pattern with the service it belongs to (the review of decision 051). */
+export interface FieldPatternRow {
+  readonly id: number;
+  readonly serviceId: number;
+  readonly serviceName: string;
+  readonly key: string;
+  readonly regex: string;
+}
+
+/**
+ * Reads a page of the fields that carry a pattern, in id order.
+ *
+ * Why: decision 051: the one-time review of stored patterns walks every field with a pattern, archived services included, so a pattern
+ * that comes back to life with its service is already in the supported form.
+ *
+ * @param db the database or a transaction
+ * @param afterId the last field id of the previous page, or 0
+ * @param limit the size of the page
+ * @returns the fields with a non-empty pattern after `afterId`, with their service's id and name
+ */
+export function fieldPatternsAfter(db: DbExecutor, afterId: number, limit: number): Promise<FieldPatternRow[]> {
+  return db
+    .select({
+      id: serviceFields.id,
+      serviceId: serviceFields.serviceId,
+      serviceName: services.name,
+      key: serviceFields.key,
+      regex: serviceFields.regex,
+    })
+    .from(serviceFields)
+    .innerJoin(services, eq(services.id, serviceFields.serviceId))
+    .where(and(ne(serviceFields.regex, ''), gt(serviceFields.id, afterId)))
+    .orderBy(asc(serviceFields.id))
+    .limit(limit);
+}
+
+/**
+ * Clears the pattern of one field, only while it still holds the pattern that was judged.
+ *
+ * Why: decision 051: a staff save that replaced the pattern after the review read it must win, so the update names the old text.
+ *
+ * @param db the transaction of the clearing
+ * @param fieldId the field
+ * @param regex the pattern that was judged
+ * @returns true when the field still held that pattern and now has none
+ */
+export async function clearFieldPattern(db: DbExecutor, fieldId: number, regex: string): Promise<boolean> {
+  const rows = await db
+    .update(serviceFields)
+    .set({ regex: '' })
+    .where(and(eq(serviceFields.id, fieldId), eq(serviceFields.regex, regex)))
+    .returning({ id: serviceFields.id });
+  return rows.length > 0;
 }

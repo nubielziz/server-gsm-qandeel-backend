@@ -2,6 +2,7 @@
 // values and totals. The use case asks these functions and turns their answers into `422` field errors; no database here.
 import { Money } from '../../../common/money';
 import type { FieldError } from '../../../common/errors';
+import { FIELD_VALUE_MAX_LENGTH, compileFieldPattern } from '../../../common/field-pattern';
 import type { MainInputField } from './main-input';
 
 /** A custom field of a service as placement validates it. */
@@ -20,8 +21,8 @@ export interface QuantityRules {
   readonly qtyOptions: readonly number[];
 }
 
-/** The longest value any custom field or main input may have. */
-export const MAX_INPUT_LENGTH = 500;
+/** The longest value any custom field or main input may have (the length a field pattern is judged for, decision 051). */
+export const MAX_INPUT_LENGTH = FIELD_VALUE_MAX_LENGTH;
 
 /**
  * Tells whether a text is a valid IMEI.
@@ -83,8 +84,8 @@ export function quantityProblem(quantity: number, rules: QuantityRules): string 
  * Checks the custom field values of an order against the service's fields.
  *
  * Why: the order form is drawn from the fields (`GET /client/services/:id`); the server checks the same rules: a required field
- * has a value, a `select` value is one of its options, a `number` is a number, a pattern matches, and no value is longer than
- * 500 characters. A key the service does not define is refused, so a typo is not silently dropped.
+ * has a value, a `select` value is one of its options, a `number` is a number, a pattern matches (patterns outside the supported
+ * form of decision 051 are not run), and no value is longer than 500 characters. A key the service does not define is refused, so a typo is not silently dropped.
  *
  * @param fields the service's custom fields
  * @param inputs the values by field key
@@ -122,13 +123,15 @@ export function inputProblems(
   return problems;
 }
 
-/** Runs a service-defined pattern; a broken pattern (staff typo) matches nothing rather than crashing the order. */
+/**
+ * Runs a service-defined pattern.
+ *
+ * Why: decision 051: a pattern runs on the request path of every placement, so only one in the supported form is run; a pattern outside it
+ * (or one that does not compile) is not run and the field has no pattern, so the order is never held up or refused by it.
+ */
 function matchesPattern(pattern: string, value: string): boolean {
-  try {
-    return new RegExp(pattern).test(value);
-  } catch {
-    return false;
-  }
+  const compiled = compileFieldPattern(pattern);
+  return compiled === null || compiled.test(value);
 }
 
 /**

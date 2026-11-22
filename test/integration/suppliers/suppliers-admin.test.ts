@@ -2,18 +2,21 @@
 // queue and a worker), the supplier's services, the import and the supplier chain of a service, and the call log. Real Postgres and
 // Redis, the fake Dhru supplier; the worker runs inside the test process.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { QueueWorkersModule, QueuesService } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
-import { SupplierJobsModule } from '@src/modules/suppliers';
+import { KEY_AGAIN_MESSAGE } from '@src/modules/suppliers/application/supplier-admin.service';
+import { SupplierJobsModule, apiKeyHintOf } from '@src/modules/suppliers';
+import { BALANCE_OUT_OF_RANGE_MESSAGE } from '@src/modules/suppliers/domain/dhru-protocol';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { auditOf, insertOrderRow, ordersWorld, type OrdersWorld } from '../../support/orders';
+import { migrationStatements } from '../../support/migration-files';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
 import { FakeDhruSupplier, SupplierTestModule, insertFakeSupplier, linkService, logsOf } from '../../support/suppliers';
 import { insertUsd } from '../../support/fixtures';
@@ -80,14 +83,14 @@ async function createSupplier(overrides: Record<string, unknown> = {}) {
 }
 
 describe('POST /admin/suppliers', () => {
-  it('adds a supplier with the server defaults, the key stored encrypted with its 5-character hint and the format of the driver', async () => {
+  it('adds a supplier with the server defaults, the key stored encrypted with its masked hint and the format of the driver', async () => {
     const res = await staff.post('/admin/suppliers', newBody({ baseUrl: `${fake.url}/` }));
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
       driver: 'dhru',
       baseUrl: fake.url,
       status: 'active',
-      apiKeyHint: fake.apiKey.slice(0, 5),
+      apiKeyHint: apiKeyHintOf(fake.apiKey),
       creditRate: '1.00000000',
       balance: '0.0000',
       balanceCheckedAt: null,
@@ -108,7 +111,7 @@ describe('POST /admin/suppliers', () => {
     });
     expect(JSON.stringify(res.body)).not.toContain(fake.apiKey);
     const [row] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, res.body.id));
-    expect(row).toMatchObject({ paramFormat: 'dhru_xml', apiKeyHint: fake.apiKey.slice(0, 5) });
+    expect(row).toMatchObject({ paramFormat: 'dhru_xml', apiKeyHint: apiKeyHintOf(fake.apiKey) });
     expect(row!.apiKeyEnc).toMatch(/^v1:/);
     expect(row!.apiKeyEnc).not.toContain(fake.apiKey);
     expect(encryption.decrypt(row!.apiKeyEnc!, 'suppliers.api_key_enc')).toBe(fake.apiKey);
@@ -334,14 +337,27 @@ describe('PATCH /admin/suppliers/:id', () => {
   it('changes only the keys sent: a new key replaces the key and its hint, an omitted key keeps both', async () => {
     const { id } = await createSupplier();
     const [before] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
-    const same = await staff.patch(`/admin/suppliers/${id}`, { username: 'new-user', maxConcurrency: 3 });
+    const same = await staff.patch(`/admin/suppliers/${id}`, { maxConcurrency: 3 });
     expect(same.status).toBe(200);
-    expect(same.body).toMatchObject({ username: 'new-user', maxConcurrency: 3, apiKeyHint: fake.apiKey.slice(0, 5) });
+    expect(same.body).toMatchObject({ maxConcurrency: 3, apiKeyHint: apiKeyHintOf(fake.apiKey) });
     const [kept] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
     expect(kept!.apiKeyEnc).toBe(before!.apiKeyEnc);
 
+    // A new username travels with the key (decision 051), which is saved again with the same text.
+    const renamed = await staff.patch(`/admin/suppliers/${id}`, {
+      username: 'new-user',
+      maxConcurrency: 3,
+      apiKey: fake.apiKey,
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body).toMatchObject({
+      username: 'new-user',
+      maxConcurrency: 3,
+      apiKeyHint: apiKeyHintOf(fake.apiKey),
+    });
+
     const rekeyed = await staff.patch(`/admin/suppliers/${id}`, { apiKey: 'brand-new-secret-key' });
-    expect(rekeyed.body.apiKeyHint).toBe('brand');
+    expect(rekeyed.body.apiKeyHint).toBe('••••ey');
     const [after] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
     expect(encryption.decrypt(after!.apiKeyEnc!, 'suppliers.api_key_enc')).toBe('brand-new-secret-key');
     expect(after!.apiKeyEnc).not.toBe(before!.apiKeyEnc);
@@ -360,7 +376,9 @@ describe('PATCH /admin/suppliers/:id', () => {
   it('derives the format again when the driver changes, and refuses a taken name, a bad driver and an empty change', async () => {
     const { id } = await createSupplier();
     const other = await createSupplier();
-    expect((await staff.patch(`/admin/suppliers/${id}`, { driver: 'rest' })).body.driver).toBe('rest');
+    expect((await staff.patch(`/admin/suppliers/${id}`, { driver: 'rest', apiKey: fake.apiKey })).body.driver).toBe(
+      'rest',
+    );
     expect((await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id)))[0]!.paramFormat).toBe('json');
     expect(
       (await staff.patch(`/admin/suppliers/${id}`, { name: other.name.toLowerCase() })).body.errors[0],
@@ -524,7 +542,7 @@ describe('POST /admin/suppliers/:id/sync', () => {
       ['imeiservicelist', null, 'ok'],
       ['accountinfo', null, 'ok'],
     ]);
-    expect(logs[0]!.response).toEqual({ services: 3 });
+    expect(logs[0]!.response).toEqual({ services: 3, skipped: 0 });
     expect((await auditOfEntity('supplier', id)).at(-1)).toMatchObject({
       action: 'synced services from',
     });
@@ -1219,6 +1237,206 @@ describe('GET /admin/supplier-api-logs', () => {
     const nobody = await adminWith(t, ['orders:read']);
     expect((await nobody.get('/admin/supplier-api-logs')).status).toBe(403);
     expect((await nobody.get('/admin/suppliers')).status).toBe(403);
+  });
+});
+
+describe('a saved key stays where it was saved (decision 051)', () => {
+  const second = new FakeDhruSupplier('other-user', 'other-fake-key-0001');
+  afterAll(() => second.stop());
+  beforeEach(() => second.reset());
+
+  /** The columns of a supplier a refused change must leave alone. */
+  const stored = async (id: number) => {
+    const [row] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
+    return {
+      baseUrl: row!.baseUrl,
+      username: row!.username,
+      driver: row!.driver,
+      apiKeyEnc: row!.apiKeyEnc,
+      apiKeyHint: row!.apiKeyHint,
+    };
+  };
+
+  it('keeps a saved key where it was saved: another origin, username or driver without the key is 422 on apiKey and changes nothing', async () => {
+    const { id } = await createSupplier();
+    const before = await stored(id);
+    const auditBefore = (await auditOfEntity('supplier', id)).length;
+    for (const change of [
+      { baseUrl: 'https://other.example' },
+      { baseUrl: fake.url.replace('127.0.0.1', 'localhost') },
+      { username: 'someone-else' },
+      { driver: 'rest' },
+    ]) {
+      const res = await staff.patch(`/admin/suppliers/${id}`, change);
+      expect(res.status, JSON.stringify(change)).toBe(422);
+      expect(res.body.errors[0]).toEqual({ field: 'apiKey', code: 'required', message: KEY_AGAIN_MESSAGE });
+      expect(await stored(id)).toEqual(before);
+    }
+    expect(await auditOfEntity('supplier', id)).toHaveLength(auditBefore);
+  });
+
+  it('never sends a saved key to an address it was not saved for', async () => {
+    const { id } = await createSupplier();
+    const moved = await staff.patch(`/admin/suppliers/${id}`, { baseUrl: second.url });
+    expect(moved.status).toBe(422);
+    const tested = await staff.post(`/admin/suppliers/${id}/test`);
+    expect(tested.body).toMatchObject({ ok: true });
+    expect(fake.callsOf('accountinfo')).toHaveLength(1);
+    expect(fake.callsOf('accountinfo')[0]!.apiKey).toBe(fake.apiKey);
+    expect(second.calls).toHaveLength(0);
+  });
+
+  it('accepts a new path on the same origin, a status or limit change and a move that carries the key', async () => {
+    const { id } = await createSupplier();
+    expect((await staff.patch(`/admin/suppliers/${id}`, { baseUrl: `${fake.url}/api/index.php` })).status).toBe(200);
+    expect((await staff.patch(`/admin/suppliers/${id}`, { status: 'paused' })).status).toBe(200);
+    expect((await staff.patch(`/admin/suppliers/${id}`, { maxConcurrency: 2, name: 'Renamed supplier' })).status).toBe(
+      200,
+    );
+    const moved = await staff.patch(`/admin/suppliers/${id}`, {
+      baseUrl: second.url,
+      apiKey: 'second-supplier-key-01',
+    });
+    expect(moved.status).toBe(200);
+    expect(moved.body).toMatchObject({ baseUrl: second.url, apiKeyHint: '••••01' });
+
+    // Without a stored key there is nothing to bind: the supplier may move without one.
+    const keyless = await insertFakeSupplier(world.db, encryption, fake, { apiKeyEnc: null, apiKeyHint: null });
+    const free = await staff.patch(`/admin/suppliers/${keyless}`, { baseUrl: second.url, username: 'x' });
+    expect(free.status).toBe(200);
+    expect(free.body).toMatchObject({ baseUrl: second.url, username: 'x', apiKeyHint: null });
+  });
+
+  it("shows a hint without the key's first characters, in the answer and the audit row", async () => {
+    const created = await staff.post('/admin/suppliers', newBody());
+    expect(created.body.apiKeyHint).toBe('••••01');
+    expect((await staff.get(`/admin/suppliers/${created.body.id}`)).body.apiKeyHint).toBe('••••01');
+    const audit = (await auditOfEntity('supplier', created.body.id)).at(-1)!;
+    expect((audit.after as { apiKeyHint: string }).apiKeyHint).toBe('••••01');
+    expect(JSON.stringify(audit)).not.toContain(fake.apiKey.slice(0, 5));
+
+    const short = await staff.post('/admin/suppliers', newBody({ apiKey: 'short-key' }));
+    expect(short.body.apiKeyHint).toBe('••••');
+    expect(JSON.stringify((await auditOfEntity('supplier', short.body.id)).at(-1))).not.toContain('short');
+  });
+
+  it('masks the hints stored before (migration)', async () => {
+    const old = await insertFakeSupplier(world.db, encryption, fake, { apiKeyHint: 'abcde' });
+    const none = await insertFakeSupplier(world.db, encryption, fake, { apiKeyHint: null });
+    const statement = migrationStatements('_supplier_safety.sql').find((text) =>
+      text.startsWith('UPDATE "suppliers"'),
+    )!;
+    expect(statement).toBeDefined();
+    await world.db.execute(sql.raw(statement));
+    const rows = await world.db
+      .select()
+      .from(s.suppliers)
+      .where(inArray(s.suppliers.id, [old, none]));
+    const hints = Object.fromEntries(rows.map((row) => [row.id, row.apiKeyHint]));
+    expect(hints).toEqual({ [old]: '••••', [none]: null });
+  });
+});
+
+describe('what a sync does with answers it cannot use (decision 051)', () => {
+  it('syncs past prices and a balance out of range: the bad services are left out and counted, the balance is kept', async () => {
+    const { id } = await createSupplier();
+    expect((await staff.post(`/admin/suppliers/${id}/sync`)).body).toMatchObject({ balance: '1240.5000' });
+
+    fake.services.push(
+      {
+        id: '5001',
+        group: 'Carrier unlock',
+        type: 'IMEI',
+        name: 'Huge price',
+        credit: '100000000000000000000',
+        time: '1 day',
+      },
+      { id: '5002', group: 'Carrier unlock', type: 'IMEI', name: 'Negative price', credit: '-5', time: '1 day' },
+      { id: '5003', group: 'Carrier unlock', type: 'IMEI', name: 'Bad\u0000 name', credit: '3', time: '1 day' },
+    );
+    fake.credit = '100000000000000000000';
+    const res = await staff.post(`/admin/suppliers/${id}/sync`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ balance: '1240.5000' });
+
+    const rows = await world.db.select().from(s.supplierServices).where(eq(s.supplierServices.supplierId, id));
+    const available = rows.filter((row) => row.isAvailable).map((row) => row.remoteId);
+    expect(available).not.toContain('5001');
+    expect(available).not.toContain('5002');
+    expect(rows.find((row) => row.remoteId === '5003')).toMatchObject({ name: 'Bad name', isAvailable: true });
+    const audit = (await auditOfEntity('supplier', id)).at(-1)!;
+    expect(audit.after).toMatchObject({ skipped: 2, balanceSkipped: true });
+    const listLog = (await logsOf(world.db, id)).filter((log) => log.action === 'imeiservicelist').at(-1)!;
+    expect(listLog.response).toEqual({ services: 4, skipped: 2 });
+    const [supplier] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
+    expect(supplier!.balance).toBe('1240.5000');
+  });
+
+  it('marks a stored service unavailable when its price turns unreadable, and available again with a usable price', async () => {
+    const { id } = await createSupplier();
+    await staff.post(`/admin/suppliers/${id}/sync`);
+    fake.services[0]!.credit = '-1';
+    expect((await staff.post(`/admin/suppliers/${id}/sync`)).body).toMatchObject({ services: 2, removed: 1 });
+    const read = async () =>
+      (await world.db.select().from(s.supplierServices).where(eq(s.supplierServices.supplierId, id))).find(
+        (row) => row.remoteId === '4411',
+      )!;
+    expect(await read()).toMatchObject({ isAvailable: false, credit: '13.5000' });
+    fake.services[0]!.credit = '14.0000';
+    await staff.post(`/admin/suppliers/${id}/sync`);
+    expect(await read()).toMatchObject({ isAvailable: true, credit: '14.0000' });
+  });
+
+  it('tests a connection whose balance is out of range: not ok, not saved', async () => {
+    const { id } = await createSupplier();
+    expect((await staff.post(`/admin/suppliers/${id}/test`)).body).toMatchObject({ ok: true, balance: '1240.5000' });
+    fake.credit = '100000000000000000000';
+    const res = await staff.post(`/admin/suppliers/${id}/test`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: false, message: BALANCE_OUT_OF_RANGE_MESSAGE, balance: null });
+    const [supplier] = await world.db.select().from(s.suppliers).where(eq(s.suppliers.id, id));
+    expect(supplier!.balance).toBe('1240.5000');
+    expect((await auditOfEntity('supplier', id)).at(-1)).toMatchObject({ action: 'tested connection to (failed)' });
+    // The call itself worked: its log row says so.
+    expect((await logsOf(world.db, id)).at(-1)).toMatchObject({ action: 'accountinfo', outcome: 'ok' });
+  });
+
+  it('keeps every text of a service list without control characters and within its length', async () => {
+    const { id } = await createSupplier();
+    const long = 'n'.repeat(400);
+    fake.answerRaw(
+      'imeiservicelist',
+      JSON.stringify({
+        SUCCESS: [
+          {
+            MESSAGE: 'IMEI Service List',
+            LIST: {
+              G1: {
+                GROUPNAME: `Group\u0000\t${long}`,
+                GROUPTYPE: `Type\u0000\t${long}`,
+                SERVICES: {
+                  '77': {
+                    SERVICEID: '77',
+                    SERVICENAME: 'Plain name',
+                    CREDIT: '2',
+                    TIME: `Time\u0000\t${long}`,
+                    'Requires.Note\u0000': 'x\u0000y',
+                  },
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
+    expect((await staff.post(`/admin/suppliers/${id}/sync`)).status).toBe(200);
+    const [row] = await world.db.select().from(s.supplierServices).where(eq(s.supplierServices.supplierId, id));
+    expect(row!.remoteGroup).toHaveLength(300);
+    expect(row!.remoteGroup.startsWith('Group n')).toBe(true);
+    expect(row!.type).toHaveLength(300);
+    expect(row!.time).toHaveLength(300);
+    expect(JSON.stringify(row)).not.toContain('\\u0000');
+    expect(row!.raw).toMatchObject({ SERVICENAME: 'Plain name' });
   });
 });
 

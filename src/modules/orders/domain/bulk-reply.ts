@@ -40,14 +40,16 @@ export function squash(text: string): string {
  * Reads the pasted text into lines.
  *
  * Why: ANSWERS orders Q13 and the console's paste dialog: each non-blank line is an input followed by a code, separated by
- * whitespace, a comma or a semicolon; the code keeps the rest of the line as typed (its own commas included).
+ * whitespace, a comma or a semicolon; the code keeps the rest of the line as typed (its own commas included). Decision 051: lines end at
+ * CRLF, CR, LF, U+2028 or U+2029, so no line holds a character the line pattern's `.` cannot match and reading a line takes time in
+ * proportion to its length.
  *
  * @param text the pasted text
  * @returns the non-blank lines with their 1-based position in the text
  */
 export function parseBulkLines(text: string): ParsedLine[] {
   const lines: ParsedLine[] = [];
-  text.split(/\r?\n/).forEach((raw, index) => {
+  text.split(/\r\n|\r|\n|\u2028|\u2029/).forEach((raw, index) => {
     const trimmed = raw.trim();
     if (trimmed === '') return;
     const match = /^([^\s,;]+)[\s,;]*(.*)$/.exec(trimmed);

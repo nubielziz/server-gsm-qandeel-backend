@@ -154,3 +154,11 @@ export {
 } from './application/category-name-cleanup';
 export type { CategoryNameCleanupResult } from './application/category-name-cleanup';
 export { CategoryNameCleanupModule } from './jobs/category-name-cleanup.module';
+export {
+  FIELD_PATTERNS_REVIEW_EVENT,
+  FIELD_PATTERNS_REVIEW_JOB,
+  FIELD_PATTERN_CLEARED_AUDIT_ACTION,
+  FieldPatternReview,
+} from './application/field-pattern-review';
+export type { FieldPatternReviewResult } from './application/field-pattern-review';
+export { FieldPatternReviewModule } from './jobs/field-pattern-review.module';

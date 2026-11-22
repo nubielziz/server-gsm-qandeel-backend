@@ -207,7 +207,14 @@ describe('the readers of dhru-protocol read through the contracts', () => {
   });
 
   it('accepts exactly what the contract accepts: placeimeiorder', () => {
-    for (const body of [{ REFERENCEID: 'a' }, { REFERENCEID: 0 }, { REFERENCEID: '' }, {}, { REFERENCEID: false }]) {
+    for (const body of [
+      { REFERENCEID: 'a' },
+      { REFERENCEID: 0 },
+      { REFERENCEID: '' },
+      {},
+      { REFERENCEID: false },
+      { REFERENCEID: '\u0000\u0001' },
+    ]) {
       expect(readPlacedOrder(entry(body)) !== undefined, JSON.stringify(body)).toBe(
         passes(placeOrderCall.success, body),
       );
@@ -222,7 +229,8 @@ describe('the readers of dhru-protocol read through the contracts', () => {
 
   it('reads a service list the contract accepts into the services it can use, keeping the raw entry', () => {
     const body = serviceListCall.examples.response as Record<string, unknown>;
-    const services = readServiceList(entry(body));
+    const { services, skipped } = readServiceList(entry(body));
+    expect(skipped).toBe(0);
     expect(services).toHaveLength(1);
     expect(services[0]).toMatchObject({
       remoteId: '4411',

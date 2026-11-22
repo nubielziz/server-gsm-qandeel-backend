@@ -8,7 +8,7 @@ import { OutboundHttp } from '../../../infra/http';
 import { RateLimitService, type SemaphoreLease } from '../../../infra/rate-limit';
 import { withoutCredentials } from '../../../infra/redis';
 import { SettingsReader } from '../../platform';
-import type { AccountInfo, RemoteService, SupplierOrderStatus } from '../domain/dhru-protocol';
+import type { AccountInfo, ServiceListReading, SupplierOrderStatus } from '../domain/dhru-protocol';
 import type { Supplier } from '../db/schema';
 import {
   type DriverCall,
@@ -68,9 +68,9 @@ export class SupplierClient {
    * Asks the supplier for its service list.
    *
    * @param supplier the supplier
-   * @returns the services, or why the call failed, with the record for the log
+   * @returns the services and how many entries were left out, or why the call failed, with the record for the log
    */
-  serviceList(supplier: CallableSupplier): Promise<DriverCall<RemoteService[]>> {
+  serviceList(supplier: CallableSupplier): Promise<DriverCall<ServiceListReading>> {
     return this.run(supplier, 'imeiservicelist', (driver, context) => driver.serviceList(context));
   }
 

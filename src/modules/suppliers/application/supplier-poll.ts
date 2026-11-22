@@ -10,7 +10,7 @@ import { SettingsReader } from '../../platform';
 import { DEFAULT_POLL_SLOW_AFTER_HOURS, pollIntervalMs } from '../domain/poll-schedule';
 import { findSupplier } from '../infra/supplier.repository';
 import { SupplierClient, SupplierThrottle } from './supplier-client';
-import { writeCallLog } from './supplier-sync';
+import { writeCallLogSafely } from './supplier-sync';
 
 /** The job name of one status poll on the `supplier-poll` queue. */
 export const SUPPLIER_POLL_JOB = 'poll';
@@ -50,7 +50,8 @@ export const FETCH_AUDIT_ACTION = 'fetched supplier result of';
  * is the reason). The tick keeps no state of its own: the order's `sent_at` and the newest `getimeiorder` log row tell what is due, so
  * a lost job or a restart loses nothing. A poll never changes an order that moved on, and an unreachable supplier leaves it as it is
  * for the next round. Decision 044: an answer is applied only while the order still names the supplier and reference it was asked about
- * (the check runs again in the guarded update), and limits that cannot be read count as busy (the next tick asks again).
+ * (the check runs again in the guarded update), and limits that cannot be read count as busy (the next tick asks again). The call's log
+ * row is written by `writeCallLogSafely`, so a log failure never keeps the answer from being recorded (decision 051).
  *
  * Side effects: one `supplier_api_logs` row per call; a completion or rejection settles the order (ledger, events, outbox);
  * the tick adds `poll` jobs with the id `order-poll-<order>-<minute>`.
@@ -124,7 +125,7 @@ export class SupplierPoll {
     const asked = { supplierId: order.supplierId, supplierRef: order.supplierRef };
     try {
       const call = await this.client.getOrder(supplier, order.supplierRef);
-      await writeCallLog(this.db.db, supplier.id, order.id, call.record, this.clock.now());
+      await writeCallLogSafely(this.db.db, supplier.id, order.id, call.record, this.clock.now());
       if (!call.ok) return { kind: 'unreachable', message: `${supplier.name}: ${call.message}` };
       const audit = by.type === 'staff' ? { audit: FETCH_AUDIT_ACTION } : {};
       const actor = by.type === 'staff' ? { type: 'staff' as const, id: by.id } : { type: 'system' as const, id: null };

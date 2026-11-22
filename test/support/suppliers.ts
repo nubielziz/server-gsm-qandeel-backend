@@ -1,10 +1,11 @@
 // Helpers for the suppliers tests (feature 6): a fake Dhru Fusion supplier served by a local Bun server (it speaks the protocol of
-// decisions 026 and 042, reading `parameters` as the classic XML string or as base64 of JSON, and records every call), the test policy that lets the supplier client reach it over plain http, and rows for a supplier
-// that points at it, with its services and links.
+// decisions 026 and 042, reading `parameters` as the classic XML string or as base64 of JSON, and records every call; `answerRaw` makes
+// it answer a body as it is, for the answers of decision 051), the test policy that lets the supplier client reach it over plain http,
+// and rows for a supplier that points at it, with its services and links.
 import { Global, Module } from '@nestjs/common';
 import { type Database, schema as s } from '@src/infra/db';
 import { EncryptionService } from '@src/infra/crypto';
-import { SUPPLIER_TARGET_POLICY, type SupplierTargetPolicy } from '@src/modules/suppliers';
+import { SUPPLIER_TARGET_POLICY, type SupplierTargetPolicy, apiKeyHintOf } from '@src/modules/suppliers';
 
 /** The form a call's `parameters` arrived in: the classic XML string, base64 of JSON, or none sent (decision 042). */
 export type FakeParamForm = 'dhru_xml' | 'json' | 'none';
@@ -64,6 +65,8 @@ export function hold(): FakeHold {
 /** How the fake answers the next `placeimeiorder`. */
 export type PlaceScript =
   | 'accept'
+  /** The order is accepted and kept under exactly this REFERENCEID (the answer carries it as it is). */
+  | { readonly accept: string }
   /** The order is created, then the answer is held until the hold is released; it then answers `SUCCESS` with the reference. */
   | { readonly hold: FakeHold }
   /** The supplier runs the order and never answers: the caller times out although the order exists at the supplier. */
@@ -124,6 +127,7 @@ export class FakeDhruSupplier {
    */
   accepts: 'both' | 'dhru_xml' | 'json' = 'both';
   private readonly script: PlaceScript[] = [];
+  private readonly rawAnswers = new Map<string, string[]>();
   private readonly holds = new Set<FakeHold>();
   private readonly server: ReturnType<typeof Bun.serve>;
   private nextReference = 88_100;
@@ -152,6 +156,14 @@ export class FakeDhruSupplier {
     this.script.push(...scripts);
   }
 
+  /**
+   * Queues bodies for an action: the next calls of it are recorded as usual and answered with the next body as it is (HTTP 200,
+   * `content-type: application/json; charset=utf-8`), before the credential check. A raw `placeimeiorder` answer creates no order.
+   */
+  answerRaw(action: string, ...bodies: string[]): void {
+    this.rawAnswers.set(action, [...(this.rawAnswers.get(action) ?? []), ...bodies]);
+  }
+
   /** The calls of one action. */
   callsOf(action: string): FakeCall[] {
     return this.calls.filter((call) => call.action === action);
@@ -178,6 +190,7 @@ export class FakeDhruSupplier {
     this.calls.length = 0;
     this.orders.clear();
     this.script.length = 0;
+    this.rawAnswers.clear();
     this.services = DEFAULT_SERVICES.map((service) => ({ ...service }));
     this.credit = '1240.50';
     this.forceHttp = 0;
@@ -212,6 +225,10 @@ export class FakeDhruSupplier {
       parameters,
     });
     if (this.forceHttp > 0) return new Response('down', { status: this.forceHttp });
+    const raw = this.rawAnswers.get(action)?.shift();
+    if (raw !== undefined) {
+      return new Response(raw, { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } });
+    }
     if (form.get('username') !== this.username || form.get('apiaccesskey') !== this.apiKey) {
       return this.json({ ERROR: [{ MESSAGE: 'Authentication Failed' }] });
     }
@@ -248,7 +265,7 @@ export class FakeDhruSupplier {
     if (typeof next === 'object' && 'refuse' in next) return this.json({ ERROR: [{ MESSAGE: next.refuse }] });
     if (typeof next === 'object' && 'http' in next) return new Response('bad gateway', { status: next.http });
     if (next === 'garbage') return new Response('<html>maintenance</html>', { status: 200 });
-    const reference = String(this.nextReference++);
+    const reference = typeof next === 'object' && 'accept' in next ? next.accept : String(this.nextReference++);
     this.orders.set(reference, { reference, parameters, status: 1, code: '' });
     if (next === 'accept-then-hang') return new Promise<Response>(() => undefined);
     const answer = (): Response => this.json({ SUCCESS: [{ MESSAGE: 'Order received', REFERENCEID: reference }] });
@@ -342,7 +359,7 @@ export async function insertFakeSupplier(
       baseUrl: fake.url,
       username: fake.username,
       apiKeyEnc: encryption.encrypt(fake.apiKey, 'suppliers.api_key_enc'),
-      apiKeyHint: fake.apiKey.slice(0, 5),
+      apiKeyHint: apiKeyHintOf(fake.apiKey),
       paramFormat: 'dhru_xml',
       timeoutMs: 1500,
       ...overrides,

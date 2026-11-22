@@ -404,7 +404,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -684,6 +684,20 @@ Gives the categories that exist the clean names new ones get: the public menu sh
 - **Idempotency:** a clean name is skipped, so a retry or a second delivery changes nothing.
 - **Not recorded in `job_runs`:** it is not a schedule. 3 attempts with the queue's backoff.
 
+### `field_patterns_review` (catalog module, feature 41)
+
+Clears the stored field patterns that are outside the supported form of decision 051, so a field never keeps a pattern the order check
+does not run.
+
+- **Trigger:** once. Migration `0048_supplier_safety` writes the outbox event `catalog.field_patterns_review`, and the relay turns it into this
+  job (id `outbox-<event id>`). The route is registered by `FieldPatternReviewModule`, in the worker only.
+- **Payload:** none. The processor is `FieldPatternReviewProcessor` (`src/modules/catalog/jobs/`, worker only).
+- **What it does:** walks the fields with a pattern by id, 500 a page; a pattern outside the form is set to `''` by a guarded update
+  (`where id = $1 and regex = $2`), with an audit row by `system` (`cleared an unsupported field pattern of`, the old pattern in `before`) and a
+  warning line, in one transaction per field. A field a staff save changed meanwhile is left as staff saved it.
+- **Idempotency:** a cleared pattern is not matched again, so a retry or a second delivery changes nothing.
+- **Not recorded in `job_runs`:** it is not a schedule. 3 attempts with the queue's backoff.
+
 ### `retail_price_follow` (catalog module, feature 31)
 
 Moves the retail prices that follow a pricing rule to what the rule gives now (decision 040, `docs/briefs/31-bulk-publish.md` sections 3.4 and 6.4).
@@ -811,6 +825,7 @@ none); the job id is `outbox-<event id>`.
 | `search.settings_changed` | `search-index` | `search_settings` | `kind` (`synonyms`, `pins`, `hidden_terms`) (aggregate: the row's table) | storefront (`SearchOutboxRoutes`), written by the console's search routes (feature 29, slice B2) |
 | `search.rebuild_requested` | `maintenance` | `search_rebuild` | `staffId`, optional `runId` (aggregate: `search_index`, 1) | storefront (`SearchOutboxRoutes`), written by `POST /admin/search/index/rebuild` (feature 29, slice B2) |
 | `catalog.category_names_clean` | `maintenance` | `category_names_clean` | none (aggregate: `service_categories`, 1) | catalog (`CategoryNameCleanupModule`, worker only), written once by migration `0046_clean_category_names` |
+| `catalog.field_patterns_review` | `maintenance` | `field_patterns_review` | none (aggregate: `service_fields`, 1) | catalog (`FieldPatternReviewModule`, worker only), written once by migration `0048_supplier_safety` |
 | `supplier.quick_add` | `imports` | `supplier_quick_add` | `runId`, `supplierId` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox`, loaded by the API and the worker), written by `POST /admin/suppliers/:id/quick-add` in the transaction that inserts the run (feature 26). The processor is `QuickAddProcessor` (`src/modules/suppliers/jobs/`) |
 | `storefront.publish_prepare` | `imports` | `publish_prepare` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that inserts a run in `preparing` (`POST /admin/publish-runs`, feature 31). The processor is `PublishPrepareProcessor` (`src/modules/storefront/publish/jobs/`) |
 | `storefront.publish_apply` | `imports` | `publish_apply` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that moves a run to `queued` (feature 31). The processor is `PublishApplyProcessor` (`src/modules/storefront/publish/jobs/`) |

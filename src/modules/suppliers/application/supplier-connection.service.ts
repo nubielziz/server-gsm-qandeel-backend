@@ -4,6 +4,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
+import { BALANCE_OUT_OF_RANGE_MESSAGE } from '../domain/dhru-protocol';
 import { findSupplier, updateSupplier } from '../infra/supplier.repository';
 import { SupplierClient } from './supplier-client';
 import { type SyncResult, writeCallLog } from './supplier-sync';
@@ -28,6 +29,9 @@ const notFound = () => new AppError('NOT_FOUND', { detail: 'No supplier has this
  * message), never a problem; the sync waits for the worker's job and answers its counts, `409 SUPPLIER_UNAVAILABLE` when the supplier
  * failed during it, `504 SUPPLIER_TIMEOUT` when the wait ran out while the job goes on.
  *
+ * Decision 051: a balance the supplier reports outside -1000000000 to 1000000000 answers `ok: false` and is not saved, while the call's log
+ * row still says the call itself worked.
+ *
  * Side effects: `test` calls `accountinfo`, writes a `supplier_api_logs` row, the supplier's balance when it worked, and an audit row;
  * `sync` queues a job (which writes the services, the balance and the logs) and writes an audit row.
  */
@@ -45,31 +49,32 @@ export class SupplierConnectionService {
    * Tests the connection with `accountinfo`.
    *
    * @param id the supplier id
-   * @returns whether it worked and what the supplier said
+   * @returns whether it worked and what the supplier said (`ok: false` for a failed call and for a balance outside the range)
    * @throws {AppError} `NOT_FOUND`
    */
   async test(id: number): Promise<TestResult> {
     const supplier = await findSupplier(this.db.db, id);
     if (!supplier) throw notFound();
     const call = await this.client.accountInfo(supplier);
+    const failure = !call.ok ? call.message : call.value.credit === null ? BALANCE_OUT_OF_RANGE_MESSAGE : null;
     await this.db.runInTransaction(async ({ tx }) => {
       await writeCallLog(tx, supplier.id, null, call.record, this.clock.now());
-      if (call.ok) {
+      if (call.ok && call.value.credit !== null) {
         await updateSupplier(tx, supplier.id, { balance: call.value.credit, balanceCheckedAt: this.clock.now() });
       }
       await this.audit.record(tx, {
-        action: call.ok ? 'tested connection to' : 'tested connection to (failed)',
+        action: failure === null ? 'tested connection to' : 'tested connection to (failed)',
         entityType: 'supplier',
         entityId: supplier.id,
         entityLabel: supplier.name,
-        after: { ok: call.ok, httpStatus: call.record.httpStatus, error: call.record.error },
+        after: { ok: failure === null, httpStatus: call.record.httpStatus, error: failure ?? '' },
       });
     });
     const httpStatus = call.record.httpStatus === 0 ? null : call.record.httpStatus;
-    if (!call.ok) {
+    if (!call.ok || call.value.credit === null) {
       return {
         ok: false,
-        message: call.message,
+        message: failure ?? BALANCE_OUT_OF_RANGE_MESSAGE,
         httpStatus,
         durationMs: call.record.durationMs,
         accountName: null,
@@ -119,6 +124,8 @@ export class SupplierConnectionService {
           changed: outcome.result.changed,
           removed: outcome.result.removed,
           adopted: outcome.result.adopted,
+          skipped: outcome.skipped,
+          balanceSkipped: outcome.balanceSkipped,
         },
       }),
     );

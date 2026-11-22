@@ -4,7 +4,7 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41). Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -37,7 +37,11 @@ feature 6.
   pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
   read here and their code is free again.
 - **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
-  the later duplicate's dotted path.
+  the later duplicate's dotted path. A field's `regex` follows the supported form of decision 051 (`src/common/field-pattern.ts`,
+  `fieldPatternProblem`: literals, classes, the escapes `\d \w \s` and their capitals, groups that neither repeat nor nest, counts up to
+  500, `^` and `$` at the ends, and a bound on the work of a 500-character value); a pattern outside it is refused at save with `422` on
+  `fields.N.regex` and the reason's sentence (`FIELD_PATTERN_MESSAGES`). The order check runs only a pattern in that form
+  (`compileFieldPattern`); the patterns stored before were reviewed once (`field_patterns_review`, see "Jobs and schedules").
 - **Inventory** (`inventory-admin.service.ts`, `domain/inventory-codes.ts`): codes AES-GCM encrypted (`inventory_codes.code_enc`)
   with `code_hash` (`TokenService.hash` of `inventory-code:<code>`) and `code_last4`; import counts imported, duplicates and
   rejected, never logs a clear code; void only `available` codes, idempotent. `InventoryStock` (`application/inventory-stock.ts`,
@@ -252,6 +256,11 @@ The follow pass adds `RetailPriceFollow` with `RetailPriceFollowModule` and its 
 `CatalogPricesModule`), the job and scheduler names, and the lists `RETAIL_CHANGE_KINDS`, `RETAIL_CHANGE_REASONS` and
 `RETAIL_CHANGE_RESOLUTIONS`.
 
+Feature 41 (decision 051) adds the one-time review of the stored field patterns: `FieldPatternReview` (`run()` answers a
+`FieldPatternReviewResult`, `{ checked, cleared }`) with `FieldPatternReviewModule` and its processor (worker only),
+`FIELD_PATTERNS_REVIEW_EVENT`, `FIELD_PATTERNS_REVIEW_JOB` and `FIELD_PATTERN_CLEARED_AUDIT_ACTION`. The pattern checker itself is shared
+code (`src/common/field-pattern.ts`), not a catalog export.
+
 ## Owned tables
 
 Only this module reads and writes these 10 tables, `listed_prices`, `retail_price_rules`, `retail_price_follows` and `retail_price_changes` (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`.
@@ -394,6 +403,13 @@ asked for by migration `0046_clean_category_names` through the outbox event `cat
 every category and gives it the name `cleanGroupName` makes of it, each rename in its own transaction under the category row lock, with the `catalog.category_changed` event, the
 catalog price version and an `edited category` audit row by `system`. A name another category of the type already has (ignoring case) is left alone: staff merge such a pair by hand.
 Idempotent: a repeat finds the names clean. Not recorded in `job_runs`.
+
+`field_patterns_review` (queue `maintenance`, processor `jobs/field-pattern-review.processor.ts`, module `FieldPatternReviewModule` in the worker; feature 41, decision 051):
+runs once, asked for by migration `0048_supplier_safety` through the outbox event `catalog.field_patterns_review` (only the worker registers its route). `FieldPatternReview`
+walks every field with a pattern by id (archived services included), 500 a page, and clears each pattern outside the supported form with a guarded update (`where id = $1 and
+regex = $2`, so a pattern a staff save changed meanwhile is left as saved), in one transaction per field with an audit row by `system` (`cleared an unsupported field pattern of`,
+entity `service`, `before: { field, regex }`, `after: { field, regex: '' }`) and one warning line after the commit. No catalog price version move and no search signal (a staff
+save of the fields does neither). Idempotent: a cleared pattern is not read again. Not recorded in `job_runs`.
 
 `retail_price_follow` (queue `maintenance`, processor `jobs/retail-price-follow.processor.ts`, module `RetailPriceFollowModule` in the worker; feature 31, decision 040): every
 move of the catalog price version asks for a pass (`RetailFollowScheduler` in the global `CatalogPricesModule`, so the API asks too: a delayed job of 60 s, id

@@ -2,11 +2,12 @@
 // (PUT /admin/services/:id/fields and /options, map domain B, stage 4).
 import { Injectable } from '@nestjs/common';
 import { AppError, type FieldError } from '../../../common/errors';
+import { fieldPatternProblem } from '../../../common/field-pattern';
 import { DbService } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import { CatalogSignals } from './catalog-signals';
 import type { ServiceFieldType, ServiceOptionList } from '../db/schema';
-import { duplicateFieldKeys, duplicateOptionValues, isValidPattern } from '../domain/service-parts';
+import { duplicateFieldKeys, duplicateOptionValues } from '../domain/service-parts';
 import {
   listFieldRows,
   listOptionRows,
@@ -75,7 +76,7 @@ export class ServicePartsService {
    * @param fields the whole list in order (the index is the sort order)
    * @returns the saved fields in order
    * @throws {AppError} `NOT_FOUND` (404: unknown or archived); `VALIDATION_FAILED` (422 on `fields.N.key` for a repeated key,
-   *   on `fields.N.regex` for a pattern that does not compile)
+   *   on `fields.N.regex` for a pattern outside the supported form, decision 051)
    */
   async replaceFields(serviceId: number, fields: readonly FieldInput[]): Promise<FieldView[]> {
     return this.db.runInTransaction(async ({ tx }) => {
@@ -83,11 +84,10 @@ export class ServicePartsService {
       if (!service) throw notFound();
       const found = [
         ...duplicateFieldKeys(fields.map((field) => field.key)),
-        ...fields.flatMap((field, index) =>
-          isValidPattern(field.regex)
-            ? []
-            : [{ field: `fields.${index}.regex`, message: 'Enter a valid regular expression.' }],
-        ),
+        ...fields.flatMap((field, index) => {
+          const problem = fieldPatternProblem(field.regex);
+          return problem === undefined ? [] : [{ field: `fields.${index}.regex`, message: problem.message }];
+        }),
       ];
       if (found.length > 0) throw problems(found);
 

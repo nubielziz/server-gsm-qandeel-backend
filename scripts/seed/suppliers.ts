@@ -1,7 +1,8 @@
 // Seeder of the suppliers module: the demo's suppliers, the services each offers (the demo's services with their primary and fallback
 // supplier, plus three unimported ones per supplier), the links of the services to them in priority order and the supplier call log,
-// mapped as the frontend mock maps them (src/features/suppliers/mocks/seed.ts): same ids, names and amounts. API keys are the demo's
-// dev-only placeholders, stored encrypted like real ones; no real secret is ever seeded.
+// mapped as the frontend mock maps them (src/features/suppliers/mocks/seed.ts): same ids, names and amounts, except the key hint, which
+// follows the server rule (decision 051), not the console mock. API keys are the demo's dev-only placeholders, stored encrypted like
+// real ones; no real secret is ever seeded.
 //
 // Two steps because of the foreign keys: the suppliers, services and links come before the orders (the orders seed links each order to
 // its supplier by name), the call log after them (its rows point at orders).
@@ -9,6 +10,7 @@ import type { AppConfig } from '../../src/config';
 import { EncryptionService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import { recomputeEffectiveCost } from '../../src/modules/catalog';
+import { apiKeyHintOf } from '../../src/modules/suppliers';
 import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -126,7 +128,7 @@ export async function seedSuppliers(db: DbExecutor, demo: DemoSeed, config?: App
       baseUrl: `https://${supplier.host}`,
       username: 'gsm-supply',
       apiKeyEnc: encryption ? encryption.encrypt(supplier.key, 'suppliers.api_key_enc') : null,
-      apiKeyHint: encryption ? supplier.key.slice(0, 5) : null,
+      apiKeyHint: encryption ? apiKeyHintOf(supplier.key) : null,
       paramFormat: driver === 'dhru' ? 'dhru_xml' : 'json',
       currency: 'USD',
       creditRate: '1',

@@ -19,6 +19,26 @@ describe('parseBulkLines', () => {
     expect(lines[0]!.raw).toBe('111 a');
   });
 
+  it('ends a line at CR, U+2028 and U+2029 as well', () => {
+    const lines = parseBulkLines('111 a\r222 b\u2028333 c\u2029444 d\r\n555 e');
+    expect(lines.map((line) => [line.line, line.imei, line.code])).toEqual([
+      [1, '111', 'a'],
+      [2, '222', 'b'],
+      [3, '333', 'c'],
+      [4, '444', 'd'],
+      [5, '555', 'e'],
+    ]);
+  });
+
+  it('reads a long line with a lone carriage return in time proportional to its length', () => {
+    const started = performance.now();
+    const lines = parseBulkLines(`${'a'.repeat(60_000)} b\rc`);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ imei: 'a'.repeat(60_000), code: 'b' });
+    expect(lines[1]).toMatchObject({ imei: 'c', code: null });
+  });
+
   it('gives a line with an input only no code', () => {
     expect(parseBulkLines('111')[0]).toMatchObject({ imei: '111', code: null });
     expect(parseBulkLines('111,;  ')[0]).toMatchObject({ imei: '111', code: null });
