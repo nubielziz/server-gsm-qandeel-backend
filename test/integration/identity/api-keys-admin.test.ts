@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { desc, eq } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
+import { SECURITY_NOTICE_PHRASES } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
 import { type TestApp, createTestApp } from '../../support/app';
 import { adminWith } from '../../support/admin-api';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
@@ -360,6 +361,119 @@ describe('PATCH /admin/api-keys/:id', () => {
     const clientId = await insertMerchant(db, { status: 'suspended' });
     const key = await insertApiKey(t, db, clientId, {});
     expect((await api.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 5 })).status).toBe(200);
+  });
+});
+
+describe('PATCH /admin/api-keys/:id: who may widen a key, and the merchant is told', () => {
+  const WIDEN_DETAIL = 'Only an owner can widen the allowed addresses of an API key or raise its limit.';
+  const SERVER = '198.51.100.7/32';
+  const OTHER = '203.0.113.9';
+  const NOTICE = 'merchant.security_notice';
+  // A member who may change keys but is not an Owner.
+  const deputy = () => staff(['api_keys:read', 'api_keys:update']);
+  const keyRow = async (id: number) => (await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id)))[0]!;
+
+  it('refuses a non-Owner every change that opens the key more, and writes, mails and audits nothing', async () => {
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER], rateLimitPerMin: 60 });
+    const member = await deputy();
+    const widenings: Record<string, unknown>[] = [
+      { allowedIps: [] },
+      { allowedIps: [SERVER, OTHER] },
+      { allowedIps: [OTHER] },
+      { rateLimitPerMin: 61 },
+      { rateLimitPerMin: 6000, allowedIps: [SERVER] },
+      // A narrower value in one field does not pay for a wider one in the other.
+      { rateLimitPerMin: 1, allowedIps: [] },
+    ];
+    for (const body of widenings) {
+      const refused = await member.patch(`/admin/api-keys/${key.id}`, body);
+      expect(refused.status, JSON.stringify(body)).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe(WIDEN_DETAIL);
+    }
+    expect(await keyRow(key.id)).toMatchObject({ allowedIps: [SERVER], rateLimitPerMin: 60 });
+    expect((await useKey(key.key, OTHER)).statusCode).toBe(403);
+    expect(await db.select().from(s.auditLogs)).toEqual([]);
+    expect(await notificationRows(db)).toEqual([]);
+    expect(await db.select().from(s.outboxEvents)).toEqual([]);
+  });
+
+  it('on a key without a restriction, refuses a non-Owner a higher limit but lets them keep it open or restrict it', async () => {
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [], rateLimitPerMin: 60 });
+    const member = await deputy();
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 6000 })).status).toBe(403);
+    // Keeping the key open is not a widening, and restricting it is a narrowing.
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { allowedIps: [] })).status).toBe(200);
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { allowedIps: [SERVER] })).status).toBe(200);
+    expect(await keyRow(key.id)).toMatchObject({ allowedIps: [SERVER], rateLimitPerMin: 60 });
+  });
+
+  it('lets a non-Owner narrow a key: fewer addresses, a first restriction, a lower limit', async () => {
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER, `${OTHER}/32`], rateLimitPerMin: 60 });
+    const member = await deputy();
+    const fewer = await member.patch(`/admin/api-keys/${key.id}`, { allowedIps: [SERVER] });
+    expect(fewer.status).toBe(200);
+    expect(fewer.body).toMatchObject({ allowedIps: ['198.51.100.7'], rateLimitPerMin: 60 });
+    const lower = await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 10 });
+    expect(lower.status).toBe(200);
+    expect(lower.body).toMatchObject({ rateLimitPerMin: 10 });
+    const both = await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 5, allowedIps: [SERVER] });
+    expect(both.status).toBe(200);
+    const open = await insertApiKey(t, db, clientId, { allowedIps: [], rateLimitPerMin: 60 });
+    expect((await member.patch(`/admin/api-keys/${open.id}`, { allowedIps: [SERVER] })).status).toBe(200);
+    expect((await useKey(open.key, OTHER)).statusCode).toBe(403);
+  });
+
+  it('lets an Owner widen a key', async () => {
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER], rateLimitPerMin: 60 });
+    expect((await useKey(key.key, OTHER)).statusCode).toBe(403);
+    const owner = await staff();
+    const res = await owner.patch(`/admin/api-keys/${key.id}`, { allowedIps: [], rateLimitPerMin: 6000 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ allowedIps: [], rateLimitPerMin: 6000 });
+    expect((await useKey(key.key, OTHER)).statusCode).toBe(200);
+  });
+
+  it('mails the merchant one security notice for each change, whoever made it, and only that merchant', async () => {
+    const clientId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    await insertMerchant(db, { name: 'Cedar Phones' });
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER, `${OTHER}/32`], rateLimitPerMin: 60 });
+    const [merchant] = await db.select().from(s.clients).where(eq(s.clients.id, clientId));
+    const member = await deputy();
+    const owner = await staff();
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 30 })).status).toBe(200);
+    expect((await owner.patch(`/admin/api-keys/${key.id}`, { allowedIps: [] })).status).toBe(200);
+    // A refused change sends nothing.
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 6000 })).status).toBe(403);
+
+    expect((await notificationRows(db)).map((row) => [row.event, row.recipientId])).toEqual([
+      [NOTICE, clientId],
+      [NOTICE, clientId],
+    ]);
+    await sendAllQueued(t);
+    const mails = mailbox(t).sent;
+    expect(mails).toHaveLength(2);
+    for (const mail of mails) {
+      expect(mail.subject).toBe('A security change on your merchant account');
+      expect(mail.text).toContain(SECURITY_NOTICE_PHRASES.api_key_changed);
+      expect(mail.text.startsWith('Hi Zain Mobile Hub,')).toBe(true);
+      expect(mail.text).not.toContain(key.key);
+    }
+    expect(mails.map((mail) => mail.to)).toEqual([merchant!.email, merchant!.email]);
+    expect(await db.select().from(s.auditLogs)).toHaveLength(2);
+  });
+
+  it('mails nothing when the sent values are the stored ones', async () => {
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER, `${OTHER}/32`], rateLimitPerMin: 60 });
+    const member = await deputy();
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 60 })).status).toBe(200);
+    expect((await member.patch(`/admin/api-keys/${key.id}`, { allowedIps: [OTHER, '198.51.100.7'] })).status).toBe(200);
+    expect(await notificationRows(db)).toEqual([]);
   });
 });
 

@@ -162,7 +162,7 @@ describe('the life of a merchant account', () => {
     expect((await device('again').login(email, 'a-second-long-password')).json()).toEqual({ next: 'done' });
   });
 
-  it('11. staff create an API key and lower its limit: shown once, marked as made by support, one notice, no secret stored', async () => {
+  it('11. staff create an API key and lower its limit: shown once, marked as made by support, a notice for each, no secret stored', async () => {
     mailbox(t).reset();
     const created = await api.post(`/admin/clients/${merchantId}/api-keys`, {
       name: 'Server',
@@ -180,9 +180,13 @@ describe('the life of a merchant account', () => {
     expect(mine.statusCode).toBe(200);
     expect(mine.json<{ createdByStaff: boolean }[]>().map((row) => row.createdByStaff)).toEqual([true]);
     await sendAllQueued(t);
-    expect(mails().map((mail) => mail.subject)).toEqual(['A security change on your merchant account']);
-    expect(lastMail().text).toContain('a new API key was created for your account');
-    expect(lastMail().text).not.toContain(secret);
+    expect(mails().map((mail) => mail.subject)).toEqual([
+      'A security change on your merchant account',
+      'A security change on your merchant account',
+    ]);
+    expect(mails()[0]!.text).toContain('a new API key was created for your account');
+    expect(mails()[1]!.text).toContain('the allowed addresses or the rate limit of one of your API keys was changed');
+    expect(mails().some((mail) => mail.text.includes(secret))).toBe(false);
     const { db } = await testDb();
     expect(JSON.stringify(await db.select().from(s.auditLogs))).not.toContain(secret);
   });

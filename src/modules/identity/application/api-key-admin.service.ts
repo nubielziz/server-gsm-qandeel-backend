@@ -11,6 +11,7 @@ import {
   MAX_LIVE_KEYS,
   apiKeyToWire,
   checkAllowedIps,
+  classifyKeyChange,
 } from '../domain/api-key-input';
 import {
   listAllKeysOfClient,
@@ -26,6 +27,9 @@ import type { StaffPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { ApiKeyIssuer } from './api-key-issuer';
 import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
+
+/** The refusal text when a staff member who is not an Owner widens a key (decision 046). */
+const WIDEN_KEY_DETAIL = 'Only an owner can widen the allowed addresses of an API key or raise its limit.';
 
 /** What staff send to create a key for a merchant. */
 export interface CreateClientApiKeyInput {
@@ -52,8 +56,9 @@ export interface CreatedClientApiKey {
  * dropped after the commit (P2.5c), and each one writes an audit row under the merchant.
  *
  * Side effects: `create` inserts `api_keys`, a `merchant.security_notice` notification and an audit row (never the key); `update`
- * writes `api_keys` and an audit row; `revoke` sets `api_keys.revoked_at` and writes `audit_logs` (`revoked API key of`, entity
- * `merchant`); `update` and `revoke` drop the cached view of the key after the commit.
+ * writes `api_keys`, an audit row and, when a value changes, a `merchant.security_notice` notification; `revoke` sets
+ * `api_keys.revoked_at` and writes `audit_logs` (`revoked API key of`, entity `merchant`); `update` and `revoke` drop the cached
+ * view of the key after the commit.
  *
  * @see docs/contract/endpoints/identity.md (the api-keys sections)
  */
@@ -142,12 +147,19 @@ export class ApiKeyAdminService {
   /**
    * Changes a key's per-minute limit and allowed addresses.
    *
+   * Why: a change that gives the key more reach (an empty list, an address that was not stored, a higher limit) is kept for Owners, like
+   * the creation of a key (decision 046); the other staff may narrow a key. The judgement is made on the row this transaction holds, so
+   * a concurrent change cannot make a stale read pass. The merchant is mailed a security notice for every change that alters a value.
+   *
+   * @param caller the signed-in staff member
    * @param id the key id
    * @param changes the new limit and/or the new address list (`[]` removes the restriction); a missing one stays
    * @returns the key after the change
-   * @throws {AppError} `NOT_FOUND` (404), `ALREADY_REVOKED` (409), `VALIDATION_FAILED` (422) on `allowedIps.N`
+   * @throws {AppError} `NOT_FOUND` (404), `ALREADY_REVOKED` (409), `FORBIDDEN` (403: the change widens the key and the caller is not an
+   *   Owner), `VALIDATION_FAILED` (422) on `allowedIps.N`
    */
   async update(
+    caller: StaffPrincipal,
     id: number,
     changes: { readonly rateLimitPerMin?: number | undefined; readonly allowedIps?: readonly string[] | undefined },
   ): Promise<ApiKeyWire> {
@@ -157,12 +169,22 @@ export class ApiKeyAdminService {
       const row = await lockKey(work.tx, id);
       if (!row) throw new AppError('NOT_FOUND', { detail: 'No API key has this id.' });
       if (row.revokedAt !== null) throw new AppError('ALREADY_REVOKED', { detail: 'This key was revoked.' });
+      // The kind is judged against the locked row; a widening needs an Owner and nothing has been written yet.
+      const kind = classifyKeyChange(row, {
+        rateLimitPerMin: changes.rateLimitPerMin,
+        allowedIps: allowed?.ok ? allowed.value : undefined,
+      });
+      if (kind === 'widens') requireOwner(caller, WIDEN_KEY_DETAIL);
       const updated = await updateKey(work.tx, id, {
         ...(changes.rateLimitPerMin === undefined ? {} : { rateLimitPerMin: changes.rateLimitPerMin }),
         ...(allowed?.ok ? { allowedIps: allowed.value } : {}),
       });
       // The cached view holds both values: drop it so the change applies on the next call.
       await this.directory.invalidate([row.keyHash], work);
+      const merchantName = (await merchantNameOf(work.tx, row.clientId)) ?? `Merchant ${row.clientId}`;
+      if (kind !== 'none') {
+        await this.lifecycleMails.securityNotice(work, { id: row.clientId, name: merchantName }, 'api_key_changed');
+      }
       const facts = (key: typeof row) => ({
         keyId: key.id,
         name: key.name,
@@ -174,7 +196,7 @@ export class ApiKeyAdminService {
         action: 'changed limits of API key of',
         entityType: 'merchant',
         entityId: row.clientId,
-        entityLabel: (await merchantNameOf(work.tx, row.clientId)) ?? `Merchant ${row.clientId}`,
+        entityLabel: merchantName,
         before: facts(row),
         after: facts(updated),
       });

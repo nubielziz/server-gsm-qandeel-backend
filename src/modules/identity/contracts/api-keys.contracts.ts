@@ -221,7 +221,10 @@ export const adminUpdateApiKey = defineRoute({
     'A partial body with at least one key: `rateLimitPerMin` (an integer from ' +
     `${RATE_LIMIT_PER_MIN_RANGE.min} to ${RATE_LIMIT_PER_MIN_RANGE.max}) and \`allowedIps\` (up to ${MAX_ALLOWED_IPS} addresses or ` +
     'ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. ' +
-    'A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values.',
+    'A change that gives the key more reach (an empty list, an address that is not stored, a higher limit) needs an owner: ' +
+    '`403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list or a lower limit stays under `api_keys:update`. ' +
+    'A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values; ' +
+    'a change of a value sends the merchant a security notice by email.',
   tags: ['clients'],
   surface: 'admin',
   access: 'staff-permission',

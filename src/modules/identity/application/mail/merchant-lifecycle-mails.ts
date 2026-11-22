@@ -15,7 +15,8 @@ import {
 } from './identity-mail-events';
 
 /** The staff actions a security notice names. */
-export type SecurityNoticeKind = 'temporary_password' | 'twofa_reset' | 'api_key_created' | 'email_changed';
+export type SecurityNoticeKind =
+  'temporary_password' | 'twofa_reset' | 'api_key_created' | 'api_key_changed' | 'email_changed';
 
 /**
  * The fixed sentence of each security notice (`{{change}}` of `merchant.security_notice`).
@@ -27,6 +28,7 @@ export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, string
   temporary_password: 'a temporary password was set for your account; you will choose a new one when you sign in',
   twofa_reset: 'two-factor sign-in was turned off for your account',
   api_key_created: 'a new API key was created for your account',
+  api_key_changed: 'the allowed addresses or the rate limit of one of your API keys was changed',
   email_changed:
     'the email address of your account was changed, so this address no longer receives the emails of your account',
 };
@@ -38,7 +40,7 @@ type Recipient = Pick<Client, 'id' | 'name'>;
  * Writes the lifecycle emails of a merchant.
  *
  * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
- * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key, a new email address). All are transactional: always sent, whatever the
+ * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key or a change of its addresses or limit, a new email address). All are transactional: always sent, whatever the
  * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
  * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
  *

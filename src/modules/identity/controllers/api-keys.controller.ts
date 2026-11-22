@@ -149,6 +149,7 @@ export class ApiKeysAdminController {
   /**
    * Changes a key's per-minute limit and allowed addresses.
    *
+   * @param staff the signed-in staff member
    * @param params the key id
    * @param body the fields to change
    * @returns the key after the change
@@ -156,10 +157,11 @@ export class ApiKeysAdminController {
    */
   @Route(adminUpdateApiKey)
   update(
+    @CurrentStaff() staff: StaffPrincipal,
     @Param() params: ParamsOf<typeof adminUpdateApiKey>,
     @Body() body: BodyOf<typeof adminUpdateApiKey>,
   ): Promise<ResultOf<typeof adminUpdateApiKey>> {
-    return this.keys.update(params.id, body);
+    return this.keys.update(staff, params.id, body);
   }
 
   /**

@@ -511,8 +511,8 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English
   default templates (`application/mail/identity-templates.ts` keeps the text; `drizzle/0025_merchant_management_templates.sql` shipped it, and a spec finds
   every default row of the code in the applied file). The module also registers those shipped texts with the event registry
-  (`registerBuiltInTemplates`), the fallback of the security emails (decision 047). The security notice has four kinds, each one fixed sentence
-  (`SECURITY_NOTICE_PHRASES`): `temporary_password`, `twofa_reset`, `api_key_created` and `email_changed`; the `email_changed` notice names the address
+  (`registerBuiltInTemplates`), the fallback of the security emails (decision 047). The security notice has five kinds, each one fixed sentence
+  (`SECURITY_NOTICE_PHRASES`): `temporary_password`, `twofa_reset`, `api_key_created`, `api_key_changed` and `email_changed`; the `email_changed` notice names the address
   it goes to (`to`: the address before the change), because the merchant's current address is the new one. The event is flagged `security` and `namedAddress`
   in the registry, and `staff.invited` and `staff.password_reset` are flagged `security` and `secretLink`.
   KYC decisions and the end of one merchant session are audited under `merchant`.
@@ -525,7 +525,9 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   (five an hour per member, `429`); the temporary-password mode sends no mail.
 - **API keys by staff** (`ApiKeyAdminService`, `ApiKeyIssuer`): `POST /admin/clients/:id/api-keys` (`api_keys:create`; active merchants only, `409 NOT_ACTIVE`
   otherwise; the key shown once with `no-store`, `api_keys.created_by` = the staff member, a `merchant.security_notice` mail, an audit row without the key) and
-  `PATCH /admin/api-keys/:id` (`api_keys:update`; per-minute limit 1-6000 and allowed addresses; drops the cached view of the key). `createdByStaff` is on every key row.
+  `PATCH /admin/api-keys/:id` (`api_keys:update`; per-minute limit 1-6000 and allowed addresses; drops the cached view of the key; a change that gives the key
+  more reach, meaning an empty address list, an address that is not stored or a higher limit, is kept for Owners (`classifyKeyChange`, judged on the locked row,
+  decision 046); a change of a value mails the merchant the `api_key_changed` notice). `createdByStaff` is on every key row.
   Lock order: the merchant's `api-keys:<id>` advisory lock, then the `clients` row (the merchant's own creation takes the advisory lock and then a shared lock on the
   merchant row for the foreign key of the insert, so the reverse order would deadlock). Creating a key from the console is kept for Owners (decision 046).
 
@@ -858,7 +860,7 @@ Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controll
 | `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
 | `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |
 | `POST /admin/clients/:id/api-keys` | `api_keys:create` | feature 20: the merchant's body plus `rateLimitPerMin` (1-6000, default 60) → `201 { key, secret }`, `no-store`; active merchants only (`409 NOT_ACTIVE`); `created_by` = the staff member (`createdByStaff: true`); a `merchant.security_notice` mail; audited `created API key for <merchant>` (never the key) |
-| `PATCH /admin/api-keys/:id` | `api_keys:update` | feature 20: `{ rateLimitPerMin?, allowedIps? }` (at least one); `409 ALREADY_REVOKED`; drops the cached view; audited `changed limits of API key of <merchant>` with before and after |
+| `PATCH /admin/api-keys/:id` | `api_keys:update` | feature 20: `{ rateLimitPerMin?, allowedIps? }` (at least one); `403 FORBIDDEN` for a non-Owner when the change widens the key (an empty list, an address not stored, a higher limit); `409 ALREADY_REVOKED`; drops the cached view; a changed value mails the merchant a security notice; audited `changed limits of API key of <merchant>` with before and after |
 | `DELETE /admin/api-keys/:id` | `api_keys:revoke` | `204`; `409 ALREADY_REVOKED`; drops the cached view; audited `revoked API key of <merchant>` (entity `merchant`, as the demo logs it) |
 
 Scopes a merchant may give: `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` and the area wildcards `account:*`, `orders:*`, `services:*`

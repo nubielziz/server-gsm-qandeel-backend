@@ -8,6 +8,7 @@ import {
   apiKeyToWire,
   checkAllowedIps,
   checkScopes,
+  classifyKeyChange,
   composeApiKey,
   scopeProblem,
 } from '@src/modules/identity/domain/api-key-input';
@@ -142,5 +143,44 @@ describe('apiKeyToWire', () => {
     expect(wire.lastUsedAt).toBe('2026-11-01T09:30:00.000Z');
     expect(wire.lastUsedIp).toBe('203.0.113.55');
     expect(wire.revokedAt).toBe('2026-11-02T00:00:00.000Z');
+  });
+});
+
+describe('classifyKeyChange', () => {
+  const stored = { allowedIps: ['198.51.100.7/32', '203.0.113.9/32'], rateLimitPerMin: 60 };
+  const open = { allowedIps: [], rateLimitPerMin: 60 };
+
+  it('says none when nothing is sent or the sent values equal the stored ones, whatever the order of the addresses', () => {
+    expect(classifyKeyChange(stored, {})).toBe('none');
+    expect(classifyKeyChange(stored, { rateLimitPerMin: 60 })).toBe('none');
+    expect(classifyKeyChange(stored, { allowedIps: ['203.0.113.9/32', '198.51.100.7/32'] })).toBe('none');
+    expect(classifyKeyChange(open, { allowedIps: [] })).toBe('none');
+  });
+
+  it('says widens when the restriction is removed, an address is added or replaced, or the limit rises', () => {
+    expect(classifyKeyChange(stored, { allowedIps: [] })).toBe('widens');
+    expect(classifyKeyChange(stored, { allowedIps: [...stored.allowedIps, '192.0.2.1/32'] })).toBe('widens');
+    expect(classifyKeyChange(stored, { allowedIps: ['192.0.2.1/32'] })).toBe('widens');
+    expect(classifyKeyChange(stored, { allowedIps: ['198.51.100.7/32', '192.0.2.1/32'] })).toBe('widens');
+    expect(classifyKeyChange(stored, { rateLimitPerMin: 61 })).toBe('widens');
+    expect(classifyKeyChange(open, { rateLimitPerMin: 6000 })).toBe('widens');
+  });
+
+  it('says narrows when addresses are dropped or a restriction is added to an open key, or the limit falls', () => {
+    expect(classifyKeyChange(stored, { allowedIps: ['198.51.100.7/32'] })).toBe('narrows');
+    expect(classifyKeyChange(open, { allowedIps: ['198.51.100.7/32'] })).toBe('narrows');
+    expect(classifyKeyChange(stored, { rateLimitPerMin: 59 })).toBe('narrows');
+    expect(classifyKeyChange(stored, { rateLimitPerMin: 1, allowedIps: ['203.0.113.9/32'] })).toBe('narrows');
+  });
+
+  it('says widens when one part widens and the other narrows', () => {
+    expect(classifyKeyChange(stored, { allowedIps: [], rateLimitPerMin: 1 })).toBe('widens');
+    expect(classifyKeyChange(stored, { allowedIps: ['198.51.100.7/32'], rateLimitPerMin: 6000 })).toBe('widens');
+  });
+
+  it('does not treat a narrower range inside a stored range as a subset: only the same entries count', () => {
+    const ranged = { allowedIps: ['198.51.100.0/24'], rateLimitPerMin: 60 };
+    expect(classifyKeyChange(ranged, { allowedIps: ['198.51.100.7/32'] })).toBe('widens');
+    expect(classifyKeyChange(ranged, { allowedIps: ['198.51.100.0/24'] })).toBe('none');
   });
 });

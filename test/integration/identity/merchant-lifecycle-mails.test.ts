@@ -200,6 +200,7 @@ describe('the security notice', () => {
     'api_key_created',
     // Decision 047: the notice a staff change of the merchant's email sends (to the address before the change).
     'email_changed',
+    'api_key_changed',
   ];
 
   it('names the fixed sentence of the action, the same for every merchant, never anything else', async () => {
@@ -215,7 +216,7 @@ describe('the security notice', () => {
     }
     await sendAllQueued(t);
     const sent = mailbox(t).sent;
-    expect(sent).toHaveLength(8);
+    expect(sent).toHaveLength(KINDS.length * 2);
     for (const kind of KINDS) {
       for (const merchant of [first, second]) {
         const mail = sent.find((m) => m.to === merchant.email && m.text.includes(SECURITY_NOTICE_PHRASES[kind]));

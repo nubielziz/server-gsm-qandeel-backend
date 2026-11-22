@@ -85,6 +85,41 @@ export function checkAllowedIps(entries: readonly string[]): Checked<string[]> {
   return errors.length > 0 ? { ok: false, errors } : { ok: true, value: stored };
 }
 
+/** How a change of a key's address list and per-minute limit moves its reach: it changes nothing, only narrows it, or widens it. */
+export type KeyChangeKind = 'none' | 'narrows' | 'widens';
+
+/**
+ * Judges whether a change of a key's allowed addresses and per-minute limit widens the key.
+ *
+ * Why: the address list and the limit set how far a key reaches: removing the list, adding an address or raising the limit gives
+ * the key more reach, so that change is kept for Owners and staff who are not Owners may only narrow a key (decision 046).
+ * An empty list means every address, so it is the widest list; a list is no wider than the stored one when every entry of it
+ * is also stored (a narrower range inside a stored range is not recognised and counts as a widening, which only an Owner
+ * may then make). A change that widens one part widens the key, whatever the other part does.
+ *
+ * @param stored the key as it is stored (addresses in their stored spelling)
+ * @param next the new values, in the stored spelling; a missing one stays as it is
+ * @returns `widens` when an address list or limit gets wider, `narrows` when a value gets narrower and none gets wider, `none` when nothing changes
+ */
+export function classifyKeyChange(
+  stored: { readonly allowedIps: readonly string[]; readonly rateLimitPerMin: number },
+  next: { readonly allowedIps?: readonly string[] | undefined; readonly rateLimitPerMin?: number | undefined },
+): KeyChangeKind {
+  let narrows = false;
+  if (next.rateLimitPerMin !== undefined && next.rateLimitPerMin !== stored.rateLimitPerMin) {
+    if (next.rateLimitPerMin > stored.rateLimitPerMin) return 'widens';
+    narrows = true;
+  }
+  if (next.allowedIps !== undefined) {
+    const current = new Set(stored.allowedIps);
+    const proposed = new Set(next.allowedIps);
+    const isSubset = current.size === 0 || (proposed.size > 0 && [...proposed].every((entry) => current.has(entry)));
+    if (!isSubset) return 'widens';
+    if (proposed.size !== current.size) narrows = true;
+  }
+  return narrows ? 'narrows' : 'none';
+}
+
 /**
  * Builds the text of a new key from random token text.
  *

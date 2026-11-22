@@ -6191,7 +6191,7 @@
     },
     "/admin/api-keys/{id}": {
       "patch": {
-        "description": "A partial body with at least one key: `rateLimitPerMin` (an integer from 1 to 6000) and `allowedIps` (up to 20 addresses or ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values.",
+        "description": "A partial body with at least one key: `rateLimitPerMin` (an integer from 1 to 6000) and `allowedIps` (up to 20 addresses or ranges; `[]` removes the restriction). Takes effect on the next call with the key: its cached view is dropped after the commit. A change that gives the key more reach (an empty list, an address that is not stored, a higher limit) needs an owner: `403 FORBIDDEN` for everyone else, judged on the stored key; a narrower list or a lower limit stays under `api_keys:update`. A revoked key is `409 ALREADY_REVOKED`. Writes the audit entry `changed limits of API key of <merchant>` with the old and new values; a change of a value sends the merchant a security notice by email.",
         "operationId": "patchAdminApiKeysById",
         "parameters": [
           {
