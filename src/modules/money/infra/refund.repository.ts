@@ -141,11 +141,14 @@ export async function updateRefundIn(
  *
  * Why: the next send of a refund the gateway refused (a 4xx, a failed refund object) must use a new key, or the gateway only replays the
  * refusal; after a failure whose outcome is unknown (a timeout, a 5xx) the key stays, so a refund the gateway may have made is not made twice.
+ * A new key was never sent, so a definite failure clears `unanswered_send_at`; a failure of a send that got no answer records the start of
+ * that send there (the current `updated_at`, read before this update changes it), unless an earlier send under the key already did.
  *
  * @param db the caller's transaction
  * @param id the refund id
  * @param changes the failure text, the gateway's id and the time
  * @param definite true when the gateway refused the refund for good: `send_attempt` grows by one in the same update
+ * @param unanswered true when the failed send got no answer (the gateway may have made the refund)
  * @returns the stored row, or `undefined` when the refund was not `processing`
  */
 export async function failProcessingRefund(
@@ -153,17 +156,94 @@ export async function failProcessingRefund(
   id: number,
   changes: Pick<NewRefund, 'note' | 'updatedAt'> & Partial<Pick<NewRefund, 'gatewayRefundId'>>,
   definite: boolean,
+  unanswered = false,
 ): Promise<Refund | undefined> {
   const [updated] = await db
     .update(refunds)
     .set({
       ...changes,
       status: 'failed',
-      ...(definite ? { sendAttempt: sql`${refunds.sendAttempt} + 1` } : {}),
+      ...(definite
+        ? { sendAttempt: sql`${refunds.sendAttempt} + 1`, unansweredSendAt: null }
+        : unanswered
+          ? { unansweredSendAt: sql`coalesce(${refunds.unansweredSendAt}, ${refunds.updatedAt})` }
+          : {}),
     })
     .where(and(eq(refunds.id, id), eq(refunds.status, 'processing')))
     .returning();
   return updated;
+}
+
+/**
+ * Records the gateway's refusal for good of the current send of a `failed` refund.
+ *
+ * Why: a send that got no answer fails the refund but keeps its idempotency key, since the gateway may have made the refund. The gateway's
+ * own refusal of that send (`refund.failed`) says that gateway refund is dead: the key moves on (`send_attempt` + 1) and
+ * `unanswered_send_at` is cleared, as for any refusal for good, so a later success of that send (delivered out of order or again) is stale
+ * and the staff retry sends under a new key. The gateway's refund id is stored, so a success that names no attempt but that gateway refund
+ * is stale too. Guarded by the status and the send attempt the refusal belongs to, so a repeated delivery changes nothing.
+ *
+ * Side effects: updates the `refunds` row (the gateway's text is appended to `note`).
+ *
+ * @param db the caller's transaction
+ * @param id the refund id
+ * @param sendAttempt the send attempt the refusal belongs to
+ * @param gatewayRefundId the gateway's id of the refused refund, when it gave one (kept as it is otherwise)
+ * @param text the line to append to the note
+ * @param at the clock's time
+ * @returns the stored row, or `undefined` when the refund is not `failed` on that send attempt
+ */
+export async function recordRefusalOfFailedRefund(
+  db: DbExecutor,
+  id: number,
+  sendAttempt: number,
+  gatewayRefundId: string | null,
+  text: string,
+  at: Date,
+): Promise<Refund | undefined> {
+  const [updated] = await db
+    .update(refunds)
+    .set({
+      sendAttempt: sql`${refunds.sendAttempt} + 1`,
+      unansweredSendAt: null,
+      ...(gatewayRefundId === null ? {} : { gatewayRefundId }),
+      note: sql`case when ${refunds.note} = '' then ${text} else ${refunds.note} || chr(10) || ${text} end`,
+      updatedAt: at,
+    })
+    .where(and(eq(refunds.id, id), eq(refunds.status, 'failed'), eq(refunds.sendAttempt, sendAttempt)))
+    .returning();
+  return updated;
+}
+
+/**
+ * Records that a send of a `processing` refund got no answer, while the queue retries it under the same key.
+ *
+ * Why: the gateway may have made the refund on that send and remembers its key only 24 hours, so a later send under the key must know when
+ * the first unanswered one started (`unanswered_send_at`, from the current `updated_at`, the start of the send). An earlier record is kept;
+ * `updated_at` is left as it is (the lost-work reconcile reads it as the start of the send). Guarded by the status and the send attempt, so
+ * a refund that moved on in the meantime is not touched.
+ *
+ * Side effects: updates the `refunds` row.
+ *
+ * @param db the database or a transaction
+ * @param id the refund id
+ * @param sendAttempt the send attempt the unanswered call used
+ * @returns true when the row was updated
+ */
+export async function markSendUnanswered(db: DbExecutor, id: number, sendAttempt: number): Promise<boolean> {
+  const updated = await db
+    .update(refunds)
+    .set({ unansweredSendAt: sql`${refunds.updatedAt}`, updatedAt: sql`${refunds.updatedAt}` })
+    .where(
+      and(
+        eq(refunds.id, id),
+        eq(refunds.status, 'processing'),
+        eq(refunds.sendAttempt, sendAttempt),
+        isNull(refunds.unansweredSendAt),
+      ),
+    )
+    .returning({ id: refunds.id });
+  return updated.length > 0;
 }
 
 /**
@@ -245,7 +325,9 @@ export async function appendLateRefundFailure(
  *
  * Why: decision 048: a held storefront payment counts for the money integrity check until a refund of it is `processing` or `completed`;
  * a return the gateway failed later is money that did not go back, so the refund is `failed` again (`completed_at` cleared) with the
- * failure on its note, and the payment is listed again. The update is guarded like {@link appendLateRefundFailure}: the status, no
+ * failure on its note, and the payment is listed again. That gateway refund is dead, a failure for good, so `send_attempt` moves on (and
+ * `unanswered_send_at` is cleared) as for any definite failure: a later success of that send (delivered out of order or again) is stale and
+ * cannot complete the return, and a new send uses a new key. The update is guarded like {@link appendLateRefundFailure}: the status, no
  * order, the gateway refund id and the absence of the same marker, so a repeated delivery changes nothing.
  *
  * @param db the database or a transaction
@@ -270,6 +352,9 @@ export async function failLateReturn(
       status: 'failed',
       completedAt: null,
       note: sql`case when ${refunds.note} = '' then ${text} else ${refunds.note} || chr(10) || ${text} end`,
+      // The gateway refused that refund for good: the key moves on, as for any definite failure.
+      sendAttempt: sql`${refunds.sendAttempt} + 1`,
+      unansweredSendAt: null,
       updatedAt: at,
     })
     .where(

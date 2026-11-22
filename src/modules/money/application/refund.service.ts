@@ -13,6 +13,7 @@ import {
   MIN_DECLINE_REASON_LENGTH,
   checkApproval,
   refundRoute,
+  resendNeedsGatewayCheck,
   settlesAtOnce,
   wholeCents,
 } from '../domain/refund-rules';
@@ -281,9 +282,15 @@ export class RefundService {
   /**
    * Sends a failed refund to the gateway again.
    *
+   * Why: the send goes under the refund's idempotency key, which stays after a send that got no answer (the gateway may have made the
+   * refund). The gateway remembers a key only 24 hours, so once 20 hours have passed since such a send the retry is refused and staff check
+   * the payment at the gateway: a send then could refund the customer a second time. The gateway refund of the failed send is dead, so its
+   * id is cleared: the retried refund counts as not sent (a chargeback before its send closes it, the lost-work reconcile watches it).
+   *
    * @param id the refund
    * @returns the refund, `processing` again
-   * @throws {AppError} `NOT_FOUND`; `REFUND_NOT_FAILED` (409)
+   * @throws {AppError} `NOT_FOUND`; `REFUND_NOT_FAILED` (409) for a refund that did not fail, or whose earlier send got no answer more than
+   *   20 hours ago (the detail tells staff to check the payment at the gateway)
    */
   async retry(id: number): Promise<WireRefund> {
     return this.db.runInTransaction(async ({ tx }) => {
@@ -291,10 +298,17 @@ export class RefundService {
       if (!first) throw notFound();
       const refund = await lockRefund(tx, id);
       if (!refund) throw notFound();
+      const now = this.clock.now();
+      if (refund.status === 'failed' && resendNeedsGatewayCheck(refund.unansweredSendAt, now)) {
+        throw new AppError('REFUND_NOT_FAILED', {
+          detail: `${refundLabel(id)} cannot be sent again from here: a send of it got no answer from the payment gateway more than 20 hours ago, and the gateway may already have made it. Check the payment at the gateway.`,
+        });
+      }
       const done = await updateRefundIn(tx, id, ['failed'], {
         status: 'processing',
         note: '',
-        updatedAt: this.clock.now(),
+        gatewayRefundId: null,
+        updatedAt: now,
       });
       if (!done) throw new AppError('REFUND_NOT_FAILED', { detail: `${refundLabel(id)} did not fail at the gateway.` });
       await this.outbox.refund(tx, id);
@@ -303,8 +317,8 @@ export class RefundService {
         entityType: 'refund',
         entityId: id,
         entityLabel: `${refundLabel(id)} for ${orderLabel(done.orderId ?? 0)}`,
-        before: { status: 'failed' },
-        after: { status: 'processing' },
+        before: { status: 'failed', gatewayRefundId: refund.gatewayRefundId },
+        after: { status: 'processing', gatewayRefundId: null },
       });
       return (await this.views.build(tx, [done]))[0]!;
     });

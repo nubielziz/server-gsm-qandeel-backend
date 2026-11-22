@@ -746,6 +746,12 @@ export const refunds = pgTable(
      * it stays when the answer is unknown (a timeout, a 5xx), because the gateway may have made the refund and the same key stops a second one.
      */
     sendAttempt: integer().notNull().default(1),
+    /**
+     * Schema addition: the start of the first send under the current idempotency key that got no answer from the gateway (a timeout, a 5xx, a
+     * network error, a send job that was lost); null when every send under the key was answered or none was made. Cleared when the key moves
+     * on. The gateway may have made such a refund and keeps a key 24 hours, so 20 hours after this the refund is not sent under the key again.
+     */
+    unansweredSendAt: timestampTz(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

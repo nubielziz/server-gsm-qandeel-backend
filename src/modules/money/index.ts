@@ -129,7 +129,8 @@ export type { ReceiptRenderResult } from './application/order-receipts';
 export { RefundProcessModule } from './jobs/refund-process.module';
 export { RefundSender } from './jobs/refund-sender';
 // Decision 055: the lost-work pass of storefront refunds.
-export { REFUND_RESEND_WINDOW_MS, REFUND_SEND_LOST_NOTE, RefundReconcilePass } from './jobs/refund-reconcile';
+export { REFUND_SEND_LOST_NOTE, RefundReconcilePass } from './jobs/refund-reconcile';
+export { REFUND_RESEND_WINDOW_MS } from './domain/refund-rules';
 export type { RefundSendResult } from './jobs/refund-sender';
 export { GATEWAY_HTTP_POLICY } from './infra/gateway-drivers/driver';
 export type { GatewayHttpPolicy } from './infra/gateway-drivers/driver';

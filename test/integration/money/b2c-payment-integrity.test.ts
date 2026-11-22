@@ -32,6 +32,7 @@ import { GatewayTestModule } from '../../support/billing';
 import { HOUR, MINUTE, SECOND, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { notificationRows, seedDefaultTemplates } from '../../support/notifications';
+import { rejectionOf } from '../../support/rejection';
 import { insertCurrency } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-21T12:00:00.000Z');
@@ -399,6 +400,71 @@ describe('a confirmation that cannot pay its checkout is held and sent back', ()
     // A repeated delivery changes nothing.
     expect((await confirm(failure)).statusCode).toBe(200);
     expect((await refundRows())[0]).toEqual(failed);
+  });
+
+  it('a success of a gateway refund that the gateway failed after it completed changes nothing: the return stays failed and listed', async () => {
+    const { payment } = await opened();
+    const { body } = confirmation(payment, { received: '1.00' });
+    expect((await confirm(body)).statusCode).toBe(200);
+    const [refund] = await refundRows();
+    expect(await sender.send(refund!.id, false)).toBe('completed');
+    const completed = (await refundRows())[0]!;
+    const failure = refundEvent(`evt_${unique()}`, {
+      refund: completed.gatewayRefundId!,
+      refundId: completed.id,
+      sendAttempt: 1,
+      type: 'refund.failed',
+      failure: 'expired_or_canceled_card',
+    });
+    expect((await confirm(failure)).statusCode).toBe(200);
+    const failed = (await refundRows())[0]!;
+    expect(failed).toMatchObject({ status: 'failed', completedAt: null });
+    // That gateway refund is dead: a success of it delivered after the failure (out of order, or again) is stale.
+    const stale = refundEvent(`evt_${unique()}`, {
+      refund: completed.gatewayRefundId!,
+      refundId: completed.id,
+      sendAttempt: 1,
+    });
+    expect((await confirm(stale)).statusCode).toBe(200);
+    expect((await refundRows())[0]).toEqual(failed);
+    expect(failed.note).toContain(`that refund ${completed.gatewayRefundId} failed after it was completed`);
+    expect((await paymentsWithoutEntry(db)).rows.map((row) => row.id)).toContain(payment.id);
+  });
+
+  it('a refusal for good of a return whose send got no answer keeps it failed and listed: a later success of that send changes nothing', async () => {
+    const { payment } = await opened();
+    const { body } = confirmation(payment, { received: '1.00' });
+    expect((await confirm(body)).statusCode).toBe(200);
+    const [refund] = await refundRows();
+    // Every attempt of the job gets a 5xx: the return fails on the last one, and the gateway may have made it.
+    fake.failWith = 503;
+    expect(await rejectionOf(sender.send(refund!.id, false))).toMatchObject({ code: 'GATEWAY_ERROR' });
+    expect(await rejectionOf(sender.send(refund!.id, false))).toMatchObject({ code: 'GATEWAY_ERROR' });
+    expect(await sender.send(refund!.id, true)).toBe('failed');
+    fake.failWith = undefined;
+    expect((await refundRows())[0]).toMatchObject({ status: 'failed', sendAttempt: 1 });
+    // The gateway made a refund object on that send and then refused it for good.
+    const failure = refundEvent(`evt_${unique()}`, {
+      refund: 're_made',
+      refundId: refund!.id,
+      sendAttempt: 1,
+      type: 'refund.failed',
+      failure: 'expired_or_canceled_card',
+    });
+    expect((await confirm(failure)).statusCode).toBe(200);
+    const refused = (await refundRows())[0]!;
+    expect(refused).toMatchObject({
+      status: 'failed',
+      sendAttempt: 2,
+      unansweredSendAt: null,
+      gatewayRefundId: 're_made',
+    });
+    expect(refused.note).toContain('refund re_made failed: expired_or_canceled_card');
+    // An older report of the same send, delivered after its refusal, is stale.
+    const stale = refundEvent(`evt_${unique()}`, { refund: 're_made', refundId: refund!.id, sendAttempt: 1 });
+    expect((await confirm(stale)).statusCode).toBe(200);
+    expect((await refundRows())[0]).toEqual(refused);
+    expect((await paymentsWithoutEntry(db)).rows.map((row) => row.id)).toContain(payment.id);
   });
 
   it("a confirmation that does not state its amount is held and sent back by the record's amount", async () => {

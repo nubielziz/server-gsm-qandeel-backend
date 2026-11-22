@@ -8,9 +8,11 @@ import {
   NOTHING_LEFT_MESSAGE,
   checkApproval,
   closesAtChargeback,
+  REFUND_RESEND_WINDOW_MS,
   refundRoute,
   refundSendKey,
   refundableLeft,
+  resendNeedsGatewayCheck,
   settlesAtOnce,
   wholeCents,
 } from '@src/modules/money/domain/refund-rules';
@@ -160,5 +162,25 @@ describe('closesAtChargeback (decision 048)', () => {
     expect(closesAtChargeback({ status: 'completed', gatewayRefundId: 're_1' })).toBe(false);
     expect(closesAtChargeback({ status: 'completed', gatewayRefundId: null })).toBe(false);
     expect(closesAtChargeback({ status: 'rejected', gatewayRefundId: null })).toBe(false);
+  });
+});
+
+describe('resendNeedsGatewayCheck', () => {
+  const sent = new Date('2026-11-07T12:00:00.000Z');
+  const after = (ms: number) => new Date(sent.getTime() + ms);
+
+  it('is false when no send under the key went unanswered', () => {
+    expect(resendNeedsGatewayCheck(null, after(30 * 24 * 60 * 60_000))).toBe(false);
+  });
+
+  it('is false up to 20 hours after the unanswered send: the gateway still knows the key', () => {
+    expect(REFUND_RESEND_WINDOW_MS).toBe(20 * 60 * 60_000);
+    expect(resendNeedsGatewayCheck(sent, after(0))).toBe(false);
+    expect(resendNeedsGatewayCheck(sent, after(REFUND_RESEND_WINDOW_MS))).toBe(false);
+  });
+
+  it('is true after that: the gateway may have forgotten the key and could refund again', () => {
+    expect(resendNeedsGatewayCheck(sent, after(REFUND_RESEND_WINDOW_MS + 1))).toBe(true);
+    expect(resendNeedsGatewayCheck(sent, after(25 * 60 * 60_000))).toBe(true);
   });
 });

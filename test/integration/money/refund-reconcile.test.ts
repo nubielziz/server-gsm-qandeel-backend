@@ -283,4 +283,55 @@ describe('the refund pass of the lost-work reconcile (decision 055)', () => {
     expect(await refundRow(late.refundId)).toMatchObject({ status: 'processing' });
     expect(await requestsOf(late.refundId)).toHaveLength(2);
   });
+
+  it('a give-up leaves a refund whose gateway refund id was stored after the plan: the gateway holds it', async () => {
+    const { refundId } = await approvedRefund();
+    await loseNewestRequest(refundId);
+    clock.advance(21 * HOUR);
+    const givingUp = await coordinator().plan();
+    expect(givingUp.plans.get('refunds')?.items).toEqual([
+      { action: 'give_up', id: refundId, data: { sendAttempt: 1 } },
+    ]);
+    // The job the plan read as lost was still running: the gateway answered its send pending, so its refund id is stored.
+    fake.refund = { status: 'pending' };
+    expect(await t.app.get(RefundSender, { strict: false }).send(refundId, false)).toBe('pending');
+    const held = await refundRow(refundId);
+    expect(held.gatewayRefundId).not.toBeNull();
+    expect((await coordinator().apply(givingUp)).passes.refunds).toMatchObject({ requested: 0, gaveUp: 0 });
+    expect(await refundRow(refundId)).toEqual(held);
+  });
+});
+
+describe('a refund the reconcile gave up on, and a retried refund whose job was lost', () => {
+  it('a refund given up more than 20 hours after its send started is not sent again by the retry', async () => {
+    const { refundId } = await approvedRefund();
+    await loseNewestRequest(refundId);
+    clock.advance(21 * HOUR);
+    expect((await reconcile()).passes.refunds).toMatchObject({ gaveUp: 1 });
+    // The lost job may have reached the gateway when the send started, and the gateway keeps a key 24 hours.
+    staff = await adminWith(t, ['refunds:*', 'orders:*']);
+    const refused = await staff.post(`/admin/refunds/${refundId}/retry`, {});
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'REFUND_NOT_FAILED' });
+    expect(await refundRow(refundId)).toMatchObject({ status: 'failed', note: REFUND_SEND_LOST_NOTE, sendAttempt: 1 });
+    expect(fake.calls('/v1/refunds')).toHaveLength(0);
+  });
+
+  it('asks again for a retried refund whose job was lost after the gateway had refused it with a refund object', async () => {
+    const { refundId } = await approvedRefund();
+    await loseNewestRequest(refundId);
+    fake.refund = { status: 'failed', failure: 'expired_or_canceled_card' };
+    expect(await t.app.get(RefundSender, { strict: false }).send(refundId, false)).toBe('failed');
+    expect((await refundRow(refundId)).gatewayRefundId).not.toBeNull();
+    expect((await staff.post(`/admin/refunds/${refundId}/retry`, {})).status).toBe(200);
+    await loseNewestRequest(refundId);
+    clock.advance(11 * MINUTE);
+    expect((await reconcile()).passes.refunds).toMatchObject({ checked: 1, requested: 1 });
+    fake.refund = { status: 'succeeded' };
+    expect(await t.app.get(RefundSender, { strict: false }).send(refundId, false)).toBe('completed');
+    expect(fake.calls('/v1/refunds').map((call) => call.headers['idempotency-key'])).toEqual([
+      `refund-${refundId}`,
+      `refund-${refundId}-2`,
+    ]);
+  });
 });

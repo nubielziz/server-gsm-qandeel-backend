@@ -6,7 +6,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
-import type { OrderMethod, Payment, PaymentGateway, Refund } from '../db/schema';
+import type { OrderMethod, Payment, PaymentGateway, Refund, RefundStatus } from '../db/schema';
 import { refundSplit, statusAfterRefunds, storedOrderMethod, toUsd } from '../domain/b2c-money';
 import { b2cWalletRefund } from '../domain/customer-wallet-events';
 import { type AccountRef, reversalLines } from '../domain/ledger-lines';
@@ -252,11 +252,10 @@ export class B2cRefunds {
    * with a gateway id): its result comes from the gateway.
    *
    * Lock order: the payment (the caller's), then only the refunds that qualify, in id order: they are read first without a lock, and each
-   * is checked again under its lock; a refund this will not close is never locked. The refund settlement (`RefundSettlement.settle`)
-   * takes the other order (the refund, then its payment) when the gateway's answer completes a refund, so the two can meet on the same
-   * refund at the same moment: the database then ends one of the two transactions (a deadlock), nothing of it is written, and the gateway
-   * delivers its event again (the dispute webhook answers `503 UNAVAILABLE` for it; a settlement from the refund job is retried by the
-   * queue).
+   * is checked again under its lock; a refund this will not close is never locked. The refund settlement (`RefundSettlement.settle`) takes
+   * the same order (the payment, then the refund) and closes, the same way, a refund the gateway fails after the chargeback. Should the
+   * database still end one of the transactions (a deadlock), nothing of it is written and the gateway delivers its event again (the dispute
+   * webhook answers `503 UNAVAILABLE` for it; a settlement from the refund job is retried by the queue).
    *
    * Side effects (on the caller's transaction): updates `refunds`; one ledger transaction per reversed journal.
    *
@@ -272,16 +271,36 @@ export class B2cRefunds {
     for (const candidate of closing) {
       const refund = await lockRefund(tx, candidate.id);
       if (!refund || !closesAtChargeback(refund)) continue;
-      const done = await updateRefundIn(tx, refund.id, [refund.status], {
-        status: 'rejected',
-        note: CHARGEBACK_NOT_SENT_NOTE,
-        updatedAt: this.clock.now(),
-      });
-      if (!done) continue;
-      if (done.ledgerTxId !== null) await this.reverseJournal(tx, done, done.ledgerTxId, actor);
-      closed.push(done);
+      const done = await this.closeUnsent(tx, refund, actor);
+      if (done) closed.push(done);
     }
     return closed;
+  }
+
+  /**
+   * Closes one refund of a charged-back payment unsent and reverses the journal it had posted.
+   *
+   * Why: decision 048: the card network returned the payment, so a refund the gateway has not paid would return the same money a second
+   * time; the refund becomes `rejected` with {@link CHARGEBACK_NOT_SENT_NOTE} (a guarded update on the status it was read in) and its
+   * journal is mirrored (key `reverse:<journal id>`), so the books show the money leaving once. Used by {@link B2cRefunds.closeNotSent} at
+   * the chargeback, and by the refund settlement for a failure that arrives after it.
+   *
+   * Side effects (on the caller's transaction): updates `refunds`; one ledger transaction when the refund had a journal.
+   *
+   * @param tx the caller's transaction (the payment, then the refund, are locked; the ledger accounts are locked last)
+   * @param refund the locked refund
+   * @param actor who causes the close (the system for the gateway's answer)
+   * @returns the closed refund, or `undefined` when its status changed first
+   */
+  async closeUnsent(tx: DbExecutor, refund: Refund, actor: RefundActor): Promise<Refund | undefined> {
+    const done = await updateRefundIn(tx, refund.id, [refund.status], {
+      status: 'rejected',
+      note: CHARGEBACK_NOT_SENT_NOTE,
+      updatedAt: this.clock.now(),
+    });
+    if (!done) return undefined;
+    if (done.ledgerTxId !== null) await this.reverseJournal(tx, done, done.ledgerTxId, actor);
+    return done;
   }
 
   /** Posts the mirror of a refund's journal (key `reverse:<journal id>`, so a replay posts nothing). */
@@ -411,22 +430,25 @@ export class B2cRefunds {
    * Moves a refund to completed and the payment to its new status.
    *
    * Why: RESOLUTIONS money-5: refund completion sets the payment to `partial_refund` or `refunded` (completed refunds summed against
-   * what was paid). Only a `processing` refund completes; a repeat does nothing.
+   * what was paid). Only a `processing` refund completes (or a `failed` one, when the gateway reports the success of a send whose failure
+   * was not definite); a repeat does nothing.
    *
-   * @param tx the transaction
+   * @param tx the transaction (the caller holds the payment's lock when the gateway's answer completes the refund)
    * @param refundId the refund
    * @param gatewayRefundId the gateway's id, when it has one
    * @param note a note to keep (the manual payout text)
-   * @returns the completed refund, or `undefined` when it was not `processing`
+   * @param from the statuses the refund may complete from (`processing` by default)
+   * @returns the completed refund, or `undefined` when it was in none of them
    */
   async complete(
     tx: DbExecutor,
     refundId: number,
     gatewayRefundId: string | null,
     note?: string,
+    from: readonly RefundStatus[] = ['processing'],
   ): Promise<Refund | undefined> {
     const now = this.clock.now();
-    const done = await updateRefundIn(tx, refundId, ['processing'], {
+    const done = await updateRefundIn(tx, refundId, from, {
       status: 'completed',
       completedAt: now,
       updatedAt: now,
@@ -457,6 +479,7 @@ export class B2cRefunds {
    * @param note the gateway's failure text
    * @param gatewayRefundId the gateway's id, when it gave one
    * @param definite true when the gateway refused the refund for good (a 4xx, a failed refund object, a `refund.failed` event)
+   * @param unanswered true when the failed send got no answer, so the gateway may have made the refund (`refunds.unanswered_send_at`)
    * @returns the failed refund, or `undefined` when it was not `processing`
    */
   async fail(
@@ -465,12 +488,14 @@ export class B2cRefunds {
     note: string,
     gatewayRefundId: string | null = null,
     definite = false,
+    unanswered = false,
   ): Promise<Refund | undefined> {
     return failProcessingRefund(
       tx,
       refundId,
       { note, updatedAt: this.clock.now(), ...(gatewayRefundId === null ? {} : { gatewayRefundId }) },
       definite,
+      unanswered,
     );
   }
 

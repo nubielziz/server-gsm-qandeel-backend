@@ -9,7 +9,7 @@ import { OutboundHttp } from '../../../infra/http';
 import { UnrecoverableError } from '../../../infra/queues';
 import { GatewayCredentialsVault } from '../application/gateway-credentials';
 import { RefundSettlement } from '../application/refund-settlement';
-import { refundSendKey } from '../domain/refund-rules';
+import { refundSendKey, resendNeedsGatewayCheck } from '../domain/refund-rules';
 import {
   GATEWAY_HTTP_POLICY,
   GatewayRefusalError,
@@ -19,11 +19,29 @@ import {
 import { driverFor } from '../infra/gateway-drivers/drivers';
 import { findGateway } from '../infra/gateway.repository';
 import { findOrderPayment } from '../infra/order-payment.repository';
-import { findRefund, lockRefund, updateRefund } from '../infra/refund.repository';
+import { findRefund, lockRefund, markSendUnanswered, updateRefund } from '../infra/refund.repository';
 
 /** The failure note of a refund that was not sent because its payment is disputed (decision 048). */
 export const DISPUTED_REFUND_NOTE =
   'The payment is disputed at the gateway; send this refund again after the dispute is closed.';
+
+/**
+ * The failure note of a refund that was not sent again because a send of it got no answer more than 20 hours earlier.
+ *
+ * Why: the gateway may have made that refund and keeps the idempotency key only 24 hours, so a send now could refund the customer a second
+ * time; staff check the payment at the gateway instead.
+ */
+export const UNANSWERED_SEND_NOTE =
+  'Not sent again: a send of this refund got no answer from the payment gateway more than 20 hours ago, and the gateway may already have made it. Check the payment at the gateway.';
+
+/**
+ * The sentence added to the failure note of a refund whose last send got no answer.
+ *
+ * Why: the gateway may have made the refund on a send it did not answer (a timeout, a 5xx), so staff check the payment at the gateway
+ * before they send it again or pay the customer another way.
+ */
+export const UNCONFIRMED_SEND_NOTE =
+  'The gateway did not confirm the send and may already have made the refund: check the payment at the gateway before you send it again.';
 
 /** What one run of the job did. */
 export type RefundSendResult = 'completed' | 'pending' | 'failed' | 'skipped';
@@ -39,9 +57,13 @@ export type RefundSendResult = 'completed' | 'pending' | 'failed' | 'skipped';
  * object) is definite: the sender fails the refund and, for a 4xx, throws an `UnrecoverableError` (the queue does not retry it); the refund's
  * `send_attempt` moves on, so the staff retry sends under a new key (`refund-<id>-<n>`) instead of being answered with the same refusal. An
  * error whose outcome is unknown (a timeout, a 5xx, a network error) is thrown so the queue retries it with the same key, and on the last
- * attempt the refund fails with that error but keeps its key: the gateway may have made the refund, and the same key stops a second one.
- * Decision 048: a refund whose payment is disputed or charged back at send time is not sent: it fails without a gateway call and keeps its
- * key, so staff send it again once the dispute is closed.
+ * attempt the refund fails with that error but keeps its key: the gateway may have made the refund, and the same key stops a second one
+ * (the note says so, {@link UNCONFIRMED_SEND_NOTE}).
+ * Such a send is recorded (`refunds.unanswered_send_at`, the start of the send) on every attempt: the gateway remembers a key only 24
+ * hours, so 20 hours after it the refund is not sent under that key again ({@link UNANSWERED_SEND_NOTE}). Decision 048: a refund whose
+ * payment is disputed at send time is not sent: it fails without a gateway call and keeps its key, so staff send it again once the dispute
+ * is closed; one whose payment is charged back is closed unsent and its journal reversed (the settlement does it for that failure). A
+ * refund the gateway already accepted (its id is stored) is left as it is on such a payment: the gateway's event settles it.
  *
  * Side effects: calls the gateway; updates `refunds` and `payments`; adds an order timeline line.
  */
@@ -63,7 +85,8 @@ export class RefundSender {
    *
    * @param refundId the refund
    * @param finalAttempt true on the queue's last attempt: a failed call then fails the refund instead of being retried
-   * @returns what happened; `skipped` when the refund is no longer `processing` or is paid out by hand
+   * @returns what happened; `skipped` when the refund is no longer `processing`, is paid out by hand, or was accepted by the gateway
+   *   (its id is stored) and its payment is disputed or charged back: the gateway's own answer settles it
    * @throws {AppError} `GATEWAY_ERROR` when the call failed with an unknown outcome and the queue should retry
    * @throws {UnrecoverableError} when the gateway refused the call for good (a 4xx): the refund is `failed` and the queue must not retry it
    */
@@ -82,13 +105,31 @@ export class RefundSender {
       });
       return 'failed';
     }
+    // The gateway accepted this send (its id is stored) before the dispute: the gateway's refund.updated or refund.failed settles it, so a
+    // repeated run of the job neither fails it nor closes it at the chargeback.
+    if ((payment.status === 'disputed' || payment.status === 'chargeback') && refund.gatewayRefundId !== null) {
+      this.logger.warn(
+        `Refund ${refund.id} was not sent again: the gateway holds it (${refund.gatewayRefundId}) and its payment is ${payment.status === 'chargeback' ? 'charged back' : 'disputed'}.`,
+      );
+      return 'skipped';
+    }
     // Money the buyer disputed with the card network is never sent back while the dispute is open (decision 048): the failure is not
-    // definite, so the key stays and a staff retry after the dispute sends it once.
+    // definite, so the key stays and a staff retry after the dispute sends it once. After a chargeback the settlement closes the refund.
     if (payment.status === 'disputed' || payment.status === 'chargeback') {
       this.logger.warn(`Refund ${refund.id} was not sent: its payment is disputed at the gateway.`);
       await this.settlement.settle(refundId, {
         kind: 'failed',
         note: DISPUTED_REFUND_NOTE,
+        attempt: refund.sendAttempt,
+      });
+      return 'failed';
+    }
+    // A send under this key got no answer long ago: the gateway may have made the refund and may no longer know the key.
+    if (resendNeedsGatewayCheck(refund.unansweredSendAt, this.clock.now())) {
+      this.logger.warn(`Refund ${refund.id} was not sent again: a send of it got no answer more than 20 hours ago.`);
+      await this.settlement.settle(refundId, {
+        kind: 'failed',
+        note: UNANSWERED_SEND_NOTE,
         attempt: refund.sendAttempt,
       });
       return 'failed';
@@ -111,14 +152,23 @@ export class RefundSender {
         await this.settlement.settle(refundId, { kind: 'failed', note, definite: true, attempt: refund.sendAttempt });
         throw new UnrecoverableError(note);
       }
-      if (!finalAttempt) throw error;
-      const note = error instanceof AppError ? (error.detail ?? error.message) : 'The refund could not be sent.';
+      if (!finalAttempt) {
+        await markSendUnanswered(this.db.db, refund.id, refund.sendAttempt);
+        throw error;
+      }
+      const reason = error instanceof AppError ? (error.detail ?? error.message) : 'The refund could not be sent.';
+      // The gateway may have made the refund on a send it did not answer: staff are told before they act on the failure.
+      const note = `${reason} ${UNCONFIRMED_SEND_NOTE}`;
       this.logger.warn(`Refund ${refund.id} failed on its last attempt: ${note}`);
-      await this.settlement.settle(refundId, { kind: 'failed', note, attempt: refund.sendAttempt });
+      await this.settlement.settle(refundId, { kind: 'failed', note, attempt: refund.sendAttempt, unanswered: true });
       return 'failed';
     }
     if (answer.status === 'succeeded') {
-      await this.settlement.settle(refundId, { kind: 'completed', gatewayRefundId: answer.gatewayRefundId });
+      await this.settlement.settle(refundId, {
+        kind: 'completed',
+        gatewayRefundId: answer.gatewayRefundId,
+        attempt: refund.sendAttempt,
+      });
       return 'completed';
     }
     if (answer.status === 'failed') {

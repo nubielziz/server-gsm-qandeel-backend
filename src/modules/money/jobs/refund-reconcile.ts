@@ -14,15 +14,8 @@ import {
 } from '../../platform';
 import { REFUND_PROCESS_EVENT, RefundOutbox } from '../application/refund-outbox';
 import { RefundSettlement } from '../application/refund-settlement';
+import { REFUND_RESEND_WINDOW_MS } from '../domain/refund-rules';
 import { lockRefund, refundsAwaitingSend } from '../infra/refund.repository';
-
-/**
- * How long after the start of its current send a lost refund may still be sent again automatically.
- *
- * Why: decision 055: the gateway keeps an idempotency key 24 hours; a send after that could refund twice, so past 20 hours the refund is
- * failed for staff instead.
- */
-export const REFUND_RESEND_WINDOW_MS = 20 * 60 * 60_000;
 
 /**
  * The note of a refund the reconcile gave up on.
@@ -42,7 +35,10 @@ const AGGREGATE = 'refunds';
  * Why: decision 055 and scenario b2c-refund step 6: a refund `processing` with no gateway reference waits for its `refund.process`
  * job; when that job is gone (no live request for 10 minutes) a new request goes out, at most three times. Then, or once the current
  * send started more than 20 hours ago, the refund is failed with {@link REFUND_SEND_LOST_NOTE}, as a failure whose outcome is unknown: the
- * idempotency key is kept, so the console's retry sends under the same key and the gateway cannot refund twice.
+ * idempotency key is kept, so the console's retry sends under the same key and the gateway cannot refund twice. The lost job may have reached
+ * the gateway, so the start of that send is recorded as unanswered (`refunds.unanswered_send_at`): once the gateway may have forgotten the
+ * key (20 hours after it), neither the retry nor the job sends under it again. A refund whose gateway refund id is stored by the time the
+ * give-up holds its lock (the job was still running and the gateway answered it) is left as it is: the gateway's answer settles it.
  *
  * Side effects: `apply` inserts `refund.process` outbox rows (`reconcile: true`) under the refund's lock, or fails refunds (with the order
  * timeline line `RefundSettlement` writes).
@@ -107,6 +103,9 @@ export class RefundReconcilePass implements LostWorkPass, OnModuleInit {
           kind: 'failed',
           note: REFUND_SEND_LOST_NOTE,
           attempt: typeof sendAttempt === 'number' ? sendAttempt : null,
+          unanswered: true,
+          // Under the refund's lock the settlement leaves a refund whose gateway refund id was stored after the plan.
+          lost: true,
         });
         return failed ? 'gave_up' : 'skipped';
       }

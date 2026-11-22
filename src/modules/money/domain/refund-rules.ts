@@ -174,6 +174,28 @@ export function refundSendKey(refundId: number, sendAttempt: number): string {
   return sendAttempt <= 1 ? `refund-${refundId}` : `refund-${refundId}-${sendAttempt}`;
 }
 
+/**
+ * How long after a send that got no answer the same idempotency key may still be sent again.
+ *
+ * Why: decision 055: the gateway keeps an idempotency key 24 hours; a send under the key after that is a new refund to the gateway, so past 20
+ * hours a refund the gateway may already have made is not sent again (the reconcile gives up, the retry and the job refuse).
+ */
+export const REFUND_RESEND_WINDOW_MS = 20 * 60 * 60_000;
+
+/**
+ * Tells whether a refund may no longer be sent under its idempotency key without asking the gateway first.
+ *
+ * Why: a send that got no answer (a timeout, a 5xx, a lost job) may have made the refund at the gateway. The same key stops a second refund
+ * only while the gateway remembers it ({@link REFUND_RESEND_WINDOW_MS}); after that staff check the payment at the gateway instead.
+ *
+ * @param unansweredSendAt `refunds.unanswered_send_at`: the start of the first send under the current key that got no answer, or `null`
+ * @param now the clock's time
+ * @returns true when more than {@link REFUND_RESEND_WINDOW_MS} has passed since that send
+ */
+export function resendNeedsGatewayCheck(unansweredSendAt: Date | null, now: Date): boolean {
+  return unansweredSendAt !== null && now.getTime() - unansweredSendAt.getTime() > REFUND_RESEND_WINDOW_MS;
+}
+
 /** The shortest decline reason the console accepts: "at least a sentence" (the mock's minimum). */
 export const MIN_DECLINE_REASON_LENGTH = 10;
 
