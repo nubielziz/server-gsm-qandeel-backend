@@ -63,6 +63,8 @@ const IMMUTABLE = new Set([
   'service_checks',
   'consent_records',
   'ticket_messages',
+  // The raised part of a credit limit, per staff member, merchant and time: written once, summed over 24 hours.
+  'credit_limit_raises',
 ]);
 
 /**
@@ -118,8 +120,9 @@ const ADDITIONS: Record<string, string[]> = {
   checkout_sessions: ['opened_signed_in', 'token_hash', 'token_enc', 'ip_country'],
   orders: ['public_token_hash', 'public_token_enc'],
   kyc_submissions: ['submitted_note'],
-  // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses.
-  refunds: ['note', 'send_attempt'],
+  // Feature 16 (migration 0014): which idempotency key the next gateway send of the refund uses; and when a send ended without a
+  // definite answer (migration 0058).
+  refunds: ['note', 'send_attempt', 'unanswered_send_at'],
   data_requests: ['note'],
   notifications: ['error', 'attempts', 'dedupe_key', 'campaign_id'],
   // Feature 28 (migration 0031): the seen marks of both sides, the newest message of each side and the reply-mail sweep's columns.
