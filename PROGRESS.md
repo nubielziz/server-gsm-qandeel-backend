@@ -86,15 +86,20 @@ state each rule and its reason.
 | 34 dispatch state | `69b524a` | 044 | 0047 | An order being sent to a supplier waits for the answer: cancel, reject, reply, change of supplier and refund approval wait while the call is in flight; a sweep on the maintenance queue finds sends that were lost |
 | 35 origins per surface | `b043de5` | 045 | none | Browser origins are a property of the surface: `CONSOLE_ORIGINS` for the staff surface, `SHOP_ORIGINS` for the merchant and storefront surfaces, none for the machine surfaces |
 | 36 privilege ceiling | `8065e0c` | 046 | none | Staff act only inside the permissions they hold; stronger actions ask for a second permission or an Owner; a change of the IP rules by a non-Owner cannot refuse an address an active Owner uses, now or when a rule runs out |
+| 42 sign-in and mail limits | `745c9ce` | 052 | none | Per-email sign-in limits count per email and network; ten failed passwords lock an email for 15 minutes for every network its account has not signed in from; the sign-in link and forgot-password mails are capped per recipient; temporary passwords expire after 72 hours; two-step sign-in needs a confirmed address |
+| 41 suppliers | `50b8517` | 051 | 0048 | A saved supplier key stays with the address it was saved for; what a supplier answers is cleaned and bounded; a field pattern is checked against a supported form before it ever runs; only an Owner allows supplier calls over plain http |
 
-Checks: the whole `bun run check` on the tree of `8065e0c` (main with the three features): 8290 pass, 1 skip, 0 fail. Dev DB `gsm` migrated to 0047
-after a dump. **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
+Checks: the whole `bun run check` on the tree of `8065e0c` (main with 34, 35, 36): 8290 pass, 1 skip, 0 fail; on the tree of `745c9ce`
+(with 42): 8393 pass, 1 skip, 0 fail; on the tree of `50b8517` (with 41): 8456 pass, 1 skip, 2 fail, both Redis command timeouts under load in
+files the change does not touch, each green alone. Dev DB `gsm` migrated to 0048 after a dump (the worker's one-off review of stored field
+patterns clears nothing there: all 458 are in the import's length form). **For the owner:** production now needs `CONSOLE_BASE_URL`, `STORE_BASE_URL` and `PORTAL_BASE_URL` as https addresses and refuses
 `CORS_ORIGINS`; outside production `CORS_ORIGINS` still fills both lists, with a warning at boot (`docs/OPERATIONS.md` section 1). The website's e2e
 helpers must send the page's `Origin` on the two `/store/v1` sign-in calls.
 
-Next, in this order: 41 suppliers (decision 051), 44 logs and secrets (054) and 42 sign-in and mail limits (052) are being finished and reviewed in
-their worktrees; 38 payments integrity (048) has its brief and the lead's rulings and is built next, then 39 manual money and exchange rates (049),
-37 staff data access (047), 40 risk inputs (050), 43 public abuse limits (053) and 45 infrastructure (055).
+Next (2026-11-22, evening): 44 logs and secrets (decision 054) is in its fix round; 38 payments integrity (048) is built and in review; 39 manual
+money and exchange rates (049), 37 staff data access (047) and 45a infrastructure inside the application (055, part A) are being built; 40 risk
+inputs (050) follows 38, 43 public abuse limits (053) and 45b the production stack follow 44. Tests of the worktrees and the merge checks run
+on a memory-backed Postgres (`docs/decisions/014-testing.md` is unchanged; the container is a local convenience, see the state file).
 
 **Follow-ups (not blocking):** a test of a top-up dispute through `/webhooks/payments`; a same-instant refund.failed/complete race in
 `refund-settlement.ts`; `closeForErasure` should also refuse while a balance-paid order is not final (B191); no per-email lock on the
