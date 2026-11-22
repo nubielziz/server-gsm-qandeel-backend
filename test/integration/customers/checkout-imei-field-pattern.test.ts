@@ -1,0 +1,129 @@
+// The pattern of a field keyed imei judges the IMEI the buyer typed at the storefront checkout (the value that is stored and sent to the
+// supplier), as it does on the portal, REST v1 and Dhru. A value the buyer also puts under inputs.imei never stands in for it, and a
+// required field keyed imei is satisfied by the typed IMEI. Real application, Postgres and Redis.
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { schema as s, type Database } from '@src/infra/db';
+import { type TestApp, createTestApp } from '../../support/app';
+import { B2cGateway, type B2cWorld, b2cWorld, json, paidOrder } from '../../support/b2c';
+import { GatewayTestModule } from '../../support/billing';
+import { TestClock } from '../../support/clock';
+import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { IMEIS, orderRow } from '../../support/orders';
+import { freshClientIp } from '../../support/pipeline-routes';
+import { clearStoreRateLimits } from '../../support/store';
+import { APPLE_IMEI, TURNSTILE_HEADERS } from '../../support/storefront';
+import { seedDefaultTemplates } from '../../support/notifications';
+
+const clock = new TestClock('2026-11-10T12:00:00.000Z');
+const fake = new B2cGateway();
+let t: TestApp;
+let db: Database;
+let world: B2cWorld;
+
+/** The pattern of the `imei` field: 15 digits that start with 35. */
+const PATTERN = '^35[0-9]{13}$';
+/** A valid IMEI the pattern accepts. */
+const ACCEPTED = APPLE_IMEI;
+/** Another valid IMEI the pattern accepts. */
+const ACCEPTED_TOO = IMEIS[1];
+/** A valid IMEI the pattern refuses (it starts with 86). */
+const REFUSED = IMEIS[4];
+
+beforeAll(async () => {
+  ({ db } = await testDb());
+  t = await createTestApp({ clock, imports: [GatewayTestModule] });
+});
+afterAll(async () => {
+  await fake.stop();
+  await resetDb();
+  await t.close();
+  await closeTestDb();
+});
+beforeEach(async () => {
+  clock.set('2026-11-10T12:00:00.000Z');
+  fake.reset();
+  await resetDb();
+  await clearStoreRateLimits(t);
+  world = await b2cWorld(t, db, fake);
+  await seedDefaultTemplates(db);
+  await db.insert(s.serviceFields).values({
+    serviceId: world.icloud.serviceId,
+    key: 'imei',
+    label: 'IMEI',
+    required: true,
+    sort: 1,
+    regex: PATTERN,
+  });
+});
+
+/** `POST /store/v1/checkout-sessions` of the iCloud service with the given typed IMEI and inputs. */
+const open = (payload: Record<string, unknown>) =>
+  t.app.inject({
+    method: 'POST',
+    url: '/store/v1/checkout-sessions',
+    headers: { 'user-agent': 'Mozilla/5.0 (test)', ...TURNSTILE_HEADERS },
+    remoteAddress: freshClientIp(),
+    payload: {
+      serviceId: world.icloud.serviceId,
+      email: 'sam@mail.example',
+      country: 'GB',
+      currency: 'GBP',
+      ...payload,
+    } as never,
+  });
+
+/** Asserts that nothing was opened. */
+async function expectNothingOpened(): Promise<void> {
+  expect(await db.select().from(s.checkoutSessions)).toHaveLength(0);
+  expect(await db.select().from(s.customers)).toHaveLength(0);
+}
+
+describe('the pattern of a field keyed imei on a storefront checkout', () => {
+  it('judges the typed IMEI, not a value sent under inputs.imei', async () => {
+    const withOther = await open({ imei: REFUSED, inputs: { imei: ACCEPTED } });
+    expect(withOther.statusCode).toBe(422);
+    expect(json(withOther).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'invalid_format' })]);
+    await expectNothingOpened();
+  });
+
+  it('refuses a typed IMEI the pattern does not accept, on the field', async () => {
+    const alone = await open({ imei: REFUSED });
+    expect(alone.statusCode).toBe(422);
+    expect(json(alone).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'invalid_format' })]);
+    await expectNothingOpened();
+  });
+
+  it('a required field keyed imei is satisfied by the typed IMEI', async () => {
+    const opened = await open({ imei: ACCEPTED });
+    expect(opened.statusCode).toBe(201);
+    const repeated = await open({ imei: ACCEPTED_TOO, inputs: { imei: ACCEPTED_TOO }, email: 'ann@mail.example' });
+    expect(repeated.statusCode).toBe(201);
+  });
+
+  it('the order stores the typed IMEI under that key, never another value', async () => {
+    const stray = await paidOrder(t, clock, world, { inputs: { imei: 'not an imei' } });
+    const order = await orderRow(db, stray.orderId);
+    expect(order.imei).toBe(ACCEPTED);
+    expect(order.inputs).toEqual({ imei: ACCEPTED });
+
+    const same = await paidOrder(t, clock, world, { email: 'ann@mail.example', inputs: { imei: ACCEPTED } });
+    expect((await orderRow(db, same.orderId)).inputs).toEqual({ imei: ACCEPTED });
+
+    const alone = await paidOrder(t, clock, world, { email: 'bob@mail.example' });
+    expect((await orderRow(db, alone.orderId)).inputs).toEqual({});
+  });
+
+  it('a service without a field keyed imei still refuses a value under inputs.imei', async () => {
+    await db.delete(s.serviceFields).where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
+    const refused = await open({ imei: ACCEPTED, inputs: { imei: ACCEPTED } });
+    expect(refused.statusCode).toBe(422);
+    expect(json(refused).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'unknown_field' })]);
+    expect((await open({ imei: ACCEPTED })).statusCode).toBe(201);
+  });
+
+  it('a field keyed imei without a pattern accepts any typed IMEI that is valid', async () => {
+    await db.update(s.serviceFields).set({ regex: '' }).where(eq(s.serviceFields.serviceId, world.icloud.serviceId));
+    expect((await open({ imei: REFUSED })).statusCode).toBe(201);
+  });
+});

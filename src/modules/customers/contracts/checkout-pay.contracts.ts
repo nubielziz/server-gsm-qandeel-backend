@@ -26,7 +26,7 @@ export const payCheckoutSession = defineRoute({
     'wallet or a crypto address on the same page) and the answer carries its address. **No order exists yet**: the order is created, the money ' +
     "booked and the service delivered only when the gateway's signed confirmation arrives (`POST /webhooks/payments/:gateway`), in one " +
     'transaction. The checkout needs every required consent first (`422` on `consent`); a paid or expired checkout is `409 ' +
-    'INVALID_TRANSITION` (so is a page that opened after its payment was already closed), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` ' +
+    'INVALID_TRANSITION` (so is a page that opened after its payment was already closed, and so is a checkout whose service the shop no longer sells at all: switched off, unlisted or without a retail price; a changed price is not a reason, the locked price holds), a suspended or blocked customer `403 ACCOUNT_SUSPENDED`, a method that is off or does not take the amount `422` ' +
     'on `gateway`, a gateway that cannot open its page `502 GATEWAY_ERROR`. `Idempotency-Key` is required. The token in the path is the credential. ' +
     'A checkout keeps at most 3 payment pages open (`429 RATE_LIMITED` for another; a page that failed, was paid or is held frees its ' +
     'place); an amount the method cannot charge exactly is `422` on `gateway` (`not_chargeable`); a `returnUrl` that is not an address of ' +
@@ -105,7 +105,7 @@ export const payCheckoutFromBalance = defineRoute({
     "Pays an open checkout from the signed-in customer's store balance (USD) and creates the order **at once**, in one transaction: no " +
     'gateway, no webhook, no polling. Besides the checkout token in the path, the request needs the customer session cookie and its ' +
     '`X-CSRF-Token`: `401 UNAUTHORIZED` means "sign in to pay from the balance" (not an ended checkout). The checkout must belong to that ' +
-    'customer **and** have been opened while signed in (`balancePayable` on the checkout), else `403 FORBIDDEN`. A paid or expired ' +
+    'customer **and** have been opened while signed in (`balancePayable` on the checkout), else `403 FORBIDDEN`. A paid, expired or no-longer-sold ' +
     'checkout is `409 INVALID_TRANSITION`, a suspended customer `403 ACCOUNT_SUSPENDED`, missing consents `422` on `consent`, a balance ' +
     'below the gross `402 INSUFFICIENT_FUNDS`, a balance on hold `409 WALLET_FROZEN`, the store balance switched off `409 WALLET_DISABLED`. ' +
     '`Idempotency-Key` is required: a retry with the same key answers the same payment and order (header `idempotency-replayed: true`, the ' +

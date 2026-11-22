@@ -18,13 +18,14 @@ import {
 } from '../../money';
 import { CustomerOrderPlacement, OrderReadService } from '../../orders';
 import { RiskDecisionsService, RiskScreening, holdReason } from '../../risk';
-import { StorefrontPolicies, inCurrency } from '../../storefront';
+import { StorefrontPolicies, StorefrontQuotes, inCurrency } from '../../storefront';
 import type { payCheckoutFromBalance } from '../contracts/checkout-pay.contracts';
 import { CHECKOUT_IMEI_AAD, consentState, effectiveStatus, requiredConsents } from '../domain/checkout';
 import type { CheckoutSession } from '../db/schema';
 import { lockCheckoutSession, markSessionPaid } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
 import { findCustomerById } from '../infra/customer.repository';
+import { assertServiceOnSale } from './checkout-on-sale';
 
 /** What the route answers. */
 export type BalancePaymentResult = ResultOf<typeof payCheckoutFromBalance>;
@@ -62,6 +63,7 @@ export class CheckoutBalancePayService {
     private readonly money: StorefrontMoney,
     private readonly mails: StorefrontMails,
     private readonly policies: StorefrontPolicies,
+    private readonly quotes: StorefrontQuotes,
     private readonly risk: RiskScreening,
     private readonly decisions: RiskDecisionsService,
     private readonly encryption: EncryptionService,
@@ -77,7 +79,7 @@ export class CheckoutBalancePayService {
    * @param key the `Idempotency-Key`
    * @returns the payment, the order and the wallet after it; `replayed` when the key answered an earlier call
    * @throws {AppError} `UNAUTHORIZED` (no customer session), `NOT_FOUND`, `FORBIDDEN` (another account's checkout, or one opened as a
-   *   guest), `IDEMPOTENCY_KEY_REUSED`, `WALLET_DISABLED`, `INVALID_TRANSITION` (paid or expired), `ACCOUNT_SUSPENDED`,
+   *   guest), `IDEMPOTENCY_KEY_REUSED`, `WALLET_DISABLED`, `INVALID_TRANSITION` (paid, expired, or the service no longer on sale), `ACCOUNT_SUSPENDED`,
    *   `VALIDATION_FAILED` (`consent`), `WALLET_FROZEN`, `INSUFFICIENT_FUNDS` (402)
    */
   async pay(
@@ -202,7 +204,7 @@ export class CheckoutBalancePayService {
     });
   }
 
-  /** The checks of a new payment: open (not paid, not expired), active customer, every required consent (as `/pay`). */
+  /** The checks of a new payment: open (not paid, not expired), active customer, a service still on sale, every required consent (as `/pay`). */
   private async assertPayable(tx: DbExecutor, session: CheckoutSession): Promise<void> {
     if (session.status === 'paid') {
       throw new AppError('INVALID_TRANSITION', { detail: 'This checkout was already paid.' });
@@ -215,6 +217,7 @@ export class CheckoutBalancePayService {
     if (customer.status !== 'active') {
       throw new AppError('ACCOUNT_SUSPENDED', { detail: 'This account cannot start a new order. Contact support.' });
     }
+    await assertServiceOnSale(this.quotes, tx, session.serviceId);
     const switches = await this.policies.switches(tx);
     const state = consentState(await listSessionConsents(tx, session.id), requiredConsents(switches.withdrawalWaiver));
     if (!state.complete) {

@@ -18,7 +18,7 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   utm? }`. In one transaction: the policy `guestCheckout` (off answers `401 UNAUTHORIZED` "Sign in to check out." to a guest; a
   signed-in customer is not a guest, see **Signed-in checkout** below); the service must be one the shop sells, lists
   (a switched-on `service_listings` row) and has priced (`StorefrontQuotes`, else `422` on `serviceId`; a `file` service cannot be ordered online yet); the quantity and the
-  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`); an IMEI service needs a
+  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; a field keyed `imei` is judged on the typed IMEI, which also satisfies it when it is required, and what is stored under that key is the typed IMEI); an IMEI service needs a
   valid IMEI (`INVALID_IMEI`, stored as `imei_enc`, context `checkout_sessions.imei_enc`, never returned: the answer shows the last
   four digits). The email (trimmed, lower case) finds the customer or inserts a guest (`has_account` false; `ON CONFLICT DO NOTHING`
   on the unique `lower(email)` index, so two checkouts racing on a new email make one customer); a `suspended` or `blocked`
@@ -73,7 +73,7 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
 - **Anti-bot**: opening a session is `turnstile: true` (decision 034).
 - **Pay** (feature 16, scenario b2c-paid steps 4 and 5): `POST /store/v1/checkout-sessions/:token/pay`, body `{ gateway, returnUrl }`, header `Idempotency-Key` (required, ALIGNMENT § 7), answer `201 { payment, gateway, paymentUrl }`.
   `CheckoutPayService` judges the checkout and hands the money side to the money module's `StorefrontPayments.start`: a replay of an earlier call (same key, same body) answers before any check, so a retry after the session expired still receives the page it missed
-  (`Idempotency-Replayed: true`); otherwise the session must be `open` (`409 INVALID_TRANSITION` for a paid or expired one), its customer `active` (`403 ACCOUNT_SUSPENDED`) and every required consent granted (`422` on `consent`), the method one of the shop's whose limits take the amount
+  (`Idempotency-Replayed: true`); otherwise the session must be `open` (`409 INVALID_TRANSITION` for a paid or expired one), its customer `active` (`403 ACCOUNT_SUSPENDED`), its service still on sale (sellable, listed and with a retail price, `assertServiceOnSale`: else `409 INVALID_TRANSITION` "This service is no longer available. Start again.", before any payment row or gateway call; a changed price is not a reason, the lock holds, and money that already arrived is still captured) and every required consent granted (`422` on `consent`), the method one of the shop's whose limits take the amount
   (`422` on `gateway`); another body under the key is `409 IDEMPOTENCY_KEY_REUSED` (also after the payment was captured, failed or held), a call still opening its page `409 IDEMPOTENCY_IN_PROGRESS` (a call whose page is still empty after 60 s starts over), a page that opens after its payment was written off `409 INVALID_TRANSITION`; a gateway that cannot open its page is `502 GATEWAY_ERROR` and frees the key. 3-D Secure is asked of a card when the policy `require3ds` is on (the default) and the gateway supports it.
   Decision 048: `returnUrl` must be on a shop origin (the origin of `STORE_BASE_URL`, of `PORTAL_BASE_URL` or one of `SHOP_ORIGINS`; no user name or password), else `422` on `returnUrl` (`not_shop`), checked first (a replay with such an address is refused too; `isShopAddress` in `domain/checkout.ts`); a checkout keeps at most 3 live payment pages (`429 RATE_LIMITED`, `Retry-After: 60`; a page that failed, was paid or is held frees its place); an amount the method cannot charge exactly is `422` on `gateway` (`not_chargeable`); the card page closes 30 minutes after the checkout's price lock ends (`lockEndsAt` = `expires_at`).
   **No order exists after this call**: B2C never dispatches before payment.
@@ -332,8 +332,8 @@ or job. Tests: `test/integration/customers/smart-sign-in.test.ts`.
 `CheckoutBalancePayService` (route `POST /store/v1/checkout-sessions/:token/balance-payment`, plan 21 § 5.6.6): the customer id comes from
 the cookie session (`OptionalCustomerSession`, CSRF checked; none is `401`), never from the checkout row; the checkout must belong to that
 customer and have been opened signed in (`checkout_sessions.opened_signed_in`, set by `open`; else `403`). One transaction: lock the
-session → replay by `Idempotency-Key` (a `/pay` key is `IDEMPOTENCY_KEY_REUSED`) → switch (`WALLET_DISABLED`) → the `/pay` checks (paid
-or expired `INVALID_TRANSITION`, consents) → a friendly balance/hold pre-check → risk screening (`paymentMethod: 'balance'`) →
+session → replay by `Idempotency-Key` (a `/pay` key is `IDEMPOTENCY_KEY_REUSED`) → switch (`WALLET_DISABLED`) → the `/pay` checks (paid,
+expired or no longer on sale `INVALID_TRANSITION`, consents) → a friendly balance/hold pre-check → risk screening (`paymentMethod: 'balance'`) →
 `CustomerOrderPlacement.place` whose `onInserted` calls money's `CustomerWalletPayments.record` (payment row, `b2c_wallet_pay` guarded
 under the wallet lock, receipt) → `markSessionPaid` → mails, or `refundBlocked` (back to the balance). The checkout view has
 `balancePayable` (switch on and opened signed in; never the balance). Maintenance scope `checkout` covers the route. Anonymize calls

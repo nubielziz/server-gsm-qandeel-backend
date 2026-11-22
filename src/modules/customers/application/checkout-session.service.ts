@@ -84,7 +84,8 @@ function cannotOrder(): AppError {
  * clock. Decision 050: while the shop has a tax window in force, a country without one is refused as the customer profile refuses it; a
  * signed-in buyer is not matched by a blocklist entry limited to guest checkouts; and the visitor's country the proxy header reported is
  * kept on the session. While a country has a regional tax window in force, the checkout must name a region that has one (any case); the
- * region is the buyer's own statement, like the country.
+ * region is the buyer's own statement, like the country. A service field keyed `imei` is judged (pattern and required) on the typed IMEI, never on a
+ * value sent under `inputs.imei`, and what is stored under that key is the typed IMEI, as on the other order surfaces.
  *
  * Side effects: inserts a guest `customers` row when the email is new and one `checkout_sessions` row (with `ip_country`), in one transaction.
  */
@@ -157,7 +158,13 @@ export class CheckoutSessionService {
       const quantityIssue = quantityProblem(quantity, service);
       if (quantityIssue !== undefined)
         problems.push({ field: 'quantity', code: 'invalid_quantity', message: quantityIssue });
-      problems.push(...inputProblems(fields.map(placementField), request.inputs ?? {}));
+      // A service may define a field keyed `imei` (it carries the pattern the supplier wants): it receives the IMEI itself. The typed IMEI
+      // is the value stored encrypted and sent to the supplier, so it is the one the pattern judges and the one that satisfies a required
+      // field: a value under `inputs.imei` never stands in for it.
+      const typedInputs = request.inputs ?? {};
+      const hasImeiField = fields.some((field) => field.key === 'imei');
+      const fieldInputs = imei !== undefined && hasImeiField ? { ...typedInputs, imei } : typedInputs;
+      problems.push(...inputProblems(fields.map(placementField), fieldInputs));
       if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { errors: problems });
 
       // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked customer gets, so the
@@ -182,7 +189,9 @@ export class CheckoutSessionService {
         email: request.email,
         serviceId: service.id,
         imeiEnc: imei === undefined ? null : this.encryption.encrypt(imei, CHECKOUT_IMEI_AAD),
-        inputs: { ...(request.inputs ?? {}) },
+        // What is stored under that key is the typed IMEI too, so the order never shows two different IMEIs.
+        inputs:
+          imei !== undefined && hasImeiField && 'imei' in typedInputs ? { ...typedInputs, imei } : { ...typedInputs },
         quantity,
         currency: context.currency.code,
         fxRate: context.fxRate,
