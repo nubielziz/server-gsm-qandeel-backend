@@ -114,6 +114,12 @@ consents are feature 14a; block, export and anonymize are feature 18 (below).
   `password/forgot` are `turnstile: true` (decision 034): without the `X-Turnstile-Token` header the answer is `403 TURNSTILE_FAILED`
   before the route does anything (the tests send the dummy token through `test/support/store.ts`).
   `POST /store/v1/auth/verify` and `/login` need an `Origin` of the shop (`originCheck`, decision 045).
+  `POST /auth/magic-link` sets the HttpOnly cookie `gsm_store_link` (`__Host-` when secure; one hour, like the link; a value it made
+  before is kept, so every link asked for in one browser matches it) for every email alike, and the link row keeps its keyed hash
+  (`auth_tokens.browser_hash`). `POST /auth/verify` signs that browser in as before (`requestedHere: true`); a link asked for elsewhere
+  (or sent by staff, or after an email change) is `409 CONFLICT` while the browser holds a live session of another customer (the session
+  stays, the link is not spent), and otherwise signs in with `requestedHere: false`; both answers carry `maskedEmail`, so the shop can
+  show whose account was opened.
 - **Account** (`CustomerAccountService`): `GET|PATCH /store/v1/me` (name, phone and country with the staff edit's rules, feature 24B:
   `domain/profile-edit.ts` judges "changed" against the locked row, `CustomerProfileRules` refuses a changed country with no current
   tax rate (`422` on `country`) and re-derives the currency unless the request sends one; email is not editable; no audit row;

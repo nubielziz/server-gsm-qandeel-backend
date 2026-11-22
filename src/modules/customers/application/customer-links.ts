@@ -15,6 +15,8 @@ export interface SendLinkInput {
   readonly ip?: string;
   /** Keep the two newest unused links of the family instead of voiding all older ones: only for links the visitor asked for (decision 052). */
   readonly keepEarlier?: boolean;
+  /** The value of the cookie of the browser that asked for a sign-in link (only its keyed hash is stored); omitted for other links. */
+  readonly browserKey?: string;
 }
 
 /**
@@ -49,6 +51,7 @@ export class CustomerLinks {
       createdBy: input.createdBy ?? null,
       ip: input.ip ?? null,
       ...(input.keepEarlier ? { keepEarlier: true } : {}),
+      ...(input.browserKey === undefined ? {} : { browserKey: input.browserKey }),
     });
     // The issued token is a placeholder nobody receives: the mail job rotates it, so only the row's id goes on.
     await this.mail.enqueue(work, { kind: input.kind, customerId: input.customerId, tokenId: issued.id });

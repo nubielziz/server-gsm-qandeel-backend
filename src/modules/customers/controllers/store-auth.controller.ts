@@ -44,22 +44,32 @@ export class StoreAuthController {
    * Emails a sign-in link.
    *
    * @param body the email
-   * @param request the request (address for the rate limit and the link record)
+   * @param request the request (address for the rate limit and the link record, and the asking-browser cookie it already carried)
+   * @param reply the reply, to set the asking-browser cookie
    * @route POST /store/v1/auth/magic-link
    */
   @Route(requestMagicLink)
   @Header('Cache-Control', 'no-store')
-  async magicLink(@Body() body: BodyOf<typeof requestMagicLink>, @Req() request: FastifyRequest): Promise<void> {
-    await this.signIn.requestMagicLink(body.email, requestMetaOf(request));
+  async magicLink(
+    @Body() body: BodyOf<typeof requestMagicLink>,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<void> {
+    const browser = await this.signIn.requestMagicLink(
+      body.email,
+      requestMetaOf(request),
+      this.cookies.readLinkBrowser(request),
+    );
+    this.cookies.setLinkBrowser(reply, browser.browserKey, browser.expiresAt);
   }
 
   /**
    * Exchanges a sign-in link for a session.
    *
    * @param linkId the one-time link the guard resolved
-   * @param request the request (a stale session cookie on it is ended)
+   * @param request the request (a stale session cookie on it is ended; its asking-browser cookie tells whether it asked for the link)
    * @param reply the reply, to set the session's cookies and the CSRF header
-   * @returns the customer's account
+   * @returns the customer's account, whether this browser asked for the link, and the masked address
    * @route POST /store/v1/auth/verify
    */
   @Route(verifyMagicLink)
@@ -73,6 +83,7 @@ export class StoreAuthController {
       linkId,
       requestMetaOf(request),
       this.cookies.readToken(request, 'customer'),
+      this.cookies.readLinkBrowser(request),
     );
     this.cookies.set(reply, 'customer', session.token, session.session.expiresAt);
     return me;

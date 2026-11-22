@@ -246151,7 +246151,7 @@
     },
     "/store/v1/auth/magic-link": {
       "post": {
-        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. An email the store does not know yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Counted per network and email, whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).",
+        "description": "Answers `204` whatever the email is, so it cannot be used to find out who has an account. An email the store does not know yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Counted per network and email, whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`). Every answer sets an HttpOnly cookie that lives as long as the link and marks the browser that asked for it (`POST /store/v1/auth/verify` reads it).",
         "operationId": "postStoreV1AuthMagicLink",
         "parameters": [
           {
@@ -247304,7 +247304,7 @@
     },
     "/store/v1/auth/verify": {
       "post": {
-        "description": "Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details. A link that is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link sent after an email change works the same way. Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
+        "description": "Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details plus `requestedHere` and `maskedEmail`. In the browser that asked for the link (the cookie of `POST /store/v1/auth/magic-link`) it signs in as before (`requestedHere` true). Anywhere else, while the browser holds a live session of another customer, it is `409 CONFLICT` (sign out first): that session stays and the link is not spent; in a browser without such a session it signs in with `requestedHere` false, and the shop shows whose account was opened. A link that is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link sent after an email change works the same way (it is never asked for in a browser). Accepted only with an `Origin` header that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).",
         "operationId": "postStoreV1AuthVerify",
         "parameters": [],
         "requestBody": {
@@ -247402,6 +247402,14 @@
                       "examples": [
                         "2026-03-01T09:30:00.000Z"
                       ]
+                    },
+                    "requestedHere": {
+                      "type": "boolean",
+                      "description": "True when this browser asked for the link (it carries the cookie of `POST /store/v1/auth/magic-link`); false for a link asked for in another browser or sent by the shop: the shop then shows whose account was opened (`maskedEmail`)."
+                    },
+                    "maskedEmail": {
+                      "type": "string",
+                      "description": "The address of the account the link opened, masked (`da•••@example.com`)."
                     }
                   },
                   "required": [
@@ -247414,7 +247422,9 @@
                     "currency",
                     "marketingOptIn",
                     "hasPassword",
-                    "createdAt"
+                    "createdAt",
+                    "requestedHere",
+                    "maskedEmail"
                   ],
                   "additionalProperties": false
                 },
@@ -247428,7 +247438,9 @@
                   "currency": "GBP",
                   "marketingOptIn": true,
                   "hasPassword": true,
-                  "createdAt": "2026-10-12T09:30:00.000Z"
+                  "createdAt": "2026-10-12T09:30:00.000Z",
+                  "requestedHere": true,
+                  "maskedEmail": "da•••@example.com"
                 }
               }
             },
@@ -247528,6 +247540,96 @@
                       "status": 403,
                       "code": "CSRF_FAILED",
                       "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONFLICT: The request conflicts with the current state.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 409
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "CONFLICT"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "CONFLICT": {
+                    "summary": "The request conflicts with the current state.",
+                    "value": {
+                      "type": "https://errors.gsm.example/conflict",
+                      "title": "The request conflicts with the current state.",
+                      "status": 409,
+                      "code": "CONFLICT",
+                      "detail": "The request conflicts with the current state.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }

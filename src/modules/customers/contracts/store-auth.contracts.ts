@@ -11,6 +11,17 @@ export const StoreNext = z.enum(['password', 'done']);
 
 const TokenField = z.string().min(1).max(512);
 
+/** The answer of `POST /store/v1/auth/verify`: the customer's own details, whether this browser asked for the link, and whose account it opened. */
+export const StoreVerifySchema = StoreMeSchema.extend({
+  requestedHere: z
+    .boolean()
+    .describe(
+      'True when this browser asked for the link (it carries the cookie of `POST /store/v1/auth/magic-link`); false for a link asked ' +
+        'for in another browser or sent by the shop: the shop then shows whose account was opened (`maskedEmail`).',
+    ),
+  maskedEmail: z.string().describe('The address of the account the link opened, masked (`da•••@example.com`).'),
+});
+
 /** `POST /store/v1/auth/magic-link`. */
 export const requestMagicLink = defineRoute({
   key: 'POST /store/v1/auth/magic-link',
@@ -20,7 +31,8 @@ export const requestMagicLink = defineRoute({
     'yet becomes a customer (self-signup); a suspended, blocked or anonymized customer, and a blocklisted email, get nothing. ' +
     'The link is valid one hour and works once; up to three such links work at once (a fourth replaces the oldest), and at most ' +
     'five are mailed an hour per customer; a request beyond that answers `204` and sends nothing. Counted per network and email, ' +
-    'whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`).',
+    'whether or not the email exists. Needs the anti-bot token (`X-Turnstile-Token`). Every answer sets an HttpOnly cookie that ' +
+    'lives as long as the link and marks the browser that asked for it (`POST /store/v1/auth/verify` reads it).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'public',
@@ -38,19 +50,26 @@ export const verifyMagicLink = defineRoute({
   summary: 'Exchange a sign-in link for a session',
   description:
     'Spends the link (single use), marks the email verified on first use, turns the customer into an account holder and opens a ' +
-    'session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details. A link that ' +
+    'session: the cookies and the `X-CSRF-Token` header come with the answer, which is the customer’s own details plus ' +
+    '`requestedHere` and `maskedEmail`. In the browser that asked for the link (the cookie of `POST /store/v1/auth/magic-link`) ' +
+    'it signs in as before (`requestedHere` true). Anywhere else, while the browser holds a live session of another customer, it is ' +
+    '`409 CONFLICT` (sign out first): that session stays and the link is not spent; in a browser without such a session it signs in ' +
+    'with `requestedHere` false, and the shop shows whose account was opened. A link that ' +
     'is unknown, used, expired or replaced, or belongs to a suspended customer, is `410 TOKEN_INVALID`. The verification link ' +
-    'sent after an email change works the same way. Accepted only with an `Origin` header that is one of the shop’s origins, like ' +
-    'the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).',
+    'sent after an email change works the same way (it is never asked for in a browser). Accepted only with an `Origin` header ' +
+    'that is one of the shop’s origins, like the public `/client` sign-in routes (`403 CSRF_FAILED` otherwise).',
   tags: ['storefront-auth'],
   surface: 'store',
   access: 'link-token',
   csrf: false,
   originCheck: true,
   body: z.object({ token: TokenField }),
-  success: { status: 200, schema: StoreMeSchema },
-  errors: ['VALIDATION_FAILED', 'TOKEN_INVALID', 'IP_NOT_ALLOWED', 'RATE_LIMITED', 'CSRF_FAILED'],
-  examples: { request: { token: 'k3Jx9Qd7mT2vN8bR5yHc1WzA4uLsE6oPgF0iVtXnDqM' }, response: STORE_ME_EXAMPLE },
+  success: { status: 200, schema: StoreVerifySchema },
+  errors: ['VALIDATION_FAILED', 'TOKEN_INVALID', 'CONFLICT', 'IP_NOT_ALLOWED', 'RATE_LIMITED', 'CSRF_FAILED'],
+  examples: {
+    request: { token: 'k3Jx9Qd7mT2vN8bR5yHc1WzA4uLsE6oPgF0iVtXnDqM' },
+    response: { ...STORE_ME_EXAMPLE, requestedHere: true, maskedEmail: 'da•••@example.com' },
+  },
 });
 
 /** `POST /store/v1/auth/login`. */

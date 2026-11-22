@@ -37,6 +37,11 @@ export interface IssueCustomerTokenInput {
    * not void the link the owner was sent. Every other issue keeps "newest wins".
    */
   readonly keepEarlier?: boolean;
+  /**
+   * The value of the cookie that marks the browser which asked for a storefront sign-in link; only its keyed hash is stored, on the
+   * link's row, so the exchange can tell that browser from another one. Omitted for every other link.
+   */
+  readonly browserKey?: string;
 }
 
 /** An issued link token. */
@@ -121,10 +126,26 @@ export class CustomerAuthTokens {
       expiresAt: new Date(now.getTime() + CUSTOMER_TOKEN_TTL_MS),
       ip: input.ip ?? null,
       createdBy: input.createdBy ?? null,
+      browserHash: input.browserKey === undefined ? null : this.tokens.hash(input.browserKey),
       // The clock writes the time the staff list shows ("link sent at"), not the column default (decision 031).
       createdAt: now,
     });
     return { token, id: row.id, expiresAt: row.expiresAt };
+  }
+
+  /**
+   * Tells whether a link was asked for by the browser that presents this cookie value.
+   *
+   * Why: a sign-in link opened in the browser that asked for it signs in at once; opened anywhere else it must not replace another
+   * customer's session, and the shop says whose account it opened.
+   *
+   * @param record the stored link
+   * @param browserKey the value of the asking-browser cookie the request carried, if any
+   * @returns true only when the link stored a browser hash and the cookie's keyed hash equals it (compared in constant time)
+   */
+  askedFrom(record: Pick<AuthToken, 'browserHash'>, browserKey: string | undefined): boolean {
+    if (record.browserHash === null || browserKey === undefined) return false;
+    return this.tokens.equals(record.browserHash, this.tokens.hash(browserKey));
   }
 
   /**

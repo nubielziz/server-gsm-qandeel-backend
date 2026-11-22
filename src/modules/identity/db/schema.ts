@@ -357,6 +357,11 @@ export const authTokens = pgTable(
     ip: text(),
     /** the staff member who issued the link; null for self-service links */
     createdBy: fk((): AnyPgColumn => staffUsers.id),
+    /**
+     * keyed hash of the cookie of the browser that asked for a storefront sign-in link, so the exchange can tell that browser from
+     * another one; null for every other link
+     */
+    browserHash: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

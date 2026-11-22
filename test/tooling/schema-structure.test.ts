@@ -94,6 +94,8 @@ const ADDITIONS: Record<string, string[]> = {
     'internal_notes',
   ],
   api_keys: ['created_by'],
+  // The keyed hash of the cookie of the browser that asked for a storefront sign-in link.
+  auth_tokens: ['browser_hash'],
   staff_users: ['totp_last_step'],
   payments: [
     'reviewed_at',

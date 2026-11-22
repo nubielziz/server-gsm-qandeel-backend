@@ -421,6 +421,13 @@
       "when": 1795384547881,
       "tag": "0059_receipt_reference_release",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1795389357655,
+      "tag": "0060_link_browser",
+      "breakpoints": true
     }
   ]
 }

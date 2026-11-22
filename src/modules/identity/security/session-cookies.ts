@@ -33,6 +33,14 @@ export const CSRF_COOKIE_NAMES: Readonly<Record<SubjectType, string>> = {
 };
 
 /**
+ * The name of the cookie that marks the browser which asked for a storefront sign-in link, without the `__Host-` prefix.
+ *
+ * Why: `POST /store/v1/auth/verify` signs the browser that asked for the link in at once, and must not let a link asked for in
+ * another browser replace a customer's session there; this cookie (HttpOnly, as long as the link lives) tells the two apart.
+ */
+const LINK_BROWSER_COOKIE_NAME = 'gsm_store_link';
+
+/**
  * Reads, sets and clears the cookies of a session.
  *
  * Why: the sign-in routes of the three subjects must set exactly the same cookies and header, and the guards must read the
@@ -87,6 +95,45 @@ export class SessionCookies {
   readToken(request: FastifyRequest, subject: SubjectType): string | undefined {
     const value = request.cookies?.[this.sessionCookieName(subject)];
     return value === undefined || value === '' ? undefined : value;
+  }
+
+  /**
+   * Reads the cookie that marks the browser which asked for a storefront sign-in link.
+   *
+   * @param request the Fastify request
+   * @returns the value, or `undefined` when the cookie is missing or empty
+   */
+  readLinkBrowser(request: FastifyRequest): string | undefined {
+    const value = request.cookies?.[this.linkBrowserCookieName()];
+    return value === undefined || value === '' ? undefined : value;
+  }
+
+  /**
+   * Sets the cookie that marks the browser which asked for a storefront sign-in link.
+   *
+   * Why: the link's row keeps the keyed hash of this value, so the exchange can tell the asking browser from another one. HttpOnly,
+   * SameSite=Lax, host-only, and it lives as long as the link.
+   *
+   * Side effects: writes a `Set-Cookie` header.
+   *
+   * @param reply the Fastify reply
+   * @param value the random value whose keyed hash the link stores
+   * @param expiresAt when the link ends; the cookie gets the same lifetime
+   */
+  setLinkBrowser(reply: FastifyReply, value: string, expiresAt: Date): void {
+    const maxAge = Math.max(0, Math.floor((expiresAt.getTime() - this.clock.nowMs()) / 1000));
+    void reply.setCookie(this.linkBrowserCookieName(), value, {
+      httpOnly: true,
+      secure: this.secure,
+      sameSite: 'lax',
+      path: '/',
+      maxAge,
+    });
+  }
+
+  /** The asking-browser cookie's name, with the `__Host-` prefix when cookies are Secure. */
+  private linkBrowserCookieName(): string {
+    return this.secure ? `__Host-${LINK_BROWSER_COOKIE_NAME}` : LINK_BROWSER_COOKIE_NAME;
   }
 
   /**

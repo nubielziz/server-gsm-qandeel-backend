@@ -2,11 +2,13 @@
 // Sensitive steps read the customer from the database, not from the session's cached copy (decision 018).
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
+import { maskCustomerEmail } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import {
+  CUSTOMER_TOKEN_TTL_MS,
   type CustomerPrincipal,
   CustomerAuthTokens,
   type IssuedSession,
@@ -15,6 +17,7 @@ import {
   SessionService,
   SignInLock,
   isUsableLink,
+  livenessOf,
   takePublicMailPoint,
   temporaryPasswordExpired,
 } from '../../identity';
@@ -39,11 +42,26 @@ export interface CustomerLoginResult {
   readonly session: IssuedSession;
 }
 
-/** The answer of `verifyLink`: the customer's account and the session to put in the cookies. */
+/** What `requestMagicLink` gives the controller: the asking-browser cookie to set and when it ends (with the link). */
+export interface MagicLinkBrowser {
+  readonly browserKey: string;
+  readonly expiresAt: Date;
+}
+
+/**
+ * The answer of `verifyLink`: the customer's account, whether this browser asked for the link, the account's masked address, and the
+ * session to put in the cookies.
+ */
 export interface CustomerVerifyResult {
-  readonly me: WireStoreMe;
+  readonly me: WireStoreMe & { readonly requestedHere: boolean; readonly maskedEmail: string };
   readonly session: IssuedSession;
 }
+
+/** A value of the asking-browser cookie this service made: 32 random bytes in base64url. */
+const BROWSER_KEY_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
+const OTHER_ACCOUNT_SIGNED_IN =
+  'This browser is signed in to another account. Sign out first, then open the link again.';
 
 const WRONG_CREDENTIALS = 'The email or password is not correct.';
 
@@ -61,7 +79,9 @@ const SIGN_IN_PURPOSES: readonly string[] = ['magic_link', 'verify_email'];
  * `active` otherwise. The sign-in link answers `204` for every email and never says whether the account exists; it spends one point of
  * the recipient's mail budget (five an hour), runs the same statements for every email (a run that sends nothing is rolled back) and
  * does not void the link sent before (up to three work at once). An email the store does not know becomes a customer (self-signup),
- * because the storefront has no other registration route.
+ * because the storefront has no other registration route. The link keeps the keyed hash of a cookie of the browser that asked for it: there
+ * the exchange signs in as before; elsewhere it never replaces another customer's live session (`409 CONFLICT`) and says whose account
+ * it opened.
  *
  * Side effects: reads and writes `customers`, `customer_credentials` and `sessions`; writes `auth_tokens` and `outbox_events`
  * (the link mail; rolled back when no mail is sent); counts rate-limit attempts, mail points and failed passwords (cache Redis); a failed
@@ -96,14 +116,22 @@ export class CustomerSignInService implements OnModuleInit {
   /**
    * Emails a sign-in link; silent for every email that must not get one.
    *
+   * Why: the link stores the keyed hash of a cookie of the browser that asked, so `verifyLink` can tell that browser from another
+   * one. Every email gets the same cookie answer, so the cookie says nothing about the account.
+   *
    * @param email the normalised email
    * @param meta the caller's address and network
+   * @param browserKey the asking-browser cookie the request already carried: kept when this service made it, so every link asked for
+   *   in one browser matches that browser
+   * @returns the asking-browser cookie to set and when it ends (when the link does)
    * @throws {AppError} `RATE_LIMITED` (429: too many requests for this email from this network); nothing else: a blocklisted,
    *   suspended, blocked or anonymized customer, or one whose mail budget (five an hour) is used up, is silent
    */
-  async requestMagicLink(email: string, meta: RequestMeta): Promise<void> {
+  async requestMagicLink(email: string, meta: RequestMeta, browserKey?: string): Promise<MagicLinkBrowser> {
     await this.limiter.enforceMagicLink(email, meta);
     const now = this.clock.now();
+    const key =
+      browserKey !== undefined && BROWSER_KEY_SHAPE.test(browserKey) ? browserKey : this.tokenService.random(32);
     const blocked = await this.blocklist.isEmailBlocked(this.db.db, email);
     // The same statements for every email: a run that sends no mail writes for an id no account has and is rolled back (decision 052).
     await this.db.runOrDiscard(async (work) => {
@@ -125,21 +153,35 @@ export class CustomerSignInService implements OnModuleInit {
         customerId: deliver ? customer.id : NO_ACCOUNT_ID,
         ip: meta.ip,
         keepEarlier: true,
+        browserKey: key,
       });
       return deliver;
     });
+    return { browserKey: key, expiresAt: new Date(now.getTime() + CUSTOMER_TOKEN_TTL_MS) };
   }
 
   /**
    * Exchanges a sign-in or verification link for a session.
    *
+   * Why: a link opened in the browser that asked for it signs in at once. A link asked for elsewhere (or sent by staff, or after an
+   * email change) must not replace the session of another customer in this browser: that is refused, the session stays and the link
+   * stays usable. In a browser without such a session it signs in, and the answer says the link was asked for elsewhere and whose
+   * account it opened (masked), so the shop can show it.
+   *
    * @param linkId the `auth_tokens` id the guard resolved from the token
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
-   * @returns the customer's account and the session
-   * @throws {AppError} `TOKEN_INVALID` (410: the link is used, expired, replaced or of another kind, or the customer is not active)
+   * @param browserKey the asking-browser cookie the request carried, if any
+   * @returns the customer's account with `requestedHere` and `maskedEmail`, and the session
+   * @throws {AppError} `TOKEN_INVALID` (410: the link is used, expired, replaced or of another kind, or the customer is not active),
+   *   `CONFLICT` (409: the link was not asked for in this browser and the browser holds a live session of another customer)
    */
-  async verifyLink(linkId: number, meta: RequestMeta, staleToken?: string): Promise<CustomerVerifyResult> {
+  async verifyLink(
+    linkId: number,
+    meta: RequestMeta,
+    staleToken?: string,
+    browserKey?: string,
+  ): Promise<CustomerVerifyResult> {
     const link = await this.authTokens.findById(linkId);
     const customer =
       link !== undefined && SIGN_IN_PURPOSES.includes(link.purpose) && isUsableLink(link, this.clock.nowMs())
@@ -147,6 +189,9 @@ export class CustomerSignInService implements OnModuleInit {
         : undefined;
     if (!link || !customer || !canSignIn(customer.status)) throw new AppError('TOKEN_INVALID');
 
+    const requestedHere = this.authTokens.askedFrom(link, browserKey);
+    // Checked before anything is written: the refusal leaves the session and the link as they are.
+    if (!requestedHere) await this.assertNoOtherCustomerSession(staleToken, customer.id);
     await this.endStaleSession(staleToken);
     const now = this.clock.now();
     return this.db.runInTransaction(async (work) => {
@@ -175,7 +220,14 @@ export class CustomerSignInService implements OnModuleInit {
         { subjectType: 'customer', subjectId: customer.id, stage: 'active', ip: meta.ip, userAgent: meta.userAgent },
         work,
       );
-      return { me: toStoreMe(updated, credentials?.passwordHash != null), session };
+      return {
+        me: {
+          ...toStoreMe(updated, credentials?.passwordHash != null),
+          requestedHere,
+          maskedEmail: maskCustomerEmail(updated.email),
+        },
+        session,
+      };
     });
   }
 
@@ -326,6 +378,26 @@ export class CustomerSignInService implements OnModuleInit {
       await replacePasswordHash(this.db.db, customer.id, await this.hasher.hash(password));
     } catch (error) {
       this.logger.warn(`Could not upgrade the password hash of customer ${customer.id}: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Refuses a link asked for elsewhere while the browser holds a live session of another customer.
+   *
+   * @param token the customer session cookie the request carried
+   * @param customerId the customer the link belongs to
+   * @throws {AppError} `CONFLICT` (409) for a live customer session (any stage) of another customer; an ended, unknown or missing
+   *   session counts as none
+   */
+  private async assertNoOtherCustomerSession(token: string | undefined, customerId: number): Promise<void> {
+    if (token === undefined) return;
+    const view = await this.sessions.lookup(token);
+    if (
+      view?.subjectType === 'customer' &&
+      view.subjectId !== customerId &&
+      livenessOf(view, this.clock.nowMs()) === 'live'
+    ) {
+      throw new AppError('CONFLICT', { detail: OTHER_ACCOUNT_SIGNED_IN });
     }
   }
 
