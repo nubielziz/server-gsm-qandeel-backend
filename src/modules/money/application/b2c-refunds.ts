@@ -19,7 +19,7 @@ import {
   refundRoute,
   settlesAtOnce,
 } from '../domain/refund-rules';
-import { type LedgerParts, ledgerPartsOf, loadSessionMoney } from '../infra/b2c-reads.repository';
+import { type LedgerParts, ledgerPartsOf, loadSessionMoney, orderForRefund } from '../infra/b2c-reads.repository';
 import { findReversibleJournal } from '../infra/ledger-read.repository';
 import { findCurrencyByCode } from '../infra/storefront-money.repository';
 import { driverFor } from '../infra/gateway-drivers/drivers';
@@ -300,7 +300,8 @@ export class B2cRefunds {
    * Why: decision 048: the card network returned the payment, so a refund the gateway has not paid would return the same money a second
    * time; the refund becomes `rejected` with {@link CHARGEBACK_NOT_SENT_NOTE} (a guarded update on the status it was read in) and its
    * journal is mirrored (key `reverse:<journal id>`), so the books show the money leaving once. Used by {@link B2cRefunds.closeNotSent} at
-   * the chargeback, and by the refund settlement for a failure that arrives after it.
+   * the chargeback, and by the refund settlement for a failure that arrives after it (which then books
+   * {@link B2cRefunds.returnAfterLateClose}).
    *
    * Side effects (on the caller's transaction): updates `refunds`; one ledger transaction when the refund had a journal.
    *
@@ -318,6 +319,44 @@ export class B2cRefunds {
     if (!done) return undefined;
     if (done.ledgerTxId !== null) await this.reverseJournal(tx, done, done.ledgerTxId, actor);
     return done;
+  }
+
+  /**
+   * Books what a never delivered order gives back once one of its refunds was closed unsent after its payment had been charged back.
+   *
+   * Why: decision 048 and the chargeback rules: a loss booked while a refund of the order was still the gateway's (its id stored) gives
+   * nothing back, because that refund's journal had already taken the sale's customer funds and VAT off the books. When the gateway then
+   * fails the refund, {@link B2cRefunds.closeUnsent} reverses its journal and those lines are back; for an order that was never delivered
+   * (`rejected`) the share the lost disputes took leaves the books again, as the loss would have given it back without the refund
+   * ({@link returnAfterChargeback}: it counts what the chargeback journals already gave back, and posts once per order under
+   * `order:<id>:chargeback-return`). A delivered order keeps the plain loss; an order still open gives the share back when it ends rejected.
+   *
+   * Side effects (on the caller's transaction): one ledger transaction when there is anything to give back.
+   *
+   * @param tx the refund settlement's transaction (lock order: the payment, then the refund, both held by the caller, then the ledger
+   *   accounts)
+   * @param refund the refund that was closed, with its journal reversed
+   * @param payment its charged-back payment (locked)
+   * @param actor who causes it (the system for the gateway's answer)
+   * @returns the give-back posting, or `undefined` when the refund has no order or its order was not rejected
+   */
+  async returnAfterLateClose(
+    tx: DbExecutor,
+    refund: Refund,
+    payment: Payment,
+    actor: RefundActor,
+  ): Promise<RefundPosting | undefined> {
+    if (refund.orderId === null) return undefined;
+    // Read without a lock, as the loss reads it: an order's lock comes before its payment's, which is held here. A rejected order is final;
+    // an order rejected after this commits takes the payment's lock afterwards and books the give-back in its own transition.
+    const order = await orderForRefund(tx, refund.orderId);
+    if (order?.status !== 'rejected') return undefined;
+    return returnAfterChargeback(tx, this.poster, {
+      order,
+      payment,
+      left: await this.leftOn(tx, order, payment),
+      actor,
+    });
   }
 
   /** Posts the mirror of a refund's journal (key `reverse:<journal id>`, so a replay posts nothing). */

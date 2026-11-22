@@ -6,7 +6,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { toUsd } from '../domain/b2c-money';
-import type { Refund } from '../db/schema';
+import type { Payment, Refund } from '../db/schema';
 import { CHARGEBACK_NOT_SENT_NOTE, closesAtChargeback, wholeCents } from '../domain/refund-rules';
 import { ledgerPartsOf, loadSessionMoney } from '../infra/b2c-reads.repository';
 import type { RefundEvent } from '../infra/gateway-drivers/driver';
@@ -73,7 +73,9 @@ export type RefundOutcome =
  * refund; any other success that meets a refund that is not `processing` changes nothing and is logged as an error. A failure that arrives
  * after the payment was charged back closes the refund unsent and reverses its journal, as the chargeback does for the refunds the gateway
  * has not paid (decision 048), so the books show the money leaving once; for a refund the gateway accepted (its id is stored) only the
- * gateway's own refusal of it does that, since the gateway may still pay it. The gateway's refusal for good of the current send of a refund
+ * gateway's own refusal of it does that, since the gateway may still pay it. The loss gave nothing back while that refund's journal was in
+ * place, so for an order that was never delivered (`rejected`) the close also books what the chargeback rules give back from the sale
+ * (`B2cRefunds.returnAfterLateClose`); a delivered order keeps the plain loss. The gateway's refusal for good of the current send of a refund
  * that failed without a definite answer moves its key on (the refund stays `failed`, the gateway's text is added to its note), so a later
  * success of that send is stale and the retry sends under a new key. The lost-work reconcile's give-up fails only a refund with no gateway
  * refund id stored: a refund the gateway answered meanwhile is the gateway's to settle.
@@ -81,8 +83,9 @@ export type RefundOutcome =
  * Lock order: the payment, then the refund (as an approval and a chargeback take them), then the ledger accounts.
  *
  * Side effects (in its own transaction): updates `refunds` and `payments`, adds a timeline line to the order, and for a failure after a
- * chargeback posts the reversal of the refund's journal (key `reverse:<journal id>`); a late failure appends to `refunds.note` (and moves a
- * return without an order back to `failed`).
+ * chargeback posts the reversal of the refund's journal (key `reverse:<journal id>`) and, for a rejected order, the give-back against the
+ * loss (key `order:<id>:chargeback-return`); a late failure appends to `refunds.note` (and moves a return without an order back to
+ * `failed`).
  */
 @Injectable()
 export class RefundSettlement {
@@ -148,7 +151,9 @@ export class RefundSettlement {
       // the chargeback closes it. A refund the gateway accepted (its id is stored) closes only on the gateway's refusal of it: a failure
       // without a definite answer changes nothing, and the gateway's own refund.updated or refund.failed settles it.
       if (outcome.kind === 'failed' && payment?.status === 'chargeback') {
-        if (outcome.definite === true || closesAtChargeback(locked)) return this.closeAfterChargeback(tx, locked);
+        if (outcome.definite === true || closesAtChargeback(locked)) {
+          return this.closeAfterChargeback(tx, locked, payment);
+        }
         this.logger.warn(
           `Refund ${refundId}: a failure without a definite answer after the chargeback was not applied (${outcome.note}); the gateway holds refund ${locked.gatewayRefundId}.`,
         );
@@ -227,9 +232,14 @@ export class RefundSettlement {
     return done !== undefined;
   }
 
-  /** Closes a refund whose failure arrived after its payment was charged back, with the order's timeline line (decision 048). */
-  private async closeAfterChargeback(tx: DbExecutor, locked: Refund): Promise<boolean> {
+  /**
+   * Closes a refund whose failure arrived after its payment was charged back, with the order's timeline line (decision 048). For an
+   * order that was never delivered, the same transaction books what the loss could not give back while the refund's journal was in place
+   * (`B2cRefunds.returnAfterLateClose`).
+   */
+  private async closeAfterChargeback(tx: DbExecutor, locked: Refund, payment: Payment): Promise<boolean> {
     const closed = await this.refunds.closeUnsent(tx, locked, { type: 'system', id: null });
+    if (closed) await this.refunds.returnAfterLateClose(tx, closed, payment, { type: 'system', id: null });
     if (closed?.orderId != null) {
       await this.ports
         .get()

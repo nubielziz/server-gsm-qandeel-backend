@@ -1,5 +1,6 @@
 // The give-back of an order rejected after its payment was charged back: the share of what its sale booked as customer funds and VAT that
-// the lost disputes took goes back against the chargeback loss, once per order, and no refund is opened (feature 16, decision 048).
+// the lost disputes took goes back against the chargeback loss, once per order, and no refund is opened (feature 16, decision 048). The
+// refund settlement books it too when the gateway fails, after the loss, a refund of a rejected order whose journal was in place at the loss.
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
 import type { Payment } from '../db/schema';
@@ -26,7 +27,7 @@ export function chargebackReturnKey(orderId: number): string {
 }
 
 /**
- * Books what a rejected order of a charged-back payment gives back, instead of a refund.
+ * Books what a rejected order of a charged-back payment gives back, instead of a refund, or once a refund of it was closed after the loss.
  *
  * Why: a dispute lost while the order was still open booked the plain loss (`DisputeLedger.lose`). When that order then ends rejected (a
  * staff reject, a supplier's rejection, a risk refund) it was never delivered, so what its sale booked as owed to the buyer and as VAT must
@@ -34,13 +35,18 @@ export function chargebackReturnKey(orderId: number): string {
  * opened. The share is worked out as the loss of a rejected order works it out ({@link chargebackReturn}): the disputed amounts of the
  * payment's lost disputes, never more than the refunds that went out left, less what their chargeback journals already gave back. It is
  * posted as the give-back part of `b2c_chargeback` (Dr customer_funds, Dr vat_payable / Cr chargeback_loss) under
- * {@link chargebackReturnKey}; the VAT report and the payments report read those lines.
+ * {@link chargebackReturnKey}; the VAT report and the payments report read those lines. A loss booked while a refund of the rejected order
+ * was still the gateway's gives nothing back (that refund's journal had taken the sale's lines off the books); when the gateway fails that
+ * refund after the loss, the refund settlement closes it, reverses its journal and books this give-back in the same transaction
+ * (`B2cRefunds.returnAfterLateClose`).
  *
  * Side effects (on the caller's transaction): one ledger transaction, when there is anything to give back.
  *
- * @param tx the transition's transaction (lock order: the order, the payment, which the caller holds, then the ledger accounts)
+ * @param tx the transition's transaction (lock order: the order, the payment, which the caller holds, then the ledger accounts), or the
+ *   refund settlement's (the payment, then the refund, which the caller holds, then the ledger accounts)
  * @param poster the ledger writer
  * @param input the rejected order, its charged-back payment (locked), what is left on the payment after its refunds, and who rejected it
+ *   (or the system, for the gateway's failure of a refund)
  * @returns the posting, with `chargedBack` set and no refund row
  */
 export async function returnAfterChargeback(

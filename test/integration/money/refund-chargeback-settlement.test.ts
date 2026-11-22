@@ -4,6 +4,7 @@
 // while the payment is disputed or charged back; a refund the gateway completes after the chargeback keeps both journals;
 // and the gateway's answer to a refund reads the payment under its lock, so a dispute recorded meanwhile is kept.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { Decimal } from 'decimal.js';
 import { eq, sql } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
 import { RefundProcessModule, RefundSender } from '@src/modules/money';
@@ -25,8 +26,9 @@ import {
 import { GatewayTestModule } from '../../support/billing';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { ledgerTotals } from '../../support/money';
 import { seedDefaultTemplates } from '../../support/notifications';
-import { eventsOf, ledgerOf, systemBalance } from '../../support/orders';
+import { eventsOf, ledgerOf, orderRow, systemBalance } from '../../support/orders';
 
 const clock = new TestClock('2026-11-21T12:00:00.000Z');
 const fake = new B2cGateway();
@@ -73,6 +75,33 @@ const orderNet = async (orderId: number, kind?: string) =>
       group by la.kind order by la.kind`)
   ).rows;
 
+/** What one ledger transaction moved, per account kind (debit positive). */
+async function linesOf(transactionId: number): Promise<Record<string, string>> {
+  const result = await db.execute<{ kind: string; amount: string }>(sql`
+    select la.kind, sum(le.amount)::numeric(18,4)::text as amount
+    from ledger_entries le join ledger_accounts la on la.id = le.account_id
+    where le.transaction_id = ${transactionId}
+    group by la.kind order by la.kind`);
+  return Object.fromEntries(result.rows.map((row) => [row.kind, row.amount]));
+}
+
+/** The dispute fee the fake gateway reports (GBP 12.00), in USD at the checkout's locked rate. */
+async function disputeFeeUsd(paid: PaidOrder): Promise<Decimal> {
+  const order = await orderRow(db, paid.orderId);
+  const [session] = await db
+    .select()
+    .from(s.checkoutSessions)
+    .where(eq(s.checkoutSessions.id, order.checkoutSessionId!));
+  return new Decimal('12').div(session!.fxRate).toDecimalPlaces(4);
+}
+
+/** The VAT report's totals of the month. */
+async function vatTotals() {
+  const res = await staff.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
+  expect(res.status).toBe(200);
+  return res.body.totals as { orders: number; taxable: string; vat: string };
+}
+
 /** The gateway reports a dispute of the whole payment; `status` closes it. */
 async function dispute(paid: PaidOrder, gatewayId: string, status?: 'won' | 'lost') {
   const body = disputeEvent(`evt_${unique()}`, {
@@ -93,24 +122,36 @@ async function rejected() {
   return { paid, refund: refund! };
 }
 
-/** The books of an order whose refund was closed unsent: the refund and its reversal cancel out, the chargeback is the one outflow. */
-async function expectMoneyLeftOnce(paid: PaidOrder, ledgerTxId: number) {
+/**
+ * The books of a never delivered order whose refund was closed unsent: the refund and its reversal cancel out, the chargeback is the one
+ * outflow, and what the sale booked as customer funds and VAT goes back against the loss: inside the loss's journal when the refund was
+ * closed at the loss, in a journal of its own when the gateway's failure closed it after the loss.
+ */
+async function expectMoneyLeftOnce(paid: PaidOrder, ledgerTxId: number, closed: 'at the loss' | 'after the loss') {
   const journals = await ledgerOf(db, paid.orderId);
-  expect(journals.map((entry) => entry.kind).sort()).toEqual([
-    'b2c_payment',
-    'chargeback',
-    'gateway_fee',
-    'refund',
-    'refund',
-  ]);
+  expect(journals.map((entry) => entry.kind).sort()).toEqual(
+    closed === 'at the loss'
+      ? ['b2c_payment', 'chargeback', 'gateway_fee', 'refund', 'refund']
+      : ['b2c_payment', 'chargeback', 'chargeback', 'gateway_fee', 'refund', 'refund'],
+  );
   expect(journals.filter((entry) => entry.key === `reverse:${ledgerTxId}`)).toHaveLength(1);
+  expect(journals.filter((entry) => entry.key === `order:${paid.orderId}:chargeback-return`)).toHaveLength(
+    closed === 'at the loss' ? 0 : 1,
+  );
   expect((await orderNet(paid.orderId, 'refund')).map((row) => row.net)).toEqual(['0.0000', '0.0000', '0.0000']);
-  const clearing = (await orderNet(paid.orderId)).find((row) => row.kind === 'gateway_clearing');
-  expect(clearing?.net).toBe('-15.4043');
-  const vat = await staff.get('/admin/reports/vat?from=2026-11-01&to=2026-11-30');
-  expect(vat.status).toBe(200);
-  expect(vat.body.totals).toEqual({ orders: 1, taxable: '3.9900', vat: '0.8000' });
-  expect(await systemBalance(db, 'vat_payable')).toBe(vat.body.totals.vat);
+  // Per account, debit positive: the payment (4.79) came in and left once with the chargeback, with the gateway fee (2.9 % + 0.30 =
+  // 0.4389) and the dispute fee (GBP 12.00 = 14.9654); customer funds and VAT are back to zero and only the dispute fee is a loss.
+  expect(Object.fromEntries((await orderNet(paid.orderId)).map((row) => [row.kind, row.net]))).toEqual({
+    chargeback_loss: '14.9654',
+    customer_funds: '0.0000',
+    gateway_clearing: '-15.4043',
+    gateway_fees: '0.4389',
+    vat_payable: '0.0000',
+  });
+  const vat = await vatTotals();
+  expect(vat).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
+  expect(await systemBalance(db, 'vat_payable')).toBe(vat.vat);
+  expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
 }
 
 describe('a refund of a charged-back payment never stays booked unless the gateway paid it (decision 048)', () => {
@@ -135,7 +176,7 @@ describe('a refund of a charged-back payment never stays booked unless the gatew
     });
     expect((await hook(t, clock, 'payments', world.gateway.code, failed)).statusCode).toBe(200);
     expect((await refundRows())[0]).toMatchObject({ status: 'rejected', note: CHARGEBACK_NOT_SENT_NOTE });
-    await expectMoneyLeftOnce(paid, refund.ledgerTxId!);
+    await expectMoneyLeftOnce(paid, refund.ledgerTxId!, 'after the loss');
     expect(await eventsOf(db, paid.orderId)).toContainEqual(
       expect.objectContaining({
         type: 'refund',
@@ -174,7 +215,7 @@ describe('a refund of a charged-back payment never stays booked unless the gatew
     fake.refund = { status: 'succeeded' };
     expect(await sender.send(refund.id, false)).toBe('skipped');
     expect(fake.calls('/v1/refunds')).toHaveLength(1);
-    await expectMoneyLeftOnce(paid, refund.ledgerTxId!);
+    await expectMoneyLeftOnce(paid, refund.ledgerTxId!, 'at the loss');
   });
 
   it('a failed refund of a charged-back payment is closed by its send instead of being sent', async () => {
@@ -190,7 +231,7 @@ describe('a refund of a charged-back payment never stays booked unless the gatew
     expect(await sender.send(refund.id, false)).toBe('failed');
     expect((await refundRows())[0]).toMatchObject({ status: 'rejected', note: CHARGEBACK_NOT_SENT_NOTE });
     expect(fake.calls('/v1/refunds')).toHaveLength(1);
-    await expectMoneyLeftOnce(paid, refund.ledgerTxId!);
+    await expectMoneyLeftOnce(paid, refund.ledgerTxId!, 'after the loss');
   });
 
   it('a refund the gateway completes after the chargeback stays completed with both journals', async () => {
@@ -214,6 +255,16 @@ describe('a refund of a charged-back payment never stays booked unless the gatew
       'chargeback',
     ]);
     expect((await paymentRow(paid.paymentId)).status).toBe('chargeback');
+    // The gateway paid both: the refund took the customer funds and the VAT back, so the loss gives nothing back and the money left
+    // clearing twice (4.79 refunded, 4.79 + the GBP 12.00 dispute fee charged back, and the gateway fee).
+    expect(Object.fromEntries((await orderNet(paid.orderId)).map((row) => [row.kind, row.net]))).toEqual({
+      chargeback_loss: '19.7554',
+      customer_funds: '0.0000',
+      gateway_clearing: '-20.1943',
+      gateway_fees: '0.4389',
+      vat_payable: '0.0000',
+    });
+    expect(await vatTotals()).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
   });
 
   it('a job run again for a refund the gateway accepted, after the chargeback, sends nothing and leaves the refund to the gateway', async () => {
@@ -282,6 +333,104 @@ describe('a refund of a charged-back payment never stays booked unless the gatew
       'chargeback',
     ]);
     expect(fake.calls('/v1/refunds')).toHaveLength(1);
+  });
+});
+
+describe('a refund the gateway accepted and fails after the loss leaves the books as the chargeback rules say', () => {
+  /** The journal that gives back what the sale of the order booked (one per order). */
+  const giveBackOf = (orderId: number) =>
+    db
+      .select()
+      .from(s.ledgerTransactions)
+      .where(eq(s.ledgerTransactions.idempotencyKey, `order:${orderId}:chargeback-return`));
+
+  /** The gateway's `refund.failed` for the refund it accepted. */
+  const failure = (gatewayRefundId: string, refundId: number) =>
+    refundEvent(`evt_${unique()}`, {
+      refund: gatewayRefundId,
+      refundId,
+      sendAttempt: 1,
+      type: 'refund.failed',
+      failure: 'charge_disputed',
+    });
+
+  it('an order that was never delivered: its customer funds and VAT end at zero and only the dispute fee is a loss', async () => {
+    const { paid, refund } = await rejected();
+    fake.refund = { status: 'pending' };
+    expect(await sender.send(refund.id, false)).toBe('pending');
+    const taken = (await refundRows())[0]!;
+    await dispute(paid, 'dp_never_delivered');
+    await dispute(paid, 'dp_never_delivered', 'lost');
+    const fee = await disputeFeeUsd(paid);
+    // The refund is still the gateway's: its journal is in place, so the loss gives nothing back.
+    expect((await refundRows())[0]).toMatchObject({ status: 'processing', gatewayRefundId: taken.gatewayRefundId });
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.add('4.79').toFixed(4));
+
+    const failed = failure(taken.gatewayRefundId!, refund.id);
+    expect((await hook(t, clock, 'payments', world.gateway.code, failed)).statusCode).toBe(200);
+    expect((await refundRows())[0]).toMatchObject({ status: 'rejected', note: CHARGEBACK_NOT_SENT_NOTE });
+    // The refund's journal is reversed, and the sale was undone by the chargeback: nothing is owed to the buyer and no VAT is due.
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.0000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.toFixed(4));
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    expect(await vatTotals()).toEqual({ orders: 1, taxable: '0.0000', vat: '0.0000' });
+    // What the sale booked goes back against the loss: Dr customer_funds 3.99, Dr vat_payable 0.80 / Cr chargeback_loss 4.79.
+    const [back] = await giveBackOf(paid.orderId);
+    expect(back).toMatchObject({ kind: 'chargeback', refType: 'order', refId: paid.orderId });
+    expect(await linesOf(back!.id)).toEqual({
+      chargeback_loss: '-4.7900',
+      customer_funds: '3.9900',
+      vat_payable: '0.8000',
+    });
+
+    // A repeated delivery of the failure books nothing more.
+    expect((await hook(t, clock, 'payments', world.gateway.code, failed)).statusCode).toBe(200);
+    expect(await giveBackOf(paid.orderId)).toHaveLength(1);
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.toFixed(4));
+  });
+
+  it('a delivered order keeps the plain loss, and its VAT stays owed', async () => {
+    const paid = await paidOrder(t, clock, world);
+    expect((await staff.post(`/admin/orders/${paid.orderId}/reply`, { code: 'Unlocked' })).status).toBe(204);
+    const customerId = (await orderRow(db, paid.orderId)).customerId!;
+    const [requested] = await db
+      .insert(s.refunds)
+      .values({
+        paymentId: paid.paymentId,
+        orderId: paid.orderId,
+        customerId,
+        amount: paid.charged,
+        currency: 'GBP',
+        reason: 'The code did not work',
+        method: 'original',
+        status: 'requested',
+        requestedByType: 'customer',
+        requestedById: customerId,
+        createdAt: clock.now(),
+        updatedAt: clock.now(),
+      })
+      .returning();
+    expect((await staff.post(`/admin/refunds/${requested!.id}/approve`, {})).status).toBe(200);
+    fake.refund = { status: 'pending' };
+    expect(await sender.send(requested!.id, false)).toBe('pending');
+    const taken = (await refundRows())[0]!;
+    await dispute(paid, 'dp_delivered_late');
+    await dispute(paid, 'dp_delivered_late', 'lost');
+    const fee = await disputeFeeUsd(paid);
+
+    expect(
+      (await hook(t, clock, 'payments', world.gateway.code, failure(taken.gatewayRefundId!, taken.id))).statusCode,
+    ).toBe(200);
+    expect((await refundRows())[0]).toMatchObject({ status: 'rejected', note: CHARGEBACK_NOT_SENT_NOTE });
+    // The refund of the revenue is reversed; nothing goes back from the loss.
+    expect(await giveBackOf(paid.orderId)).toEqual([]);
+    expect(await systemBalance(db, 'customer_funds')).toBe('0.0000');
+    expect(await systemBalance(db, 'vat_payable')).toBe('0.8000');
+    expect(await systemBalance(db, 'chargeback_loss')).toBe(fee.add('4.79').toFixed(4));
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    expect(await vatTotals()).toEqual({ orders: 1, taxable: '3.9900', vat: '0.8000' });
   });
 });
 
