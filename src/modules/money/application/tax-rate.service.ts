@@ -16,6 +16,7 @@ import {
   checkTaxText,
   checkTaxType,
   checkWindow,
+  normalizeTaxRegion,
   windowsOverlap,
 } from '../domain/tax-rate-rules';
 import {
@@ -84,7 +85,8 @@ function textProblems(input: UpdateTaxRateInput): FieldError[] {
  *
  * Why: the Settings page shows the rate added to the price per country with its reporting scheme and history (M163: no
  * delete, a rate that stops applying gets an end date). One window at a time per country and region, so the rate in force
- * is never ambiguous; changes of one country and region are serialised by an advisory lock.
+ * is never ambiguous; changes of one country and region are serialised by an advisory lock. A region is stored trimmed and in upper
+ * case ({@link normalizeTaxRegion}), so two spellings of one region are one window.
  *
  * Side effects: `create` and `update` write `tax_rates` and one audit row each.
  */
@@ -130,11 +132,12 @@ export class TaxRateService {
    */
   async create(input: CreateTaxRateInput): Promise<WireTaxRate> {
     const country = input.country.toUpperCase();
+    const region = normalizeTaxRegion(input.region);
     const errors = [
       checkCountry(country),
       checkRatePercent(input.ratePercent),
       checkTaxType(input.taxType),
-      ...textProblems(input),
+      ...textProblems({ ...input, region }),
     ].filter((problem): problem is FieldError => problem !== undefined);
     if (input.validFrom === null) {
       errors.push({ field: 'validFrom', code: 'required', message: 'Choose the date the rate starts.' });
@@ -145,12 +148,12 @@ export class TaxRateService {
     if (order) throw refuse(order);
 
     return this.db.runInTransaction(async ({ tx }) => {
-      await lockTaxWindows(tx, country, input.region);
-      await this.assertNoOverlap(tx, country, input.region, window);
+      await lockTaxWindows(tx, country, region);
+      await this.assertNoOverlap(tx, country, region, window);
       const now = this.clock.now();
       const row = await insertTaxRateRow(tx, {
         country,
-        region: input.region,
+        region,
         ratePercent: input.ratePercent,
         taxType: input.taxType,
         appliesTo: input.appliesTo,
@@ -186,10 +189,11 @@ export class TaxRateService {
     return this.db.runInTransaction(async ({ tx }) => {
       const current = await findTaxRateRow(tx, id, true);
       if (!current) throw notFound();
+      const typedRegion = input.region === undefined ? undefined : normalizeTaxRegion(input.region);
       const errors = [
         input.ratePercent === undefined ? undefined : checkRatePercent(input.ratePercent),
         input.taxType === undefined ? undefined : checkTaxType(input.taxType),
-        ...textProblems(input),
+        ...textProblems({ ...input, region: typedRegion }),
       ].filter((problem): problem is FieldError => problem !== undefined);
       if (input.country !== undefined && input.country.toUpperCase() !== current.country) {
         errors.push({
@@ -203,7 +207,7 @@ export class TaxRateService {
       }
       if (errors.length > 0) throw refuse(...errors);
 
-      const region = input.region ?? current.region;
+      const region = typedRegion ?? current.region;
       const window: TaxWindow = {
         from: input.validFrom ? new Date(input.validFrom) : current.validFrom,
         to: input.validTo === undefined ? current.validTo : input.validTo === null ? null : new Date(input.validTo),

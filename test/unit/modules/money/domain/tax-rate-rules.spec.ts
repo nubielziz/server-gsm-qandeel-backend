@@ -6,6 +6,7 @@ import {
   checkTaxText,
   checkTaxType,
   checkWindow,
+  normalizeTaxRegion,
   windowsOverlap,
 } from '@src/modules/money/domain/tax-rate-rules';
 
@@ -68,5 +69,19 @@ describe('windowsOverlap', () => {
         { from: day('2026-03-01'), to: day('2026-04-01') },
       ),
     ).toBe(true);
+  });
+});
+
+describe('normalizeTaxRegion', () => {
+  it('trims a region and writes it in upper case, so every spelling of one region is one key', () => {
+    expect(normalizeTaxRegion('ON')).toBe('ON');
+    expect(normalizeTaxRegion('on')).toBe('ON');
+    expect(normalizeTaxRegion('  On ')).toBe('ON');
+    expect(normalizeTaxRegion('Corsica')).toBe('CORSICA');
+  });
+
+  it('keeps the whole country as the empty region', () => {
+    expect(normalizeTaxRegion('')).toBe('');
+    expect(normalizeTaxRegion('   ')).toBe('');
   });
 });

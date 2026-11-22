@@ -576,6 +576,84 @@ describe('POST /store/v1/checkout-sessions and an email blocked for guest checko
   });
 });
 
+describe('POST /store/v1/checkout-sessions for a country taxed by region', () => {
+  const REGION_REFUSAL = { field: 'region', code: 'unsupported', message: 'Choose a region.' };
+  const canada = (world: StorefrontWorld, region?: string) =>
+    valid(world, { country: 'CA', currency: 'USD', ...(region === undefined ? {} : { region }) });
+  const ONTARIO = { country: 'CA', region: 'ON', ratePercent: '13', taxType: 'sales_tax', label: 'Ontario HST' };
+
+  it('needs a region with a window in force, matched in any case, and locks the rate of that region', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await insertTaxWindow(db, ONTARIO);
+    const before = await counts();
+    const silent = await open(canada(world));
+    expect(silent.statusCode).toBe(422);
+    expect(body(silent)).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      detail: 'Choose a region.',
+      errors: [REGION_REFUSAL],
+    });
+    const unknown = await open(canada(world, 'QC'));
+    expect(unknown.statusCode).toBe(422);
+    expect(body(unknown).errors).toEqual([REGION_REFUSAL]);
+    expect(await counts()).toEqual(before);
+    for (const region of ['ON', 'on', ' On ']) {
+      const res = await open(canada(world, region));
+      expect(res.statusCode).toBe(201);
+      expect(body(res)).toMatchObject({ country: 'CA', taxRate: '13.0000' });
+    }
+  });
+
+  it('does not fall back to the national window while a regional window of the country is in force', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await insertTaxWindow(db, { country: 'CA', region: '', ratePercent: '5', taxType: 'gst', label: 'Canada GST' });
+    await insertTaxWindow(db, ONTARIO);
+    expect(body(await open(canada(world))).errors).toEqual([REGION_REFUSAL]);
+    expect(body(await open(canada(world, 'BC'))).errors).toEqual([REGION_REFUSAL]);
+    expect(body(await open(canada(world, 'on'))).taxRate).toBe('13.0000');
+    // A region without tax is one staff give a 0 % window.
+    await insertTaxWindow(db, {
+      country: 'CA',
+      region: 'BC',
+      ratePercent: '0',
+      taxType: 'none',
+      label: 'British Columbia',
+    });
+    const untaxed = await open(canada(world, 'bc'));
+    expect(untaxed.statusCode).toBe(201);
+    expect(body(untaxed).taxRate).toBe('0.0000');
+  });
+
+  it('refuses a signed-in buyer the same way', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await insertTaxWindow(db, ONTARIO);
+    const { customer, client } = await signedInCustomer();
+    const refused = await client.call('POST', OPEN_URL, { ...canada(world), email: customer.email });
+    expect(refused.statusCode).toBe(422);
+    expect(body(refused).errors).toEqual([REGION_REFUSAL]);
+    expect((await db.select().from(s.checkoutSessions)).length).toBe(0);
+  });
+
+  it('needs no region for a country whose regional windows are not in force, nor for one taxed as a whole', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    await insertTaxWindow(db, { country: 'CA', region: '', ratePercent: '5', taxType: 'gst', label: 'Canada GST' });
+    await insertTaxWindow(db, { ...ONTARIO, validTo: new Date(clock.nowMs() - 24 * 60 * MINUTE) });
+    await insertTaxWindow(db, { ...ONTARIO, region: 'QC', validFrom: new Date(clock.nowMs() + 24 * 60 * MINUTE) });
+    const silent = await open(canada(world));
+    expect(silent.statusCode).toBe(201);
+    expect(body(silent).taxRate).toBe('5.0000');
+    expect(body(await open(canada(world, 'ON'))).taxRate).toBe('5.0000');
+    // The country of the shared world has one national window: a region named there changes nothing.
+    const named = await open(valid(world, { region: 'Wales' }));
+    expect(named.statusCode).toBe(201);
+    expect(body(named).taxRate).toBe('20.0000');
+  });
+});
+
 describe('POST /store/v1/checkout-sessions as a signed-in customer (feature 14b)', () => {
   it('opens the checkout as the account, even with guest checkout off, whatever the case of the typed email', async () => {
     const { db } = await testDb();

@@ -123,6 +123,36 @@ describe('POST /admin/tax-rates', () => {
     expect(await db.select().from(s.taxRates)).toHaveLength(1);
   });
 
+  it('stores a region trimmed and in upper case, so two spellings of one region are one window', async () => {
+    const staff = await editor();
+    const ontario = {
+      ...FRANCE,
+      country: 'CA',
+      region: ' on ',
+      ratePercent: '13',
+      taxType: 'sales_tax',
+      label: 'Ontario HST',
+    };
+    const row = await create(staff, ontario);
+    expect(row.region).toBe('ON');
+    const clash = await send(staff, 'POST', '/admin/tax-rates', { ...ontario, region: 'ON' });
+    expect(clash.statusCode).toBe(422);
+    expect(clash.json<{ errors: { field: string; code: string }[] }>().errors[0]).toMatchObject({
+      field: 'validFrom',
+      code: 'overlap',
+    });
+    // Requests that arrive together with other spellings wait on the same lock and see the stored window.
+    const racing = await Promise.all(
+      ['On', 'oN', ' ON'].map((region) =>
+        send(staff, 'POST', '/admin/tax-rates', { ...ontario, country: 'US', region }),
+      ),
+    );
+    expect(racing.map((res) => res.statusCode).sort()).toEqual([201, 422, 422]);
+    const { db } = await testDb();
+    const regions = (await db.select().from(s.taxRates)).map((stored) => `${stored.country}|${stored.region}`).sort();
+    expect(regions).toEqual(['CA|ON', 'US|ON']);
+  });
+
   it('needs tax:create', async () => {
     const reader = await signInStaff(t, ['tax:read']);
     const res = await send(reader, 'POST', '/admin/tax-rates', FRANCE);
@@ -199,6 +229,29 @@ describe('PATCH /admin/tax-rates/:id', () => {
     const overlap = await send(staff, 'PATCH', `/admin/tax-rates/${early.id}`, { validTo: null });
     expect(overlap.statusCode).toBe(422);
     expect(overlap.json<{ errors: { field: string }[] }>().errors[0]?.field).toBe('validFrom');
+  });
+
+  it('stores a changed region trimmed and in upper case, and refuses a change onto another spelling of a region in force', async () => {
+    const staff = await editor();
+    const ontario = {
+      ...FRANCE,
+      country: 'CA',
+      region: 'ON',
+      ratePercent: '13',
+      taxType: 'sales_tax',
+      label: 'Ontario HST',
+    };
+    await create(staff, ontario);
+    const quebec = await create(staff, { ...ontario, region: 'QC', ratePercent: '14.975', label: 'Quebec' });
+    const onto = await send(staff, 'PATCH', `/admin/tax-rates/${quebec.id}`, { region: 'on' });
+    expect(onto.statusCode).toBe(422);
+    expect(onto.json<{ errors: { field: string; code: string }[] }>().errors[0]).toMatchObject({
+      field: 'validFrom',
+      code: 'overlap',
+    });
+    const moved = await send(staff, 'PATCH', `/admin/tax-rates/${quebec.id}`, { region: ' qc ' });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json<Row>().region).toBe('QC');
   });
 
   it('answers 404 for an unknown id and 403 without tax:update', async () => {

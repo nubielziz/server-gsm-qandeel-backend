@@ -30,7 +30,11 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   `checkout` or `store` already answers `503 MAINTENANCE` before this runs (the pipeline hook). Decision 050: right after the
   guest-checkout switch, `CustomerProfileRules.assertCheckoutCountry` refuses a `country` without a tax window in force while the shop
   has a window for any country (the profile's own refusal: `422` on `country`, code `unsupported`, "Choose a country."); a shop with no
-  window in force accepts every country without tax. The session also keeps `ip_country`, the visitor's country read by the controller
+  window in force accepts every country without tax. While the country has a regional tax window in force
+  (`StorefrontMoney.taxRegionAccepted`), `region` must name a region that has one, compared trimmed and in upper case; a missing or other
+  region is `422` on `region` (code `unsupported`, "Choose a region."), and the national window alone does not settle the tax then (staff
+  give a region without tax a 0 % window). The region is the buyer's own statement: no input of the shop confirms it, so it is not checked
+  against the card or the visitor's country the way the country is. The session also keeps `ip_country`, the visitor's country read by the controller
   from the header named by `GEOIP_COUNTRY_HEADER` (`countryFromHeader`, only when the setting is set, else null; the edge removes a
   visitor's own copy of that header). A guest is refused by a blocklist entry limited to guest checkouts (the same neutral
   `ACCOUNT_SUSPENDED`); a signed-in customer is not.

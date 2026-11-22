@@ -7,7 +7,9 @@ import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime } from '.
 export const TaxRateSchema = z.object({
   id: zId,
   country: z.string().describe('ISO 3166 alpha-2 code.'),
-  region: z.string().describe("A region inside the country, '' for the whole country."),
+  region: z
+    .string()
+    .describe("A region inside the country, stored trimmed and in upper case; '' for the whole country."),
   ratePercent: zDecimal.describe('Percent, 4 decimal places (`20.0000`).'),
   taxType: z.string().describe('vat | gst | sales_tax | none (older rows may hold other words, shown as they are).'),
   appliesTo: z.string(),
@@ -39,8 +41,8 @@ const france = {
 
 const WINDOW_RULES =
   'A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a ' +
-  'time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a ' +
-  '`validTo`.';
+  'time per country and region: an overlap is 422 on `validFrom`. A `region` is stored trimmed and in upper case, so `on` and ' +
+  '`ON` are one region. There is no delete; a rate that stops applying gets a `validTo`.';
 
 /** `GET /admin/tax-rates`. */
 export const listTaxRates = defineRoute({

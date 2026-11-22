@@ -29,6 +29,7 @@ import {
 import { findCheckoutSession, insertCheckoutSession, insertGuestCustomer } from '../infra/checkout.repository';
 import { listSessionConsents } from '../infra/consent.repository';
 import { findCustomerByEmail, findCustomerById } from '../infra/customer.repository';
+import { regionNotSupported } from './customer-errors';
 import { CustomerProfileRules } from './customer-profile-rules';
 
 /** The session as the route answers. */
@@ -82,7 +83,8 @@ function cannotOrder(): AppError {
  * (decision 019). The checkout token is stored as a keyed hash and an encrypted copy (decision 054). Expiry is judged on the injected
  * clock. Decision 050: while the shop has a tax window in force, a country without one is refused as the customer profile refuses it; a
  * signed-in buyer is not matched by a blocklist entry limited to guest checkouts; and the visitor's country the proxy header reported is
- * kept on the session.
+ * kept on the session. While a country has a regional tax window in force, the checkout must name a region that has one (any case); the
+ * region is the buyer's own statement, like the country.
  *
  * Side effects: inserts a guest `customers` row when the email is new and one `checkout_sessions` row (with `ip_country`), in one transaction.
  */
@@ -112,7 +114,8 @@ export class CheckoutSessionService {
    *   gone); `VALIDATION_FAILED` for a service that cannot be sold or ordered online, a quantity or order field that does not
    *   fit, a currency that is not offered, or (signed in) an email that is not the account's; `INVALID_IMEI` for a bad IMEI;
    *   `ACCOUNT_SUSPENDED` for a suspended or blocked customer, or a blocklisted email, email domain or IMEI (one message for all);
-   *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one
+   *   `VALIDATION_FAILED` on `country` (`unsupported`) for a country without a tax window while the shop has one; `VALIDATION_FAILED` on
+   *   `region` (`unsupported`) for a missing region, or one without a window in force, while the country has a regional window in force
    */
   async open(request: OpenCheckoutRequest): Promise<CheckoutSessionView> {
     const row = await this.db.runInTransaction(async ({ tx }) => {
@@ -125,6 +128,10 @@ export class CheckoutSessionService {
       }
       // Decision 050: no checkout for a country without a tax window while the shop has one (the profile's refusal).
       await this.countryRules.assertCheckoutCountry(tx, request.country, this.clock.now());
+      // A country taxed by region has no one rate: the buyer names one of its regions with a window in force.
+      if (!(await this.money.taxRegionAccepted(tx, request.country, request.region, this.clock.now()))) {
+        throw regionNotSupported();
+      }
       const retailGroupId = await this.quotes.retailGroupId(tx);
       if (retailGroupId === undefined) throw notAvailable();
       const context = await this.quotes.context(tx, retailGroupId, {

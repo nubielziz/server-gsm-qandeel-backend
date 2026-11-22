@@ -205490,7 +205490,7 @@
     },
     "/admin/tax-rates": {
       "get": {
-        "description": "Tax rates by country, every window (history included). A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`.",
+        "description": "Tax rates by country, every window (history included). A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. A `region` is stored trimmed and in upper case, so `on` and `ON` are one region. There is no delete; a rate that stops applying gets a `validTo`.",
         "operationId": "getAdminTaxRates",
         "parameters": [
           {
@@ -205569,7 +205569,7 @@
                       },
                       "region": {
                         "type": "string",
-                        "description": "A region inside the country, '' for the whole country."
+                        "description": "A region inside the country, stored trimmed and in upper case; '' for the whole country."
                       },
                       "ratePercent": {
                         "type": "string",
@@ -205987,7 +205987,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "Adds a window for a country: `country` is two capital letters, `ratePercent` 0 to 100 with up to four decimals, `taxType` vat | gst | sales_tax | none, `validFrom` required. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
+        "description": "Adds a window for a country: `country` is two capital letters, `ratePercent` 0 to 100 with up to four decimals, `taxType` vat | gst | sales_tax | none, `validFrom` required. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. A `region` is stored trimmed and in upper case, so `on` and `ON` are one region. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
         "operationId": "postAdminTaxRates",
         "parameters": [],
         "requestBody": {
@@ -206105,7 +206105,7 @@
                     },
                     "region": {
                       "type": "string",
-                      "description": "A region inside the country, '' for the whole country."
+                      "description": "A region inside the country, stored trimmed and in upper case; '' for the whole country."
                     },
                     "ratePercent": {
                       "type": "string",
@@ -206567,7 +206567,7 @@
                     },
                     "region": {
                       "type": "string",
-                      "description": "A region inside the country, '' for the whole country."
+                      "description": "A region inside the country, stored trimmed and in upper case; '' for the whole country."
                     },
                     "ratePercent": {
                       "type": "string",
@@ -207065,7 +207065,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Changes the fields sent; `validTo: null` clears the end. The country never changes. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
+        "description": "Changes the fields sent; `validTo: null` clears the end. The country never changes. A window runs from `validFrom` (a calendar date at midnight UTC) to `validTo` (exclusive; null = open). One window at a time per country and region: an overlap is 422 on `validFrom`. A `region` is stored trimmed and in upper case, so `on` and `ON` are one region. There is no delete; a rate that stops applying gets a `validTo`. Audited.",
         "operationId": "patchAdminTaxRatesById",
         "parameters": [
           {
@@ -207177,7 +207177,7 @@
                     },
                     "region": {
                       "type": "string",
-                      "description": "A region inside the country, '' for the whole country."
+                      "description": "A region inside the country, stored trimmed and in upper case; '' for the whole country."
                     },
                     "ratePercent": {
                       "type": "string",
@@ -247774,7 +247774,7 @@
     },
     "/store/v1/checkout-sessions": {
       "post": {
-        "description": "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
+        "description": "Starts a purchase, as a guest or as a signed-in customer: the session locks the retail price, the tax rate of the buyer's `country` and the exchange rate of `currency` for 30 minutes. A guest's email makes (or finds) a guest customer. A request that carries the cookie of a signed-in customer (and its `X-CSRF-Token`, else `403 CSRF_FAILED` and nothing is written) opens the checkout as that account instead: `email` must be the email of the account in any case (else `422` on `email`: \"Use the email of your account, or sign out to check out as a guest.\"), the `guestCheckout` switch does not apply and the session belongs to the signed-in customer. A request without a usable customer session is a guest. An IMEI service needs a valid `imei` (else `422 INVALID_IMEI`); a service with order fields needs their `inputs`. A suspended or blocked customer is refused (`403 ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is `422` on `country` (code `unsupported`, \"Choose a country.\"), the refusal of the customer profile; a shop with no tax window in force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that has one (any case), else `422` on `region` (code `unsupported`, \"Choose a region.\"); the national window alone does not apply then. An email that staff blocked for guest checkouts is refused to a guest like any blocked email (`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). The answer carries the session token: the whole credential of the next two routes. Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. `currency` must be on offer in `GET /store/v1/config` (`422` on `currency` otherwise).",
         "operationId": "postStoreV1CheckoutSessions",
         "parameters": [
           {
@@ -247817,7 +247817,7 @@
                     "pattern": "^[A-Za-z]{2}$"
                   },
                   "region": {
-                    "description": "The buyer's region, for the countries that tax by region.",
+                    "description": "The buyer's region, for the countries that tax by region: while the `country` has a regional window in force (a `taxRates` row of `GET /store/v1/config` with a `region`), it must be one of those regions, in any case.",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 60

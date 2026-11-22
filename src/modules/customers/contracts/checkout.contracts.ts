@@ -42,7 +42,9 @@ const OpenBody = z.object({
     .min(1)
     .max(60)
     .optional()
-    .describe("The buyer's region, for the countries that tax by region."),
+    .describe(
+      "The buyer's region, for the countries that tax by region: while the `country` has a regional window in force (a `taxRates` row of `GET /store/v1/config` with a `region`), it must be one of those regions, in any case.",
+    ),
   currency: zCurrencyCode
     .optional()
     .describe('The currency to pay in (one `GET /store/v1/config` lists). Default: USD.'),
@@ -157,7 +159,9 @@ export const openCheckoutSession = defineRoute({
     'ACCOUNT_SUSPENDED`); when the shop requires an account (`guestCheckout` off) a guest gets `401 UNAUTHORIZED`. A service the ' +
     'shop cannot sell is `422` on `serviceId`. While the shop has a tax window in force for any country, a `country` without one is ' +
     '`422` on `country` (code `unsupported`, "Choose a country."), the refusal of the customer profile; a shop with no tax window in ' +
-    'force accepts any country without tax. An email that staff blocked for guest checkouts is refused to a guest like any blocked email ' +
+    'force accepts any country without tax. While the `country` has a regional tax window in force, `region` must name a region that ' +
+    'has one (any case), else `422` on `region` (code `unsupported`, "Choose a region."); the national window alone does not apply then. ' +
+    'An email that staff blocked for guest checkouts is refused to a guest like any blocked email ' +
     '(`403 ACCOUNT_SUSPENDED`) and accepted for its signed-in account (decision 050). ' +
     'The answer carries the session token: the whole credential of the next two routes. ' +
     'Paying comes later. Needs the anti-bot token (`X-Turnstile-Token`). The answer holds the token, so it is never cached. ' +

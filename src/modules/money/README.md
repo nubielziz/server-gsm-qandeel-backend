@@ -65,7 +65,8 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
 - **Tax rates** (stage 14, built ahead of feature 14b by the lead): `TaxRateService` lists, reads, adds and changes the
   windows of `tax_rates` (`/admin/tax-rates`, permissions `tax:read|create|update`): country two capital letters, rate 0 to
   100 with four decimals, `taxType` vat | gst | sales_tax | none, `validTo` after `validFrom` (exclusive end), and one window
-  at a time per country and region (422 on `validFrom`; changes of one pair serialised by an advisory lock). No delete
+  at a time per country and region (422 on `validFrom`; changes of one pair serialised by an advisory lock; a region is stored trimmed
+  and in upper case, `normalizeTaxRegion`, so two spellings of one region are one pair). No delete
   (M163): a rate that stops applying gets an end. The seed loads the demo's 12 rates as the console's mock maps them.
 - **Spend and credit reads for the groups (feature 4a).** `MerchantSpend.completedSpend(db, clientIds)` is the cumulative
   completed-order spend in USD (the `order_settle` debits on each merchant's `client_hold` minus the settlements that were
@@ -294,7 +295,9 @@ the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPos
 helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-rate rule `isRateStale` (the System health dashboard's `fx_stale` item reads it, so it agrees with the currencies page). `StorefrontPayments`, `OrderReceipts`, `B2cRefunds` (what the order engine calls to reverse a refunded storefront order), `StorefrontCaptures` and `StorefrontOrderPorts` (the slots the customers and orders modules fill at boot, decision 032), `RefundProcessModule` and `RefundSender` (worker), `REFUND_PROCESS_EVENT`/`RefundOutbox`, and the pure helpers `brandLine`, `paymentFacts`, `storefrontMismatch`. `StorefrontMoney` (feature 14a, read only, takes the caller's
 database handle): `currencies` / `offered` / `defaultCurrency` / `byCode` (the currencies the shop offers, `is_storefront` and
 `is_active`), `taxInForce(db, country, at, region?)` and `taxRatesInForce(db, at)` (the tax window whose `valid_from` is at most the
-moment and whose `valid_to` is empty or after it; a regional window wins over the national one), `paymentMethods` (active gateways
+moment and whose `valid_to` is empty or after it; a regional window wins over the national one; the region compares trimmed and in upper
+case), `taxRegionAccepted(db, country, region, at)` (false while the country has a regional window in force and the region has none: the
+checkout's refusal on `region`), `paymentMethods` (active gateways
 for the B2C or both audiences: code, name, 3DS support, `preset`, `logoUrl`). `WalletService` is exported by `MoneyAdminModule`
 (the routes and the services that read the database; a database-less test app leaves it out). Other modules import only
 `src/modules/money/index.ts` (lint rule `gsm/module-boundaries`).

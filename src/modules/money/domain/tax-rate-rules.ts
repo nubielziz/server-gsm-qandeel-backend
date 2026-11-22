@@ -16,6 +16,19 @@ const PERCENT = /^\d{1,3}(\.\d{1,4})?$/;
 export const TAX_TEXT_LIMITS = { region: 60, appliesTo: 60, label: 80, ossScheme: 40 } as const;
 
 /**
+ * Puts a region in the one form it is stored and compared in: trimmed and in upper case.
+ *
+ * Why: the one-window rule (one window at a time per country and region) and the checkout's tax lookup match a region exactly, so
+ * `ON`, `on` and ` On ` must be one region; `''` stays the whole country.
+ *
+ * @param region the region as staff or a buyer typed it
+ * @returns the stored form
+ */
+export function normalizeTaxRegion(region: string): string {
+  return region.trim().toUpperCase();
+}
+
+/**
  * Checks a country code.
  *
  * @param country the code as sent, already trimmed and upper-cased by the caller

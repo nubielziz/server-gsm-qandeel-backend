@@ -6,10 +6,12 @@ import type { DbExecutor } from '../../../infra/db';
 import { FX_GUARD_SETTINGS, PublicImages, SettingsReader } from '../../platform';
 import type { Currency } from '../db/schema';
 import { isRateOffered } from '../domain/currency-rules';
+import { normalizeTaxRegion } from '../domain/tax-rate-rules';
 import {
   findCurrencyByCode,
   findOfferedCurrencies,
   findStorefrontGateways,
+  findTaxRegionsInForce,
   findTaxWindow,
   findTaxWindowsInForce,
 } from '../infra/storefront-money.repository';
@@ -135,14 +137,15 @@ export class StorefrontMoney {
    * @param db the database or a transaction
    * @param country the buyer's ISO-2 country
    * @param at the moment (the injected clock's time)
-   * @param region the buyer's region; a regional window wins over the national one when both exist
+   * @param region the buyer's region, in any case (compared trimmed and in upper case, as it is stored); a regional window wins over the
+   *   national one when both exist
    * @returns the window in force, or `undefined` when the country has none (no tax)
    */
   async taxInForce(db: DbExecutor, country: string, at: Date, region = ''): Promise<TaxInForce | undefined> {
     const upper = country.toUpperCase();
+    const key = normalizeTaxRegion(region);
     const row =
-      (region === '' ? undefined : await findTaxWindow(db, upper, region, at)) ??
-      (await findTaxWindow(db, upper, '', at));
+      (key === '' ? undefined : await findTaxWindow(db, upper, key, at)) ?? (await findTaxWindow(db, upper, '', at));
     return row === undefined
       ? undefined
       : {
@@ -153,6 +156,24 @@ export class StorefrontMoney {
           label: row.label,
           ossScheme: row.ossScheme,
         };
+  }
+
+  /**
+   * Tells whether a buyer's region settles the tax of a country at a moment.
+   *
+   * Why: a country staff tax by region has no one rate for the whole country. While one of its regional windows is in force, the tax of a
+   * checkout is the window of the buyer's region, so the region must be one that has a window in force (staff give a region without tax a
+   * 0 % window); the national window alone does not settle it. Regions compare trimmed and in upper case, as they are stored.
+   *
+   * @param db the database or a transaction
+   * @param country the buyer's ISO-2 country
+   * @param region the buyer's region, or `undefined` when none was named
+   * @param at the moment (the injected clock's time)
+   * @returns true when the country has no regional window in force, or the region has one
+   */
+  async taxRegionAccepted(db: DbExecutor, country: string, region: string | undefined, at: Date): Promise<boolean> {
+    const regions = await findTaxRegionsInForce(db, country.toUpperCase(), at);
+    return regions.length === 0 || regions.includes(normalizeTaxRegion(region ?? ''));
   }
 
   /**

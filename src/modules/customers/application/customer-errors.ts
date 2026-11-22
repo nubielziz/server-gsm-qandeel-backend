@@ -46,6 +46,22 @@ export function countryNotSupported(): AppError {
 }
 
 /**
+ * A refused region: `422 VALIDATION_FAILED` on `region`.
+ *
+ * Why: a country taxed by region is charged the window of the buyer's region, so while one of its regional windows is in force a checkout
+ * must name a region that has one; the refusal has the shape of the country's own ("Choose a region.").
+ *
+ * @returns the error to throw
+ */
+export function regionNotSupported(): AppError {
+  const message = 'Choose a region.';
+  return new AppError('VALIDATION_FAILED', {
+    detail: message,
+    errors: [{ field: 'region', code: 'unsupported', message }],
+  });
+}
+
+/**
  * `404 NOT_FOUND` for a customer id that matches nothing.
  *
  * @returns the error to throw

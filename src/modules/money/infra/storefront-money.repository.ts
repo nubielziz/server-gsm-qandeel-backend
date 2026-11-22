@@ -1,6 +1,6 @@
 // Drizzle queries behind the storefront's money reads (feature 14a): the currencies the shop offers, the tax window in force for
 // a country and the B2C payment gateways that are switched on. Read only; the admin routes have their own repositories.
-import { and, asc, desc, eq, inArray, isNull, lte, gt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, gt, ne, or } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { type Currency, type PaymentGateway, type TaxRate, currencies, paymentGateways, taxRates } from '../db/schema';
 
@@ -59,6 +59,29 @@ export async function findTaxWindow(
     .orderBy(desc(taxRates.validFrom), desc(taxRates.id))
     .limit(1);
   return row;
+}
+
+/**
+ * Reads the regions of a country that have a tax window in force at a moment.
+ *
+ * @param db the database or a transaction
+ * @param country the ISO-2 country
+ * @param at the moment (the clock's time)
+ * @returns the regions (stored trimmed and in upper case), without `''` (the whole country); empty when the country is taxed as a whole
+ */
+export async function findTaxRegionsInForce(db: DbExecutor, country: string, at: Date): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ region: taxRates.region })
+    .from(taxRates)
+    .where(
+      and(
+        eq(taxRates.country, country),
+        ne(taxRates.region, ''),
+        lte(taxRates.validFrom, at),
+        or(isNull(taxRates.validTo), gt(taxRates.validTo, at)),
+      ),
+    );
+  return rows.map((row) => row.region);
 }
 
 /**
