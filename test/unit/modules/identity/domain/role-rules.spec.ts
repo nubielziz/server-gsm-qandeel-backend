@@ -4,6 +4,7 @@ import {
   areaOf,
   cleanPermissions,
   describePermission,
+  samePermissions,
   unknownPermissions,
 } from '@src/modules/identity/domain/role-rules';
 
@@ -20,6 +21,19 @@ describe('cleanPermissions', () => {
 
   it('keeps an empty list empty', () => {
     expect(cleanPermissions([])).toEqual([]);
+  });
+});
+
+describe('samePermissions', () => {
+  it('is true for the same entries in any order, and for two empty lists', () => {
+    expect(samePermissions(['staff:read', 'orders:*'], ['orders:*', 'staff:read'])).toBe(true);
+    expect(samePermissions([], [])).toBe(true);
+  });
+
+  it('is false when an entry was added, taken away or swapped', () => {
+    expect(samePermissions(['staff:read'], ['staff:read', 'orders:read'])).toBe(false);
+    expect(samePermissions(['staff:read', 'orders:read'], ['staff:read'])).toBe(false);
+    expect(samePermissions(['staff:read'], ['staff:update'])).toBe(false);
   });
 });
 

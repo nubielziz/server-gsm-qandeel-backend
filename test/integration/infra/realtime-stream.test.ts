@@ -282,6 +282,47 @@ describe('session doorbells', () => {
     await s.ended;
     await started(await stream('/admin/stream', headers));
   });
+
+  it('a change of the permissions of a role ends the streams of its members with bye reauth, and no other stream', async () => {
+    const { db } = await testDb();
+    const roleId = await insertRole(db, ['orders:read', 'support:read']);
+    const otherRole = await insertRole(db, ['orders:read']);
+    const members = [await insertStaff(db, roleId), await insertStaff(db, roleId)];
+    const outsider = await insertStaff(db, otherRole);
+    const open = [];
+    for (const staffId of [...members, outsider]) {
+      const session = await openSession(t, { type: 'staff', id: staffId });
+      open.push(await started(await stream('/admin/stream', { ...SAME_ORIGIN, ...session.headers })));
+    }
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/roles/${roleId}`, { permissions: ['orders:read'] })).status).toBe(200);
+    for (const s of open.slice(0, 2)) {
+      expect(await s.next('bye')).toMatchObject({ data: { reason: 'reauth' } });
+      await s.ended;
+    }
+    // Behind the members' bye frames: a barrier for the member of the other role, who got nothing.
+    await t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff'] });
+    await open[2]!.next('unread.changed');
+    expect(open[2]!.isEnded).toBe(false);
+    expect(open[2]!.frames.some((frame) => frame.event === 'bye')).toBe(false);
+  });
+
+  it('a rename of a role, or the same permissions in another order, leaves the streams of its members open', async () => {
+    const { db } = await testDb();
+    const roleId = await insertRole(db, ['orders:read', 'support:read']);
+    const staffId = await insertStaff(db, roleId);
+    const session = await openSession(t, { type: 'staff', id: staffId });
+    const s = await started(await stream('/admin/stream', { ...SAME_ORIGIN, ...session.headers }));
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/roles/${roleId}`, { name: 'Renamed' })).status).toBe(200);
+    expect((await owner.patch(`/admin/roles/${roleId}`, { permissions: ['support:read', 'orders:read'] })).status).toBe(
+      200,
+    );
+    await t.app.get(RealtimePublisher).publish('inbox', 'recount', { types: ['staff'] });
+    await s.next('unread.changed');
+    expect(s.isEnded).toBe(false);
+    expect(s.frames.some((frame) => frame.event === 'bye')).toBe(false);
+  });
 });
 
 describe('the logs and metrics of a stream', () => {

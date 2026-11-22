@@ -227,6 +227,35 @@ describe('a requester message', () => {
   });
 });
 
+describe('a change of the role of a staff member who watches the support chat', () => {
+  it('ends the open stream with bye reauth, and the reconnect gets no support events', async () => {
+    const { ticket } = await customerTicket();
+    const owner = await adminWith(t, ['*'], { name: 'Owner' });
+    const agent = await adminWith(t, ['support:read', 'orders:read'], { name: 'Agent' });
+    const session = await openSession(t, { type: 'staff', id: agent.staffId });
+    const headers = { ...SAME_ORIGIN, ...session.headers };
+    const open1 = await stream('/admin/stream', headers);
+    expect(open1.status).toBe(200);
+    expect((await open1.next()).event).toBe('ready');
+
+    expect((await owner.patch(`/admin/roles/${agent.roleId}`, { permissions: ['orders:read'] })).status).toBe(200);
+    expect((await open1.next('bye')).data).toMatchObject({ reason: 'reauth' });
+    await open1.ended;
+    expect((await agent.get('/admin/support-tickets')).status).toBe(403);
+
+    // The same session reconnects with the permissions of the moment: the support key is not decided for it any more.
+    const open2 = await stream('/admin/stream', headers);
+    expect(open2.status).toBe(200);
+    expect((await open2.next()).event).toBe('ready');
+    expect((await open2.next()).event).toBe('unread.changed');
+    const res = await onTicket('POST', ticket.token, '/messages', { body: 'Any news?' });
+    expect(res.statusCode).toBe(201);
+    await inboxBarrier();
+    await open2.next('unread.changed');
+    expect(ticketEvents(open2.frames)).toEqual([]);
+  });
+});
+
 describe('the requester view', () => {
   it('never carries an internal note or a system message, nor a staff name, the assignee or the priority', async () => {
     const { ticket, customer } = await customerTicket();

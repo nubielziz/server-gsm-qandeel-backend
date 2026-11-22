@@ -6,7 +6,7 @@ import { AppError } from '../../../common/errors';
 import { DbService, isForeignKeyViolation, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import type { Role } from '../db/schema';
-import { cleanPermissions, describePermission, unknownPermissions } from '../domain/role-rules';
+import { cleanPermissions, describePermission, samePermissions, unknownPermissions } from '../domain/role-rules';
 import { countActiveOwners, lockOwnerChanges } from '../infra/owner.repository';
 import {
   type RoleWithCount,
@@ -17,6 +17,7 @@ import {
   insertRoleRow,
   listRoleRows,
   lockRole,
+  staffIdsOfRole,
   updateRoleRow,
 } from '../infra/role.repository';
 import { grantsEverything } from '../security/permission-grammar';
@@ -24,6 +25,7 @@ import { PermissionsCatalog } from '../security/permissions-catalog';
 import { assertOwnerTargetAllowed, assertWithinCeiling, isOwner } from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { RolePermissions } from '../security/role-permissions';
+import { SessionService } from '../security/session.service';
 
 /** A role as the console reads it. */
 export interface RoleView {
@@ -69,7 +71,11 @@ function nameTaken(): AppError {
  * Privilege ceiling (decision 046): the caller must hold every permission of a role they create, edit or delete, and every
  * permission they give it; only an Owner edits the role they hold themselves (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
  *
- * Side effects: writes `roles` and `audit_logs`; deletes `gsm:{env}:identity:role:{id}` after the commit.
+ * Open live streams: a change of a role's permissions ends the open streams of its members (`SessionService.invalidateSubject`, so
+ * each stream gets `bye reauth` and reconnects with the permissions of the moment); the streams copy the permissions when they open.
+ *
+ * Side effects: writes `roles` and `audit_logs`; deletes `gsm:{env}:identity:role:{id}` after the commit; when the permissions
+ * change, deletes the cached session views of the role's members and rings `session subject` (ids only) for those with live sessions.
  *
  * @see docs/contract/endpoints/identity.md (the `/admin/roles` and `/admin/permissions` sections)
  */
@@ -80,6 +86,7 @@ export class RoleAdminService {
     private readonly audit: AuditService,
     private readonly catalog: PermissionsCatalog,
     private readonly rolePermissions: RolePermissions,
+    private readonly sessions: SessionService,
   ) {}
 
   /**
@@ -155,6 +162,8 @@ export class RoleAdminService {
    * @param id the role id
    * @param changes the keys to change
    * @returns the updated role
+   * Side effects: see the class; the members' open streams end only when the permissions really change.
+   *
    * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422), `CANNOT_CHANGE_OWN_ROLE` (409: the caller holds this role and
    *   is not an Owner), `FORBIDDEN` (403: an Owner role, or granting `*`, needs an Owner; the caller must hold every permission
    *   the role has and every permission sent, decision 046), `LAST_OWNER` (409 on `permissions`)
@@ -189,6 +198,13 @@ export class RoleAdminService {
         throw error;
       }
       await this.rolePermissions.invalidate(id, work);
+      // The open streams copied the old permissions when they opened: end them after the role cache is dropped (the callbacks run
+      // in registration order), so each reconnect reads the new list. The member list is read under the role lock.
+      if (permissions && !samePermissions(before.permissions, after.permissions)) {
+        for (const memberId of await staffIdsOfRole(work.tx, id)) {
+          await this.sessions.invalidateSubject('staff', memberId, work);
+        }
+      }
       await this.audit.record(work.tx, {
         action: 'edited role',
         entityType: 'role',

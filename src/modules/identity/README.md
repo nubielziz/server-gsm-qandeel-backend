@@ -306,7 +306,8 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   concerned (`403 FORBIDDEN`); only an Owner edits the role they hold (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
 - **What a change does to sessions and caches:** a suspension, "end all sessions", a password reset with `revokeSessions` and a 2FA reset
   call `SessionService.revokeAllOf` (the caller keeps their own session when they reset their own 2FA); a rename or role change, and a
-  reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`; a merchant status change calls
+  reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`, and a change of a role's permissions also calls
+  `invalidateSubject` for each member, so their open streams end with `bye reauth` (a rename does not); a merchant status change calls
   `ApiKeyDirectory.invalidateClient`. All after the commit.
 - **Staff links** (`StaffAuthTokens`): `POST /admin/staff` (invite) and `reset_link` issue an `auth_tokens` row (purpose `invite` while the member
   is `invited`, `reset` otherwise; hash only, one hour, only the newest link works). The link itself is built and mailed by the
@@ -572,7 +573,7 @@ README) and the inbox is its first source (platform). Code: `realtime/` (`stream
 - **Events and refusals:** `docs/contract/realtime-events.md`.
 - **Session doorbells.** `SessionService` rings the hub after the commit, ids only (topic `session`, never a source): `revoke`,
   `revokeAllOf` and `rotate` (the old row) ring `ended` with the session ids (500 per message), so the streams of those sessions get
-  `bye session_ended` and close at once; `invalidateSubject` (suspension, password or role change, a staff edit of a merchant) rings
+  `bye session_ended` and close at once; `invalidateSubject` (suspension, password or role change, a change of the permissions of a role for each of its members, a staff edit of a merchant) rings
   `subject` with the subject type and id when the account has live sessions, so its streams get `bye reauth`, reconnect, and the guard
   answers 401 or 403 for a suspended account (which stops the browser's `EventSource`). Beside the cache `forget`, after the commit
   (`afterCommit` and `onCommit`), through `RealtimePublisher.publishOnCommit`; a failed publish never fails the use case. A stream

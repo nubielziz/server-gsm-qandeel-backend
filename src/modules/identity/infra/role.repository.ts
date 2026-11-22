@@ -144,6 +144,22 @@ export async function countStaffOfRole(db: DbExecutor, roleId: number): Promise<
 }
 
 /**
+ * Lists the ids of the staff members who hold a role, any status.
+ *
+ * @param db the database or a transaction
+ * @param roleId the role id
+ * @returns the member ids, lowest first
+ */
+export async function staffIdsOfRole(db: DbExecutor, roleId: number): Promise<number[]> {
+  const rows = await db
+    .select({ id: staffUsers.id })
+    .from(staffUsers)
+    .where(eq(staffUsers.roleId, roleId))
+    .orderBy(staffUsers.id);
+  return rows.map((row) => row.id);
+}
+
+/**
  * Counts the active staff members of a role.
  *
  * @param db the database or a transaction

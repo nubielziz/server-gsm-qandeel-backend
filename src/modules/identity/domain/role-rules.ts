@@ -25,6 +25,22 @@ export function cleanPermissions(entries: readonly string[]): string[] {
 }
 
 /**
+ * Tells whether two permission lists grant the same entries, whatever their order.
+ *
+ * Why: a role edit that sends the same grants again (or only renames the role) changes nothing for the role's members, so it must
+ * not end their open live streams.
+ *
+ * @param left a stored or cleaned permission list
+ * @param right another one
+ * @returns true when both hold exactly the same entries
+ */
+export function samePermissions(left: readonly string[], right: readonly string[]): boolean {
+  const kept = new Set(left);
+  const other = new Set(right);
+  return kept.size === other.size && [...kept].every((entry) => other.has(entry));
+}
+
+/**
  * Finds the entries a role may not hold.
  *
  * Why: `POST` and `PATCH /admin/roles` reject unknown keys or prefixes with `422` on `permissions` (identity.md). The catalog

@@ -150,7 +150,7 @@ data: {"topics":["inbox"]}
 
 The server ends the stream; the browser reconnects (and the guard runs again). No `id`. `reason` is one of `max_age` (the 15-minute
 limit), `shutdown` (the server is restarting), `session_ended` (sign-out, "end this device", "end all sessions", a session that was rotated, a suspension), `reauth`
-(the account's role or details changed: reconnect and the guard decides, a suspended account then gets 403 and the stream stops).
+(the account's role or details changed, or the permissions of its role: reconnect and the guard decides, a suspended account then gets 403 and the stream stops).
 
 ```
 event: bye
