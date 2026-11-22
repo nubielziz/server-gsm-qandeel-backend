@@ -2,7 +2,7 @@
 // POST /admin/customers/:id/anonymize; scenario b2c-account, RESOLUTIONS b2c-4, b2c-5 and b2c-8, MISMATCHES B48, B49, B50): what a block
 // adds and an unblock removes, the origin check (decision 045) and content of the export, and everything anonymizing cuts and keeps.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { CHECKOUT_IMEI_AAD, CustomerErasureHooks } from '@src/modules/customers';
@@ -16,7 +16,8 @@ import { type OrdersWorld, ordersWorld } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { blocklistRows, insertBlock, insertHeldOrder, insertImeiCheck } from '../../support/risk';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
-import { insertSupportTicket } from '../../support/support';
+import { insertSupportMessage, insertSupportTicket } from '../../support/support';
+import { insertFileRow } from '../../support/support-accounts';
 import {
   STORE_ORIGIN,
   StoreClient,
@@ -325,6 +326,37 @@ describe('GET /admin/customers/:id/export', () => {
     for (const secret of ['fp_secret_card', 'passwordHash', 'rude']) expect(text).not.toContain(secret);
   });
 
+  it('leaves out a ticket whose address is not confirmed, and lists it once the address is confirmed (decision 053)', async () => {
+    const { customer, db } = await buyer();
+    await insertSupportTicket(db, { requesterId: customer.id, number: 'T-2001', subject: 'Confirmed one' });
+    const typed = await insertSupportTicket(db, {
+      requesterId: customer.id,
+      number: 'T-2002',
+      subject: 'Typed on the form',
+      requesterProvenAt: null,
+    });
+    await insertSupportMessage(db, typed.id, {
+      authorType: 'customer',
+      authorId: customer.id,
+      body: 'Words typed by somebody.',
+    });
+    const read = async () => {
+      const res = await download(customer.id, { 'sec-fetch-site': 'same-origin' });
+      expect(res.statusCode).toBe(200);
+      return {
+        subjects: res.json().supportTickets.map((ticket: { subject: string }) => ticket.subject),
+        text: res.body,
+      };
+    };
+    const before = await read();
+    expect(before.subjects).toEqual(['Confirmed one']);
+    expect(before.text).not.toContain('Words typed by somebody.');
+    await db.update(s.supportTickets).set({ requesterProvenAt: clock.now() }).where(eq(s.supportTickets.id, typed.id));
+    const after = await read();
+    expect(after.subjects).toEqual(['Confirmed one', 'Typed on the form']);
+    expect(after.text).toContain('Words typed by somebody.');
+  });
+
   it('leaves out what staff keep to protect the shop: the notes, the risk level, the reason of a suspension and the blocklist entries', async () => {
     const { customer, db } = await buyer({ fingerprint: 'fp_secret_card' });
     // The customer is blocked: the block writes a note, a risk level, a reason and blocklist entries linked to the customer.
@@ -617,6 +649,56 @@ describe('POST /admin/customers/:id/anonymize', () => {
     expect(tickets.find((ticket) => ticket.id === others.id)!.token).toBe(others.token);
     expect(tickets.find((ticket) => ticket.id === merchants.id)!.token).toBe(merchants.token);
     expect((await read(others.token!)).statusCode).toBe(200);
+  });
+
+  it('covers a ticket whose address was never confirmed as it covers the others: its link goes and its attachments are deleted (decision 053)', async () => {
+    const { customer, db } = await buyer();
+    const proven = await insertSupportTicket(db, { requesterId: customer.id });
+    const typed = await insertSupportTicket(db, { requesterId: customer.id, requesterProvenAt: null });
+    const provenFile = await insertFileRow(db, 'customer', customer.id);
+    const typedFile = await insertFileRow(db, 'customer', customer.id);
+    await insertSupportMessage(db, proven.id, {
+      authorType: 'customer',
+      authorId: customer.id,
+      fileIds: [provenFile.id],
+    });
+    await insertSupportMessage(db, typed.id, {
+      authorType: 'customer',
+      authorId: customer.id,
+      fileIds: [typedFile.id],
+    });
+    const read = (token: string) =>
+      t.app.inject({ method: 'GET', url: `/store/v1/tickets/${token}`, remoteAddress: freshClientIp() });
+    // The link of the typed-address ticket opens the thread (and so confirms the address): take the ticket back to unconfirmed to prove
+    // that the anonymization reaches it in that state.
+    expect((await read(typed.token!)).statusCode).toBe(200);
+    await db.update(s.supportTickets).set({ requesterProvenAt: null }).where(eq(s.supportTickets.id, typed.id));
+    expect((await staff.post(`/admin/customers/${customer.id}/anonymize`)).status).toBe(204);
+    const tickets = await db.select().from(s.supportTickets).orderBy(s.supportTickets.id);
+    for (const ticket of [proven, typed]) {
+      expect(
+        tickets.find((row) => row.id === ticket.id),
+        String(ticket.id),
+      ).toMatchObject({
+        token: null,
+        tokenHash: null,
+        tokenEnc: null,
+      });
+    }
+    expect(tickets.find((row) => row.id === typed.id)!.requesterProvenAt).toBeNull();
+    expect((await read(typed.token!)).statusCode).toBe(404);
+    expect(
+      await db
+        .select()
+        .from(s.files)
+        .where(inArray(s.files.id, [provenFile.id, typedFile.id])),
+    ).toEqual([]);
+    const messages = await db
+      .select()
+      .from(s.ticketMessages)
+      .where(inArray(s.ticketMessages.ticketId, [proven.id, typed.id]));
+    expect(messages.length).toBeGreaterThanOrEqual(2);
+    expect(messages.every((message) => message.fileIds.length === 0)).toBe(true);
   });
 
   it('refuses: 409 ANONYMIZED the second time, 404, 401, 403 and a missing CSRF token; another customer is untouched', async () => {

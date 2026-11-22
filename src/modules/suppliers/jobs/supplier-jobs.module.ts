@@ -1,4 +1,4 @@
-// Nest module of the supplier jobs (suppliers module): the dispatch, poll, sync and quick add processors and the schedules. Import it in the worker
+// Nest module of the supplier jobs (suppliers module): the dispatch, poll, sync, quick add and log retention processors and the schedules. Import it in the worker
 // process only (src/worker.module.ts).
 import { Module, type OnModuleInit } from '@nestjs/common';
 import { JobSchedulerRegistry } from '../../../infra/queues';
@@ -7,6 +7,8 @@ import { SupplierEngineModule } from '../supplier-engine.module';
 import { DISPATCH_SWEEP_JOB, DispatchSweepProcessor } from './dispatch-sweep.processor';
 import { QuickAddProcessor } from './quick-add.processor';
 import { QuickAddReconcilePass } from './quick-add-reconcile';
+import { SupplierLogRetention } from './supplier-log-retention';
+import { SUPPLIER_LOG_RETENTION_JOB, SupplierLogRetentionProcessor } from './supplier-log-retention.processor';
 import { SupplierDispatchProcessor } from './supplier-dispatch.processor';
 import { SUPPLIER_POLL_TICK_JOB } from '../application/supplier-poll';
 import { SupplierPollProcessor } from './supplier-poll.processor';
@@ -18,13 +20,15 @@ export const SUPPLIER_SCHEDULERS = {
   priceSync: 'supplier-price-sync',
   balanceCheck: 'supplier-balance-check',
   dispatchSweep: 'supplier-dispatch-sweep',
+  logRetention: 'supplier-log-retention',
 } as const;
 
 /**
  * Provides the processors of `supplier-dispatch`, `supplier-poll`, `supplier-sync`, the `supplier_quick_add` job of `imports` and the
  * `dispatch_sweep` job of `maintenance` (decision 044), and registers the schedules: the poll tick and the dispatch sweep every minute,
  * the price sync every 15 minutes and the balance check every 30 minutes (the console's job list); and the lost-work pass of Quick add runs
- * (decision 055).
+ * (decision 055). Decision 053: the `supplier_log_retention` job of `maintenance` deletes supplier call logs older than 90 days, daily at
+ * 04:50 UTC.
  *
  * Why: the API only enqueues (the outbox row of a placed order, a staff sync request); the worker runs the supplier calls (decision 020).
  */
@@ -37,6 +41,8 @@ export const SUPPLIER_SCHEDULERS = {
     QuickAddProcessor,
     DispatchSweepProcessor,
     QuickAddReconcilePass,
+    SupplierLogRetention,
+    SupplierLogRetentionProcessor,
   ],
 })
 export class SupplierJobsModule implements OnModuleInit {
@@ -60,6 +66,13 @@ export class SupplierJobsModule implements OnModuleInit {
       jobOptions: { removeOnComplete: { age: 600, count: 20 }, removeOnFail: { age: 3600 } },
       description:
         'Moves orders whose supplier answer never came to needs attention, and asks again for the sends whose request was lost.',
+    });
+    this.schedulers.register({
+      id: SUPPLIER_SCHEDULERS.logRetention,
+      queue: 'maintenance',
+      jobName: SUPPLIER_LOG_RETENTION_JOB,
+      pattern: '50 4 * * *',
+      description: 'Deletes supplier call logs older than 90 days.',
     });
     this.schedulers.register({
       id: SUPPLIER_SCHEDULERS.priceSync,

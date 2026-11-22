@@ -1,5 +1,6 @@
 // Which public requests the per-IP rate limit counts, and against which limiter (decision 021). Pure; the hook calls it.
 import type { AccessKind } from '../../common/contract';
+import { isMultipartContentType } from '../../common/multipart';
 import { surfaceOfPath } from '../../common/surface';
 import type { LimiterName } from './limiters';
 
@@ -30,14 +31,16 @@ const SUGGEST_PATH = '/store/v1/search/suggest';
  * (`ip`: 300 a minute), and the token routes (`token`: 30 a minute, so a capability token cannot be guessed at speed). The
  * store surface is limited as a whole, matched or not, so a scanner probing unknown paths is counted too. Admin and
  * merchant-portal routes are limited only when they are public (sign-in, password and registration routes); their
- * session-authenticated routes have per-principal limits after authentication. REST v1 and Dhru have a limit per API key,
- * webhooks are signed, and `/health` and `/metrics` are probes: none of them is limited per IP here, except for a large body
+ * session-authenticated routes have per-principal limits after authentication. REST v1 and Dhru have a limit per API key, and
+ * `/health` and `/metrics` are probes: none of them is limited per IP here, except for a large body
  * (`upload`, 20 a minute): a multipart body or one over 1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed
  * (up to 25 MiB, B157) before the credentials are known, so an anonymous caller could otherwise make the server read one after
  * another (the per-key limit comes too late for that). The admin console counts a large body the same way (its service picture upload
  * is multipart, feature 22). The public pictures (`/store/v1/media/`) have their own budget (`media`, 1200 a minute): a catalog page
  * shows up to 100 of them and they must not use up the store's `ip` budget. The typing pings and read marks of a ticket page
- * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`. The suggest route of the search (`/store/v1/search/suggest`, feature 29) counts against `search-suggest` (1200 a minute).
+ * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`. Every request under
+ * `/webhooks` (payment and dispute events, Telegram updates), matched or not, counts against `webhook-intake` (600 a minute per address,
+ * decision 053): the route reads the gateway row before the signature, and the IP rules skip this surface, so this is the first check. The suggest route of the search (`/store/v1/search/suggest`, feature 29) counts against `search-suggest` (1200 a minute).
  *
  * @param path the route template or decoded path of the request (`requestPath`)
  * @param access the `access` of the matched route's contract; `undefined` for an unknown route
@@ -71,6 +74,8 @@ export function publicLimiterFor(
     case 'dhru':
       return largeBody ? 'upload' : undefined;
     case 'hooks':
+      // Decision 053: an incoming webhook (matched or not) is counted before the route reads the gateway row or the signature.
+      return 'webhook-intake';
     case 'system':
       return undefined;
   }
@@ -94,7 +99,7 @@ export function isLargeBody(
   contentLength: string | undefined,
   unboundedForm = false,
 ): boolean {
-  if ((contentType ?? '').toLowerCase().startsWith('multipart/form-data')) return true;
+  if (isMultipartContentType(contentType)) return true;
   if (contentLength === undefined) return unboundedForm;
   const length = Number(contentLength);
   return !Number.isFinite(length) || length > LARGE_BODY_BYTES;

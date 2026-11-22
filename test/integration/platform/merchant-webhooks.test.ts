@@ -46,8 +46,10 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
   await deleteBullKeys(t.app.get(RedisService).queue, prefix);
   const redis = t.app.get(RedisService).cache;
-  const found = await redis.keys(`${t.app.get(CacheKeys).rateLimit('webhook-retry')}:*`);
-  if (found.length > 0) await redis.del(...found);
+  for (const limiter of ['webhook-retry', 'webhook-test'] as const) {
+    const found = await redis.keys(`${t.app.get(CacheKeys).rateLimit(limiter)}:*`);
+    if (found.length > 0) await redis.del(...found);
+  }
 });
 
 async function merchant(overrides: Partial<typeof s.clients.$inferInsert> = {}): Promise<PortalClient> {
@@ -271,6 +273,36 @@ describe('POST /client/webhooks/:id/test', () => {
     const a = await m.call('POST', `/client/webhooks/${id}/test`);
     const b = await m.call('POST', `/client/webhooks/${id}/test`);
     expect(a.body.deliveryId).not.toBe(b.body.deliveryId);
+  });
+
+  it('allows 10 test deliveries an hour per merchant: the eleventh is 429 and queues nothing', async () => {
+    const m = await merchant();
+    const id = await insertEndpoint(encryption(), db, m.clientId, { events: ['invoice.paid'] });
+    for (let n = 0; n < 10; n += 1)
+      expect((await m.call('POST', `/client/webhooks/${id}/test`)).status, `test ${n + 1}`).toBe(202);
+    const refused = await m.call('POST', `/client/webhooks/${id}/test`);
+    expect(refused.status).toBe(429);
+    expect(refused.body.code).toBe('RATE_LIMITED');
+    expect(Number(refused.res.headers['retry-after'])).toBeGreaterThan(0);
+    expect(Number(refused.res.headers['retry-after'])).toBeLessThanOrEqual(3600);
+    // The refused call inserted no delivery and queued no job: ten deliveries, ten jobs.
+    const deliveries = await db.select().from(s.webhookDeliveries);
+    expect(deliveries).toHaveLength(10);
+    const queue = t.app.get(QueuesService).queue('merchant-webhooks');
+    expect(await queue.getJobCounts('delayed', 'waiting')).toMatchObject({ delayed: 0 });
+    expect((await queue.getJobs(['waiting', 'delayed', 'active'])).length).toBe(10);
+    // Another merchant has its own budget, and the budget key names the merchant, not an address.
+    const other = await merchant();
+    const theirs = await insertEndpoint(encryption(), db, other.clientId);
+    expect((await other.call('POST', `/client/webhooks/${theirs}/test`)).status).toBe(202);
+  });
+
+  it('counts a test only after the endpoint is found and switched on (a refused call costs no point)', async () => {
+    const m = await merchant();
+    const paused = await insertEndpoint(encryption(), db, m.clientId, { isActive: false });
+    for (let n = 0; n < 12; n += 1) expect((await m.call('POST', `/client/webhooks/${paused}/test`)).status).toBe(409);
+    const live = await insertEndpoint(encryption(), db, m.clientId);
+    expect((await m.call('POST', `/client/webhooks/${live}/test`)).status).toBe(202);
   });
 
   it('is 409 INVALID_TRANSITION for a paused endpoint and 404 for another merchant’s or an unknown one', async () => {

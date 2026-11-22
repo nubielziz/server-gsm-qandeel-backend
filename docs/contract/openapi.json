@@ -12748,7 +12748,7 @@
     },
     "/admin/checkouts/abandoned": {
       "get": {
-        "description": "Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a case-insensitive contains over the FULL email while rows carry it masked, for callers who hold `customers:read`; for others a `q` finds no row (decision 047). `canRecover=true` is the \"Needs a reminder\" filter and uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server).",
+        "description": "Checkout sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered). A session younger than `abandonedMinutes` (the storefront policy, 5 to 1440, default 60) is listed with `canRecover: false`. `q` is a case-insensitive contains over the FULL email while rows carry it masked, for callers who hold `customers:read`; for others a `q` finds no row (decision 047). `canRecover=true` is the \"Needs a reminder\" filter and uses the same rule as the row flag. Default order: newest first. Needs `growth:read` only (the delay is applied by the server). `marketingConsent` is the consent the recovery mail needs: the customer’s switch, the latest marketing record and a confirmed address (a sign-in or verification link was used, or a checkout of the customer was paid; decision 053).",
         "operationId": "getAdminCheckoutsAbandoned",
         "parameters": [
           {
@@ -46656,7 +46656,7 @@
     },
     "/admin/customers/{id}/export": {
       "get": {
-        "description": "A JSON file (`Content-Disposition: attachment; filename=\"customer-<id>.json\"`, never cached) with everything the shop holds about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout sessions, the support tickets with their public messages, the IMEI checks, the data requests and the store balance with its statement (`wallet`, staff reasons hidden). It works for an anonymized customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the request must be started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins): anything else is `403 CSRF_FAILED`.",
+        "description": "A JSON file (`Content-Disposition: attachment; filename=\"customer-<id>.json\"`, never cached) with everything the shop holds about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout sessions, the support tickets with their public messages (only tickets whose requester's address is confirmed: a ticket opened on the contact form with a typed address is left out until its link is used), the IMEI checks, the data requests and the store balance with its statement (`wallet`, staff reasons hidden). It works for an anonymized customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the request must be started by the console itself (`Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the console’s origins): anything else is `403 CSRF_FAILED`.",
         "operationId": "getAdminCustomersByIdExport",
         "parameters": [
           {
@@ -56840,7 +56840,7 @@
     },
     "/admin/disputes/{id}": {
       "get": {
-        "description": "The row plus `evidence` (six lines: payment, 3-D Secure, delivery, consents, history, contact) and `strength` (`strong` from 8 points, `fair` from 5; the lines weigh 1, 3, 3, 2, 1, 1 when they support the case), built from the order, the payment, the consent records, the customer's other orders and their support tickets.",
+        "description": "The row plus `evidence` (six lines: payment, 3-D Secure, delivery, consents, history, contact) and `strength` (`strong` from 8 points, `fair` from 5; the lines weigh 1, 3, 3, 2, 1, 1 when they support the case), built from the order, the payment, the consent records, the customer's other orders and their support tickets (a ticket whose requester's address is not confirmed is not counted).",
         "operationId": "getAdminDisputesById",
         "parameters": [
           {
@@ -80687,7 +80687,7 @@
                       "service",
                       "marketing"
                     ],
-                    "description": "`marketing` reaches only customers who agreed to marketing."
+                    "description": "`marketing` reaches only customers who agreed to marketing. A campaign of any purpose reaches only customers whose address is confirmed (a sign-in or verification link was used, or a checkout was paid); a marketing answer counts from then on (decision 053)."
                   },
                   "channels": {
                     "minItems": 1,
@@ -83672,7 +83672,7 @@
                       "service",
                       "marketing"
                     ],
-                    "description": "`marketing` reaches only customers who agreed to marketing."
+                    "description": "`marketing` reaches only customers who agreed to marketing. A campaign of any purpose reaches only customers whose address is confirmed (a sign-in or verification link was used, or a checkout was paid); a marketing answer counts from then on (decision 053)."
                   },
                   "channels": {
                     "minItems": 1,
@@ -107818,7 +107818,7 @@
     },
     "/admin/payment-gateways/{id}/logo": {
       "post": {
-        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 64 to 4096 pixels on each side (the checks of a service picture, with a logo's smaller minimum). The type is read from the content; the picture is cleaned before it is stored and stored once under the SHA-256 of the cleaned bytes. It becomes the `logoUrl` of the method (replacing the previous one) and wins over the bundled logo of its `preset`. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated`; more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. Audited (`uploaded logo for`).",
+        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 64 to 4096 pixels on each side (the checks of a service picture, with a logo's smaller minimum). The type is read from the content; the picture is cleaned before it is stored and stored once under the SHA-256 of the cleaned bytes. It becomes the `logoUrl` of the method (replacing the previous one) and wins over the bundled logo of its `preset`. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated`; more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. A multipart body is read only with a live staff session. Audited (`uploaded logo for`).",
         "operationId": "postAdminPaymentGatewaysByIdLogo",
         "parameters": [
           {
@@ -158463,7 +158463,7 @@
     },
     "/admin/service-listings/{id}/image": {
       "post": {
-        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 200 to 4096 pixels on each side. The type is read from the content (the declared type and the file name are ignored). The picture is cleaned before it is stored (EXIF, XMP, IPTC, comments and text chunks are removed, anything after the end of the picture is cut) and stored once under the SHA-256 of the cleaned bytes. It becomes the picture of the service (replacing the previous one) and the `imageUrl` of the answer and of the public service cards. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated` (a JPEG whose EXIF turns it: save it upright); more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. Audited (`uploaded image for`).",
+        "description": "`multipart/form-data` with one part named `file`: a JPEG, PNG or WebP picture, at most 2 MiB, 200 to 4096 pixels on each side. The type is read from the content (the declared type and the file name are ignored). The picture is cleaned before it is stored (EXIF, XMP, IPTC, comments and text chunks are removed, anything after the end of the picture is cut) and stored once under the SHA-256 of the cleaned bytes. It becomes the picture of the service (replacing the previous one) and the `imageUrl` of the answer and of the public service cards. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated` (a JPEG whose EXIF turns it: save it upright); more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does not read is `415`. A multipart body is read only with a live staff session. Audited (`uploaded image for`).",
         "operationId": "postAdminServiceListingsByIdImage",
         "parameters": [
           {
@@ -174762,7 +174762,7 @@
     },
     "/admin/supplier-api-logs": {
       "get": {
-        "description": "Every call we made to a supplier, newest first, without the request and response bodies. Filters: `supplierId`, `orderId`, `action`, `outcome` (`ok`, `error`, `timeout`). Credentials are never stored and IMEIs are masked.",
+        "description": "Every call we made to a supplier, newest first, without the request and response bodies. Filters: `supplierId`, `orderId`, `action`, `outcome` (`ok`, `error`, `timeout`). Credentials are never stored and IMEIs are masked. Calls are kept 90 days (decision 053).",
         "operationId": "getAdminSupplierApiLogs",
         "parameters": [
           {
@@ -187072,7 +187072,7 @@
     },
     "/admin/support-tickets/{id}/files": {
       "post": {
-        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413` (a declared body over 5 MiB is refused before it is read). The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the staff member. Audited as `attached file to ticket`.",
+        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413`: a body over 5 MiB is refused before it is parsed, whether or not it declares its length. The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the staff member. Audited as `attached file to ticket`. A multipart body is read only with a live staff session.",
         "operationId": "postAdminSupportTicketsByIdFiles",
         "parameters": [
           {
@@ -207690,7 +207690,7 @@
     },
     "/admin/webhook-deliveries": {
       "get": {
-        "description": "Newest first. Each row has the delivery columns, the endpoint and the merchant. `status` is `pending`, `delivered` or `failed`. `responseCode` is `0` when the merchant’s server gave no answer (RESOLUTIONS identity-platform-12). `nextRetryAt` is `null` once the delivery is finished. `q` is a case-insensitive contains over the merchant’s name, the event and the endpoint address.",
+        "description": "Newest first. Each row has the delivery columns, the endpoint and the merchant. `status` is `pending`, `delivered` or `failed`. `responseCode` is `0` when the merchant’s server gave no answer (RESOLUTIONS identity-platform-12). `nextRetryAt` is `null` once the delivery is finished. `q` is a case-insensitive contains over the merchant’s name, the event and the endpoint address. Deliveries are kept 90 days (decision 053).",
         "operationId": "getAdminWebhookDeliveries",
         "parameters": [
           {
@@ -209627,7 +209627,7 @@
     },
     "/api/index.php": {
       "post": {
-        "description": "The Dhru Fusion v6.1 compatible endpoint (decision 026): `username`, `apiaccesskey`, `action` and `parameters` (base64 of a JSON object) as a form body (`multipart/form-data` and JSON are accepted too). Eight actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `placeimeiorderbulk`, `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Every answer is HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ \"SUCCESS\": [ ... ], \"apiversion\": \"6.1\" }` or `{ \"ERROR\": [ { \"MESSAGE\": \"...\" } ], \"apiversion\": \"6.1\" }`; a bulk action answers `{ \"<request id>\": { \"SUCCESS\" | \"ERROR\": [ ... ] }, ..., \"apiversion\": \"6.1\" }`. A wrong credential is \"Authentication Failed\", an unknown action \"Invalid Action\". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply.",
+        "description": "The Dhru Fusion v6.1 compatible endpoint (decision 026): `username`, `apiaccesskey`, `action` and `parameters` (base64 of a JSON object) as a form body (`multipart/form-data` and JSON are accepted too). Eight actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `placeimeiorderbulk`, `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Every answer is HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ \"SUCCESS\": [ ... ], \"apiversion\": \"6.1\" }` or `{ \"ERROR\": [ { \"MESSAGE\": \"...\" } ], \"apiversion\": \"6.1\" }`; a bulk action answers `{ \"<request id>\": { \"SUCCESS\" | \"ERROR\": [ ... ] }, ..., \"apiversion\": \"6.1\" }`. A wrong credential is \"Authentication Failed\", an unknown action \"Invalid Action\". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply. A text in the decoded `parameters` or `CUSTOMFIELD` may not hold the character U+0000 or an unpaired surrogate.",
         "operationId": "postApiIndexPhp",
         "parameters": [],
         "requestBody": {
@@ -210074,7 +210074,7 @@
                   {
                     "type": "object",
                     "title": "placeimeiorderbulk",
-                    "description": "Place several orders. `parameters` is an object keyed by the caller's request id, each entry the parameters of `placeimeiorder`. The answer has one entry per request id: `{ \"SUCCESS\": [...] }` or `{ \"ERROR\": [...] }`. Each order is placed on its own (a refused one never stops the others); at most 100 per call.",
+                    "description": "Place several orders. `parameters` is an object keyed by the caller's request id, each entry the parameters of `placeimeiorder`. The answer has one entry per request id: `{ \"SUCCESS\": [...] }` or `{ \"ERROR\": [...] }`. Each order is placed on its own (a refused one never stops the others); at most 100 per call. A request id has 1 to 64 characters. The call costs one point of the key’s per-minute limit per item (at most the whole limit).",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -210267,7 +210267,7 @@
                   {
                     "type": "object",
                     "title": "getimeiorderbulk",
-                    "description": "Status of several orders. `parameters` is an object keyed by the caller's request id, each entry `{ \"ID\": <order> }`; the answer has one entry per request id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call.",
+                    "description": "Status of several orders. `parameters` is an object keyed by the caller's request id, each entry `{ \"ID\": <order> }`; the answer has one entry per request id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call. A request id has 1 to 64 characters.",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -218819,7 +218819,7 @@
     },
     "/client/files": {
       "post": {
-        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The same upload as `POST /v1/files`, for the merchant portal: the id is what an order, a KYC submission or a bank transfer receipt refers to. A merchant waiting for approval may upload (its KYC documents, B153).",
+        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The same upload as `POST /v1/files`, for the merchant portal: the id is what an order, a KYC submission or a bank transfer receipt refers to. A merchant waiting for approval may upload (its KYC documents, B153). A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053). A multipart body is read only when the request carries a live session (`401` before the body is read otherwise).",
         "operationId": "postClientFiles",
         "parameters": [],
         "requestBody": {
@@ -219285,6 +219285,103 @@
                 "description": "Id of this request; quote it when you report a problem.",
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               }
             }
@@ -241638,7 +241735,7 @@
     },
     "/client/webhooks": {
       "get": {
-        "description": "The endpoints of the signed-in merchant, newest first. The signing secret is shown once, when the endpoint is created.",
+        "description": "The endpoints of the signed-in merchant, newest first. The signing secret is shown once, when the endpoint is created. An endpoint whose last 20 deliveries all failed is switched off (`isActive: false`) and the merchant gets an email; turning it on again starts a new count (decision 053).",
         "operationId": "getClientWebhooks",
         "parameters": [
           {
@@ -242589,7 +242686,7 @@
     },
     "/client/webhooks/{id}": {
       "patch": {
-        "description": "A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it on again resets `failureCount`. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.",
+        "description": "A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.",
         "operationId": "patchClientWebhooksById",
         "parameters": [
           {
@@ -243510,7 +243607,7 @@
     },
     "/client/webhooks/{id}/deliveries": {
       "get": {
-        "description": "The deliveries of the endpoint, newest first. `status` is `pending` (waiting for an attempt), `succeeded` (a `2xx` answer) or `failed` (8 attempts used). `attempt` is the attempt the delivery is on; `responseCode` is `0` when the server gave no answer; `error` is `\"\"` when there is none. Another merchant’s and an unknown endpoint are `404`.",
+        "description": "The deliveries of the endpoint, newest first. `status` is `pending` (waiting for an attempt), `succeeded` (a `2xx` answer) or `failed` (8 attempts used). `attempt` is the attempt the delivery is on; `responseCode` is `0` when the server gave no answer; `error` is `\"\"` when there is none. Another merchant’s and an unknown endpoint are `404`. Deliveries are kept 90 days (decision 053).",
         "operationId": "getClientWebhooksByIdDeliveries",
         "parameters": [
           {
@@ -244083,7 +244180,7 @@
     },
     "/client/webhooks/{id}/test": {
       "post": {
-        "description": "Queues one signed delivery of the event `ping` with a small sample payload `{ message, endpointId }`: the same envelope, signature and retry rules as a real event, so the merchant can check its receiver. The answer is `202` with the delivery id; read its progress in `GET /client/webhooks/:id/deliveries`. A paused endpoint is `409 INVALID_TRANSITION`.",
+        "description": "Queues one signed delivery of the event `ping` with a small sample payload `{ message, endpointId }`: the same envelope, signature and retry rules as a real event, so the merchant can check its receiver. The answer is `202` with the delivery id; read its progress in `GET /client/webhooks/:id/deliveries`. A paused endpoint is `409 INVALID_TRANSITION`. At most 10 test deliveries an hour per merchant: the eleventh is `429 RATE_LIMITED` with `Retry-After` and queues nothing.",
         "operationId": "postClientWebhooksByIdTest",
         "parameters": [
           {
@@ -244533,6 +244630,103 @@
               }
             }
           },
+          "429": {
+            "description": "RATE_LIMITED: You are sending requests too quickly.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 429
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "RATE_LIMITED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "RATE_LIMITED": {
+                    "summary": "You are sending requests too quickly.",
+                    "value": {
+                      "type": "https://errors.gsm.example/rate-limited",
+                      "title": "You are sending requests too quickly.",
+                      "status": 429,
+                      "code": "RATE_LIMITED",
+                      "detail": "You are sending requests too quickly.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "retry-after": {
+                "description": "Seconds to wait before the next request.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
           "503": {
             "description": "UNAVAILABLE: The service is temporarily unavailable.",
             "content": {
@@ -244678,7 +244872,7 @@
     },
     "/health": {
       "get": {
-        "description": "Checks Postgres (critical), the two Redis roles and object storage. Always answers 200 with `{ status, checks }`; with `?strict=1` it answers 503 and the same body when the status is `down` (a critical dependency failed), for load balancers and readiness probes. Contains no versions, hostnames or error texts.",
+        "description": "Checks Postgres (critical), the two Redis roles and object storage. Always answers 200 with `{ status, checks }`; with `?strict=1` it answers 503 and the same body when the status is `down` (a critical dependency failed), for load balancers and readiness probes. Contains no versions, hostnames or error texts. The answer comes from a check at most 3 seconds old; one check runs at a time per API process.",
         "operationId": "getHealth",
         "parameters": [
           {
@@ -251394,7 +251588,7 @@
     },
     "/store/v1/files": {
       "post": {
-        "description": "Uploads one file from the signed-in customer’s account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB, such as the receipt of a store balance top-up (`POST /store/v1/me/wallet/top-ups/:id/receipt` takes its id). The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a declared body over 5 MiB is refused before it is read (`413`). Counted against the `upload` limiter (20 a minute per address).",
+        "description": "Uploads one file from the signed-in customer’s account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB, such as the receipt of a store balance top-up (`POST /store/v1/me/wallet/top-ups/:id/receipt` takes its id). The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a body over 5 MiB is refused before it is parsed, whether or not it declares its length (`413`). Counted against the `upload` limiter (20 a minute per address). A customer can upload 30 files (100 MiB) in 24 hours, ticket files included (`422` on `file`, `quota`). A multipart body is read only when the request carries a live session (`401` before the body is read otherwise).",
         "operationId": "postStoreV1Files",
         "parameters": [],
         "requestBody": {
@@ -258500,7 +258694,7 @@
     },
     "/store/v1/me/tickets": {
       "get": {
-        "description": "The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed as a guest with the same address included. Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket `token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is `hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more (its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials. The link of a ticket resolved more than 180 days ago no longer opens it (`404` on the token routes).",
+        "description": "The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed on the public form with the same address included once their link has been opened (decision 053). Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket `token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is `hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more (its token was cleared by an erasure) is not listed. Never cached (`Cache-Control: no-store`): the rows hold credentials. The link of a ticket resolved more than 180 days ago no longer opens it (`404` on the token routes).",
         "operationId": "getStoreV1MeTickets",
         "parameters": [
           {
@@ -269045,7 +269239,7 @@
     },
     "/store/v1/tickets": {
       "post": {
-        "description": "Opens a ticket from the order page or the contact page, with no account. `orderToken` (the tracking token of the order) links the ticket to the order and to its customer; without it `email` is needed, and a first-time address becomes a guest customer. An unknown or non-storefront `orderToken` is `422` on `orderToken`. The ticket starts `new` with the priority of its category and a reply target; the customer gets a receipt email whose link holds the ticket token, the whole credential of the next three routes. The answer carries `token` only when `orderToken` was given (the caller already holds the order link); with `email` alone it has no token, because anyone can type an address and the ticket is filed under the customer who owns it: the receipt link is the only way in. An address may open 3 new tickets an hour (case-insensitive), so the receipt email cannot relay spam: the fourth is `429 RATE_LIMITED` with `Retry-After`. Needs the anti-bot token (`X-Turnstile-Token`). Never cached: the answer holds a credential or sits behind it.",
+        "description": "Opens a ticket from the order page or the contact page, with no account. `orderToken` (the tracking token of the order) links the ticket to the order and to its customer; without it `email` is needed, and a first-time address becomes a guest customer. An unknown or non-storefront `orderToken` is `422` on `orderToken`. The ticket starts `new` with the priority of its category and a reply target; the customer gets a receipt email whose link holds the ticket token, the whole credential of the next three routes. The answer carries `token` only when `orderToken` was given (the caller already holds the order link); with `email` alone it has no token, because anyone can type an address and the ticket is filed under the customer who owns it: the receipt link is the only way in. An address may get 3 new tickets an hour (case-insensitive), counted for the typed `email` and, with `orderToken`, for the address of the order's customer: the fourth is `429 RATE_LIMITED` with `Retry-After`. The receipt email repeats nothing that was typed (no name, no subject): it holds the ticket number and the link. A ticket opened with a typed `email` is listed in that customer’s account only once its link has been opened (decision 053). Needs the anti-bot token (`X-Turnstile-Token`). Never cached: the answer holds a credential or sits behind it.",
         "operationId": "postStoreV1Tickets",
         "parameters": [
           {
@@ -269734,7 +269928,7 @@
     },
     "/store/v1/tickets/{token}": {
       "get": {
-        "description": "The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is `404`. A ticket’s link stops working 180 days after the ticket was resolved (also `404`); reopening the ticket opens it again. Lookups are limited to 30 a minute per address. Never cached: the answer holds a credential or sits behind it.",
+        "description": "The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is `404`. A ticket’s link stops working 180 days after the ticket was resolved (also `404`); reopening the ticket opens it again. Opening a ticket filed on the contact form with a typed email confirms that address: the ticket then shows in the customer’s account (decision 053). Lookups are limited to 30 a minute per address. Never cached: the answer holds a credential or sits behind it.",
         "operationId": "getStoreV1TicketsByToken",
         "parameters": [
           {
@@ -270721,7 +270915,7 @@
     },
     "/store/v1/tickets/{token}/files": {
       "post": {
-        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413` (a declared body over 5 MiB is refused before it is read). The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the ticket's customer. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address).",
+        "description": "One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` (`empty`); more than 5 MiB `413`: a body over 5 MiB is refused before it is parsed, whether or not it declares its length. The answer is the stored file; its id goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link. The file belongs to the ticket's customer. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address). A ticket link can upload 20 files (50 MiB) in 24 hours, and its customer 30 (100 MiB) (`422` on `file`, `quota`; decision 053).",
         "operationId": "postStoreV1TicketsByTokenFiles",
         "parameters": [
           {
@@ -271735,7 +271929,7 @@
     },
     "/store/v1/tickets/{token}/messages": {
       "post": {
-        "description": "The customer's reply. A ticket that waited on the customer goes back to `open`; the reply target restarts from this message. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` (\"This ticket is closed. Open a new ticket if you still need help.\"), nothing is written, and staff must reopen it before the customer can write again. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` (at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.",
+        "description": "The customer's reply. A ticket that waited on the customer goes back to `open`; the reply target restarts from this message. A resolved ticket is closed for the customer: `409 TICKET_RESOLVED` (\"This ticket is closed. Open a new ticket if you still need help.\"), nothing is written, and staff must reopen it before the customer can write again. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` (at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages a minute (`429 RATE_LIMITED` with `Retry-After`). A message written with the link confirms the address in the same way (decision 053). The answer is the new message; staff see it at once on their live stream.",
         "operationId": "postStoreV1TicketsByTokenMessages",
         "parameters": [
           {
@@ -273842,7 +274036,7 @@
     },
     "/v1/files": {
       "post": {
-        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The id is what a File service order takes as its input file (`fileId` of `POST /v1/orders`). Maintenance with the order scope refuses the upload like an order. Scope `orders:write`.",
+        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The id is what a File service order takes as its input file (`fileId` of `POST /v1/orders`). Maintenance with the order scope refuses the upload like an order. Scope `orders:write`. A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053).",
         "operationId": "postV1Files",
         "parameters": [],
         "requestBody": {
@@ -277806,7 +278000,7 @@
     },
     "/v1/orders/bulk": {
       "post": {
-        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for 7 days (after that the stored answer is gone and the same key places new orders).",
+        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for 7 days (after that the stored answer is gone and the same key places new orders). The call costs one point of the key’s per-minute limit per order (at most the whole limit), so `RateLimit-Remaining` drops by the number of orders; a bulk larger than what is left of the minute is `429 RATE_LIMITED` (decision 053).",
         "operationId": "postV1OrdersBulk",
         "parameters": [
           {

@@ -38,7 +38,9 @@ describe('RATE_LIMITERS', () => {
       'token',
       'upload',
       'wallet-topup',
+      'webhook-intake',
       'webhook-retry',
+      'webhook-test',
     ]);
   });
 
@@ -78,6 +80,13 @@ describe('RATE_LIMITERS', () => {
 
   it('lets one email address open 3 tickets an hour on the public form', () => {
     expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
+  });
+
+  it('gives a merchant 10 test deliveries an hour and an address 600 incoming webhooks a minute (decision 053)', () => {
+    expect(RATE_LIMITERS['webhook-test']).toMatchObject({ points: 10, windowSeconds: 3600 });
+    expect(RATE_LIMITERS['webhook-intake']).toMatchObject({ points: 600, windowSeconds: 60 });
+    expect(RATE_LIMITERS['webhook-test']).not.toHaveProperty('blockSeconds');
+    expect(RATE_LIMITERS['webhook-intake']).not.toHaveProperty('blockSeconds');
   });
 
   it('sends at most 5 campaign emails and 20 campaign Telegram messages a second by default (feature 23)', () => {

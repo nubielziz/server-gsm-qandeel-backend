@@ -3,13 +3,19 @@
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
+import { ipRateLimitKey, parseIpAddress } from '../../../common/ip-address';
 import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import type { ContentPage, ContentPageKind, HelpArticle } from '../db/schema';
 import { helpIdOfSlug, helpSlugOf } from '../domain/help-slug';
 import { LEGAL_TYPE_LABEL, legalTypeOfSlug } from '../domain/legal';
 import { type PublicPageSort, findLivePage, listLivePages } from '../infra/content-page.repository';
-import { addHelpVote, findPublishedArticle, listArticles } from '../infra/help-article.repository';
+import {
+  addHelpVote,
+  findPublishedArticle,
+  isPublishedHelpArticle,
+  listArticles,
+} from '../infra/help-article.repository';
 import { CurrentLegalDocuments } from './legal-documents';
 
 /** The version of a legal document a public page carries. */
@@ -204,8 +210,10 @@ export class PublicContentService {
    * Counts a visitor's "was this helpful?" vote.
    *
    * Why: feature 22 (D-15c). The first vote of a visitor address on an article in a day counts; later ones are accepted and ignored,
-   * and the answer is the same, so it is not an oracle for "did my vote count". The limiter point is taken before the article is
-   * read, so a refused vote does nothing at all.
+   * and the answer is the same, so it is not an oracle for "did my vote count". Decision 053: the article is read first, so an unknown or
+   * unpublished id is `404` and leaves no counter key behind (a caller cannot make the cache grow with made-up ids), and the visitor key is
+   * the address key (the IPv4 address, or the /64 network of an IPv6 address) so rotating addresses inside one network does not give
+   * more votes.
    *
    * Side effects: a point of the `help-vote` limiter (cache Redis); `help_articles.helpful_yes` or `helpful_no` + 1 (not `updated_at`).
    *
@@ -217,7 +225,11 @@ export class PublicContentService {
   async vote(slug: string, helpful: boolean, ip: string): Promise<void> {
     const id = helpIdOfSlug(slug);
     if (id === undefined) throw articleNotFound();
-    const point = await this.limits.consume('help-vote', RateLimitService.compositeKey(ip, String(id)));
+    if (!(await isPublishedHelpArticle(this.db.db, id))) throw articleNotFound();
+    const point = await this.limits.consume(
+      'help-vote',
+      RateLimitService.compositeKey(ipRateLimitKey(parseIpAddress(ip)), String(id)),
+    );
     if (!point.allowed) return;
     if (!(await addHelpVote(this.db.db, id, helpful))) throw articleNotFound();
   }

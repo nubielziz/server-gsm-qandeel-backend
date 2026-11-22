@@ -26,6 +26,36 @@ export type WebhookEventName = (typeof WEBHOOK_EVENT_NAMES)[number];
  */
 export const PING_EVENT = 'ping';
 
+/**
+ * Deliveries in a row that end failed (while the endpoint is on) before the endpoint is switched off.
+ *
+ * Why: decision 053. An endpoint that accepts nothing keeps costing a delivery, a job and up to 8 attempts per event; after 20 failed
+ * deliveries in a row it is paused and the merchant is told. A delivered one, or turning the endpoint on, starts the count again.
+ */
+export const WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES = 20;
+
+/**
+ * Tells whether the count of failed deliveries in a row switches an endpoint off.
+ *
+ * Why: decision 053; see {@link WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES}.
+ *
+ * @param consecutiveFailed the deliveries in a row that ended failed, the one just recorded included
+ * @returns true from 20 on
+ */
+export function pausesEndpoint(consecutiveFailed: number): boolean {
+  return consecutiveFailed >= WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES;
+}
+
+/**
+ * The outbox event (and notification event) that says an endpoint was switched off after repeated failures.
+ *
+ * Why: decision 053. The merchant gets a transactional email; the payload holds ids only (`clientId`, `endpointId`).
+ */
+export const WEBHOOK_ENDPOINT_DISABLED_EVENT = 'webhook.endpoint_disabled';
+
+/** Deliveries that are not pending are deleted this many days after they were created (decision 053). */
+export const WEBHOOK_DELIVERY_RETENTION_DAYS = 90;
+
 /** A merchant may register at most this many endpoints (B156). */
 export const MAX_ENDPOINTS_PER_MERCHANT = 5;
 /** Attempts per delivery, the first one included: 8 over about 21 hours (ALIGNMENT § 7, docs/queues.md). */

@@ -106,6 +106,8 @@ export class AccountTicketOpener {
         token: null,
         tokenHash: issued?.hash ?? null,
         tokenEnc: issued?.enc ?? null,
+        // Decision 053: a signed-in requester is proven (the session says who they are).
+        requesterProvenAt: now,
         createdAt: now,
         updatedAt: now,
       });

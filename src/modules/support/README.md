@@ -39,7 +39,7 @@ import only `src/modules/support/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
-Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` (feature 17 added `support_tickets.token` and `support_tickets.survey_sent_at`, migration `0016`).
+Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` (feature 17 added `support_tickets.token` and `support_tickets.survey_sent_at`, migration `0016`; decision 053 added `support_tickets.requester_proven_at`: when the requester's address was proven, null for an unconfirmed contact-form ticket).
 
 | Table | What it holds |
 |---|---|
@@ -136,9 +136,10 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   (`token_enc`, AAD `support_tickets.token_enc`) that the mails and the account list reveal (decision 054). The receipt email holds
   its link; the 201 answer carries `token` only on the `orderToken` path (the caller already holds the order link). On the `email` path the
   answer has no token: the ticket is filed under whoever owns the address and Turnstile only stops bots, so a token in the body would let a
-  stranger who knows an address read that customer's thread. The receipt email repeats the visitor's subject to the address they typed, so
-  besides Turnstile and the per-IP limit one email address (case-insensitive) opens at most 3 tickets an hour on the `email` path (limiter
-  `ticket-email`, decision 021): the fourth is `429 RATE_LIMITED` with `Retry-After`. `TicketTokenResolver`
+  stranger who knows an address read that customer's thread. The receipt goes to an address anyone can type, so besides Turnstile and the
+  per-IP limit one email address (case-insensitive) gets at most 3 new tickets an hour (limiter `ticket-email`, decision 021): the fourth is
+  `429 RATE_LIMITED` with `Retry-After`. Decision 053: the count is made for the typed `email`, and with an `orderToken` for the address of the order's customer (a
+  customer without an address, anonymized, is counted under the order), after the order link is checked and before anything is written, so both paths share the cap. `TicketTokenResolver`
   registers with identity's `CapabilityTokenResolvers`, finds the ticket by the keyed hash (a ticket opened before decision 054 by its plain
   token until the seal pass ran) and compares in constant time. **A ticket's link stops working 180 days after the ticket was resolved**
   (`TICKET_LINK_DAYS_AFTER_RESOLUTION`, `domain/ticket-link.ts`; the default of `support.attachmentRetentionDays`): the guard answers the same
@@ -154,6 +155,19 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   resolved to `open` (a reopen), after which the requester can write again; a staff reply on a resolved ticket stays `409`, and a note is
   still allowed. The account opener (`POST /store/v1/me/tickets`, `POST /client/tickets`) only opens new tickets, so it has nothing to
   refuse; a signed-in customer writes on an existing ticket through its link token. The lock is one helper, `application/requester-lock.ts`.
+- **An unproven ticket (decision 053).** A ticket of the public form opened with a typed `email` (no order link) has `support_tickets.requester_proven_at` null: anyone can type an
+  address, so the ticket stays off the account of the customer who owns it until the link that was mailed to that address is first used. While it is null: the ticket is not in
+  `GET /store/v1/me/tickets`, its live events reach only the streams opened with its link (not the requester's account stream), the account stream's replay leaves it out and
+  a resolve sends no satisfaction survey (the mail would repeat the typed subject to the address). The ticket is not in the customer's data export (`GET /admin/customers/:id/export`) and is not an evidence line of a dispute of the customer's orders either: all of these reads (the account list, the stream replay, the export and the evidence) use one condition, `requesterProven()` of `db/schema.ts`, which the other modules reach through the schema barrel. The anonymization of a customer still covers every ticket of the customer, confirmed or not. The ticket link itself works as before. The address proves itself when the
+  holder of the link opens the ticket page (`GET /store/v1/tickets/:token`) or writes on it (`POST /store/v1/tickets/:token/messages`): a guarded update sets the time once
+  (`WHERE requester_proven_at IS NULL`; `updated_at` stays, it is not activity for staff). Every other ticket is proven when it is made (an order link, a signed-in requester,
+  a merchant; the migration gave every existing ticket its `created_at`). Staff see it in the thread: an internal system note after the first message ("Opened on the contact form by
+  someone who typed this email address. The address is not confirmed yet: ...") and another when the link proves the address ("The requester opened the link from the receipt email: the
+  email address is confirmed."), both ringing the staff stream like the resolve note.
+- **The receipt repeats nothing a visitor typed (decision 053).** The event `support.ticket_received` offers `ticketNumber` and `link` only; the job passes `{ ticketNumber }` and the link
+  as the secret, for every receipt (public form, order link, account). The default text is fixed wording plus the number and the link (`RECEIPT_BODY`); the feature-43 migration
+  replaces it only where the row still holds the text migration `0016` shipped, so a template staff edited keeps their words (a `{{customerName}}` or `{{subject}}` left in it is shown
+  as written, and the editor refuses to save it again until it is removed).
 - **Anonymization (B175, feature 18).** `SupportErasureModule` registers a customer erasure hook: when a customer is anonymized, in the same
   transaction, the `token` of every ticket the customer opened is set to NULL, so the old link answers `404`; the tickets and messages stay.
 - **Templates.** The shortcut is trimmed; `''` is stored as NULL and read back as `''`; it must be `''` or `/word`; unique ignoring case among
@@ -255,7 +269,7 @@ Live events (feature 28, not outbox events): the doorbells of topic `ticket` on 
 `ticket.read`, `ticket.typing`, and the end of a ticket link's streams), documented with both views in `docs/contract/realtime-events.md`.
 
 Notification events registered here (`SUPPORT_EVENTS`, loaded by the API and the worker through `SupportEventsModule`): customer
-`support.ticket_received` and `support.csat_survey` (email), and merchant `support.reply` (email and Telegram, transactional: never a
+`support.ticket_received` (email; variables `ticketNumber` and `link` only, decision 053) and `support.csat_survey` (email), and merchant `support.reply` (email and Telegram, transactional: never a
 preference). The customer's `support.reply` is built into the platform's list (12a registered it for the Customer emails tab; this feature
 widened its variables to the name, the ticket number, the subject, the reply and the link). Default English templates for all five are in
 `SUPPORT_DEFAULT_TEMPLATES` and inserted by migration `0012`.

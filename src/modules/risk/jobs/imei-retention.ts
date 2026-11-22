@@ -1,6 +1,6 @@
 // ImeiRetention: erases the IMEI of old IMEI checks (feature 18, the `data_retention` job, RESOLUTIONS b2c-4): the same erasure as the
 // anonymization of a customer, applied by age.
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
 import { SettingsReader } from '../../platform';
@@ -18,8 +18,13 @@ export const MAX_IMEI_RETENTION_DAYS = 3650;
 /** How many checks one batch erases. */
 export const RETENTION_BATCH = 1000;
 
-/** The most batches one run does; a larger backlog continues the next night. */
-export const RETENTION_MAX_BATCHES = 50;
+/**
+ * The most batches one run does (2000 batches of 1000 checks: 2 000 000 checks a night); a larger backlog continues the next night.
+ *
+ * Why: decision 053. The run goes on until a batch is short, so a backlog of a few hundred thousand checks (a retention that was shortened,
+ * or a long outage of the job) is finished in one night, not in a month; the cap only bounds a runaway run.
+ */
+export const RETENTION_MAX_BATCHES = 2000;
 
 /** What a run did. */
 export interface RetentionOutcome {
@@ -36,12 +41,15 @@ export interface RetentionOutcome {
  * `imeiRetentionDays` (0 means do not keep it), then `imei_enc`, `imei_hash` and `cached_until` are set to NULL together, which
  * stops the row matching a lookup. The brand, model, result and the staff log row stay; the console then shows the TAC and
  * bullets. The cutoff comes from the injected clock; the update is by id in batches, so a repeat or a parallel run only finds
- * fewer rows (a row that is erased cannot be erased twice).
+ * fewer rows (a row that is erased cannot be erased twice). The run goes on until a batch comes back short, at most 2000 batches
+ * (2 000 000 checks); when it stops at the cap it logs a warning (counts only, no IMEI).
  *
- * Side effects: updates `imei_checks`.
+ * Side effects: updates `imei_checks`; one warning line when the cap is reached.
  */
 @Injectable()
 export class ImeiRetention {
+  private readonly logger = new Logger(ImeiRetention.name);
+
   constructor(
     private readonly db: DbService,
     private readonly settings: SettingsReader,
@@ -61,10 +69,19 @@ export class ImeiRetention {
     const now = this.clock.now();
     const cutoff = new Date(now.getTime() - days * 86_400_000);
     let erased = 0;
+    let finished = false;
     for (let batch = 0; batch < RETENTION_MAX_BATCHES; batch += 1) {
       const done = await eraseChecksOlderThan(this.db.db, cutoff, now, RETENTION_BATCH);
       erased += done;
-      if (done < RETENTION_BATCH) break;
+      if (done < RETENTION_BATCH) {
+        finished = true;
+        break;
+      }
+    }
+    if (!finished) {
+      this.logger.warn(
+        `IMEI retention stopped after ${RETENTION_MAX_BATCHES} batches; the rest is erased on the next run.`,
+      );
     }
     return { days, erased };
   }

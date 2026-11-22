@@ -29,9 +29,10 @@ export interface LimiterConfig {
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + network (the IPv4 address or
  * the IPv6 /64, `RequestMeta.limitKey`; build the key with `RateLimitService.compositeKey`), counted per attempt and reset on
  * success; `sign-in-code` the account (the authenticator code steps, never counted in process memory, decision 052); `sign-in-familiar` scope + email + network, hashed (the attempts a familiar network is still allowed while an email is locked, decision 052); `token` the client IP; `supplier` the
- * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `upload` the client IP; `ticket-email`
- * the hashed email address of a public ticket form (`RateLimitService.compositeKey`); `wallet-topup` the customer id; `help-vote` the
- * client IP + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
+ * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `webhook-test` the merchant
+ * (`client:<id>`, decision 053); `webhook-intake` the client address key of an incoming webhook (decision 053); `upload` the client IP; `ticket-email`
+ * the hashed email address of a public ticket form, the typed one or the order's customer's (`RateLimitService.compositeKey`);
+ * `wallet-topup` the customer id; `help-vote` the client address key (IPv4, or the IPv6 /64) + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
  * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
  * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037); `ticket-chat` the client IP;
  * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28); `search-suggest` the client IP (feature 29).
@@ -92,11 +93,23 @@ export const RATE_LIMITERS = {
     description:
       'Manual retries of one webhook delivery by staff: one a minute per delivery (POST /admin/webhook-deliveries/:id/retry).',
   },
+  'webhook-test': {
+    points: 10,
+    windowSeconds: 60 * 60,
+    description:
+      'Test deliveries a merchant asks for (POST /client/webhooks/:id/test): ten an hour per merchant (key client:<id>), so the shared delivery queue and other hosts are not flooded (decision 053).',
+  },
+  'webhook-intake': {
+    points: 600,
+    windowSeconds: 60,
+    description:
+      'Incoming webhooks (POST /webhooks/*: payment and dispute events, Telegram updates): requests per client address, counted before the route reads anything; generous, and a refused sender retries (decision 053).',
+  },
   'ticket-email': {
     points: 3,
     windowSeconds: 60 * 60,
     description:
-      'The public ticket form (POST /store/v1/tickets): new tickets per email address per hour, so the receipt email cannot relay spam to a stranger.',
+      "New tickets of the public form (POST /store/v1/tickets) per email address per hour: the typed address, or with an order link the address of the order's customer, so the receipt email cannot be sent to one address without bound (decision 053).",
   },
   'broadcast-email': {
     points: 5,
@@ -126,7 +139,7 @@ export const RATE_LIMITERS = {
     points: 1,
     windowSeconds: 24 * 60 * 60,
     description:
-      'The "was this helpful?" vote of a help article (POST /store/v1/help/:slug/vote): one counted vote per visitor IP and article per day; repeats are accepted and ignored.',
+      'The "was this helpful?" vote of a help article (POST /store/v1/help/:slug/vote): one counted vote per client address key (IPv4, or the IPv6 /64) and article per day; repeats are accepted and ignored.',
   },
   'stream-connect': {
     points: 20,

@@ -338,7 +338,7 @@ export const uploadGatewayLogo = defineRoute({
     'under the SHA-256 of the cleaned bytes. It becomes the `logoUrl` of the method (replacing the previous one) and wins over the bundled ' +
     'logo of its `preset`. Refusals are `422` on `file` with the code: `empty`, `unsupported_type`, `corrupt`, `animated`, `too_small`, ' +
     '`too_large_dimensions`, `rotated`; more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a ' +
-    'body of a type the API does not read is `415`. Audited (`uploaded logo for`).',
+    'body of a type the API does not read is `415`. A multipart body is read only with a live staff session. Audited (`uploaded logo for`).',
   tags: ['settings'],
   surface: 'admin',
   access: 'staff-permission',

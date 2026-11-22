@@ -21,7 +21,8 @@ export const jobLike = <T>(data: T, attemptsMade = 0, attempts = 6) =>
  * Inserts a customer.
  *
  * @param db the test database
- * @param values columns to override (default: an active account holder in English)
+ * @param values columns to override (default: an active account holder in English whose address is proven; pass `emailVerifiedAt: null` for
+ *   one that never was)
  * @returns the id
  */
 export async function insertCustomer(
@@ -35,6 +36,8 @@ export async function insertCustomer(
       name: 'Test Customer',
       hasAccount: true,
       status: 'active',
+      // A customer whose address was proven (a used sign-in or verification link): campaigns reach only those (decision 053).
+      emailVerifiedAt: new Date('2026-01-01T00:00:00.000Z'),
       ...values,
     })
     .returning({ id: s.customers.id });

@@ -4,6 +4,7 @@ import { type ArgumentMetadata, type CanActivate, type ExecutionContext, type Pi
 import type { z } from 'zod';
 import { AppError, type FieldError } from '../errors/app-error';
 import type { AnyRouteContract } from './define-route';
+import { FORBIDDEN_TEXT_CODE, FORBIDDEN_TEXT_MESSAGE, forbiddenTextPathOf } from './forbidden-characters';
 
 /**
  * Marker the headers parameter decorator passes, so the pipe can tell `@ContractHeaders()` from other custom ones.
@@ -45,6 +46,25 @@ export function locationOf(metadata: ArgumentMetadata): InputLocation | undefine
 
 function joinPath(path: readonly PropertyKey[]): string {
   return path.map(String).join('.');
+}
+
+/**
+ * The one `errors[]` item of an input whose text holds U+0000 or an unpaired surrogate (decision 053): the dotted path of the offending
+ * value, or the input's name.
+ */
+function forbiddenTextError(location: InputLocation, path: readonly (string | number)[]): FieldError {
+  return { field: joinPath(path) || location, code: FORBIDDEN_TEXT_CODE, message: FORBIDDEN_TEXT_MESSAGE };
+}
+
+/**
+ * Tells whether the character rule judges an input of a route.
+ *
+ * Why: decision 053. Headers are cut by the HTTP parser before they reach us. The incoming webhooks (`surface: 'hooks'`) are exempt:
+ * a `422` makes a payment gateway repeat the event for days and Telegram hold back the later updates; their bodies are signed or
+ * secret-bound and read field by field, and what they store has the character removed instead.
+ */
+function scansText(contract: AnyRouteContract, location: InputLocation): boolean {
+  return location !== 'headers' && contract.surface !== 'hooks';
 }
 
 /**
@@ -107,13 +127,27 @@ export interface RawInputs {
  * Why: a route must answer 422 for a bad declared input even when its handler never reads it (a header used only by an
  * interceptor, a body the handler ignores); all problems are reported together, one `errors[]` item per issue.
  *
+ * Decision 053: before any schema runs, the raw params, query and body (declared or not, object keys and file part names included)
+ * are looked at for the character U+0000 and for an unpaired surrogate; Postgres refuses the first in text and JSON and the second in JSON,
+ * and a statement that failed on one branch only would answer differently. A text that holds one gives one item for that input
+ * (`code: invalid_format`) and that input's schema is not run.
+ * Headers are not scanned (the HTTP parser refuses the character) and neither are the incoming webhooks (`hooks` surface: their
+ * senders repeat a refused delivery).
+ *
  * @param contract the route contract
  * @param request the raw Fastify request parts
- * @throws {AppError} `VALIDATION_FAILED` (422) listing the issues of every declared input
+ * @throws {AppError} `VALIDATION_FAILED` (422) listing the issues of every declared input, and the one item of an input that holds U+0000 or an unpaired surrogate
  */
 export function validateInputs(contract: AnyRouteContract, request: RawInputs): void {
   const errors: FieldError[] = [];
   for (const location of ['params', 'query', 'headers', 'body'] as const) {
+    if (scansText(contract, location)) {
+      const at = forbiddenTextPathOf(request[location]);
+      if (at !== undefined) {
+        errors.push(forbiddenTextError(location, at));
+        continue;
+      }
+    }
     const schema = contract[location];
     if (!schema) continue;
     const raw = request[location];
@@ -175,7 +209,8 @@ export class ContractValidationPipe implements PipeTransform {
    * @param value the raw value Nest extracted (`@Param()`, `@Query()`, `@Body()` or the headers)
    * @param metadata which input the parameter reads
    * @returns the parsed value, or the raw value for parameters the contract does not validate (`@Req()`)
-   * @throws {AppError} `VALIDATION_FAILED` (422) when the input does not satisfy its schema
+   * @throws {AppError} `VALIDATION_FAILED` (422) when the input does not satisfy its schema, or holds the character U+0000 or an unpaired surrogate (decision 053: the
+   *   same rule as the guard, for a value the guard did not see)
    * @throws {Error} when the handler reads an input the contract does not declare (a programming error)
    */
   transform(value: unknown, metadata: ArgumentMetadata): unknown {
@@ -192,6 +227,10 @@ export class ContractValidationPipe implements PipeTransform {
     }
     // The guard already parsed this exact object: reuse the result instead of parsing twice.
     if (typeof value === 'object' && value !== null && parsedByRaw.has(value)) return parsedByRaw.get(value);
+    if (scansText(this.contract, location)) {
+      const at = forbiddenTextPathOf(value);
+      if (at !== undefined) throw failure([forbiddenTextError(location, at)]);
+    }
     const result = schema.safeParse(value);
     if (result.success) return result.data;
     throw validationFailed(location, result.error);

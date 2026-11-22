@@ -46,7 +46,9 @@ export interface ConsentOrigin {
  * email belongs to an account, `marketing` is not recorded (anyone can type someone else's email; the account page owns that
  * choice) and is left out of the answer. The exception is the account holder themself: a request with the signed-in session of
  * the session's own customer (cookie and CSRF token checked by the caller) may record `marketing` too, and then the account's
- * `marketing_opt_in` follows the answer, as it does on the account page.
+ * `marketing_opt_in` follows the answer, as it does on the account page. Decision 053: a guest's marketing answer is recorded as proof and
+ * sets the switch, but it counts only once the address is proven (`consentSql`: a sign-in or verification link was used, an invitation was
+ * accepted, or a checkout of the customer was paid), because anyone can type an address at a checkout.
  *
  * Side effects: inserts `consent_records` rows (one per changed purpose) in one transaction, with the session row locked; the
  * customer's `marketing_opt_in` follows its recorded marketing answer (a guest's, or the signed-in owner's).

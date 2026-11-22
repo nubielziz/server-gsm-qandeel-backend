@@ -9,6 +9,7 @@ import { DbService, type DbExecutor, type TransactionContext } from '../../../in
 import { AuditService } from '../../platform';
 import type { SupportTicket, TicketPriority, TicketStatus } from '../db/schema';
 import { replyChannelsOf } from '../domain/reply-channels';
+import { isRequesterProven } from '../domain/requester-proof';
 import { hasTicketLink } from '../domain/ticket-link';
 import { slaDueAt } from '../domain/ticket-sla';
 import { type WireTicketStatus, fromWireStatus, judgeStatusMove, toWireStatus } from '../domain/ticket-status';
@@ -246,7 +247,8 @@ export class TicketAdminService {
    * (internal), and the survey goes to the customer through the notification service. A merchant's ticket has no ticket page, so it gets
    * no survey and the message says so. The survey is sent once per ticket: one resolved again after a reopen is not asked a second time,
    * rated or not (`support_tickets.survey_sent_at` is the record, set here under a guard, so the second message is only
-   * `Marked resolved by <staff>.`).
+   * `Marked resolved by <staff>.`). Decision 053: a ticket whose requester address is not proven yet gets no survey either, because the
+   * mail would repeat the typed subject to an address nobody confirmed.
    */
   private async afterResolve(
     work: Pick<TransactionContext, 'tx'>,
@@ -262,6 +264,7 @@ export class TicketAdminService {
       ticket.csatScore === null &&
       ticket.surveySentAt === null &&
       hasTicketLink(ticket) &&
+      isRequesterProven(ticket) &&
       requester?.reachable === true;
     // The guarded update is the record that the survey was queued; it runs in this transaction, with the event and the message below.
     const survey = askable && (await markSurveySent(tx, ticket.id, now));

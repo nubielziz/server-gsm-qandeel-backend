@@ -1,8 +1,8 @@
 // Per-route body limits above the general 1 MiB one (P4a, MISMATCHES B166): the Dhru route reads a form body up to the upload size.
-import { Transform, type Readable } from 'node:stream';
-import { type FastifyInstance, errorCodes } from 'fastify';
+import type { FastifyInstance } from 'fastify';
+import { cappedBody } from './capped-body';
 import { AppError } from './errors';
-import { MULTIPART_MAX_BYTES } from './multipart';
+import { MULTIPART_MAX_BYTES, isMultipartContentType } from './multipart';
 import { requestPath } from './pipeline/request-path';
 
 /**
@@ -25,39 +25,10 @@ export const RAISED_BODY_LIMITS: ReadonlyMap<string, number> = new Map([['/api/i
  * @returns true for a form type, with parameters and in any case
  */
 export function isFormContentType(contentType: string | undefined): boolean {
-  const type = (contentType ?? '').toLowerCase();
-  return type.startsWith('application/x-www-form-urlencoded') || type.startsWith('multipart/form-data');
-}
-
-/**
- * Tells whether a `Content-Type` is a multipart body (`multipart/form-data`).
- *
- * Why: the over-limit answer differs by form type: a caller who already sends multipart must not be told to send multipart.
- *
- * @param contentType the `Content-Type` header, if any
- * @returns true for `multipart/form-data`, with parameters and in any case
- */
-function isMultipartContentType(contentType: string | undefined): boolean {
-  return (contentType ?? '').toLowerCase().startsWith('multipart/form-data');
-}
-
-/**
- * Passes a body through and fails it with `413` once it is longer than `limit`.
- *
- * Why: a body without a `Content-Length` (chunked) is judged only as it streams in.
- */
-function capped(payload: Readable, limit: number): Readable {
-  let seen = 0;
-  const tap = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      seen += chunk.length;
-      // Fastify's own error: its body reader turns any other error of a stream into a 400.
-      if (seen > limit) callback(new errorCodes.FST_ERR_CTP_BODY_TOO_LARGE());
-      else callback(null, chunk);
-    },
-  });
-  payload.once('error', (error: Error) => tap.destroy(error));
-  return payload.pipe(tap);
+  return (
+    (contentType ?? '').toLowerCase().startsWith('application/x-www-form-urlencoded') ||
+    isMultipartContentType(contentType)
+  );
 }
 
 /**
@@ -103,6 +74,6 @@ export function registerRaisedBodyLimits(fastify: FastifyInstance, generalLimit:
       return;
     }
     // A form body is already bounded by the route's limit as it streams in; any other type is held to the general limit.
-    done(null, form ? payload : capped(payload, generalLimit));
+    done(null, form ? payload : cappedBody(payload, generalLimit));
   });
 }

@@ -53,7 +53,7 @@ export const listWebhookDeliveries = defineRoute({
   description:
     'Newest first. Each row has the delivery columns, the endpoint and the merchant. `status` is `pending`, `delivered` or `failed`. `responseCode` is `0` when the merchant’s server gave no answer ' +
     '(RESOLUTIONS identity-platform-12). `nextRetryAt` is `null` once the delivery is finished. `q` is a case-insensitive ' +
-    'contains over the merchant’s name, the event and the endpoint address.',
+    'contains over the merchant’s name, the event and the endpoint address. Deliveries are kept 90 days (decision 053).',
   tags: ['webhooks'],
   surface: 'admin',
   access: 'staff-permission',

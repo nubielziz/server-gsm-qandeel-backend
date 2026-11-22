@@ -559,6 +559,31 @@ describe('PATCH /admin/support-tickets/:id', () => {
     expect(mail[0]!.text).toContain(`/support/tickets/${ticket.token}`);
   });
 
+  it('sends no satisfaction survey when an unproven ticket is resolved', async () => {
+    // Decision 053: the survey would repeat the typed subject to an address nobody confirmed.
+    const { ticket } = await waitingTicket({ status: 'open', slaDueAt: ahead(HOUR), requesterProvenAt: null });
+    const res = await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
+    expect(res.status).toBe(200);
+    const thread = await messagesOf(ticket.id);
+    expect(thread.at(-1)).toMatchObject({
+      authorType: 'system',
+      isInternal: true,
+      body: 'Marked resolved by Lina S..',
+    });
+    const { db } = await testDb();
+    expect(await ticketMailEvents(db)).toHaveLength(0);
+    expect((await ticketRow(ticket.id)).surveySentAt).toBeNull();
+    // Once the address is proven the ticket is asked like any other when it is resolved again.
+    await db
+      .update(s.supportTickets)
+      .set({ requesterProvenAt: new Date(clock.nowMs()) })
+      .where(eq(s.supportTickets.id, ticket.id));
+    await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' });
+    await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
+    expect(await ticketMailEvents(db)).toHaveLength(1);
+    expect((await ticketRow(ticket.id)).surveySentAt?.toISOString()).toBe(NOW);
+  });
+
   it('reopens a resolved ticket to open, clears resolved_at and restarts the target from the customer’s last message', async () => {
     const { ticket } = await waitingTicket({ status: 'resolved', resolvedAt: ago(1000), slaDueAt: null });
     const res = await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' });

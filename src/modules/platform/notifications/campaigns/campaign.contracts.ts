@@ -29,7 +29,9 @@ const inputShape = {
   name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
   purpose: z
     .enum(NOTIFICATION_CAMPAIGN_PURPOSES)
-    .describe('`marketing` reaches only customers who agreed to marketing.'),
+    .describe(
+      '`marketing` reaches only customers who agreed to marketing. A campaign of any purpose reaches only customers whose address is confirmed (a sign-in or verification link was used, or a checkout was paid); a marketing answer counts from then on (decision 053).',
+    ),
   channels: zChannels,
   audience: zAudienceSpec,
   content: zContent,

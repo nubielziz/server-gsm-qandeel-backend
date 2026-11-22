@@ -100,7 +100,7 @@ export const getDispute = defineRoute({
   description:
     'The row plus `evidence` (six lines: payment, 3-D Secure, delivery, consents, history, contact) and `strength` (`strong` from 8 ' +
     'points, `fair` from 5; the lines weigh 1, 3, 3, 2, 1, 1 when they support the case), built from the order, the payment, the ' +
-    "consent records, the customer's other orders and their support tickets.",
+    "consent records, the customer's other orders and their support tickets (a ticket whose requester's address is not confirmed is not counted).",
   tags: ['refunds'],
   surface: 'admin',
   access: 'staff-permission',

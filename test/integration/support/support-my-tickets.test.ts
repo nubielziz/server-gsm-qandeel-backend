@@ -7,6 +7,7 @@ import { schema as s } from '@src/infra/db';
 import { TicketEvents } from '@src/modules/support/application/ticket-events';
 import { type AdminApi } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
+import { mailbox } from '../../support/notifications';
 import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { MINUTE, TestClock } from '../../support/clock';
@@ -24,6 +25,7 @@ import {
   insertSupportMessage,
   insertSupportTicket,
   seedSupportTemplates,
+  sendTicketMails,
   supportStaff,
   ticketMailEvents,
 } from '../../support/support';
@@ -180,8 +182,9 @@ describe('GET /store/v1/me/tickets', () => {
     });
   });
 
-  it('lists the ticket a visitor filed with the customer’s address on the public form', async () => {
+  it('keeps a ticket filed with the customer’s address on the public form off the list until its link is opened', async () => {
     const mine = await customer({ email: 'victor@mail.example' });
+    mailbox(t).reset();
     const filed = await t.app.inject({
       method: 'POST',
       url: '/store/v1/tickets',
@@ -190,8 +193,16 @@ describe('GET /store/v1/me/tickets', () => {
       payload: { email: 'Victor@Mail.Example', subject: 'Filed as a guest', message: 'Hello from the contact page.' },
     });
     expect(filed.statusCode).toBe(201);
+    // Anyone can type an address: until the mailed link is opened the ticket stays off the customer's account.
+    expect((await mine.session.call('GET', '/store/v1/me/tickets')).body).toEqual([]);
+    // The receipt goes to the address; its link is the proof (read from the mail, as the owner of the mailbox does).
+    expect(await sendTicketMails(t)).toEqual([{ sent: true }]);
+    const link = /\/support\/tickets\/([A-Za-z0-9_-]{22})/.exec(mailbox(t).sent[0]!.text);
+    expect(link).not.toBeNull();
+    expect((await onPage('GET', link![1]!)).statusCode).toBe(200);
     const res = await mine.session.call('GET', '/store/v1/me/tickets');
     expect(res.body).toHaveLength(1);
+    expect(res.body[0].token).toBe(link![1]);
     expect(res.body[0]).toMatchObject({
       subject: 'Filed as a guest',
       status: 'new',

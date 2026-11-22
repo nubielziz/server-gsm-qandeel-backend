@@ -175,6 +175,44 @@ describe('POST /webhooks/disputes/:gateway: dispute.created', () => {
     expect((await eventsOf(db, paid.orderId)).filter((event) => event.type === 'dispute')).toHaveLength(1);
   });
 
+  it('accepts a correctly signed event whose texts hold U+0000 and stores the dispute without the character (decision 053)', async () => {
+    const paid = await order();
+    const body = JSON.parse(
+      disputeEvent(`evt_nul_${unique()}`, {
+        dispute: 'dp_nul\u0000x',
+        intent: paid.intent,
+        dueBy: dueIn(7),
+        reason: 'fraud\u0000ulent',
+      }),
+    ) as { data: { object: Record<string, unknown> } };
+    body.data.object.metadata = { ['k\u0000']: 'v\u0000' };
+    const res = await hook(t, clock, 'disputes', world.gateway.code, JSON.stringify(body));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    const row = await rowOf('dp_nulx');
+    expect(row.paymentId).toBe(paid.paymentId);
+    expect(JSON.stringify(row)).not.toContain('\\u0000');
+  });
+
+  it('accepts a correctly signed event whose texts hold an unpaired surrogate and stores the dispute with U+FFFD in its place (decision 053)', async () => {
+    const paid = await order();
+    const body = JSON.parse(
+      disputeEvent(`evt_lone_${unique()}`, {
+        dispute: 'dp_lone\ud800x',
+        intent: paid.intent,
+        dueBy: dueIn(7),
+        reason: 'fraud\udc00ulent',
+      }),
+    ) as { data: { object: Record<string, unknown> } };
+    body.data.object.metadata = { ['k\ud800']: 'v\udc00 \u{1F600}' };
+    const res = await hook(t, clock, 'disputes', world.gateway.code, JSON.stringify(body));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    const row = await rowOf('dp_lone\ufffdx');
+    expect(row.paymentId).toBe(paid.paymentId);
+    expect(JSON.stringify(row)).not.toMatch(/\\ud[89a-f]/i);
+  });
+
   it('the same signed event delivered twice is handled once', async () => {
     const paid = await order();
     const body = disputeEvent(`evt_same_${unique()}`, { dispute: 'dp_same', intent: paid.intent, dueBy: dueIn(7) });
@@ -326,6 +364,37 @@ describe('GET /admin/disputes and /admin/disputes/:id', () => {
     const ticket = byKey((await staff.get(`/admin/disputes/${row.id}`)).body).contact;
     expect(ticket).toMatchObject({ ok: false });
     expect(ticket.body).toContain('Where is my unlock?');
+  });
+
+  it('leaves a ticket whose address is not confirmed out of the pack, and counts it once the address is confirmed (decision 053)', async () => {
+    const paid = await order({ email: 'typed@mail.example' });
+    const { row } = await open(paid);
+    const customerId = (await orderRow(db, paid.orderId)).customerId!;
+    const [ticket] = await db
+      .insert(s.supportTickets)
+      .values({
+        number: 'TCK-9002',
+        subject: 'Typed on the contact form',
+        requesterType: 'customer',
+        requesterId: customerId,
+        orderId: paid.orderId,
+        requesterProvenAt: null,
+        createdAt: clock.now(),
+        updatedAt: clock.now(),
+      })
+      .returning();
+    const contact = async () =>
+      (await staff.get(`/admin/disputes/${row.id}`)).body.evidence.find(
+        (line: { key: string }) => line.key === 'contact',
+      );
+    expect(await contact()).toMatchObject({ ok: true });
+    expect((await contact()).body).not.toContain('Typed on the contact form');
+    await db
+      .update(s.supportTickets)
+      .set({ requesterProvenAt: clock.now() })
+      .where(eq(s.supportTickets.id, ticket!.id));
+    expect(await contact()).toMatchObject({ ok: false });
+    expect((await contact()).body).toContain('Typed on the contact form');
   });
 
   it('filters by status, sorts the open ones first by deadline, searches and pages with the exact total', async () => {

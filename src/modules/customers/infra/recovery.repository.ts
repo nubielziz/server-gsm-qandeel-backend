@@ -28,13 +28,27 @@ export interface RecoveryRow {
 }
 
 /**
- * Tells whether the session's customer agreed to marketing email.
+ * Tells whether the customer's email address was proven.
+ *
+ * Why: decision 053. Anyone can type an address at a guest checkout or on a form, so a marketing answer typed there counts only once the
+ * address is proven by one of the proofs the system already has: a sign-in or verification link was used, or an invitation was accepted
+ * (`customers.email_verified_at` is set by all three), or a checkout of the customer was paid (a paid order by that guest). The literal
+ * identifiers (an alias for the paid-session subquery, `"customers"."id"`) make it work in the joined selects of this file and in the
+ * one-table selects of the campaign audience.
+ */
+export const provenAddressSql: SQL<boolean> = sql<boolean>`(${customers.emailVerifiedAt} is not null or exists (
+  select 1 from "checkout_sessions" "paid_session"
+  where "paid_session"."customer_id" = "customers"."id" and "paid_session"."status" = 'paid'))`;
+
+/**
+ * Tells whether the session's customer agreed to marketing email, and the agreement counts.
  *
  * Why: ANSWERS checkouts 2 and RULES checkouts 1: consent is the latest `marketing` record (append-only proof; a withdrawal is a new
  * `granted = false` row) of the session's customer, and the customer's own `marketing_opt_in` must still say yes, so a switch turned
  * off by the account page or by staff stops the mail even when no withdrawal record exists. A session without a customer has none.
  * Both kinds of customer read the same way: a guest's choice is the record its checkout wrote (14a), an account holder's the record
- * its account page wrote (14b).
+ * its account page wrote (14b). Decision 053: the consent is effective only for a proven address ({@link provenAddressSql}), because anyone
+ * can type an address; the recorded answer stays as proof and counts from the moment the address is proven.
  */
 export const consentSql: SQL<boolean> = sql<boolean>`(
   coalesce(${customers.marketingOptIn}, false) and coalesce((
@@ -42,7 +56,7 @@ export const consentSql: SQL<boolean> = sql<boolean>`(
     where ${consentRecords.subjectType} = 'customer' and ${consentRecords.subjectId} = ${customers.id}
       and ${consentRecords.purpose} = 'marketing'
     order by ${consentRecords.createdAt} desc, ${consentRecords.id} desc
-    limit 1), false))`;
+    limit 1), false) and ${provenAddressSql})`;
 
 /**
  * The SQL twin of `recoveryVerdict(...) === null`: may this session get its recovery email now.

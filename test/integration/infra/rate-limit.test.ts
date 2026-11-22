@@ -174,6 +174,53 @@ describe('per-key limits (API keys, suppliers)', () => {
   });
 });
 
+describe('peek (decision 053)', () => {
+  it('peeks at a budget without spending it', async () => {
+    const key = caller();
+    // An unknown key has its whole limit left.
+    expect(await limiter.peek('api-key', key, { limit: 3 })).toEqual({
+      allowed: true,
+      remaining: 3,
+      limit: 3,
+      retryAfterSeconds: 0,
+      resetSeconds: RATE_LIMITERS['api-key'].windowSeconds,
+    });
+    await limiter.consume('api-key', key, 1, { limit: 3 });
+    await limiter.consume('api-key', key, 1, { limit: 3 });
+    const seen = await limiter.peek('api-key', key, { limit: 3 });
+    expect(seen).toMatchObject({ allowed: true, remaining: 1, limit: 3, retryAfterSeconds: 0 });
+    // Peeking twice does not change the count.
+    expect(await limiter.peek('api-key', key, { limit: 3 })).toMatchObject({ allowed: true, remaining: 1 });
+    expect(await limiter.consume('api-key', key, 1, { limit: 3 })).toMatchObject({ allowed: true, remaining: 0 });
+    const used = await limiter.peek('api-key', key, { limit: 3 });
+    expect(used).toMatchObject({ allowed: false, remaining: 0, limit: 3 });
+    expect(used.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(used.resetSeconds).toBeGreaterThanOrEqual(1);
+    // A refused peek still counts nothing: the next consume is the first refused one.
+    await limiter.peek('api-key', key, { limit: 3 });
+    expect(await limiter.consume('api-key', key, 1, { limit: 3 })).toMatchObject({ allowed: false });
+  });
+
+  it('judges the points of the limiter when no limit is given, and rejects an empty key', async () => {
+    const key = caller();
+    expect((await limiter.peek('token', key)).limit).toBe(RATE_LIMITERS.token.points);
+    await expectRejection(limiter.peek('token', ''), RangeError);
+  });
+
+  it('answers from the in-memory limiter while the cache Redis is down, and refuses a fail-closed budget', async () => {
+    const down = await createInfra({ env: { REDIS_CACHE_URL_TEST: await deadRedisUrl() } });
+    try {
+      const service = down.get(RateLimitService);
+      const key = caller();
+      await service.consume('api-key', key, 1, { limit: 2 });
+      expect(await service.peek('api-key', key, { limit: 2 })).toMatchObject({ allowed: true, remaining: 1 });
+      expect(await service.peek('sign-in-code', caller())).toMatchObject({ allowed: false, retryAfterSeconds: 60 });
+    } finally {
+      await down.close();
+    }
+  });
+});
+
 describe('sign-in lock-out (email + IP)', () => {
   const email = () => `rltest-${randomUUID()}@example.com`;
 

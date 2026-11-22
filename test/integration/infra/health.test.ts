@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import { HealthRegistry, type HealthIndicator } from '@src/infra/health';
 import { HEALTH_CHECK_TIMEOUT_MS } from '@src/modules/health/application/health.service';
 import { type TestApp, createTestApp } from '../../support/app';
-import { ManualTimers } from '../../support/clock';
+import { ManualTimers, TestClock } from '../../support/clock';
 import { eventually } from '../../support/infra';
 import { logSink } from '../../support/log-sink';
 
@@ -118,6 +118,82 @@ describe('GET /health', () => {
     const t = await appWith(meeting('a'), meeting('b'), meeting('c'));
     const res = await t.app.inject({ method: 'GET', url: '/health' });
     expect(res.json()).toEqual({ status: 'ok', checks: { a: 'ok', b: 'ok', c: 'ok' } });
+  });
+});
+
+describe('GET /health: the memo of 3 seconds (decision 053)', () => {
+  /** An app on a test clock whose only indicator counts its calls and answers when the test lets it. */
+  async function counted(options: { critical?: boolean; failing?: boolean } = {}) {
+    const clock = new TestClock('2026-11-01T10:00:00.000Z');
+    const t = await createTestApp({ withoutDatabase: true, withoutInfrastructure: true, clock });
+    apps.push(t);
+    let calls = 0;
+    let release: () => void = () => undefined;
+    let gate: Promise<void> = Promise.resolve();
+    t.app.get(HealthRegistry).register({
+      name: 'postgres',
+      critical: options.critical ?? true,
+      check: async () => {
+        calls += 1;
+        await gate;
+        if (options.failing === true) throw new Error('down');
+      },
+    });
+    return {
+      t,
+      clock,
+      calls: () => calls,
+      hold() {
+        gate = new Promise<void>((resolve) => (release = resolve));
+      },
+      release: () => release(),
+    };
+  }
+  const get = (t: TestApp, url = '/health') => t.app.inject({ method: 'GET', url });
+
+  it('answers from a check at most 3 seconds old, one check at a time', async () => {
+    const world = await counted();
+    // Two requests one after the other make one check.
+    expect((await get(world.t)).json()).toEqual({ status: 'ok', checks: { postgres: 'ok' } });
+    expect((await get(world.t)).json()).toEqual({ status: 'ok', checks: { postgres: 'ok' } });
+    expect(world.calls()).toBe(1);
+    // Five at once, inside the 3 seconds, make none.
+    world.clock.advance(2999);
+    expect((await Promise.all(Array.from({ length: 5 }, () => get(world.t)))).map((res) => res.statusCode)).toEqual([
+      200, 200, 200, 200, 200,
+    ]);
+    expect(world.calls()).toBe(1);
+    // Three seconds after the check the next request runs a new one.
+    world.clock.advance(1);
+    await get(world.t);
+    expect(world.calls()).toBe(2);
+  });
+
+  it('shares one check among requests that arrive while it runs', async () => {
+    const world = await counted();
+    world.hold();
+    const five = Array.from({ length: 5 }, () => get(world.t));
+    await eventually(() => (world.calls() === 1 ? true : undefined));
+    // Nothing else starts while the first check waits.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(world.calls()).toBe(1);
+    world.release();
+    const answers = await Promise.all(five);
+    expect(answers.map((res) => res.statusCode)).toEqual([200, 200, 200, 200, 200]);
+    expect(world.calls()).toBe(1);
+  });
+
+  it('reads the same check for ?strict=1 and only changes the status code', async () => {
+    const world = await counted({ failing: true });
+    const plain = await get(world.t);
+    const strict = await get(world.t, '/health?strict=1');
+    expect(plain.statusCode).toBe(200);
+    expect(strict.statusCode).toBe(503);
+    expect(strict.json()).toEqual(plain.json());
+    expect(world.calls()).toBe(1);
+    world.clock.advance(3000);
+    expect((await get(world.t, '/health?strict=1')).statusCode).toBe(503);
+    expect(world.calls()).toBe(2);
   });
 });
 

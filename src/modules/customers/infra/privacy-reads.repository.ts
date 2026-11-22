@@ -180,7 +180,7 @@ export interface ExportConsent {
   readonly createdAt: Date;
 }
 
-/** A ticket with its public messages. */
+/** A ticket with its public messages (only a ticket whose requester's address is confirmed, decision 053). */
 export interface ExportTicket {
   readonly number: string;
   readonly subject: string;
@@ -227,7 +227,8 @@ export interface ExportRows {
  *
  * Why: GET /admin/customers/:id/export, the data-subject access right: the profile (read by the caller), the orders with their IMEI,
  * the payments without card data, the consents, the checkout sessions, the support tickets with their public messages (never the
- * internal notes), the IMEI checks and the data requests. It works for an anonymized customer too (the rows then hold the masks).
+ * internal notes; a ticket opened with a typed address that was never confirmed is not the customer's data, decision 053), the IMEI
+ * checks and the data requests. It works for an anonymized customer too (the rows then hold the masks).
  *
  * @param db the database or a transaction
  * @param customerId the customer
@@ -349,7 +350,14 @@ async function ticketsOf(db: DbExecutor, customerId: number): Promise<ExportTick
       createdAt: s.supportTickets.createdAt,
     })
     .from(s.supportTickets)
-    .where(and(eq(s.supportTickets.requesterType, 'customer'), eq(s.supportTickets.requesterId, customerId)))
+    .where(
+      and(
+        eq(s.supportTickets.requesterType, 'customer'),
+        eq(s.supportTickets.requesterId, customerId),
+        // Decision 053: a ticket whose address is not confirmed is not in the customer's own data (the support module's one condition).
+        s.requesterProven(),
+      ),
+    )
     .orderBy(asc(s.supportTickets.id));
   if (tickets.length === 0) return [];
   const messages = await db

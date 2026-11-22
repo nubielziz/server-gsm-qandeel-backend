@@ -116,11 +116,11 @@ const refusedAs = (res: LightMyRequestResponse, status: number, code: string) =>
 };
 
 describe('the pipeline in the real application', () => {
-  it('has a handler for each of the three stages, and the maintenance check of the Dhru body', () => {
+  it('has a handler for each of the four stages, and the maintenance check of the Dhru body', () => {
     const pipeline = t.app.get(RequestPipeline);
     expect(pipeline.stagesWithHandlers()).toEqual([...PIPELINE_STAGES]);
     expect(pipeline.stagesWithHandlers('preValidation')).toEqual(['maintenance']);
-    expect([...PIPELINE_STAGES]).toEqual(['ip-rules', 'maintenance', 'rate-limit']);
+    expect([...PIPELINE_STAGES]).toEqual(['ip-rules', 'maintenance', 'rate-limit', 'upload-session']);
   });
 });
 
@@ -133,7 +133,7 @@ describe('an application without Postgres or Redis', () => {
     const warning = logSink.lines.find((line) =>
       String(line.msg).includes('Request pipeline stages without a handler'),
     );
-    expect(warning?.msg).toContain('ip-rules, maintenance, rate-limit');
+    expect(warning?.msg).toContain('ip-rules, maintenance, rate-limit, upload-session');
     expect(
       (await bare.app.inject({ method: 'GET', url: '/store/v1/anything', remoteAddress: freshIp() })).statusCode,
     ).toBe(404);
@@ -401,7 +401,7 @@ describe('the per-IP rate limit (decision 021)', () => {
     refusedAs(await post('/admin/t/sign-in', ip, {}, AUTH), 429, 'RATE_LIMITED');
   });
 
-  it('counts nothing else: authenticated admin and portal routes, REST v1, webhooks and the probes', async () => {
+  it('counts nothing else on ip and token: authenticated admin and portal routes, REST v1, webhooks and the probes', async () => {
     const ip = freshIp();
     for (const url of ['/admin/t/session', '/client/t/ping', '/v1/t/ping', '/health', '/metrics']) {
       await get(url, ip, AUTH);
@@ -411,6 +411,22 @@ describe('the per-IP rate limit (decision 021)', () => {
     expect(next.remaining).toBe(299);
     const token = await t.app.get(RateLimitService).consume('token', ipRateLimitKey(parseIpAddress(ip)));
     expect(token.remaining).toBe(29);
+    // The webhook counted one point on its own limiter (decision 053).
+    const hook = await t.app.get(RateLimitService).consume('webhook-intake', ipRateLimitKey(parseIpAddress(ip)));
+    expect(hook.remaining).toBe(598);
+  });
+
+  it('counts incoming webhooks per address against webhook-intake before the route runs', async () => {
+    const ip = freshIp();
+    await exhaust('webhook-intake', ip, 600);
+    const refused = await post('/webhooks/t/ping', ip, {}, AUTH);
+    refusedAs(refused, 429, 'RATE_LIMITED');
+    expect(Number(refused.headers['retry-after'])).toBeGreaterThanOrEqual(1);
+    // A path that matches no route is counted the same way, and another address has its own budget.
+    refusedAs(await post('/webhooks/nope/unknown', ip), 429, 'RATE_LIMITED');
+    expect((await post('/webhooks/t/ping', freshIp(), {}, AUTH)).statusCode).toBe(200);
+    // The IP budget of the same address is untouched.
+    expect((await get('/store/v1/t/ping', ip, AUTH)).statusCode).toBe(200);
   });
 
   it('counts an IPv4-mapped client with its IPv4 address, and an IPv6 client by its /64 network', async () => {

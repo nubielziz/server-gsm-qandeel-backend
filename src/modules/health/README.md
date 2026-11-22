@@ -113,7 +113,7 @@ Only this module reads and writes these 5 tables and `alert_streaks` (`scripts/m
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `GET /health` | public | Service health check: Postgres and Redis. | 0 |
+| `GET /health` | public | Service health check: Postgres and Redis. The answer comes from a check at most 3 seconds old, one check at a time per API process (`HealthService`, a `ShortMemo` of 3 s on the injected clock, decision 053); `?strict=1` reads the same check and only changes the status code. | 0 |
 | `GET /metrics` | internal-or-token | Prometheus metrics: requests, latency and queues. Internal network or token only; the admin health page reads it. | 9 |
 
 ## Scenarios

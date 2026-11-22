@@ -16,6 +16,7 @@ import { IdentityAudienceModule } from './notifications/identity-audience.module
 import { StreamRoutesModule } from './realtime/stream.module';
 import { IpRulesModule } from './security/ip-rules/ip-rules.module';
 import { SecurityModule } from './security/security.module';
+import { UploadSessionModule } from './security/upload-session.module';
 import { StaffAuthModule } from './staff-auth.module';
 
 /**
@@ -23,7 +24,8 @@ import { StaffAuthModule } from './staff-auth.module';
  *
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts`
  * (decision 016). Today it provides the security stack (sessions, CSRF, permissions and the guard dispatcher), the IP rules
- * stage of the request pipeline (`IpRulesModule`, scenario ip-rules), the staff sign-in routes (`StaffAuthModule`), the staff
+ * stage of the request pipeline (`IpRulesModule`, scenario ip-rules), the upload session check that follows the per-IP limit
+ * (`UploadSessionModule`, decision 053), the staff sign-in routes (`StaffAuthModule`), the staff
  * access routes (`AccessAdminModule`), the merchant management routes (`MerchantAdminModule`), the merchant portal's
  * sign-in (`MerchantAuthModule`), the API key routes (`ApiKeysModule`) and the controller of the merchant portal's webhook routes
  * (`MerchantWebhookRoutesModule`; the use cases are the platform's), the verification routes (`KycModule`, stage 8) and the
@@ -34,6 +36,7 @@ import { StaffAuthModule } from './staff-auth.module';
   imports: [
     SecurityModule,
     IpRulesModule,
+    UploadSessionModule,
     StaffAuthModule,
     AccessAdminModule,
     MerchantAdminModule,

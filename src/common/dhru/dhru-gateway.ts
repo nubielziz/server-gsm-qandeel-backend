@@ -4,6 +4,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { z } from 'zod';
 import { MetricsService } from '../../infra/metrics/metrics.service';
+import { FORBIDDEN_TEXT_DHRU_MESSAGE, forbiddenTextPathOf } from '../contract/forbidden-characters';
 import { AppError } from '../errors';
 import { dhruMessageOf } from '../errors/dhru-formatter';
 import type { UploadedFile } from '../multipart';
@@ -12,6 +13,42 @@ import type { AnyDhruAction, DhruActionContract } from './define-dhru-action';
 
 /** The most items one bulk call may hold (the same limit as REST v1's `POST /v1/orders/bulk`). */
 export const DHRU_MAX_BULK_ITEMS = 100;
+
+/**
+ * The longest id a bulk item may have.
+ *
+ * Why: decision 053. The id is echoed in the answer and written to the log for every refused item, so its length is bounded.
+ */
+export const DHRU_MAX_ITEM_ID_LENGTH = 64;
+
+/**
+ * The action that places many orders in one call.
+ *
+ * Why: decision 053. The API key limiter charges this action one point per item (see `bulkPlacementItems`).
+ */
+export const DHRU_BULK_PLACEMENT_ACTION = 'placeimeiorderbulk';
+
+/**
+ * Counts the items a Dhru request would place, without running anything.
+ *
+ * Why: decision 053. A bulk placement costs one point of the key's per-minute limit per item, so the limiter needs the count before
+ * the gateway runs. The gateway itself refuses what cannot be read, so an unreadable body counts as one point.
+ *
+ * @param body the parsed request body (form or JSON fields of `/api/index.php`)
+ * @returns the number of item ids of a `placeimeiorderbulk` call (the `apiversion` key is not an item); 1 for every other call
+ *   and for parameters that cannot be read
+ */
+export function bulkPlacementItems(body: unknown): number {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return 1;
+  const fields = body as Record<string, unknown>;
+  if (typeof fields['action'] !== 'string' || fields['action'].trim().toLowerCase() !== DHRU_BULK_PLACEMENT_ACTION)
+    return 1;
+  try {
+    return Object.keys(readParameters(fields['parameters'])).filter((key) => key !== 'apiversion').length;
+  } catch {
+    return 1;
+  }
+}
 
 /** Who a Dhru call acts for: the merchant behind the API key. */
 export interface DhruCaller {
@@ -106,14 +143,20 @@ export class DhruGateway {
    * @param request the action, its parameters, the files and who calls
    * @returns the whole answer body (`{ SUCCESS: [...], apiversion }`, or the per-item body of a bulk action)
    * @throws {AppError} for a single action: `BAD_REQUEST` ("Invalid Action") for an action nobody owns, `VALIDATION_FAILED` for
-   *   parameters that cannot be read or do not fit, and whatever the handler throws; a bulk call throws only for a body that has no
-   *   items or too many
+   *   parameters that cannot be read or do not fit or whose decoded text holds U+0000 or an unpaired surrogate (decision 053), and whatever the
+   *   handler throws;
+   *   a bulk call throws only for a body that has no items, too many, an item id of 0 or more than 64 characters, or parameters
+   *   that hold U+0000 or an unpaired surrogate
    */
   async execute(request: DhruExecution): Promise<Record<string, unknown>> {
     const name = request.action.trim().toLowerCase();
     const bound = this.handlers.get(name);
     if (!bound) throw new AppError('BAD_REQUEST', { detail: 'Invalid Action' });
     const raw = readParameters(request.parameters);
+    // Decision 053: the decoded text never passed the validation guard, so the same character rule is applied here.
+    if (forbiddenTextPathOf(raw) !== undefined) {
+      throw new AppError('VALIDATION_FAILED', { detail: FORBIDDEN_TEXT_DHRU_MESSAGE });
+    }
     if (!bound.contract.bulk) {
       return dhruSuccess(await this.runOne(bound, raw, request, null));
     }
@@ -121,6 +164,9 @@ export class DhruGateway {
     if (ids.length === 0) throw new AppError('VALIDATION_FAILED', { detail: 'Send at least one item.' });
     if (ids.length > DHRU_MAX_BULK_ITEMS) {
       throw new AppError('VALIDATION_FAILED', { detail: `At most ${DHRU_MAX_BULK_ITEMS} items per call.` });
+    }
+    if (ids.some((id) => id.length < 1 || id.length > DHRU_MAX_ITEM_ID_LENGTH)) {
+      throw new AppError('VALIDATION_FAILED', { detail: 'An item id must have 1 to 64 characters.' });
     }
     if (ids.includes('apiversion'))
       throw new AppError('VALIDATION_FAILED', { detail: 'apiversion is not a valid item id.' });

@@ -4,7 +4,7 @@
 import { and, count, desc, eq, inArray, isNotNull, ne, or } from 'drizzle-orm';
 import type { ParsedFilter, ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type SupportTicket, supportTickets, ticketMessages } from '../db/schema';
+import { type SupportTicket, requesterProven, supportTickets, ticketMessages } from '../db/schema';
 import { type WireTicketStatus, fromWireStatus } from '../domain/ticket-status';
 
 /** Who owns the tickets of a list: the signed-in customer or the merchant. */
@@ -86,7 +86,7 @@ async function latestPublicMessages(
  * Lists the tickets of one customer or merchant.
  *
  * Why: feature 28, rule 6 and 7: a signed-in customer's tickets are those whose requester is that customer (tickets they filed as a guest
- * with the same address included); a merchant's, those whose requester is that merchant. A customer's ticket without a link token (cleared
+ * with the same address included, once the address was proven, decision 053); a merchant's, those whose requester is that merchant. A customer's ticket without a link token (cleared
  * by an erasure) has no page to open and is left out. The sort is `updatedAt` (default, newest first) or `createdAt`; the only filter is
  * `status`, and there is no search.
  *
@@ -108,6 +108,8 @@ export async function listAccountTickets(
       eq(supportTickets.requesterId, owner.id),
       // A link-less ticket of a customer cannot be opened from the list (either stored form of the link counts, decision 054).
       owner.type === 'customer' ? or(isNotNull(supportTickets.token), isNotNull(supportTickets.tokenHash)) : undefined,
+      // Decision 053: a ticket opened with a typed address stays off the account until its mailed link is first used.
+      owner.type === 'customer' ? requesterProven() : undefined,
     ),
   );
   const [tickets, [total]] = await Promise.all([

@@ -29,17 +29,19 @@ interface Setup {
   readonly authenticator: ApiKeyAuthenticator;
   readonly lookups: string[];
   readonly consumed: { name: string; key: string; points: number }[];
-  readonly enforced: { name: string; key: string; options: unknown }[];
+  readonly enforced: { name: string; key: string; points: number; options: unknown }[];
+  readonly peeked: { name: string; key: string }[];
   readonly touches: string[];
 }
 
 function setup(
   found: ApiKeyView | undefined,
-  options: { failureAllowed?: boolean; keyAllowed?: boolean; touchFails?: boolean } = {},
+  options: { failureAllowed?: boolean; keyAllowed?: boolean; touchFails?: boolean; peekAllowed?: boolean } = {},
 ): Setup {
   const lookups: string[] = [];
   const consumed: Setup['consumed'] = [];
   const enforced: Setup['enforced'] = [];
+  const peeked: Setup['peeked'] = [];
   const touches: string[] = [];
   const directory = {
     findByKey: (key: string) => {
@@ -52,10 +54,21 @@ function setup(
     },
   } as unknown as ApiKeyDirectory;
   const limits = {
+    // Decision 053: the unknown-key budget of the address is read before the key is looked up.
+    peek: (name: string, key: string) => {
+      peeked.push({ name, key });
+      return Promise.resolve({
+        allowed: options.peekAllowed ?? true,
+        remaining: 300,
+        limit: 300,
+        retryAfterSeconds: options.peekAllowed === false ? 33 : 0,
+        resetSeconds: 33,
+      });
+    },
     consume: (name: string, key: string, points = 1, opts?: unknown) => {
       // The key's own limit (`api-key`) is counted after every check passed; the `ip` limiter counts unknown keys.
       if (name === 'api-key') {
-        enforced.push({ name, key, options: opts });
+        enforced.push({ name, key, points, options: opts });
         return Promise.resolve({
           allowed: options.keyAllowed ?? true,
           remaining: 1,
@@ -79,6 +92,7 @@ function setup(
     lookups,
     consumed,
     enforced,
+    peeked,
     touches,
   };
 }
@@ -129,9 +143,47 @@ describe('ApiKeyAuthenticator', () => {
       scopes: ['orders:read', 'dhru'],
       ip: '203.0.113.9',
     });
-    expect(s.enforced).toEqual([{ name: 'api-key', key: '7', options: { limit: 25 } }]);
+    expect(s.enforced).toEqual([{ name: 'api-key', key: '7', points: 1, options: { limit: 25 } }]);
     expect(s.consumed).toEqual([]);
     expect(s.touches).toEqual(['203.0.113.9']);
+  });
+
+  it('answers 429 before the lookup once the address used its unknown-key budget (decision 053)', async () => {
+    const s = setup(view(), { peekAllowed: false });
+    const error = await rejectionOf(s.authenticator.authenticate(request(), { ...asking, key: 'the-key' }));
+    expect(error).toMatchObject({ code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 33 });
+    expect(s.peeked).toEqual([{ name: 'ip', key: 'api-key-failures:203.0.113.9' }]);
+    // No lookup, and nothing is charged for the refused call.
+    expect(s.lookups).toEqual([]);
+    expect(s.consumed).toEqual([]);
+    expect(s.enforced).toEqual([]);
+  });
+
+  it('reads the budget of an address by its /64 network before the lookup, and a call without a key reads nothing', async () => {
+    const s = setup(view());
+    await s.authenticator.authenticate(request('2001:db8:1:2:aaaa::1'), { ...asking, key: 'the-key' });
+    expect(s.peeked).toEqual([{ name: 'ip', key: 'api-key-failures:2001:db8:1:2::/64' }]);
+    const none = setup(view());
+    await rejectionOf(none.authenticator.authenticate(request(), { ...asking, key: undefined }));
+    expect(none.peeked).toEqual([]);
+  });
+
+  it("charges the points of a bulk placement in one count, at most the key's own limit (decision 053)", async () => {
+    const eight = setup(view());
+    await eight.authenticator.authenticate(request(), { ...asking, key: 'k', points: 8 });
+    expect(eight.enforced[0]).toMatchObject({ points: 8, options: { limit: 25 } });
+    const over = setup(view());
+    await over.authenticator.authenticate(request(), { ...asking, key: 'k', points: 100 });
+    expect(over.enforced[0]?.points).toBe(25);
+    const defaulted = setup(view({ rateLimitPerMin: 0 }));
+    await defaulted.authenticator.authenticate(request(), { ...asking, key: 'k', points: 100 });
+    // A stored limit of 0 is a data error: the limiter's default (60) is the cap.
+    expect(defaulted.enforced[0]?.points).toBe(60);
+    for (const points of [undefined, 0, -3, Number.NaN]) {
+      const s = setup(view());
+      await s.authenticator.authenticate(request(), { ...asking, key: 'k', points });
+      expect(s.enforced[0]?.points, String(points)).toBe(1);
+    }
   });
 
   it('refuses a request without a key without a lookup and without charging anything', async () => {

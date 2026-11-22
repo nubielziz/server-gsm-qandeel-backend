@@ -137,10 +137,14 @@ const ADDITIONS: Record<string, string[]> = {
     // Feature 44 (decision 054): the keyed hash and the encrypted copy of the link token.
     'token_hash',
     'token_enc',
+    // Feature 43 (decision 053): when the requester's address was proven.
+    'requester_proven_at',
   ],
   // Feature 28: the channel a public staff message was delivered on.
   ticket_messages: ['notify_channel'],
   webhook_deliveries: ['response_body', 'error', 'event_id'],
+  // Feature 43 (decision 053): deliveries in a row that ended failed; 20 switch the endpoint off.
+  webhook_endpoints: ['consecutive_failed_deliveries'],
   alert_rules: ['deleted_at'],
   alert_events: [
     'rule_name',

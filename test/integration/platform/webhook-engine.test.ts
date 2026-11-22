@@ -26,10 +26,12 @@ import {
   insertEndpoint,
   insertOrder,
   insertUsd,
+  portalFor,
   resetWebhookPolicy,
   testWebhookPolicy,
 } from '../../support/webhooks';
 import { RateLimitService } from '@src/infra/rate-limit';
+import { mailbox, planEvent, seedDefaultTemplates, sendAllQueued } from '../../support/notifications';
 
 const prefix = testBullPrefix();
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -56,8 +58,10 @@ beforeEach(async () => {
   // The ids start again after resetDb, and the queue keeps a finished job under its id: forget the jobs and the retry budgets.
   await deleteBullKeys(t.app.get(RedisService).queue, prefix);
   const cache = t.app.get(RedisService).cache;
-  const found = await cache.keys(`${t.app.get(CacheKeys).rateLimit('webhook-retry')}:*`);
-  if (found.length > 0) await cache.del(...found);
+  for (const limiter of ['webhook-retry', 'webhook-test'] as const) {
+    const found = await cache.keys(`${t.app.get(CacheKeys).rateLimit(limiter)}:*`);
+    if (found.length > 0) await cache.del(...found);
+  }
 });
 afterEach(() => {
   receiver.reset();
@@ -635,5 +639,129 @@ describe('a manual retry', () => {
     expect(await deliveries().deliver({ deliveryId: id, attempt: 2 })).toEqual({ outcome: 'resumed' });
     expect(receiver.requests).toEqual([]);
     expect(await deliveries().deliver({ deliveryId: id, attempt: 3 })).toMatchObject({ outcome: 'delivered' });
+  });
+});
+
+describe('the pause after 20 failed deliveries in a row (decision 053)', () => {
+  const disabledEvents = () =>
+    db
+      .select()
+      .from(s.outboxEvents)
+      .where(eq(s.outboxEvents.type, 'webhook.endpoint_disabled'))
+      .orderBy(s.outboxEvents.id);
+
+  /** Ends one delivery failed for good: the receiver's address is refused at send time (no call, no retry). */
+  async function failOnce(endpointId: number): Promise<void> {
+    testWebhookPolicy.allowPrivateNetwork = false;
+    testWebhookPolicy.httpsOnly = false;
+    const id = await insertDelivery(db, endpointId);
+    expect(await deliveries().deliver({ deliveryId: id, attempt: 1 })).toEqual({ outcome: 'failed' });
+  }
+  async function deliverOnce(endpointId: number): Promise<void> {
+    testWebhookPolicy.allowPrivateNetwork = true;
+    const id = await insertDelivery(db, endpointId);
+    expect(await deliveries().deliver({ deliveryId: id, attempt: 1 })).toMatchObject({ outcome: 'delivered' });
+  }
+
+  it('switches an endpoint off after 20 deliveries in a row ended failed, and emails the merchant once', async () => {
+    await seedDefaultTemplates(db);
+    mailbox(t).reset();
+    const { clientId, endpointId } = await subscribed();
+    for (let n = 1; n <= 19; n += 1) await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({
+      isActive: true,
+      consecutiveFailedDeliveries: 19,
+      failureCount: 19,
+    });
+    expect(await disabledEvents()).toHaveLength(0);
+
+    await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false, consecutiveFailedDeliveries: 20 });
+    const [event] = await disabledEvents();
+    expect(event).toMatchObject({ aggregateType: 'webhook_endpoints', aggregateId: endpointId });
+    expect(event!.payload).toMatchObject({ clientId, endpointId });
+
+    // The planner turns the event into one email to the merchant that names the endpoint's address; planning it again adds nothing.
+    const job = {
+      eventId: event!.id,
+      type: event!.type,
+      aggregateType: event!.aggregateType,
+      aggregateId: endpointId,
+      payload: event!.payload as OutboxPayload,
+      requestId: 'test',
+    };
+    expect(await planEvent(t, job)).toEqual({ created: 1 });
+    expect(await planEvent(t, job)).toEqual({ created: 0 });
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }]);
+    const [mail] = mailbox(t).sent;
+    expect(mail).toMatchObject({ subject: 'A webhook endpoint was switched off' });
+    expect(mail!.text).toContain(receiver.url);
+    expect(mail!.text).toContain('did not accept the last 20 deliveries');
+    expect(mailbox(t).sent).toHaveLength(1);
+
+    // A delivery that arrives for the endpoint after it was switched off counts nothing and tells nobody again.
+    await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false, consecutiveFailedDeliveries: 20 });
+    expect(await disabledEvents()).toHaveLength(1);
+  });
+
+  it('a delivered one in between starts the count again', async () => {
+    const { endpointId } = await subscribed();
+    for (let n = 1; n <= 15; n += 1) await failOnce(endpointId);
+    await deliverOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ consecutiveFailedDeliveries: 0, failureCount: 0 });
+    for (let n = 1; n <= 19; n += 1) await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: true, consecutiveFailedDeliveries: 19 });
+    expect(await disabledEvents()).toHaveLength(0);
+    await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false });
+    expect(await disabledEvents()).toHaveLength(1);
+  });
+
+  it('counts a delivery that is still being retried as nothing: only one that ended failed counts', async () => {
+    const { endpointId } = await subscribed();
+    testWebhookPolicy.allowPrivateNetwork = true;
+    receiver.answer(...Array.from({ length: 25 }, () => 503));
+    for (let n = 1; n <= 25; n += 1) {
+      const id = await insertDelivery(db, endpointId);
+      // Attempt 1 of 8 fails with a 503 and waits for its retry: the delivery has not ended.
+      expect(await deliveries().deliver({ deliveryId: id, attempt: 1 })).toMatchObject({ outcome: 'retry_scheduled' });
+    }
+    expect(await endpointOf(endpointId)).toMatchObject({
+      isActive: true,
+      consecutiveFailedDeliveries: 0,
+      failureCount: 25,
+    });
+    expect(await disabledEvents()).toHaveLength(0);
+  });
+
+  it('turning the endpoint on starts it again', async () => {
+    const { clientId, endpointId } = await subscribed();
+    for (let n = 1; n <= 20; n += 1) await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false, consecutiveFailedDeliveries: 20 });
+    const portal = await portalFor(t, clientId);
+    const on = await portal.call('PATCH', `/client/webhooks/${endpointId}`, { isActive: true });
+    expect(on.status).toBe(200);
+    expect(await endpointOf(endpointId)).toMatchObject({
+      isActive: true,
+      consecutiveFailedDeliveries: 0,
+      failureCount: 0,
+    });
+    for (let n = 1; n <= 19; n += 1) await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: true, consecutiveFailedDeliveries: 19 });
+    expect(await disabledEvents()).toHaveLength(1);
+    await failOnce(endpointId);
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false });
+    expect(await disabledEvents()).toHaveLength(2);
+  });
+
+  it('an endpoint the merchant switched off counts nothing', async () => {
+    const { endpointId } = await subscribed(['order.status_changed'], { isActive: false });
+    for (let n = 1; n <= 22; n += 1) {
+      const id = await insertDelivery(db, endpointId);
+      expect(await deliveries().deliver({ deliveryId: id, attempt: 1 })).toEqual({ outcome: 'failed' });
+    }
+    expect(await endpointOf(endpointId)).toMatchObject({ isActive: false, consecutiveFailedDeliveries: 0 });
+    expect(await disabledEvents()).toHaveLength(0);
   });
 });

@@ -9,6 +9,7 @@ import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { TicketEvents } from '@src/modules/support/application/ticket-events';
 import type { TicketCategory, TicketPriority } from '@src/modules/support/db/schema';
+import { PROVEN_TICKET_NOTE, UNPROVEN_TICKET_NOTE } from '@src/modules/support/domain/requester-proof';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -178,7 +179,9 @@ describe('POST /store/v1/tickets', () => {
     expect(JSON.stringify(notification!.payload)).not.toContain(rowToken);
     const [mail] = mailbox(t).sent;
     expect(mail).toMatchObject({ to: 'victor@mail.example', subject: `We got your message (${ticket.number})` });
-    expect(mail!.text).toContain('Hi Victor,');
+    // Decision 053: the receipt holds fixed wording, the number and the link, and nothing the visitor typed.
+    expect(mail!.text).toContain('Hello,');
+    expect(mail!.text).not.toContain('Victor');
     // The link is built from STORE_BASE_URL (the development default here).
     expect(mail!.text).toContain(`http://localhost:5175/support/tickets/${rowToken}`);
   });
@@ -387,13 +390,64 @@ describe('POST /store/v1/tickets', () => {
     expect(keys.join(' ')).not.toContain('mail.example');
   });
 
-  it('does not count the order-token path against the email limit, where the receipt goes to the order’s own customer', async () => {
-    await trackedOrder();
-    for (let n = 0; n < 4; n += 1) {
+  it('counts the order-token path against the address of the order’s customer', async () => {
+    const { db } = await trackedOrder();
+    for (let n = 0; n < 3; n += 1) {
       const res = await open({ subject: 'Where is it?', message: 'Still waiting.', orderToken: TRACKING_TOKEN });
       expect(res.statusCode).toBe(201);
     }
-    expect((await open({ ...VALID, email: 'victor@mail.example' })).statusCode).toBe(201);
+    const refused = await open({ subject: 'Where is it?', message: 'Still waiting.', orderToken: TRACKING_TOKEN });
+    expect(refused.statusCode).toBe(429);
+    expect(body(refused).code).toBe('RATE_LIMITED');
+    expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
+    // The refused call wrote no ticket and no receipt: three tickets, three receipts.
+    expect(await db.select().from(s.supportTickets)).toHaveLength(3);
+    expect(await ticketMailEvents(db)).toHaveLength(3);
+    // The same address typed on the contact form shares the budget (the receipt goes to the same mailbox).
+    expect((await open({ ...VALID, email: 'Victor@Mail.Example' })).statusCode).toBe(429);
+    expect(await db.select().from(s.supportTickets)).toHaveLength(3);
+    // Another customer's order has its own budget.
+    const other = await trackedOrder('T7kq2Zp9Xw4Ld1Hn6Rb3Zz', 'other@mail.example');
+    expect((await open({ subject: 'Hi', message: 'Hello', orderToken: 'T7kq2Zp9Xw4Ld1Hn6Rb3Zz' })).statusCode).toBe(
+      201,
+    );
+    expect(other.customer.email).toBe('other@mail.example');
+  });
+
+  it('counts an order of an anonymized customer under the order, not under an address', async () => {
+    const { db, customer } = await trackedOrder(TRACKING_TOKEN, 'gone@mail.example');
+    await db
+      .update(s.customers)
+      .set({ status: 'anonymized', name: 'Deleted customer', email: 'deleted-9@redacted.invalid' })
+      .where(eq(s.customers.id, customer.id));
+    for (let n = 0; n < 3; n += 1) {
+      expect((await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN })).statusCode).toBe(201);
+    }
+    expect((await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN })).statusCode).toBe(429);
+  });
+
+  it('the receipt holds the ticket number and the link and nothing that was typed', async () => {
+    const res = await open({
+      email: 'new.visitor@mail.example',
+      name: 'Victor Hale',
+      subject: 'Call me on +962 79 123 4567 about this',
+      message: 'Please call.',
+    });
+    expect(res.statusCode).toBe(201);
+    const ticket = body(res);
+    const { db } = await testDb();
+    expect(await sendTicketMails(t)).toEqual([{ sent: true }]);
+    const [mail] = mailbox(t).sent;
+    expect(mail).toMatchObject({ to: 'new.visitor@mail.example', subject: `We got your message (${ticket.number})` });
+    expect(mail!.text).toContain('Hello,');
+    expect(mail!.text).toContain(`opened ticket ${ticket.number}`);
+    expect(mail!.text).toMatch(/http:\/\/localhost:5175\/support\/tickets\/[A-Za-z0-9_-]{22}/);
+    for (const typed of ['Victor', 'Hale', '+962', 'Call me', 'new.visitor'])
+      expect(mail!.text, typed).not.toContain(typed);
+    const [notification] = await notificationRows(db);
+    expect((notification!.payload as { variables: Record<string, string> }).variables).toEqual({
+      ticketNumber: ticket.number,
+    });
   });
 
   it('sends no receipt when the template is off or the customer was anonymized, and still opens the ticket', async () => {
@@ -523,8 +577,12 @@ describe('POST /store/v1/tickets/:token/messages', () => {
       .from(s.ticketMessages)
       .where(eq(s.ticketMessages.ticketId, row.id))
       .orderBy(s.ticketMessages.id);
+    // The two staff notes of decision 053 sit between the customer's two messages: the first at the opening, the second when this write
+    // proved the address.
     expect(messages.map((message) => [message.authorType, message.authorId, message.isInternal])).toEqual([
       ['customer', row.requesterId, false],
+      ['system', null, true],
+      ['system', null, true],
       ['customer', row.requesterId, false],
     ]);
   });
@@ -682,5 +740,107 @@ describe('the ticket token', () => {
     const merchant = await insertClient(db);
     await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
     expect((await show('0000000000000000000000')).statusCode).toBe(404);
+  });
+});
+
+/** The thread of a ticket as stored, oldest first. */
+const threadOf = async (ticketId: number) =>
+  (await testDb()).db
+    .select()
+    .from(s.ticketMessages)
+    .where(eq(s.ticketMessages.ticketId, ticketId))
+    .orderBy(s.ticketMessages.id);
+
+describe('the address of a ticket opened with a typed email (decision 053)', () => {
+  it('marks a ticket opened with a typed email as unproven and tells staff in a system note', async () => {
+    const res = await open(VALID);
+    expect(res.statusCode).toBe(201);
+    const row = await ticketByNumber(body(res).number);
+    expect(row.requesterProvenAt).toBeNull();
+    const staff = await supportStaff(t, ['support:*']);
+    const detail = await staff.get(`/admin/support-tickets/${row.id}`);
+    expect(
+      detail.body.messages.map((m: { authorType: string; isInternal: boolean; body: string }) => [
+        m.authorType,
+        m.isInternal,
+        m.body,
+      ]),
+    ).toEqual([
+      ['customer', false, VALID.message],
+      ['system', true, UNPROVEN_TICKET_NOTE],
+    ]);
+    // The first message stays the requester's newest, and the note is not a message the customer sees.
+    const [first, note] = await threadOf(row.id);
+    expect(row.lastRequesterMessageId).toBe(first!.id);
+    expect(note).toMatchObject({ authorType: 'system', authorId: null, isInternal: true });
+    // The ticket page the link opens shows the customer's own message only.
+    const token = tokenOf(row) as string;
+    expect(body(await show(token)).messages.map((m: { body: string }) => m.body)).toEqual([VALID.message]);
+  });
+
+  it('proves the address when its link is opened, once', async () => {
+    const opened = await openByEmail(VALID);
+    const before = await ticketRow(opened.token);
+    expect(before.requesterProvenAt).toBeNull();
+    clock.advance(60_000);
+    expect((await show(opened.token)).statusCode).toBe(200);
+    clock.advance(60_000);
+    expect((await show(opened.token)).statusCode).toBe(200);
+    const after = await ticketRow(opened.token);
+    // Set at the first use, never moved by the second; it is not activity for staff, so updated_at stays.
+    expect(after.requesterProvenAt?.toISOString()).toBe('2026-11-08T12:01:00.000Z');
+    expect(after.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+    const notes = (await threadOf(after.id)).filter((message) => message.authorType === 'system');
+    expect(notes.map((note) => note.body)).toEqual([UNPROVEN_TICKET_NOTE, PROVEN_TICKET_NOTE]);
+    expect(notes.every((note) => note.isInternal)).toBe(true);
+  });
+
+  it('proves the address when a message is written with the link', async () => {
+    const opened = await openByEmail({ ...VALID, email: 'writer@mail.example' });
+    expect((await write(opened.token, { body: 'One more detail.' })).statusCode).toBe(201);
+    const row = await ticketRow(opened.token);
+    expect(row.requesterProvenAt?.toISOString()).toBe(NOW);
+    const notes = (await threadOf(row.id)).filter((message) => message.authorType === 'system');
+    expect(notes.map((note) => note.body)).toEqual([UNPROVEN_TICKET_NOTE, PROVEN_TICKET_NOTE]);
+  });
+
+  it('does not confirm the address by a write that a resolved ticket refuses; opening the page does', async () => {
+    const opened = await openByEmail({ ...VALID, email: 'locked@mail.example' });
+    const { db } = await testDb();
+    await db
+      .update(s.supportTickets)
+      .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()) })
+      .where(byToken(opened.token));
+    const refused = await write(opened.token, { body: 'Still locked.' });
+    expect(refused.statusCode).toBe(409);
+    expect((await ticketRow(opened.token)).requesterProvenAt).toBeNull();
+    expect((await threadOf((await ticketRow(opened.token)).id)).map((message) => message.authorType)).toEqual([
+      'customer',
+      'system',
+    ]);
+    expect((await show(opened.token)).statusCode).toBe(200);
+    expect((await ticketRow(opened.token)).requesterProvenAt?.toISOString()).toBe(NOW);
+  });
+
+  it('a ticket opened with the order link is proven at once, with no note', async () => {
+    await trackedOrder();
+    const res = await open({ subject: 'Delay', message: 'Still waiting.', orderToken: TRACKING_TOKEN });
+    expect(res.statusCode).toBe(201);
+    const row = await ticketByNumber(body(res).number);
+    expect(row.requesterProvenAt?.toISOString()).toBe(NOW);
+    expect((await threadOf(row.id)).map((message) => message.authorType)).toEqual(['customer']);
+  });
+
+  it('leaves a ticket that was proven when it was made untouched: no write, no note', async () => {
+    const { db } = await testDb();
+    const customer = await insertCustomer(db);
+    const proven = await insertSupportTicket(db, { requesterId: customer.id, token: 'P7kq2Zp9Xw4Ld1Hn6Rb3Pp' });
+    expect(proven.requesterProvenAt).not.toBeNull();
+    clock.advance(HOUR);
+    expect((await show('P7kq2Zp9Xw4Ld1Hn6Rb3Pp')).statusCode).toBe(200);
+    const [again] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, proven.id));
+    expect(again!.requesterProvenAt?.toISOString()).toBe(proven.requesterProvenAt!.toISOString());
+    expect(again!.updatedAt.toISOString()).toBe(proven.updatedAt.toISOString());
+    expect(await threadOf(proven.id)).toHaveLength(0);
   });
 });

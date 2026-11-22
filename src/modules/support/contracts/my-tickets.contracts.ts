@@ -96,8 +96,8 @@ export const listMyTickets = defineRoute({
   key: 'GET /store/v1/me/tickets',
   summary: 'My support tickets',
   description:
-    'The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed as a guest with the same address ' +
-    'included. Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key ' +
+    'The signed-in customer’s own tickets: every ticket whose requester is the customer, those filed on the public form with the same address ' +
+    'included once their link has been opened (decision 053). Newest activity first (`updatedAt` descending); sort by `updatedAt` or `createdAt`; filter by `status` (repeat the key ' +
     'for IN; `pending` means the team waits for the customer); at most 50 a page; there is no search. Each row carries the ticket ' +
     '`token`: open the conversation with the token routes (`GET /store/v1/tickets/:token`, `…/stream`, `…/messages`). A row is ' +
     '`hasUnread` while support wrote a message the page has not marked as seen (`POST …/read`). A ticket that has no link any more ' +

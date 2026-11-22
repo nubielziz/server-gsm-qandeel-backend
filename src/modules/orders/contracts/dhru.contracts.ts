@@ -122,7 +122,8 @@ export const dhruPlaceImeiOrderBulk = defineDhruAction({
   description:
     "`parameters` is an object keyed by the caller's request id, each entry the parameters of `placeimeiorder`. The answer has one entry " +
     'per request id: `{ "SUCCESS": [...] }` or `{ "ERROR": [...] }`. Each order is placed on its own (a refused one never stops the ' +
-    'others); at most 100 per call.',
+    'others); at most 100 per call. A request id has 1 to 64 characters. The call costs one point of the key’s per-minute limit per item ' +
+    '(at most the whole limit).',
   bulk: true,
   params: PlaceImeiParams,
   success: PlacedSchema,
@@ -149,7 +150,7 @@ export const dhruGetImeiOrderBulk = defineDhruAction({
   summary: 'Status of several orders',
   description:
     '`parameters` is an object keyed by the caller\'s request id, each entry `{ "ID": <order> }`; the answer has one entry per request ' +
-    'id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call.',
+    'id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call. A request id has 1 to 64 characters.',
   bulk: true,
   params: GetOrderParams,
   success: StatusSchema,
@@ -210,7 +211,8 @@ export const dhruEndpoint = defineRoute({
     'HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ "SUCCESS": [ ... ], ' +
     '"apiversion": "6.1" }` or `{ "ERROR": [ { "MESSAGE": "..." } ], "apiversion": "6.1" }`; a bulk action answers `{ "<request id>": ' +
     '{ "SUCCESS" | "ERROR": [ ... ] }, ..., "apiversion": "6.1" }`. A wrong credential is "Authentication Failed", an unknown action ' +
-    '"Invalid Action". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply.',
+    '"Invalid Action". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply. A text in the ' +
+    'decoded `parameters` or `CUSTOMFIELD` may not hold the character U+0000 or an unpaired surrogate.',
   tags: ['dhru'],
   surface: 'dhru',
   access: 'dhru-credentials',

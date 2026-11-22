@@ -8,8 +8,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
 import { schema as s } from '@src/infra/db';
-import { RealtimeHub, RealtimePublisher } from '@src/infra/realtime';
+import { RealtimeHub, RealtimePublisher, type Doorbell, type StreamViewer } from '@src/infra/realtime';
 import { RedisService } from '@src/infra/redis';
+import { TicketRealtimeSource } from '@src/modules/support/realtime/ticket-realtime.source';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, openSession } from '../../support/auth';
@@ -578,5 +579,62 @@ describe('the ticket-chat limiter', () => {
       expect((await onTicket('POST', ticket.token, '/typing', undefined, ip)).statusCode).toBe(204);
     }
     expect((await onTicket('GET', ticket.token, '', undefined, ip)).statusCode).toBe(200);
+  });
+});
+
+describe('a ticket whose address is not proven (decision 053)', () => {
+  it('keeps the events of an unproven ticket off the customer’s account stream and its replay', async () => {
+    const { db, customer, ticket } = await customerTicket();
+    await db.update(s.supportTickets).set({ requesterProvenAt: null }).where(eq(s.supportTickets.id, ticket.id));
+    const reply = await staff.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'We are on it.' });
+    expect(reply.status).toBe(201);
+    const source = t.app.get(TicketRealtimeSource);
+    const bell = (op: string, extra: Record<string, unknown> = {}): Doorbell => ({
+      v: 1,
+      topic: 'ticket',
+      op,
+      at: clock.nowMs(),
+      ticketId: ticket.id,
+      ...extra,
+    });
+    // The requester deliveries of a staff reply, with a listener on every key.
+    const requesterKeys = async (doorbell: Doorbell): Promise<string[]> =>
+      (await source.resolve(doorbell, () => true))
+        .flatMap((delivery) => delivery.keys)
+        .filter((key) => key !== 'support:staff');
+    const message = bell('message', { messageId: reply.body.id });
+    expect(new Set(await requesterKeys(message))).toEqual(new Set([`ticket:${ticket.id}`]));
+    expect(new Set(await requesterKeys(bell('updated')))).toEqual(new Set([`ticket:${ticket.id}`]));
+
+    // A reconnecting account stream replays none of its messages.
+    const viewer: StreamViewer = {
+      kind: 'customer',
+      id: customer.id,
+      sessionId: 1,
+      ip: '203.0.113.5',
+      name: 'Victor',
+      permissions: [],
+    };
+    expect(await source.replay(viewer, 0, 100)).toEqual([]);
+    // The link's own stream still replays the thread.
+    const linkViewer: StreamViewer = {
+      kind: 'ticket',
+      id: ticket.id,
+      sessionId: null,
+      ip: '203.0.113.5',
+      name: '',
+      permissions: [],
+    };
+    expect(((await source.replay(linkViewer, 0, 100)) as unknown[]).length).toBeGreaterThanOrEqual(2);
+
+    // Once the address is proven both include the ticket.
+    await db
+      .update(s.supportTickets)
+      .set({ requesterProvenAt: new Date(clock.nowMs()) })
+      .where(eq(s.supportTickets.id, ticket.id));
+    expect(new Set(await requesterKeys(message))).toEqual(
+      new Set([`ticket:${ticket.id}`, `u:customer:${customer.id}`]),
+    );
+    expect(((await source.replay(viewer, 0, 100)) as unknown[]).length).toBeGreaterThanOrEqual(2);
   });
 });

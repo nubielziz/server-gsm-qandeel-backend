@@ -564,6 +564,49 @@ describe('ARGON2_* (decision 007)', () => {
   });
 });
 
+describe('HTTP_*_TIMEOUT_MS (decision 053)', () => {
+  it('defaults the request timeouts to 20 s and 600 s', () => {
+    const { http } = parseEnv({});
+    expect(http.headersTimeoutMs).toBe(20_000);
+    expect(http.requestTimeoutMs).toBe(600_000);
+  });
+
+  it('reads the two settings', () => {
+    const { http } = parseEnv({ HTTP_HEADERS_TIMEOUT_MS: '5000', HTTP_REQUEST_TIMEOUT_MS: '60000' });
+    expect([http.headersTimeoutMs, http.requestTimeoutMs]).toEqual([5000, 60_000]);
+  });
+
+  it('has no bound on the silence of a connection: Bun would cut every live stream with it', () => {
+    // Bun resets that timer only on bytes that come in, so a stream that only writes is cut at the bound. A value set by an old
+    // environment is ignored, not applied.
+    const { http } = parseEnv({ HTTP_IDLE_TIMEOUT_MS: '30000' });
+    expect(Object.keys(http)).not.toContain('idleTimeoutMs');
+    expect(issuesOf({ HTTP_IDLE_TIMEOUT_MS: '30000' })).toEqual([]);
+  });
+
+  it('refuses a headers timeout that is not shorter than the request timeout', () => {
+    expect(issuesOf({ HTTP_HEADERS_TIMEOUT_MS: '30000', HTTP_REQUEST_TIMEOUT_MS: '30000' })).toEqual([
+      { variable: 'HTTP_HEADERS_TIMEOUT_MS', message: 'must be shorter than HTTP_REQUEST_TIMEOUT_MS' },
+    ]);
+    expect(
+      issuesOf({ HTTP_HEADERS_TIMEOUT_MS: '40000', HTTP_REQUEST_TIMEOUT_MS: '30000' }).map((i) => i.variable),
+    ).toEqual(['HTTP_HEADERS_TIMEOUT_MS']);
+    // The default headers bound (20 s) is longer than a request bound of 10 s.
+    expect(issuesOf({ HTTP_REQUEST_TIMEOUT_MS: '10000' }).map((i) => i.variable)).toEqual(['HTTP_HEADERS_TIMEOUT_MS']);
+    expect(issuesOf({ HTTP_HEADERS_TIMEOUT_MS: '29999', HTTP_REQUEST_TIMEOUT_MS: '30000' })).toEqual([]);
+  });
+
+  it('refuses values outside their ranges, naming the variable', () => {
+    expect(issuesOf({ HTTP_HEADERS_TIMEOUT_MS: '99' }).map((i) => i.variable)).toEqual(['HTTP_HEADERS_TIMEOUT_MS']);
+    expect(issuesOf({ HTTP_REQUEST_TIMEOUT_MS: '999' }).map((i) => i.variable)).toContain('HTTP_REQUEST_TIMEOUT_MS');
+  });
+
+  it('shows the two in the boot summary', () => {
+    const http = summarizeConfig(parseEnv({ HTTP_HEADERS_TIMEOUT_MS: '5000' })).http as Record<string, unknown>;
+    expect(http).toMatchObject({ headersTimeoutMs: 5000, requestTimeoutMs: 600_000 });
+  });
+});
+
 describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
   it('defaults to the Mailpit of compose.yaml outside production and leaves Telegram unset', () => {
     const config = parseEnv({});

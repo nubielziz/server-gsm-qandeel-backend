@@ -96,7 +96,7 @@ export const listSupplierApiLogs = defineRoute({
   summary: 'List supplier calls',
   description:
     'Every call we made to a supplier, newest first, without the request and response bodies. Filters: `supplierId`, `orderId`, ' +
-    '`action`, `outcome` (`ok`, `error`, `timeout`). Credentials are never stored and IMEIs are masked.',
+    '`action`, `outcome` (`ok`, `error`, `timeout`). Credentials are never stored and IMEIs are masked. Calls are kept 90 days (decision 053).',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',

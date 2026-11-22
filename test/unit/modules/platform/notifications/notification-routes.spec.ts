@@ -28,6 +28,11 @@ describe('NotificationRoutes', () => {
       'order.status_changed',
       'service.price_changed',
       'wallet.low_balance',
+      // Decision 053: the notice of a webhook endpoint that was switched off (a route to `notifications` only).
+      'webhook.endpoint_disabled',
+    ]);
+    expect(registry.routesOf('webhook.endpoint_disabled').map((route) => [route.queue, route.jobName])).toEqual([
+      ['notifications', 'notification.plan'],
     ]);
   });
 });

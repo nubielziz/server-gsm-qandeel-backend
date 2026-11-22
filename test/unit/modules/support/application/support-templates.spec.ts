@@ -1,17 +1,23 @@
 // Unit tests of the support events and their default templates (feature 17): every template belongs to a registered event and channel and
 // uses only that event's placeholders, every event is covered, every row of the code is found in migration 0016 or made by an update of
-// migration 0032 (the files keep the shape they shipped with), and `supportTemplatesSql()` and `supportReplyLinkSql()` write today's shape.
+// migration 0032 or of the feature-43 migration (the files keep the shape they shipped with), and `supportTemplatesSql()`,
+// `supportReplyLinkSql()` and `supportReceiptTextSql()` write today's shape.
 import { describe, expect, it } from 'bun:test';
 import { bodyUpdates, insertedTemplates } from '../../../../support/applied-templates';
+import { migrationFileName, migrationSql } from '../../../../support/migration-files';
 import { NotificationEventRegistry } from '@src/modules/platform';
 import { SUPPORT_EVENTS } from '@src/modules/support/application/support-events';
 import {
   CONVERSATION_LINK_LINE,
+  RECEIPT_BODY,
   SUPPORT_DEFAULT_TEMPLATES,
+  supportReceiptTextSql,
   supportReplyLinkSql,
   supportTemplatesSql,
   withConversationLink,
 } from '@src/modules/support/application/support-templates';
+
+const ABUSE_LIMITS_MIGRATION = '_public_abuse_limits.sql';
 
 /** The `{{placeholders}}` of a text, once each (the platform's own reader is not part of its public API). */
 const placeholdersOf = (text: string): string[] => [
@@ -34,6 +40,20 @@ describe('SUPPORT_EVENTS', () => {
     for (const definition of SUPPORT_EVENTS) {
       for (const name of definition.variables) expect(definition.sample[name], name).toBeTruthy();
     }
+  });
+
+  it('offers the receipt the ticket number and the link and nothing a visitor typed (decision 053)', () => {
+    const receipt = registry().get('support.ticket_received', 'customer');
+    expect(receipt?.variables).toEqual(['ticketNumber', 'link']);
+    expect(receipt?.channels).toEqual(['email']);
+    expect(receipt?.description).toContain('repeats nothing the customer typed');
+    // The survey is sent later, to an address of a proven ticket, and keeps its own variables.
+    expect(registry().get('support.csat_survey', 'customer')?.variables).toEqual([
+      'customerName',
+      'ticketNumber',
+      'subject',
+      'link',
+    ]);
   });
 
   it('keeps a merchant’s support reply out of their preferences (the answer to their own ticket is always sent)', () => {
@@ -89,10 +109,26 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
 
 const keyOf = (t: { event: string; channel: string; audience: string }) => `${t.event}|${t.channel}|${t.audience}`;
 
-describe('migrations 0016_support_tickets and 0032_support_reply_link', () => {
-  // The English rows of 0016 as they shipped, and the guarded updates of 0032 (the files also hold the Arabic rows migration 0035 deletes).
+describe('the receipt of a new ticket (decision 053)', () => {
+  it('is fixed wording with the ticket number and the link, and holds no typed text', () => {
+    const receipt = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === 'support.ticket_received')!;
+    expect(receipt.body).toBe(RECEIPT_BODY);
+    expect(receipt.subject).toBe('We got your message ({{ticketNumber}})');
+    expect(placeholdersOf(receipt.body).sort()).toEqual(['link', 'ticketNumber']);
+    expect(placeholdersOf(receipt.subject)).toEqual(['ticketNumber']);
+    expect(receipt.body).toStartWith('Hello,');
+  });
+});
+
+describe('migrations 0016_support_tickets, 0032_support_reply_link and the feature-43 migration', () => {
+  // The English rows of 0016 as they shipped, and the guarded updates of 0032 (the files also hold the Arabic rows migration 0035 deletes)
+  // and of the feature-43 migration (found by its suffix, never by its number: migrations are renumbered when branches merge).
   const shipped = insertedTemplates('0016_support_tickets.sql').filter((row) => row.locale === 'en');
-  const updates = bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en');
+  const abuseFile = migrationFileName(ABUSE_LIMITS_MIGRATION);
+  const updates = [
+    ...bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en'),
+    ...bodyUpdates(abuseFile),
+  ];
 
   it('ship every template of the code: as 0016 inserted it, or with the body 0032 gives the row 0016 shipped', () => {
     expect(shipped.map(keyOf).sort()).toEqual(SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort());
@@ -108,8 +144,22 @@ describe('migrations 0016_support_tickets and 0032_support_reply_link', () => {
         expect(update.to, keyOf(template)).toBe(template.body);
       }
     }
-    // The updates are the merchant's two replies.
-    expect(updates.map(keyOf).sort()).toEqual(['support.reply|email|merchant', 'support.reply|telegram|merchant']);
+    // The updates are the merchant's two replies and the customer's receipt.
+    expect(updates.map(keyOf).sort()).toEqual([
+      'support.reply|email|merchant',
+      'support.reply|telegram|merchant',
+      'support.ticket_received|email|customer',
+    ]);
+    const receipt = updates.find((row) => keyOf(row) === 'support.ticket_received|email|customer')!;
+    expect(receipt.from).toBe(shipped.find((row) => keyOf(row) === keyOf(receipt))!.body);
+    expect(receipt.to).toBe(RECEIPT_BODY);
+    expect(receipt.locale).toBeNull();
+  });
+
+  it('holds exactly the statement supportReceiptTextSql() writes', () => {
+    expect(migrationSql(ABUSE_LIMITS_MIGRATION)).toContain(supportReceiptTextSql());
+    expect(supportReceiptTextSql()).not.toContain('locale');
+    expect(supportReceiptTextSql().match(/AND "body" = /g)).toHaveLength(1);
   });
 
   it('are installed today by supportTemplatesSql(), without a language', () => {

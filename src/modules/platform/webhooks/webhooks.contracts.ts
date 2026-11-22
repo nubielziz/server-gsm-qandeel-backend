@@ -56,7 +56,9 @@ export const portalListWebhooks = defineRoute({
   key: 'GET /client/webhooks',
   summary: 'My webhook endpoints',
   description:
-    'The endpoints of the signed-in merchant, newest first. The signing secret is shown once, when the endpoint is created.',
+    'The endpoints of the signed-in merchant, newest first. The signing secret is shown once, when the endpoint is created. An endpoint whose ' +
+    'last 20 deliveries all failed is switched off (`isActive: false`) and the merchant gets an email; turning it on again starts a new ' +
+    'count (decision 053).',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
@@ -95,7 +97,7 @@ export const portalUpdateWebhook = defineRoute({
   summary: 'Edit or pause an endpoint',
   description:
     'A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it ' +
-    'on again resets `failureCount`. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.',
+    'on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
@@ -126,13 +128,14 @@ export const portalTestWebhook = defineRoute({
   description:
     `Queues one signed delivery of the event \`${PING_EVENT}\` with a small sample payload \`{ message, endpointId }\`: the same ` +
     'envelope, signature and retry rules as a real event, so the merchant can check its receiver. The answer is `202` with the ' +
-    'delivery id; read its progress in `GET /client/webhooks/:id/deliveries`. A paused endpoint is `409 INVALID_TRANSITION`.',
+    'delivery id; read its progress in `GET /client/webhooks/:id/deliveries`. A paused endpoint is `409 INVALID_TRANSITION`. At most 10 test ' +
+    'deliveries an hour per merchant: the eleventh is `429 RATE_LIMITED` with `Retry-After` and queues nothing.',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
   success: { status: 202, schema: z.object({ deliveryId: zId }) },
-  errors: ['NOT_FOUND', 'INVALID_TRANSITION', 'UNAVAILABLE', ...PORTAL_ERRORS, 'CSRF_FAILED'],
+  errors: ['NOT_FOUND', 'INVALID_TRANSITION', 'RATE_LIMITED', 'UNAVAILABLE', ...PORTAL_ERRORS, 'CSRF_FAILED'],
   examples: { response: { deliveryId: 118 } },
 });
 
@@ -143,7 +146,7 @@ export const portalListWebhookDeliveries = defineRoute({
   description:
     'The deliveries of the endpoint, newest first. `status` is `pending` (waiting for an attempt), `succeeded` (a `2xx` answer) or ' +
     '`failed` (8 attempts used). `attempt` is the attempt the delivery is on; `responseCode` is `0` when the server gave no ' +
-    'answer; `error` is `""` when there is none. Another merchant’s and an unknown endpoint are `404`.',
+    'answer; `error` is `""` when there is none. Another merchant’s and an unknown endpoint are `404`. Deliveries are kept 90 days (decision 053).',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',

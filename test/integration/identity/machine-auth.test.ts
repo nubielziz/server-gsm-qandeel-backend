@@ -2,7 +2,7 @@
 // secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. Real Postgres and Redis;
 // merchants and keys are inserted the way the feature that issues them will store them (keyed hash only).
 import { createHash } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import type { LightMyRequestResponse } from 'fastify';
 import { ipRateLimitKey, parseIpAddress } from '@src/common/ip-address';
@@ -458,6 +458,28 @@ describe('API keys on REST v1', () => {
     // Another address, and a request without any key, are not affected.
     refusedAs(await get(unknown), 401, 'UNAUTHORIZED');
     refusedAs(await get(undefined, ip), 401, 'UNAUTHORIZED');
+  });
+
+  it('answers 429 before the lookup once the address used its unknown-key budget (decision 053)', async () => {
+    const ip = freshClientIp();
+    const limiter = t.app.get(RateLimitService);
+    await limiter.consume('ip', `api-key-failures:${ipRateLimitKey(parseIpAddress(ip))}`, 300);
+    const clientId = await insertMerchant(db);
+    const known = await insertApiKey(t, db, clientId);
+    const lookup = spyOn(t.app.get(ApiKeyDirectory), 'findByKey');
+    try {
+      // Neither an unknown key nor a valid one costs a lookup from an address that used up its budget.
+      refusedAs(await get(`gsm_${t.app.get(TokenService).random(32)}`, ip), 429, 'RATE_LIMITED');
+      refusedAs(await get(known.key, ip), 429, 'RATE_LIMITED');
+      expect(lookup).not.toHaveBeenCalled();
+      // Another address still reaches the lookup, and a request without a key never does.
+      expect((await get(known.key)).statusCode).toBe(200);
+      expect(lookup).toHaveBeenCalledTimes(1);
+      refusedAs(await get(undefined, ip), 401, 'UNAUTHORIZED');
+      expect(lookup).toHaveBeenCalledTimes(1);
+    } finally {
+      lookup.mockRestore();
+    }
   });
 
   it('does not charge the failure budget for a known key', async () => {

@@ -3,6 +3,7 @@
 // download of a requester (public messages of their own ticket only) and of staff (every file of the ticket), the deletion with an
 // anonymized customer, and the retention of resolved tickets. Real Postgres, Redis and object storage.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { Readable } from 'node:stream';
 import { eq, inArray } from 'drizzle-orm';
 import { AppError } from '@src/common/errors';
 import { schema as s } from '@src/infra/db';
@@ -157,6 +158,33 @@ describe('the uploads', () => {
       entityId: ticket.id,
       after: { fileId: console.json().id, filename: 'screen.png', size: PNG.length },
     });
+  });
+
+  it('refuses a ticket-link upload over 5 MiB that declares no length, before it is parsed (decision 053)', async () => {
+    const { ticket } = await customerTicket();
+    // Not a valid multipart body on purpose: a refusal before the parser is a 413, a parse of these bytes would be a 400.
+    const chunks = Array.from({ length: 6 }, () => Buffer.alloc(MIB, 97));
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/store/v1/tickets/${ticket.token}/files`,
+      remoteAddress: freshClientIp(),
+      headers: { 'content-type': 'multipart/form-data; boundary=gsm' },
+      payload: Readable.from(chunks),
+    });
+    expect(res.statusCode).toBe(413);
+    const staffRes = await t.app.inject({
+      method: 'POST',
+      url: `/admin/support-tickets/${ticket.id}/files`,
+      remoteAddress: staff.ip,
+      headers: {
+        ...staff.session.mutationHeaders,
+        origin: CONSOLE_ORIGIN,
+        'content-type': 'multipart/form-data; boundary=gsm',
+      },
+      payload: Readable.from(chunks),
+    });
+    expect(staffRes.statusCode).toBe(413);
+    expect(await (await testDb()).db.select().from(s.files)).toEqual([]);
   });
 
   it('refuses another type by its name, a renamed program by its content, an empty file and one over 5 MiB', async () => {

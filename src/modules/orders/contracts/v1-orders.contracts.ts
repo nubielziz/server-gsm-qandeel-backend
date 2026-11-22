@@ -143,7 +143,9 @@ export const placeV1OrdersBulk = defineRoute({
     '(`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused ' +
     'places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack ' +
     'of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for ' +
-    `${IDEMPOTENCY_WINDOW_DAYS} days (after that the stored answer is gone and the same key places new orders).`,
+    `${IDEMPOTENCY_WINDOW_DAYS} days (after that the stored answer is gone and the same key places new orders). ` +
+    'The call costs one point of the key’s per-minute limit per order (at most the whole limit), so `RateLimit-Remaining` drops by the ' +
+    'number of orders; a bulk larger than what is left of the minute is `429 RATE_LIMITED` (decision 053).',
   tags: ['orders'],
   surface: 'v1',
   access: 'api-key',

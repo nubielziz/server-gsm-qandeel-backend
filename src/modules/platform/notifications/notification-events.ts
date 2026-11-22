@@ -2,6 +2,7 @@
 // notification can be about. Built-in events are data here; later features add their own with NotificationEventRegistry.register.
 import { Injectable } from '@nestjs/common';
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
+import { WEBHOOK_ENDPOINT_DISABLED_EVENT } from '../webhooks/webhook-delivery.rules';
 import { DEFAULT_TEMPLATES, type DefaultTemplate } from './default-templates';
 import type { TemplateKey } from './notification-template.repository';
 
@@ -68,6 +69,7 @@ export interface NotificationEventDefinition {
 /** Sample data of the merchant events: what a made-up merchant would see. */
 const MERCHANT_SAMPLE = {
   merchantName: 'Zain Mobile Hub',
+  url: 'https://hooks.example.com/gsm',
   link: 'https://portal.example.com/set-password?token=example',
   expiresAt: '2026-11-01 11:00 UTC',
   currency: 'USD',
@@ -294,6 +296,15 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     variables: ['merchantName', 'orderId', 'service', 'resultCode', 'resultComment'],
     transactional: false,
     defaultEmail: false,
+  }),
+  merchantEvent({
+    key: WEBHOOK_ENDPOINT_DISABLED_EVENT,
+    label: 'Webhook endpoint switched off',
+    description:
+      'One of the merchant’s webhook endpoints did not accept 20 deliveries in a row and was switched off (decision 053).',
+    channels: ['email'],
+    variables: ['merchantName', 'url', 'count'],
+    transactional: true,
   }),
   merchantEvent({
     key: TELEGRAM_LINKED_EVENT,

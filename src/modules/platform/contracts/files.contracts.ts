@@ -77,7 +77,8 @@ export const uploadV1File = defineRoute({
   summary: 'Upload a file',
   description:
     `${UPLOAD_DESCRIPTION} The id is what a File service order takes as its input file (\`fileId\` of \`POST /v1/orders\`). ` +
-    'Maintenance with the order scope refuses the upload like an order. Scope `orders:write`.',
+    'Maintenance with the order scope refuses the upload like an order. Scope `orders:write`. ' +
+    'A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053).',
   tags: ['files'],
   surface: 'v1',
   access: 'api-key',
@@ -134,7 +135,8 @@ export const uploadClientFile = defineRoute({
   summary: 'Upload a file',
   description:
     `${UPLOAD_DESCRIPTION} The same upload as \`POST /v1/files\`, for the merchant portal: the id is what an order, a KYC submission ` +
-    'or a bank transfer receipt refers to. A merchant waiting for approval may upload (its KYC documents, B153).',
+    'or a bank transfer receipt refers to. A merchant waiting for approval may upload (its KYC documents, B153). ' +
+    'A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053). A multipart body is read only when the request carries a live session (`401` before the body is read otherwise).',
   tags: ['files'],
   surface: 'client',
   access: 'merchant-session',
@@ -142,7 +144,15 @@ export const uploadClientFile = defineRoute({
   bodyType: 'multipart',
   body: UploadBody,
   success: { status: 201, schema: StoredFileSchema },
-  errors: ['UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'CSRF_FAILED', 'VALIDATION_FAILED', 'PAYLOAD_TOO_LARGE', 'UNAVAILABLE'],
+  errors: [
+    'UNAUTHORIZED',
+    'ACCOUNT_SUSPENDED',
+    'CSRF_FAILED',
+    'RATE_LIMITED',
+    'VALIDATION_FAILED',
+    'PAYLOAD_TOO_LARGE',
+    'UNAVAILABLE',
+  ],
   examples: { response: STORED_FILE_EXAMPLE },
 });
 
@@ -160,8 +170,10 @@ export const uploadStoreFile = defineRoute({
   description:
     'Uploads one file from the signed-in customer’s account (`multipart/form-data` with one part named `file`): a PDF, JPEG or PNG ' +
     'of 1 byte to 5 MiB, such as the receipt of a store balance top-up (`POST /store/v1/me/wallet/top-ups/:id/receipt` takes its id). ' +
-    'The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a declared body ' +
-    'over 5 MiB is refused before it is read (`413`). Counted against the `upload` limiter (20 a minute per address).',
+    'The file belongs to the customer. Another media type is `422` on `file` (`type`); an empty file `422` (`empty`); a body over ' +
+    '5 MiB is refused before it is parsed, whether or not it declares its length (`413`). Counted against the `upload` limiter (20 a minute ' +
+    'per address). A customer can upload 30 files (100 MiB) in 24 hours, ticket files included (`422` on `file`, `quota`). A multipart body ' +
+    'is read only when the request carries a live session (`401` before the body is read otherwise).',
   tags: ['account'],
   surface: 'store',
   access: 'customer-session',

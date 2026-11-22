@@ -29,6 +29,7 @@ import {
   type NewTicketMessage,
   type SupportTicket,
   type TicketMessage,
+  requesterProven,
   supportTickets,
   ticketMessages,
 } from '../db/schema';
@@ -296,6 +297,30 @@ export async function markSurveySent(db: DbExecutor, ticketId: number, now: Date
     .update(supportTickets)
     .set({ surveySentAt: now, updatedAt: now })
     .where(and(eq(supportTickets.id, ticketId), isNull(supportTickets.surveySentAt)))
+    .returning({ id: supportTickets.id });
+  return rows.length > 0;
+}
+
+/**
+ * Records that a ticket's requester address is proven, once.
+ *
+ * Why: decision 053. A ticket opened on the contact form with a typed address is unproven until the link that was mailed to that
+ * address is first used. The guard `requester_proven_at IS NULL` makes the first use the only one that writes. `updated_at` keeps its
+ * value (it is not activity staff have to look at); it is set to itself so the table's `$onUpdate` default does not stamp the wall
+ * clock (decision 031).
+ *
+ * Side effects: writes `support_tickets.requester_proven_at`.
+ *
+ * @param db the transaction
+ * @param ticketId the ticket
+ * @param now the injected clock's time
+ * @returns true when this call set the time; false when the ticket was proven already (or is gone)
+ */
+export async function markRequesterProven(db: DbExecutor, ticketId: number, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(supportTickets)
+    .set({ requesterProvenAt: now, updatedAt: sql`${supportTickets.updatedAt}` })
+    .where(and(eq(supportTickets.id, ticketId), isNull(supportTickets.requesterProvenAt)))
     .returning({ id: supportTickets.id });
   return rows.length > 0;
 }
@@ -584,7 +609,13 @@ export async function messageRowsAfter(
       ? undefined
       : scope.kind === 'ticket'
         ? and(eq(ticketMessages.ticketId, scope.ticketId), requesterVisible)
-        : and(eq(supportTickets.requesterType, scope.type), eq(supportTickets.requesterId, scope.id), requesterVisible);
+        : and(
+            eq(supportTickets.requesterType, scope.type),
+            eq(supportTickets.requesterId, scope.id),
+            // Decision 053: a ticket whose address is not proven yet is not replayed to the requester's account.
+            requesterProven(),
+            requesterVisible,
+          );
   const rows = await db
     .select({
       ...messageSelect,

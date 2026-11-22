@@ -387,6 +387,29 @@ export async function deleteDeliveryOf(db: DbExecutor, id: number): Promise<void
 }
 
 /**
+ * Deletes a batch of old deliveries that are not waiting for an attempt.
+ *
+ * Why: decision 053. Nothing deleted delivery rows, so the log grew without bound; deliveries are kept 90 days. A `pending` delivery is
+ * never deleted (an attempt is still due), whatever its age. Batches by id keep every statement short.
+ *
+ * Side effects: deletes `webhook_deliveries` rows.
+ *
+ * @param db the database
+ * @param before only deliveries created before this time
+ * @param limit the batch size
+ * @returns how many rows were deleted
+ */
+export async function deleteOldDeliveries(db: DbExecutor, before: Date, limit: number): Promise<number> {
+  const result = await db.execute(sql`
+    delete from webhook_deliveries
+    where id in (
+      select id from webhook_deliveries where created_at < ${before} and status <> 'pending' order by id limit ${limit}
+    )
+  `);
+  return result.rowCount ?? 0;
+}
+
+/**
  * Reads when an outbox event was written.
  *
  * Why: the envelope's `createdAt` is the moment the event happened, not the moment the worker got to it.

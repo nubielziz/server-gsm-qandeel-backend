@@ -350,6 +350,52 @@ describe('the automatic reminder', () => {
     expect(spec).toMatchObject({ queue: 'maintenance', jobName: CHECKOUT_RECOVERY_SWEEP_JOB, pattern: '*/5 * * * *' });
   });
 
+  it('does not mail a guest whose address was never proven, and mails it once the address is proven', async () => {
+    const { db } = await testDb();
+    const typed = await insertAbandoned(t, db, {
+      serviceId: serviceId(),
+      createdAt: ago(2 * 60 * MINUTE),
+      proven: false,
+    });
+    // The marketing answer was recorded at the checkout, but anyone can type an address: the sweep selects nothing.
+    expect(await tick()).toEqual({ due: 0, queued: 0, skipped: 0 });
+    expect(await recoveryJobs(db)).toEqual([]);
+    expect(
+      (await db.select().from(s.checkoutSessions).where(eq(s.checkoutSessions.id, typed.sessionId)))[0]
+        ?.recoveryEmailedAt,
+    ).toBeNull();
+    // The guest uses a sign-in link (the link flow sets email_verified_at): the next sweep sends one mail.
+    await db
+      .update(s.customers)
+      .set({ emailVerifiedAt: new Date(clock.nowMs()) })
+      .where(eq(s.customers.id, typed.customerId!));
+    expect(await tick()).toEqual({ due: 1, queued: 1, skipped: 0 });
+    expect((await recoveryJobs(db)).map((job) => job.aggregateId)).toEqual([typed.sessionId]);
+    // A paid session of another guest proves that guest's address too.
+    const payer = await insertAbandoned(t, db, {
+      serviceId: serviceId(),
+      createdAt: ago(2 * 60 * MINUTE),
+      proven: false,
+    });
+    expect(await tick()).toEqual({ due: 0, queued: 0, skipped: 0 });
+    await db.insert(s.checkoutSessions).values({
+      token: 'paid-checkout-token-0002',
+      customerId: payer.customerId!,
+      email: payer.email,
+      serviceId: serviceId(),
+      currency: 'USD',
+      fxRate: '1',
+      netAmount: '4.7900',
+      grossAmount: '4.7900',
+      utm: {},
+      status: 'paid',
+      expiresAt: new Date(clock.nowMs() + 30 * MINUTE),
+      createdAt: ago(3 * 60 * MINUTE),
+      updatedAt: ago(3 * 60 * MINUTE),
+    });
+    expect(await tick()).toEqual({ due: 1, queued: 1, skipped: 0 });
+  });
+
   it('emails the due checkouts of customers who agreed once, and leaves the rest', async () => {
     const { db } = await testDb();
     const due = await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(2 * 60 * MINUTE) });

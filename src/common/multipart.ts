@@ -2,6 +2,7 @@
 // service picture of feature 22, `POST /admin/service-listings/:id/image`, the payment method logo of feature 32, `POST /admin/payment-gateways/:id/logo`, and the ticket attachments of feature 28) get their text fields and uploaded files as one plain object before the guards run, so Dhru credentials in a multipart body are read like
 // those of a form body, and the maintenance stage sees the Dhru `action`.
 import type { FastifyInstance } from 'fastify';
+import { cappedBody } from './capped-body';
 import { AppError } from './errors';
 import { requestPath } from './pipeline/request-path';
 
@@ -12,6 +13,21 @@ import { requestPath } from './pipeline/request-path';
  * bound is also the memory one request may use.
  */
 export const MULTIPART_MAX_BYTES = 25 * 1024 * 1024 + 256 * 1024;
+
+/**
+ * Tells whether a `Content-Type` header names `multipart/form-data`, the way Fastify's parser choice reads it.
+ *
+ * Why: decision 053. Fastify drops leading whitespace (a leading U+00A0 reaches the server as a header byte) before it picks the body
+ * parser, so every check that must hold before the body is read (the `415` of the other routes, the per-route bounds, the large-body
+ * count of the per-IP limiter, the live-session precheck) has to read the media type the same way, or the parser runs where the check
+ * was skipped. This test is at least as inclusive as the parser's choice.
+ *
+ * @param contentType the `Content-Type` header, if any
+ * @returns true for `multipart/form-data`, with parameters, in any case and after leading whitespace
+ */
+export function isMultipartContentType(contentType: string | undefined): boolean {
+  return (contentType ?? '').trimStart().toLowerCase().startsWith('multipart/form-data');
+}
 
 /**
  * The route templates that accept `multipart/form-data`; every other route answers `415`.
@@ -36,7 +52,8 @@ export const MULTIPART_ROUTES: ReadonlySet<string> = new Set([
  * Routes whose declared body may not exceed a smaller bound than {@link MULTIPART_MAX_BYTES}: the store's receipt upload and the two
  * ticket attachment uploads of feature 28 (5 MiB file plus 64 KiB of form parts).
  *
- * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so a declared body over its bound is refused before it is read.
+ * Why: plan 21 § 7.1 route 9 and risk K15: the store surface is public, so a declared body over its bound is refused before it is read, and a
+ * body that declares no length (or more than it sends) is cut with `413` as soon as the bytes read pass the bound (decision 053).
  */
 export const MULTIPART_ROUTE_LIMITS: ReadonlyMap<string, number> = new Map([
   ['/store/v1/files', 5 * 1024 * 1024 + 64 * 1024],
@@ -131,7 +148,8 @@ export async function parseMultipart(body: Buffer, contentType: string): Promise
  *
  * Why: B157 and decision 026: file uploads and multipart Dhru calls. The parser runs before the guards, like the JSON and form
  * parsers, so the body limit is the bound of what an unauthenticated caller can make us buffer; a multipart body on any other route is
- * refused before it is read. Call it once, before the routes are registered (`configureApp`).
+ * refused before it is read. The per-route bounds of {@link MULTIPART_ROUTE_LIMITS} hold for the bytes read (decision 053): a declared
+ * length over the bound is refused before reading, and a body without a length, or longer than it says, fails with `413` as it streams in. Call it once, before the routes are registered (`configureApp`).
  *
  * Side effects: adds a content-type parser and a `preParsing` hook to the Fastify instance.
  *
@@ -139,19 +157,25 @@ export async function parseMultipart(body: Buffer, contentType: string): Promise
  */
 export function registerMultipartBodies(fastify: FastifyInstance): void {
   fastify.addHook('preParsing', (request, _reply, payload, done) => {
-    const multipart = (request.headers['content-type'] ?? '').toLowerCase().startsWith('multipart/form-data');
+    const multipart = isMultipartContentType(request.headers['content-type']);
     const route = request.routeOptions?.url ?? requestPath(request);
     if (multipart && !MULTIPART_ROUTES.has(route)) {
       done(new AppError('UNSUPPORTED_MEDIA_TYPE', { detail: 'This endpoint does not accept multipart/form-data.' }));
       return;
     }
     const limit = MULTIPART_ROUTE_LIMITS.get(route);
-    const declared = Number(request.headers['content-length'] ?? 0);
-    if (limit !== undefined && (!Number.isFinite(declared) || declared > limit)) {
+    if (limit === undefined) {
+      done(null, payload);
+      return;
+    }
+    const header = request.headers['content-length'];
+    const declared = header === undefined ? 0 : Number(header);
+    if (!Number.isFinite(declared) || declared > limit) {
       done(new AppError('PAYLOAD_TOO_LARGE', { detail: 'The body is larger than this endpoint takes.' }));
       return;
     }
-    done(null, payload);
+    // The bound holds for the bytes read, whether or not a length was declared.
+    done(null, cappedBody(payload, limit));
   });
   fastify.addContentTypeParser(
     'multipart/form-data',

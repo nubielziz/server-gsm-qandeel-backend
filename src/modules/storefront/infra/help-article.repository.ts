@@ -79,6 +79,25 @@ export async function findPublishedArticle(db: DbExecutor, id: number): Promise<
 }
 
 /**
+ * Tells whether an article exists and is published.
+ *
+ * Why: decision 053. The help vote reads the article before it takes its limiter point, so an unknown or unpublished id leaves no counter
+ * key behind.
+ *
+ * @param db the database or a transaction
+ * @param id the article id
+ * @returns true for a published article
+ */
+export async function isPublishedHelpArticle(db: DbExecutor, id: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: helpArticles.id })
+    .from(helpArticles)
+    .where(and(eq(helpArticles.id, id), eq(helpArticles.isPublished, true)))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
  * Inserts an article at the end of the order.
  *
  * Why: a new article goes last (`sort` = the largest plus one); the subquery keeps the choice in the same statement as the

@@ -107,6 +107,24 @@ describe('readCustomFields', () => {
   });
 });
 
+describe('readCustomFields: the character U+0000 and unpaired surrogates (decision 053)', () => {
+  it('readCustomFields refuses U+0000 in a key or a value', () => {
+    expect(refusal(() => readCustomFields({ pin: '12\u00003' })).detail).toBe('Invalid custom fields');
+    expect(refusal(() => readCustomFields({ ['ke\u0000y']: 'value' })).detail).toBe('Invalid custom fields');
+    expect(refusal(() => readCustomFields(base64({ pin: '12\u00003' }))).detail).toBe('Invalid custom fields');
+    expect(readCustomFields(base64({ pin: '123' }))).toEqual({ pin: '123' });
+  });
+
+  it('readCustomFields refuses a lone high or low surrogate in a key or a value, and accepts an emoji', () => {
+    for (const lone of ['\ud800', '\udc00']) {
+      expect(refusal(() => readCustomFields({ pin: `12${lone}3` })).detail, lone).toBe('Invalid custom fields');
+      expect(refusal(() => readCustomFields({ [`ke${lone}y`]: 'value' })).detail, lone).toBe('Invalid custom fields');
+      expect(refusal(() => readCustomFields(base64({ pin: `12${lone}3` }))).detail, lone).toBe('Invalid custom fields');
+    }
+    expect(readCustomFields(base64({ pin: '12\u{1F600}' }))).toEqual({ pin: '12\u{1F600}' });
+  });
+});
+
 describe('dhruStatusOf', () => {
   it('maps the order statuses to the numbers of decision 025 and 026', () => {
     expect(dhruStatusOf('pending')).toBe(0);

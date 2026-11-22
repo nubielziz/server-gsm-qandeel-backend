@@ -178,11 +178,18 @@ describe('GET /store/v1/search/suggest', () => {
     expect(imei).toMatchObject({ intent: 'imei', services: [], completions: [] });
   });
 
-  it('refuses an unknown key and a text over 100 characters, and takes a NUL byte as nothing', async () => {
+  it('refuses an unknown key, a text over 100 characters and a NUL character, and takes a tab as nothing', async () => {
     expect((await publicGet(t, '/store/v1/search/suggest?q=a&nope=1')).statusCode).toBe(422);
     expect((await publicGet(t, `/store/v1/search/suggest?q=${'a'.repeat(101)}`)).statusCode).toBe(422);
     expect((await publicGet(t, `/store/v1/search/suggest?q=${'a'.repeat(100)}`)).statusCode).toBe(200);
-    expect((await publicGet(t, '/store/v1/search/suggest?q=sam%00sung')).statusCode).toBe(200);
+    // Decision 053: U+0000 is refused for every request text, the search box included; a tab is cleaned.
+    const nul = await publicGet(t, '/store/v1/search/suggest?q=sam%00sung');
+    expect(nul.statusCode).toBe(422);
+    expect(json<{ errors: Array<{ field: string; code: string }> }>(nul).errors[0]).toMatchObject({
+      field: 'q',
+      code: 'invalid_format',
+    });
+    expect((await publicGet(t, '/store/v1/search/suggest?q=sam%09sung')).statusCode).toBe(200);
     expect((await publicGet(t, '/store/v1/search/suggest?q=samsung&currency=ZZZ')).statusCode).toBe(422);
   });
 
@@ -318,7 +325,7 @@ describe('GET /store/v1/search', () => {
     expect(inRange.total).toBe(2);
   });
 
-  it('refuses an unknown key, a missing or oversized text, a bad page and a bad sort; a NUL byte is a 200', async () => {
+  it('refuses an unknown key, a missing or oversized text, a bad page, a bad sort and a NUL character; a tab is a 200', async () => {
     for (const url of [
       '/store/v1/search?q=a&nope=1',
       '/store/v1/search',
@@ -330,7 +337,13 @@ describe('GET /store/v1/search', () => {
     ]) {
       expect((await publicGet(t, url)).statusCode, url).toBe(422);
     }
-    expect((await publicGet(t, '/store/v1/search?q=sam%00sung')).statusCode).toBe(200);
+    const nul = await publicGet(t, '/store/v1/search?q=sam%00sung');
+    expect(nul.statusCode).toBe(422);
+    expect(json<{ errors: Array<{ field: string; code: string }> }>(nul).errors[0]).toMatchObject({
+      field: 'q',
+      code: 'invalid_format',
+    });
+    expect((await publicGet(t, '/store/v1/search?q=sam%09sung')).statusCode).toBe(200);
   });
 
   it('answers an IMEI with the intent and no hits', async () => {
@@ -367,9 +380,15 @@ describe('GET /store/v1/services?q=', () => {
     expect(plain.headers['x-total-count']).toBe('4');
   });
 
-  it('accepts relevance as a sort and a NUL byte in q', async () => {
+  it('accepts relevance as a sort and a tab in q, and refuses a NUL character in q', async () => {
     expect((await publicGet(t, '/store/v1/services?q=samsung&_sort=relevance')).statusCode).toBe(200);
-    expect((await publicGet(t, '/store/v1/services?q=sam%00sung')).statusCode).toBe(200);
+    expect((await publicGet(t, '/store/v1/services?q=sam%09sung')).statusCode).toBe(200);
+    const nul = await publicGet(t, '/store/v1/services?q=sam%00sung');
+    expect(nul.statusCode).toBe(422);
+    expect(json<{ errors: Array<{ field: string; code: string }> }>(nul).errors[0]).toMatchObject({
+      field: 'q',
+      code: 'invalid_format',
+    });
   });
 });
 

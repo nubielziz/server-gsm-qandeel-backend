@@ -126,6 +126,7 @@ export async function updateEndpoint(
     readonly events?: readonly string[];
     readonly isActive?: boolean;
     readonly failureCount?: number;
+    readonly consecutiveFailedDeliveries?: number;
   },
 ): Promise<WebhookEndpoint> {
   const [row] = await db
@@ -135,6 +136,9 @@ export async function updateEndpoint(
       ...(changes.events === undefined ? {} : { events: [...changes.events] }),
       ...(changes.isActive === undefined ? {} : { isActive: changes.isActive }),
       ...(changes.failureCount === undefined ? {} : { failureCount: changes.failureCount }),
+      ...(changes.consecutiveFailedDeliveries === undefined
+        ? {}
+        : { consecutiveFailedDeliveries: changes.consecutiveFailedDeliveries }),
       updatedAt: sql`now()`,
     })
     .where(eq(webhookEndpoints.id, id))
@@ -190,7 +194,10 @@ export async function bumpFailureCount(db: DbExecutor, id: number): Promise<void
 }
 
 /**
- * Resets the failure counter after a delivery worked.
+ * Resets both failure counters after a delivery worked.
+ *
+ * Why: `failure_count` counts failed attempts (the portal shows it); `consecutive_failed_deliveries` counts deliveries in a row that
+ * ended failed and switches the endpoint off at 20 (decision 053). A delivered one starts both again.
  *
  * @param db the transaction
  * @param id the endpoint id
@@ -198,6 +205,58 @@ export async function bumpFailureCount(db: DbExecutor, id: number): Promise<void
 export async function resetFailureCount(db: DbExecutor, id: number): Promise<void> {
   await db
     .update(webhookEndpoints)
-    .set({ failureCount: 0, updatedAt: sql`now()` })
-    .where(and(eq(webhookEndpoints.id, id), sql`${webhookEndpoints.failureCount} > 0`));
+    .set({ failureCount: 0, consecutiveFailedDeliveries: 0, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(webhookEndpoints.id, id),
+        sql`(${webhookEndpoints.failureCount} > 0 or ${webhookEndpoints.consecutiveFailedDeliveries} > 0)`,
+      ),
+    );
+}
+
+/**
+ * Counts one more delivery in a row that ended failed, only while the endpoint is on.
+ *
+ * Why: decision 053. An endpoint the merchant switched off counts nothing, so turning it on starts a new count.
+ *
+ * Side effects: writes `webhook_endpoints.consecutive_failed_deliveries` and `updated_at`.
+ *
+ * @param db the transaction
+ * @param id the endpoint id
+ * @returns the count after this delivery and the merchant, or `undefined` when the endpoint is off or gone
+ */
+export async function countFailedDelivery(
+  db: DbExecutor,
+  id: number,
+): Promise<{ consecutive: number; clientId: number } | undefined> {
+  const [row] = await db
+    .update(webhookEndpoints)
+    .set({
+      consecutiveFailedDeliveries: sql`${webhookEndpoints.consecutiveFailedDeliveries} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.isActive, true)))
+    .returning({ consecutive: webhookEndpoints.consecutiveFailedDeliveries, clientId: webhookEndpoints.clientId });
+  return row;
+}
+
+/**
+ * Switches an endpoint off after repeated failed deliveries, once.
+ *
+ * Why: decision 053. The guard `is_active` makes the first of two racing deliveries the only one that switches it off, so the merchant is
+ * told once.
+ *
+ * Side effects: writes `webhook_endpoints.is_active` and `updated_at`.
+ *
+ * @param db the transaction
+ * @param id the endpoint id
+ * @returns the merchant, or `undefined` when the endpoint was already off or is gone
+ */
+export async function switchOffAfterFailures(db: DbExecutor, id: number): Promise<{ clientId: number } | undefined> {
+  const [row] = await db
+    .update(webhookEndpoints)
+    .set({ isActive: false, updatedAt: sql`now()` })
+    .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.isActive, true)))
+    .returning({ clientId: webhookEndpoints.clientId });
+  return row;
 }

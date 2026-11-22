@@ -1,6 +1,13 @@
 // HTTP controller of the card disputes for staff and the dispute webhook (map domain E, stage 16).
 import { Body, Controller, Param, Query } from '@nestjs/common';
-import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
+import {
+  type BodyOf,
+  type ParamsOf,
+  type QueryOf,
+  type ResultOf,
+  Route,
+  withoutForbiddenText,
+} from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, CurrentStaff, type Principal, type StaffPrincipal, customerContactOf } from '../../identity';
 import { DisputeService } from '../application/dispute.service';
@@ -97,6 +104,10 @@ export class DisputesController {
   /**
    * Records a verified dispute event.
    *
+   * Decision 053: the body of a webhook is not refused for the character U+0000 or an unpaired surrogate (a gateway would repeat the
+   * event); the first is removed and the second replaced from every text and key here, before anything is stored, so the signed body is
+   * accepted as usual.
+   *
    * @param principal the verified webhook delivery
    * @param body the gateway's event
    * @returns `{ received: true }`
@@ -108,6 +119,6 @@ export class DisputesController {
     @Body() body: BodyOf<typeof disputeWebhook>,
   ): Promise<ResultOf<typeof disputeWebhook>> {
     if (principal?.kind !== 'webhook') throw new AppError('WEBHOOK_SIGNATURE_INVALID');
-    return this.webhook.handle(principal.gateway, body);
+    return this.webhook.handle(principal.gateway, withoutForbiddenText(body));
   }
 }

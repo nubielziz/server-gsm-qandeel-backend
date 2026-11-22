@@ -27,6 +27,7 @@ import {
 } from '../application/ticket-views';
 import type { SupportTicket, TicketMessage } from '../db/schema';
 import { hasUnread } from '../domain/seen';
+import { isRequesterProven } from '../domain/requester-proof';
 import { toWireStatus } from '../domain/ticket-status';
 import { findStaffName } from '../infra/support-foreign-reads';
 import {
@@ -95,7 +96,8 @@ const LOG_INTERVAL_MS = 30_000;
  * message once and renders two views: staff (`support:staff`, every message, the inbox row, colleagues' typing with their name) and the
  * requester (`ticket:<id>` of the ticket link's streams and the requester's account key: public messages only, the ticket page's fields,
  * "Support is typing…" only for a reply). Nothing of another ticket can be rendered: every read names the ticket, and a replay is scoped
- * by the viewer (all tickets for staff, the requester's own tickets, the one ticket of a link). Each frame is parsed by its schema first
+ * by the viewer (all tickets for staff, the requester's own tickets, the one ticket of a link). A ticket whose requester address is not proven
+ * yet (decision 053) reaches only the streams of its link, never the requester's account stream. Each frame is parsed by its schema first
  * (the requester views are strict), so a frame that does not fit is logged and skipped, never sent.
  *
  * Side effects: reads `support_tickets`, `ticket_messages`, the files of a message and the requester's and author's names; registers
@@ -208,12 +210,16 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
     }
   }
 
-  /** The keys that listen: staff, and the requester's streams (the ticket link's and the account's). */
+  /**
+   * The keys that listen: staff, and the requester's streams (the ticket link's and, once the address is proven, the account's).
+   *
+   * Why: decision 053. A ticket opened with a typed address reaches only the streams opened with its link until that link is used.
+   */
   private audience(ticket: SupportTicket, has: (key: string) => boolean): { staff: boolean; requester: string[] } {
-    return {
-      staff: has(SUPPORT_STAFF_KEY),
-      requester: [ticketStreamKey(ticket.id), accountKey(ticket)].filter((key) => has(key)),
-    };
+    const keys = isRequesterProven(ticket)
+      ? [ticketStreamKey(ticket.id), accountKey(ticket)]
+      : [ticketStreamKey(ticket.id)];
+    return { staff: has(SUPPORT_STAFF_KEY), requester: keys.filter((key) => has(key)) };
   }
 
   /** `message`: the message (staff always; the requester only a public one), then the ticket. */

@@ -51,7 +51,8 @@ export const exportCustomerData = defineRoute({
   description:
     'A JSON file (`Content-Disposition: attachment; filename="customer-<id>.json"`, never cached) with everything the shop holds ' +
     'about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout ' +
-    'sessions, the support tickets with their public messages, the IMEI checks, the data requests and the store balance with its ' +
+    "sessions, the support tickets with their public messages (only tickets whose requester's address is confirmed: a ticket opened " +
+    'on the contact form with a typed address is left out until its link is used), the IMEI checks, the data requests and the store balance with its ' +
     'statement (`wallet`, staff reasons hidden). It works for an anonymized ' +
     'customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is ' +
     'audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the ' +

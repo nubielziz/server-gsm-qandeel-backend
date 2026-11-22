@@ -72,10 +72,29 @@ describe('ApiKeyAccessHandler', () => {
   it('asks for the Bearer key with the contract permission as the scope', async () => {
     const { authenticator, calls } = recorder();
     const request = { headers: { authorization: 'Bearer gsm_key' } } as unknown as FastifyRequest;
-    const contract = { permission: 'orders:write', surface: 'v1' } as AnyRouteContract;
+    const contract = {
+      key: 'POST /v1/orders',
+      permission: 'orders:write',
+      surface: 'v1',
+    } as unknown as AnyRouteContract;
     const state = await new ApiKeyAccessHandler(authenticator).authenticate(request, contract);
     expect(state.principal).toMatchObject({ kind: 'api-key', keyId: 2 });
-    expect(calls).toEqual([{ key: 'gsm_key', scope: 'orders:write', surface: 'v1' }]);
+    expect(calls).toEqual([{ key: 'gsm_key', scope: 'orders:write', points: 1, surface: 'v1' }]);
+  });
+
+  it('asks for one point per order of a bulk placement (decision 053)', async () => {
+    const { authenticator, calls } = recorder();
+    const request = {
+      headers: { authorization: 'Bearer gsm_key' },
+      body: { orders: Array.from({ length: 8 }, () => ({})) },
+    } as unknown as FastifyRequest;
+    const contract = {
+      key: 'POST /v1/orders/bulk',
+      permission: 'orders:write',
+      surface: 'v1',
+    } as unknown as AnyRouteContract;
+    await new ApiKeyAccessHandler(authenticator).authenticate(request, contract);
+    expect(calls[0]?.points).toBe(8);
   });
 
   it('asks for a scope no key has when the contract names none (a route without one cannot exist)', async () => {
@@ -85,7 +104,7 @@ describe('ApiKeyAccessHandler', () => {
       permission: null,
       surface: 'v1',
     } as AnyRouteContract);
-    expect(calls[0]).toEqual({ key: undefined, scope: '', surface: 'v1' });
+    expect(calls[0]).toEqual({ key: undefined, scope: '', points: 1, surface: 'v1' });
   });
 });
 
@@ -96,7 +115,22 @@ describe('DhruCredentialsAccessHandler', () => {
     await new DhruCredentialsAccessHandler(authenticator).authenticate(request, {
       surface: 'dhru',
     } as AnyRouteContract);
-    expect(calls).toEqual([{ key: 'KEY', username: 'acme', scope: 'dhru', surface: 'dhru' }]);
+    expect(calls).toEqual([{ key: 'KEY', username: 'acme', scope: 'dhru', points: 1, surface: 'dhru' }]);
+  });
+
+  it('asks for one point per item of a placement bulk, and one for a read bulk (decision 053)', async () => {
+    const { authenticator, calls } = recorder();
+    const parameters = Buffer.from(JSON.stringify({ a: {}, b: {}, c: {} })).toString('base64');
+    const handler = new DhruCredentialsAccessHandler(authenticator);
+    const contract = { key: 'POST /api/index.php', surface: 'dhru' } as unknown as AnyRouteContract;
+    const call = (action: string) =>
+      handler.authenticate(
+        { body: { username: 'acme', apiaccesskey: 'KEY', action, parameters } } as unknown as FastifyRequest,
+        contract,
+      );
+    await call('placeimeiorderbulk');
+    await call('getimeiorderbulk');
+    expect(calls.map((entry) => entry.points)).toEqual([3, 1]);
   });
 
   it('presents no key at all when either credential is missing', async () => {
@@ -105,7 +139,7 @@ describe('DhruCredentialsAccessHandler', () => {
     await new DhruCredentialsAccessHandler(authenticator).authenticate(request, {
       surface: 'dhru',
     } as AnyRouteContract);
-    expect(calls[0]).toEqual({ key: undefined, username: undefined, scope: 'dhru', surface: 'dhru' });
+    expect(calls[0]).toEqual({ key: undefined, username: undefined, scope: 'dhru', points: 1, surface: 'dhru' });
   });
 
   it("lets the authenticator's refusal through", async () => {

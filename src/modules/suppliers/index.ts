@@ -44,6 +44,8 @@ export {
 export type { LostRequestAction } from './domain/dispatch-sweep-rules';
 export { DISPATCH_SWEEP_JOB, DispatchSweepProcessor } from './jobs/dispatch-sweep.processor';
 export type { DispatchSweepData } from './jobs/dispatch-sweep.processor';
+export { SUPPLIER_LOG_RETENTION_JOB, SupplierLogRetentionProcessor } from './jobs/supplier-log-retention.processor';
+export { SupplierLogRetention } from './jobs/supplier-log-retention';
 export { SupplierPoll } from './application/supplier-poll';
 export { SupplierSync } from './application/supplier-sync';
 export { SupplierJobsModule, SUPPLIER_SCHEDULERS } from './jobs/supplier-jobs.module';

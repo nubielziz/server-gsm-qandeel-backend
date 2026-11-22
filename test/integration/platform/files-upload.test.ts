@@ -2,9 +2,11 @@
 // limits, the owner rule, the name and media type clean-up, and a File service order that uses the upload.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { StorageService } from '@src/infra/storage';
+import { SESSION_COOKIE_NAMES } from '@src/modules/identity';
 import { MaintenanceService } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -261,6 +263,89 @@ describe('a File service order with an uploaded file', () => {
     const none = await v1.post('/v1/orders', { serviceId });
     expect(none.statusCode).toBe(422);
     expect(body(none).errors[0]).toMatchObject({ field: 'fileId', code: 'required' });
+  });
+});
+
+describe('POST /client/files: the session is judged before the body is read (decision 053)', () => {
+  const MIB = 1024 * 1024;
+
+  /** Sends 30 MiB of a multipart body in chunks, without a length, and counts the chunks the server asked for. */
+  async function chunked(
+    headers: Record<string, string>,
+    { url = '/client/files', contentType = 'multipart/form-data; boundary=gsm' } = {},
+  ) {
+    let produced = 0;
+    function* chunks() {
+      for (let index = 0; index < 30; index += 1) {
+        produced += 1;
+        yield Buffer.alloc(MIB, 97);
+      }
+    }
+    const res = await t.app.inject({
+      method: 'POST',
+      url,
+      remoteAddress: freshClientIp(),
+      headers: { ...headers, 'content-type': contentType },
+      payload: Readable.from(chunks()),
+    });
+    return { res, produced: () => produced };
+  }
+
+  it('reads a multipart body of the portal only with a live session', async () => {
+    const none = await chunked({});
+    expect(none.res.statusCode).toBe(401);
+    expect(body(none.res)).toMatchObject({ code: 'UNAUTHORIZED' });
+    // The server never asked for the body: it answered at the request's headers.
+    expect(none.produced()).toBeLessThan(5);
+    // A random cookie of the right shape names no session: refused the same way, before the body.
+    const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.client}=${'a'.repeat(43)}` });
+    expect(random.res.statusCode).toBe(401);
+    expect(random.produced()).toBeLessThan(5);
+    // The cookie of another audience (staff) is not a merchant session.
+    const staff = await chunked({ cookie: `${SESSION_COOKIE_NAMES.staff}=${'a'.repeat(43)}` });
+    expect(staff.res.statusCode).toBe(401);
+  });
+
+  it('judges a content type that starts with whitespace the way the body parser reads it', async () => {
+    // Fastify drops leading whitespace (a leading U+00A0 reaches the server as a header byte) before it picks the multipart parser.
+    for (const contentType of ['\u00a0multipart/form-data; boundary=gsm', '\u000bMultipart/Form-Data; boundary=gsm']) {
+      const none = await chunked({}, { contentType });
+      expect(none.res.statusCode, JSON.stringify(contentType)).toBe(401);
+      expect(body(none.res)).toMatchObject({ code: 'UNAUTHORIZED' });
+      expect(none.produced(), JSON.stringify(contentType)).toBeLessThan(5);
+      const random = await chunked({ cookie: `${SESSION_COOKIE_NAMES.client}=${'a'.repeat(43)}` }, { contentType });
+      expect(random.res.statusCode).toBe(401);
+      expect(random.produced()).toBeLessThan(5);
+    }
+  });
+
+  it('refuses a multipart body of a route that takes none before reading it, with a content type that starts with whitespace', async () => {
+    for (const url of ['/admin/staff', '/client/orders']) {
+      for (const contentType of ['multipart/form-data; boundary=gsm', '\u00a0multipart/form-data; boundary=gsm']) {
+        const refused = await chunked({}, { url, contentType });
+        expect(refused.res.statusCode, `${url} ${JSON.stringify(contentType)}`).toBe(415);
+        expect(refused.produced(), `${url} ${JSON.stringify(contentType)}`).toBeLessThan(5);
+      }
+    }
+  });
+
+  it('a live session still uploads', async () => {
+    const portal = await portalFor(t, world.merchant.id);
+    const form = new FormData();
+    form.set('file', new File([bytes('%PDF-1.4')], 'passport.pdf', { type: 'application/pdf' }));
+    const res = await multipartRequest(t, '/client/files', form, portal.session.mutationHeaders);
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('judges a live session of a merchant that is not approved yet like any other: the guard decides the rest', async () => {
+    const { db } = await testDb();
+    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.merchant.id));
+    const portal = await portalFor(t, world.merchant.id);
+    const form = new FormData();
+    form.set('file', new File([bytes('%PDF-1.4')], 'kyc.pdf', { type: 'application/pdf' }));
+    const res = await multipartRequest(t, '/client/files', form, portal.session.mutationHeaders);
+    // A merchant waiting for approval may upload (B153): the stage does not turn it away.
+    expect(res.statusCode).toBe(201);
   });
 });
 

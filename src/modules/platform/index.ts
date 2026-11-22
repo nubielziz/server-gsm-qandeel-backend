@@ -151,6 +151,25 @@ export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
 export { PROOF_MIME_TYPES, StoredFiles } from './files/stored-files';
 export { auditStaffFileOpening } from './files/file-opening-audit';
+export {
+  CUSTOMER_DAILY_QUOTA,
+  MERCHANT_DAILY_QUOTA,
+  PENDING_MERCHANT_QUOTA,
+  assertUploadQuota,
+  quotaExceeded,
+  ticketDailyQuota,
+} from './files/upload-quota';
+export type { UploadQuotaRule } from './files/upload-quota';
+export { lockUploadOwner } from './infra/file.repository';
+export { UploadJanitor } from './files/upload-janitor';
+export { UPLOAD_JANITOR_JOB, UploadJanitorProcessor } from './files/upload-janitor.processor';
+export { PlatformRetentionModule } from './jobs/platform-retention.module';
+export { WebhookDeliveryRetention } from './webhooks/webhook-delivery-retention';
+export {
+  WEBHOOK_DELIVERY_RETENTION_JOB,
+  WebhookDeliveryRetentionProcessor,
+} from './webhooks/webhook-delivery-retention.processor';
+export { WEBHOOK_ENDPOINT_DISABLED_EVENT } from './webhooks/webhook-delivery.rules';
 export type { FileMeta, StoreFileInput, StoredFileRecord } from './files/stored-files';
 export { PUBLIC_IMAGE_NAME, PUBLIC_IMAGE_PREFIX, PUBLIC_MEDIA_PATH, PublicImages } from './files/public-images';
 export type { PublicImageBytes, StorePublicImageInput, StoredPublicImage } from './files/public-images';

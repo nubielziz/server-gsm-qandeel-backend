@@ -3,6 +3,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { OutboxRouteRegistry } from '../outbox/outbox-routes';
 import { SERVICE_PRICE_CHANGED_EVENT, WALLET_LOW_BALANCE_EVENT } from '../webhooks/merchant-event-routes';
+import { WEBHOOK_ENDPOINT_DISABLED_EVENT } from '../webhooks/webhook-delivery.rules';
 import { INVOICE_PAID_EVENT, NOTIFICATION_PLAN_JOB, ORDER_STATUS_CHANGED_EVENT } from './event-notifier';
 import { CAMPAIGN_FANOUT_EVENT } from './campaigns/campaign-rules';
 import { NOTIFICATION_SEND_EVENT } from './notification.service';
@@ -14,9 +15,10 @@ import { NOTIFICATION_SEND_EVENT } from './notification.service';
  * `notifications` as well as to `merchant-webhooks` (their producers do not change); one job per route, the job name
  * `notification.plan`. `notification.send` is this feature's own event: the row and the event are written together, and the relay
  * turns the event into the sending job. `deposit.approved` has no route: every credited top-up already writes `invoice.paid`, so a
- * second event would tell the merchant twice (B-entry of 12a).
+ * second event would tell the merchant twice (B-entry of 12a). Decision 053: `webhook.endpoint_disabled` (an endpoint switched off after 20
+ * failed deliveries) goes to `notifications` only: it is not a webhook event, so it has no `merchant-webhooks` route.
  *
- * Side effects: registers six routes with the `notifications` queue at boot (the API and the worker both load this class).
+ * Side effects: registers seven routes with the `notifications` queue at boot (the API and the worker both load this class).
  */
 @Injectable()
 export class NotificationRoutes implements OnModuleInit {
@@ -29,6 +31,7 @@ export class NotificationRoutes implements OnModuleInit {
       WALLET_LOW_BALANCE_EVENT,
       SERVICE_PRICE_CHANGED_EVENT,
       INVOICE_PAID_EVENT,
+      WEBHOOK_ENDPOINT_DISABLED_EVENT,
     ]) {
       this.routes.register({ type, queue: 'notifications', jobName: NOTIFICATION_PLAN_JOB });
     }

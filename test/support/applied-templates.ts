@@ -24,7 +24,8 @@ export interface AppliedBodyUpdate {
   readonly event: string;
   readonly channel: string;
   readonly audience: string;
-  readonly locale: string;
+  /** The language the update names (migration 0032 and the rows of other languages before decision 039); `null` for an update written after it. */
+  readonly locale: string | null;
   /** The body the row must still have (the text an earlier migration shipped). */
   readonly from: string;
   /** The body it gets. */
@@ -96,7 +97,8 @@ export function insertedTemplates(file: string): AppliedTemplate[] {
  * Lists the guarded body changes the `UPDATE "notification_templates"` statements of an applied migration hold.
  *
  * Why: migration 0032 appends the conversation link to the merchant's reply only where the body is still the shipped one; its
- * statements read `SET "body" = … WHERE "event" = … AND "channel" = … AND "audience" = … AND "locale" = … AND "body" = …;`.
+ * statements read `SET "body" = … WHERE "event" = … AND "channel" = … AND "audience" = … AND "locale" = … AND "body" = …;`. A statement
+ * written after decision 039 (the feature-43 migration) has the same shape without the `"locale"` condition, and reads as `locale: null`.
  *
  * @param file the file name in `drizzle/`
  * @returns the changes in file order
@@ -105,12 +107,14 @@ export function insertedTemplates(file: string): AppliedTemplate[] {
 export function bodyUpdates(file: string): AppliedBodyUpdate[] {
   const update = new RegExp(
     String.raw`SET "body" = ${LITERAL}\s+WHERE "event" = ${LITERAL} AND "channel" = ${LITERAL} AND "audience" = ${LITERAL} ` +
-      String.raw`AND "locale" = ${LITERAL} AND "body" = ${LITERAL};`,
+      String.raw`(?:AND "locale" = ${LITERAL} )?AND "body" = ${LITERAL};`,
   );
   return templateStatements(file, 'UPDATE').map((statement) => {
     const match = update.exec(statement);
     if (!match) throw new Error(`${file}: an update of notification_templates of another shape.`);
-    const [to, event, channel, audience, locale, from] = match.slice(1, 7).map((value) => unquote(value));
-    return { event: event!, channel: channel!, audience: audience!, locale: locale!, from: from!, to: to! };
+    const [to, event, channel, audience, locale, from] = match
+      .slice(1, 7)
+      .map((value) => (value === undefined ? null : unquote(value)));
+    return { event: event!, channel: channel!, audience: audience!, locale: locale ?? null, from: from!, to: to! };
   });
 }

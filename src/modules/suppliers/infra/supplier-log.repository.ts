@@ -35,6 +35,27 @@ export async function insertLog(db: DbExecutor, row: NewSupplierApiLog): Promise
 }
 
 /**
+ * Deletes a batch of old call log rows.
+ *
+ * Why: decision 053. The log had no end; calls are kept 90 days. The poll reads only the newest `getimeiorder` log of each open order, which is
+ * minutes old, so no live read depends on an old row. Batches by id keep every statement short.
+ *
+ * Side effects: deletes `supplier_api_logs` rows.
+ *
+ * @param db the database
+ * @param before only rows created before this time
+ * @param limit the batch size
+ * @returns how many rows were deleted
+ */
+export async function deleteOldLogs(db: DbExecutor, before: Date, limit: number): Promise<number> {
+  const result = await db.execute(sql`
+    delete from supplier_api_logs
+    where id in (select id from supplier_api_logs where created_at < ${before} order by id limit ${limit})
+  `);
+  return result.rowCount ?? 0;
+}
+
+/**
  * Lists log rows without their bodies.
  *
  * @param db the database

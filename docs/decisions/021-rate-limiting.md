@@ -41,3 +41,9 @@ the account signed in from (the attempts such a network is still allowed while a
 `failClosed`: it has no in-memory insurance limiter and refuses (`Retry-After: 60`) while the cache Redis cannot be reached. The
 `account-mail` limiter also counts the mails a visitor can ask for, under kinds of their own (`sign_in_link`, `forgot_password`, and
 the subject `customer`); a request beyond that budget sends nothing and answers as usual.
+
+**Amended (decision 053, feature 43).** Two limiters: `webhook-intake` (incoming webhooks, 600 a minute per client address, counted by the
+per-IP stage before the route reads the gateway row) and `webhook-test` (a merchant's test deliveries, 10 an hour, key `client:<id>`). The
+failed session lookups of each audience and the unknown API keys use the `ip` limiter under their own keys, and `RateLimitService.peek` reads such
+a budget before the lookup without spending a point. A bulk placement costs one point of the key's limit per item (at most the whole limit),
+and `ticket-email` is also charged for the address of an order's customer when a ticket is opened with an order link.

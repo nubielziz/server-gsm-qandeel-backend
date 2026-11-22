@@ -16,9 +16,11 @@ import {
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, insertRole, insertStaff } from '../../support/auth';
+import { insertCategory, insertService } from '../../support/catalog';
 import { insertCustomer, setMarketingConsent } from '../../support/campaigns';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
+import { insertCurrency } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;
@@ -308,5 +310,60 @@ describe('the providers', () => {
     const member = await audiences.get('customer').member(db, 'service', w.customerSa);
     expect(member).toMatchObject({ inApp: true, email: true, telegram: false });
     expect(member).not.toHaveProperty('locale');
+  });
+});
+
+describe('a customer whose address was never proven (decision 053)', () => {
+  it('no campaign reaches a customer whose address was never proven', async () => {
+    const { db } = await testDb();
+    const baseline = {
+      service: await preview({ customers: {} }, ['email'], 'service'),
+      marketing: await preview({ customers: {} }, ['email'], 'marketing'),
+    };
+    // Three guests who all agreed to marketing: one typed an address that nobody confirmed, one used a sign-in link, one paid a checkout.
+    const never = await insertCustomer(db, { hasAccount: false, emailVerifiedAt: null });
+    const verified = await insertCustomer(db, { hasAccount: false });
+    const payer = await insertCustomer(db, { hasAccount: false, emailVerifiedAt: null });
+    for (const id of [never, verified, payer]) await setMarketingConsent(db, id, true);
+    await insertCurrency(db, { code: 'USD' });
+    const serviceId = await insertService(db, await insertCategory(db));
+    await db.insert(s.checkoutSessions).values({
+      token: 'paid-audience-token-0001',
+      customerId: payer,
+      email: 'payer@mail.example',
+      serviceId,
+      currency: 'USD',
+      fxRate: '1',
+      netAmount: '4.7900',
+      grossAmount: '4.7900',
+      utm: {},
+      status: 'paid',
+      expiresAt: new Date(clock.nowMs() + 30 * 60_000),
+    });
+
+    // The counts include the two proven guests only, for a service campaign and for a marketing one.
+    const service = await preview({ customers: {} }, ['email'], 'service');
+    expect(service.total).toBe(baseline.service.total + 2);
+    expect(service.byType.customer).toBe(baseline.service.byType.customer + 2);
+    const marketing = await preview({ customers: {} }, ['email'], 'marketing');
+    expect(marketing.total).toBe(baseline.marketing.total + 2);
+    // Listed by hand, the unproven one still does not count (an include never adds a person the audience refuses).
+    const listed = await preview({ include: [{ type: 'customer', id: never }] }, ['email'], 'service');
+    expect(listed.total).toBe(0);
+
+    // The page and the member check say the same.
+    const audiences = t.app.get(NotificationAudiences);
+    const dbx = t.app.get(DbService).db;
+    for (const purpose of ['service', 'marketing'] as const) {
+      expect(await audiences.get('customer').member(dbx, purpose, never), purpose).toBeUndefined();
+      expect(await audiences.get('customer').member(dbx, purpose, verified), purpose).toMatchObject({ email: true });
+      expect(await audiences.get('customer').member(dbx, purpose, payer), purpose).toMatchObject({ email: true });
+    }
+    // Once the typed address is proven the recorded answer counts.
+    await db
+      .update(s.customers)
+      .set({ emailVerifiedAt: new Date(clock.nowMs()) })
+      .where(eq(s.customers.id, never));
+    expect(await audiences.get('customer').member(dbx, 'marketing', never)).toMatchObject({ email: true });
   });
 });

@@ -23,8 +23,9 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 /**
  * What a visitor typed: control characters dropped, at most 100 characters once normalised.
  *
- * Why: plan section 5.2: a NUL byte or a tab in the query is not an error (the typed text is cleaned), but a text that is longer than the
- * cap after cleaning is refused (`422`), so a pasted page cannot become an engine query. The raw text (trailing space included) is kept:
+ * Why: plan section 5.2: a tab or another control character in the query is not an error (the typed text is cleaned); a NUL character or an unpaired
+ * surrogate is refused with `422` like in every request (decision 053). A text that is longer than the cap after cleaning is refused too (`422`), so a
+ * pasted page cannot become an engine query. The raw text (trailing space included) is kept:
  * the ghost needs it.
  */
 const TypedText = z

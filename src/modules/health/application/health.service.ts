@@ -2,7 +2,8 @@
 // Never throws and never reveals versions, hostnames or error texts: details go to the log only.
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { TIMERS, type Timers } from '../../../common/clock';
+import { CLOCK, type Clock, TIMERS, type Timers } from '../../../common/clock';
+import { ShortMemo } from '../../../common/short-memo';
 import { type HealthIndicator, type HealthStatus, HealthRegistry } from '../../../infra/health';
 
 /**
@@ -21,6 +22,14 @@ export interface HealthReport {
  * Why: the console polls `/health` and must always get an answer, even when a dependency hangs.
  */
 export const HEALTH_CHECK_TIMEOUT_MS = 2000;
+
+/**
+ * How long a health answer is reused, in milliseconds.
+ *
+ * Why: decision 053. `GET /health` is public; every call used to run every indicator (a Postgres query, two Redis pings, a storage call), so
+ * a caller could multiply the work on the dependencies. One check runs at a time and its answer serves every caller for 3 seconds.
+ */
+export const HEALTH_MEMO_MS = 3000;
 
 /**
  * Combines indicator results: any critical indicator down is `down`, otherwise any non-critical one down is `degraded`.
@@ -42,24 +51,44 @@ export function foldStatus(
  *
  * Why: the console polls `/health` once a minute per tab and treats anything but a 2xx JSON as "API unreachable", so
  * the check must stay cheap, bounded in time, and answer even when a dependency hangs (map GET /health, B11).
+ *
+ * Decision 053: the answer comes from a {@link ShortMemo} of {@link HEALTH_MEMO_MS} on the injected clock, one check at a time, so an
+ * unauthenticated probe cannot multiply the work on the dependencies; a caller can see a result up to 3 seconds old.
  */
 @Injectable()
 export class HealthService {
+  private readonly memo: ShortMemo<HealthReport>;
+
   constructor(
     private readonly registry: HealthRegistry,
     private readonly logger: PinoLogger,
     @Inject(TIMERS) private readonly timers: Timers,
+    @Inject(CLOCK) private readonly clock: Clock,
   ) {
     this.logger.setContext(HealthService.name);
+    this.memo = new ShortMemo<HealthReport>({ ttlMs: HEALTH_MEMO_MS, now: () => this.clock.nowMs() });
+  }
+
+  /**
+   * Answers the health of the process from a check at most 3 seconds old.
+   *
+   * Why: decision 053; see the class. `?strict=1` reads the same memo and only changes the status code.
+   *
+   * Side effects: runs {@link HealthService.checkNow} when the memo is older than {@link HEALTH_MEMO_MS}; concurrent callers share one run.
+   *
+   * @returns the overall status and `ok`/`down` per indicator; `{ status: 'ok', checks: {} }` with no indicators
+   * @see docs/contract/endpoints/health.md GET /health
+   */
+  check(): Promise<HealthReport> {
+    return this.memo.get(() => this.checkNow());
   }
 
   /**
    * Runs every indicator in parallel, each with a timeout.
    *
    * @returns the overall status and `ok`/`down` per indicator; `{ status: 'ok', checks: {} }` with no indicators
-   * @see docs/contract/endpoints/health.md GET /health
    */
-  async check(): Promise<HealthReport> {
+  private async checkNow(): Promise<HealthReport> {
     const results = await Promise.all(
       this.registry.list().map(async (indicator) => ({ indicator, up: await this.probe(indicator) })),
     );

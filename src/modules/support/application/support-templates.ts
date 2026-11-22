@@ -1,6 +1,7 @@
 // The default templates of the support events (feature 17): English email and Telegram texts. Migration `0016_support_tickets` inserted the
-// rows as they first shipped; migration `0032_support_reply_link` added the conversation link to the merchant's reply (feature 28). A spec
-// finds every row of this file in them. The console edits the templates afterwards (Settings > Customer emails).
+// rows as they first shipped; migration `0032_support_reply_link` added the conversation link to the merchant's reply (feature 28); the migration
+// `..._public_abuse_limits` replaced the receipt text where it was not edited (decision 053). A spec finds every row of this file in them. The
+// console edits the templates afterwards (Settings > Customer emails).
 import { type DefaultTemplate, templatesInsertSql } from '../../platform';
 
 /** The templates as migration 0016 shipped them (the merchant's reply had no link: the portal had no ticket page yet). */
@@ -78,13 +79,32 @@ export function withConversationLink<T extends TemplateText>(template: T): T {
 }
 
 /**
+ * The receipt of a new ticket: fixed wording, the ticket number and the link.
+ *
+ * Why: decision 053. The receipt goes to an address anyone can type on the contact form, so it repeats nothing a visitor typed (no name,
+ * no subject).
+ */
+export const RECEIPT_BODY =
+  'Hello,\n\nWe received your message and opened ticket {{ticketNumber}}. Our team will answer by email.\n\nYou can follow the ticket and add details here: {{link}}\n\nPlease keep this email: the link is private to you.';
+
+/** The customer's receipt row (event `support.ticket_received`, email) as migration 0016 shipped it. */
+const isReceipt = (template: TemplateText): boolean =>
+  template.event === 'support.ticket_received' && template.channel === 'email' && template.audience === 'customer';
+
+/** A template with the receipt text of decision 053 (only the customer's receipt row changes; its subject stays). */
+function withReceiptText<T extends TemplateText>(template: T): T {
+  return isReceipt(template) ? { ...template, body: RECEIPT_BODY } : template;
+}
+
+/**
  * The templates the support events start with today.
  *
  * Why: a missing template sends nothing (RULES settings 10), so the reply, the receipt and the survey come with the migrations. They
  * live here and not in the platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration. The merchant's reply carries
- * the conversation link since feature 28 (migration 0032).
+ * the conversation link since feature 28 (migration 0032); the receipt holds no typed text since decision 053.
  */
-export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = SHIPPED_IN_0016.map(withConversationLink);
+export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] =
+  SHIPPED_IN_0016.map(withConversationLink).map(withReceiptText);
 
 const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
 
@@ -119,4 +139,23 @@ export function supportReplyLinkSql(): string {
         `AND "body" = ${quote(t.body)};`,
     )
     .join('--> statement-breakpoint\n');
+}
+
+/**
+ * Writes the guarded update of the feature-43 migration: the customer's receipt gets the text of decision 053 only where its body still
+ * equals the text migration 0016 shipped.
+ *
+ * Why: decision 053. A template staff edited keeps their words (a `{{customerName}}` or `{{subject}}` left in it is shown as written and the
+ * editor refuses to save it again until it is removed). The migration holds exactly this statement; a spec keeps them equal.
+ *
+ * @returns one `UPDATE` statement
+ */
+export function supportReceiptTextSql(): string {
+  const shipped = SHIPPED_IN_0016.find(isReceipt);
+  if (!shipped) throw new Error('The receipt template is missing from the shipped list');
+  return (
+    `UPDATE "notification_templates" SET "body" = ${quote(RECEIPT_BODY)}\n` +
+    `WHERE "event" = ${quote(shipped.event)} AND "channel" = ${quote(shipped.channel)} AND "audience" = ${quote(shipped.audience)} ` +
+    `AND "body" = ${quote(shipped.body)};`
+  );
 }

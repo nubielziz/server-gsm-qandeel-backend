@@ -1,11 +1,17 @@
 // EventNotifier: turns an outbox event that a merchant may want to hear about into notifications (platform module, feature 12a): low
-// balance, an order result, a paid invoice, an approved deposit, and the daily digest of price changes.
+// balance, an order result, a paid invoice, an approved deposit, an endpoint switched off after failed deliveries, and the daily digest of
+// price changes.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
 import { QueuesService, UnrecoverableError, queueJobId } from '../../../infra/queues';
 import type { OutboxJobData } from '../outbox/outbox.types';
 import { WALLET_LOW_BALANCE_EVENT, SERVICE_PRICE_CHANGED_EVENT } from '../webhooks/merchant-event-routes';
+import {
+  WEBHOOK_ENDPOINT_DISABLED_EVENT,
+  WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES,
+} from '../webhooks/webhook-delivery.rules';
+import { findEndpoint } from '../webhooks/webhook-endpoint.repository';
 import { invoiceForEvent, serviceNameOf } from '../webhooks/webhook-foreign-reads';
 import { addDigestItem, digestCycleOf, digestKey, digestSendDelay, shortMoney, type DigestItem } from './digest-rules';
 import { NotificationInbox } from './inbox/notification-inbox';
@@ -90,6 +96,8 @@ export class EventNotifier {
         return this.depositApproved(job);
       case SERVICE_PRICE_CHANGED_EVENT:
         return this.priceChanged(job);
+      case WEBHOOK_ENDPOINT_DISABLED_EVENT:
+        return this.endpointDisabled(job);
       default:
         return { created: 0, skipped: 'unknown_event' };
     }
@@ -157,6 +165,19 @@ export class EventNotifier {
       merchantName,
       amount: shortMoney(amount),
       currency,
+    }));
+  }
+
+  /** `webhook.endpoint_disabled` (decision 053): the merchant is told once that an endpoint was switched off; the email is transactional. */
+  private async endpointDisabled(job: OutboxJobData): Promise<PlanResult> {
+    const clientId = this.merchantOf(job);
+    const endpointId = whole(job.payload['endpointId']) ?? job.aggregateId;
+    const endpoint = await findEndpoint(this.db.db, endpointId);
+    if (!endpoint || endpoint.clientId !== clientId) return { created: 0, skipped: 'source_gone' };
+    return this.notifyMerchant(job, WEBHOOK_ENDPOINT_DISABLED_EVENT, clientId, (merchantName) => ({
+      merchantName,
+      url: endpoint.url,
+      count: String(WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES),
     }));
   }
 

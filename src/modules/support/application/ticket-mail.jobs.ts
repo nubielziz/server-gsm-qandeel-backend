@@ -55,7 +55,8 @@ export type TicketMailJob = Pick<Job<OutboxJobData>, 'data'> & {
  * Why: decision 020 and feature 12a: the outbox row keeps only ids. The ticket link carries the ticket token, a credential that the
  * notification log must never show, so it is built here and handed to `NotificationService.sendNow` as a secret: the `notifications` row
  * (dedupe key `outbox-<event id>:<channel>`) holds the other variables and the log shows them without the link. The job re-reads the ticket,
- * the requester and the message, so a customer anonymized since the event gets nothing; a retry resends (a message is at least once), and a
+ * the requester and the message, so a customer anonymized since the event gets nothing. The receipt carries the ticket number and the link only
+ * (decision 053): it repeats nothing a visitor typed. A retry resends (a message is at least once), and a
  * repeat of a job whose message already went out is skipped by its notification row.
  *
  * Side effects: reads `support_tickets`, `ticket_messages`, `customers` and `clients`; the notification delivery writes a `notifications`
@@ -180,7 +181,8 @@ export class TicketMailJobs {
         event: kind === 'received' ? SUPPORT_TICKET_RECEIVED_EVENT : SUPPORT_CSAT_SURVEY_EVENT,
         recipient: { type: 'customer', id: ticket.requesterId },
         channel: 'email',
-        variables: { ...common, ...customerName },
+        // Decision 053: the receipt holds the ticket number and the link and nothing a visitor typed (no name, no subject).
+        variables: kind === 'received' ? { ticketNumber: ticket.number } : { ...common, ...customerName },
       };
     }
 

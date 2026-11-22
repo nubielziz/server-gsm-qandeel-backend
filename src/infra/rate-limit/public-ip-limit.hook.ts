@@ -15,7 +15,7 @@ import { RateLimitService } from './rate-limit.service';
  * Registers the per-IP rate limit stage with the pipeline.
  *
  * Why: the third check before authentication (decision 018): after the IP rules and maintenance, the public surfaces are
- * counted per client address with the `ip`, `token` and `upload` limiters of `limiters.ts` (the numbers live there, nowhere
+ * counted per client address with the `ip`, `token`, `upload` and (incoming webhooks, decision 053) `webhook-intake` limiters of `limiters.ts` (the numbers live there, nowhere
  * else). The key is the IPv4 address or the /64 network of an IPv6 address, so rotating addresses inside one subscriber's
  * network does not dodge the limit. If the cache Redis is down, the limiter counts in memory per process (decision 021).
  *

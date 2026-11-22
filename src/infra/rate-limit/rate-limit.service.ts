@@ -188,6 +188,60 @@ export class RateLimitService {
   }
 
   /**
+   * Reads the budget of a key without spending a point.
+   *
+   * Why: decision 053. A caller that must not do work for an address whose budget of failed attempts is used up (unknown session
+   * cookies, unknown API keys) asks first and charges a point only when the attempt fails.
+   *
+   * Side effects: none (a read of the counter). The library answers from its in-memory limiter when the cache Redis cannot be
+   * reached, like `consume`; a fail-closed limiter answers "used up" in that case.
+   *
+   * @param name the limiter
+   * @param key who is being limited
+   * @param options a per-key limit that replaces the limiter's points
+   * @returns the state: `allowed` is false when the points are used up (or the key is locked out), with `retryAfterSeconds` at least 1;
+   *   an unknown key has its whole limit left
+   * @throws {RangeError} for an empty or oversize key, or a limit that is not a positive integer
+   */
+  async peek(name: LimiterName, key: string, options: RateLimitOptions = {}): Promise<RateLimitResult> {
+    this.assertInput(key, 1, options);
+    const limit = options.limit ?? RATE_LIMITERS[name].points;
+    let state: RateLimiterRes | null;
+    try {
+      state = await this.limiterFor(name, limit).get(key);
+    } catch (error) {
+      if (!isFailClosed(name)) throw error;
+      return {
+        allowed: false,
+        remaining: 0,
+        limit,
+        retryAfterSeconds: FAIL_CLOSED_RETRY_SECONDS,
+        resetSeconds: FAIL_CLOSED_RETRY_SECONDS,
+      };
+    }
+    if (state === null) {
+      return {
+        allowed: true,
+        remaining: limit,
+        limit,
+        retryAfterSeconds: 0,
+        resetSeconds: RATE_LIMITERS[name].windowSeconds,
+      };
+    }
+    const seconds = Math.max(1, Math.ceil(state.msBeforeNext / 1000));
+    if (state.consumedPoints >= limit) {
+      return { allowed: false, remaining: 0, limit, retryAfterSeconds: seconds, resetSeconds: seconds };
+    }
+    return {
+      allowed: true,
+      remaining: limit - state.consumedPoints,
+      limit,
+      retryAfterSeconds: 0,
+      resetSeconds: seconds,
+    };
+  }
+
+  /**
    * Forgets the counter (and any lock-out) of a key.
    *
    * Why: a successful sign-in clears the failed attempts of that email + IP (decision 021).

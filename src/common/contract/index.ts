@@ -53,6 +53,13 @@ export {
   zCursorLimit,
   zCursorPage,
 } from './cursor';
+export {
+  FORBIDDEN_TEXT_CODE,
+  FORBIDDEN_TEXT_DHRU_MESSAGE,
+  FORBIDDEN_TEXT_MESSAGE,
+  forbiddenTextPathOf,
+  withoutForbiddenText,
+} from './forbidden-characters';
 export { toJsonSchema } from './json-schema';
 export type { JsonSchema } from './json-schema';
 export {

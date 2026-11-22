@@ -70,6 +70,15 @@ route's own pipes and interceptors. A route without a contract is refused (`500`
 | `url-secret` | a secret in the URL path, compared in constant time with the stored hash or decrypted value |
 | `checkout-token`, `tracking-token`, `ticket-token`, `link-token` | the token in the path (`:token`) or the body (`token`), looked up by the resolver the owning module registered |
 
+**Failed session lookups (decision 053).** In required mode (the guard, the queues board, the `upload-session` stage) a cookie that names no live session of the audience costs
+one point of the budget `session-failures:<subject>:<address key>` on the `ip` limiter (300 a minute per client address and audience, the budget of unknown API keys; `sessionFailureKey`);
+the budget is read first (`RateLimitService.peek`) and an address that used it up is answered `429 RATE_LIMITED` with `Retry-After` without a lookup (the queues board gate sends the header
+too). A request without the cookie and a live session cost nothing; `authenticateOptional` (public routes that accept an optional session) charges nothing.
+**`upload-session` stage** (`security/upload-session.hook.ts`, `UploadSessionModule`, API only, the fourth stage of `PIPELINE_STAGES`): for a `multipart/form-data` request on a route of
+`MULTIPART_ROUTES` whose contract signs in with a session cookie (`POST /client/files`, `POST /store/v1/files`, the three console uploads), `SessionAuthenticator.precheck(subject, request)` refuses
+with `401 UNAUTHORIZED` unless the cookie of the route's audience names a live session, before the body is read; suspension, stage, approval, CSRF and permission stay in the guard.
+API keys and ticket links are not judged here (the `upload` limiter and the 5 MiB bound of the ticket route bound them).
+
 **Session checks**, in this order: cookie present, the session is known and belongs to the subject (`401`); absolute expiry and idle
 expiry (`401`); the account is not suspended (`403 ACCOUNT_SUSPENDED`, and every session of the account is revoked); the stage is one
 the contract accepts (`sessionStages`, default `['active']`; `401`); `last_seen_at` is written at most once a minute. A pending
@@ -150,7 +159,9 @@ order, with the answer of each:
 
 Only accepted calls count against the key's limit. Unknown keys and wrong usernames are counted per client address (the `ip` limiter,
 300 a minute, under the key `api-key-failures:<ip>`; IPv6 by /64): REST v1 and Dhru have no per-IP stage in the pipeline and an unknown
-key has no limit of its own. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
+key has no limit of its own; that budget is peeked before the lookup (decision 053), so an address that used it up gets `429` without a lookup.
+A bulk placement costs more than one point: `ApiKeyCredentials.points` (default 1; `requestPoints` in `api-keys/request-points.ts`: the length of `orders` of `POST /v1/orders/bulk`,
+the item ids of a Dhru `placeimeiorderbulk`, clamped to 1 to 100; `getimeiorderbulk` stays one) is charged in the one `consume`, at most the key's own limit, so the `RateLimit-*` headers stay true. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
 below 1 is a data error: the limiter's default (60) applies. `last_used_at` / `last_used_ip` are written at most once a minute (best
 effort). The principal is `{ kind: 'api-key', clientId, keyId, scopes, ip }`; the request context actor is the merchant (`client`).
 
@@ -465,7 +476,9 @@ MISMATCHES B165.
 | `POST /webhooks/telegram/:secret` | url-secret | the path segment and `X-Telegram-Bot-Api-Secret-Token` carry two different values derived from `TELEGRAM_WEBHOOK_SECRET` (decision 054; `scripts/telegram-webhook.ts` registers both), compared in constant time, else `404`; always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
 
 The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
-0009); `clients.telegram_chat_id` is unique (one chat, one merchant).
+0009); `clients.telegram_chat_id` is unique (one chat, one merchant). The webhook is exempt from the refusal of U+0000 and unpaired surrogates by the validation guard (a `422` would make Telegram
+re-send the update and hold back the later ones, decision 053); it stores no text of the update (the token and the chat id must match fixed patterns, the update id a safe integer),
+so a character the pattern does not accept is just an update to ignore.
 
 ### Merchant management (feature 20; plan `docs/briefs/20-merchant-management.md`)
 

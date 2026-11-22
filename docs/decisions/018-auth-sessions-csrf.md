@@ -54,3 +54,9 @@ frontend change; credentials and sessions never exist in clear text at rest.
 **Amendment (decision 046, 2026-11-20).** The guards gain a privilege ceiling (nobody grants, assigns or acts on permissions they do
 not hold; only an Owner edits the role they hold), actions kept for Owners (payment method secrets, merchant API keys made by staff,
 IP changes that would shut out an Owner) and second permissions for stronger actions inside coarse routes.
+
+**Amended (decision 053, feature 43).** A fourth pipeline stage, `upload-session`, runs after the per-IP limit and before the body is read: a
+multipart body of a route that signs in with a session cookie (the portal and customer uploads, the three console uploads) is read only when
+the request carries a live session of the route's audience (`401` otherwise; the full checks stay in the guard). In required mode the
+session authenticator charges a cookie that names no live session to a budget of the client address and audience on the `ip` limiter
+(`session-failures:<subject>:<address key>`, 300 a minute), read before the lookup and answered `429` when used up.

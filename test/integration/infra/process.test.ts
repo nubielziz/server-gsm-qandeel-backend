@@ -7,13 +7,16 @@ import { afterAll, describe, expect, it } from 'bun:test';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PRODUCTION_ENV } from '../../support/app';
-import { TEST_DATABASE_URL } from '../../support/db';
+import { PRODUCTION_ENV, createTestApp } from '../../support/app';
+import { openSession } from '../../support/auth';
+import { TEST_DATABASE_URL, testDb } from '../../support/db';
 import { MetricsModule } from '@src/infra/metrics';
 import { RedisModule, RedisService } from '@src/infra/redis';
 import { createInfra } from '../../support/infra';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
 import { testInstanceEnv } from '../../support/env';
+import { makeCustomer } from '../../support/store';
+import { SAME_ORIGIN, openStream } from '../../support/stream';
 
 const ROOT = join(import.meta.dir, '../../..');
 type Child = ReturnType<typeof Bun.spawn>;
@@ -283,4 +286,122 @@ describe('worker process', () => {
       blocker.close();
     }
   });
+});
+
+describe('request timeouts (decision 053)', () => {
+  /** One API child with short bounds: headers 300 ms, the whole request 1 s (the stream heartbeat is 5 s, five times the request bound). */
+  let booted: Promise<number> | undefined;
+  const api = (): Promise<number> => {
+    booted ??= (async () => {
+      const port = await freePort();
+      start('src/main.ts', {
+        NODE_ENV: 'test',
+        HOST: '127.0.0.1',
+        PORT: String(port),
+        DATABASE_URL_TEST: TEST_DATABASE_URL,
+        HTTP_HEADERS_TIMEOUT_MS: '300',
+        HTTP_REQUEST_TIMEOUT_MS: '1000',
+        REALTIME_HEARTBEAT_SECONDS: '5',
+      });
+      await eventually(async () => {
+        const res = await fetch(`http://127.0.0.1:${port}/health`);
+        return res.ok ? port : undefined;
+      });
+      return port;
+    })();
+    return booted;
+  };
+
+  /** How a raw connection ended: closed by the server (with what it had said), or still open at the deadline. */
+  interface Ending {
+    readonly closed: boolean;
+    readonly said: string;
+    readonly ms: number;
+  }
+
+  /** Opens a raw socket, writes the parts (none: stays silent), and waits for the server to close it, at most `deadlineMs`. */
+  async function connection(port: number, parts: readonly string[], deadlineMs: number): Promise<Ending> {
+    const started = performance.now();
+    return new Promise<Ending>((resolve) => {
+      let said = '';
+      const socket = net.connect(port, '127.0.0.1', () => {
+        for (const part of parts) socket.write(part);
+      });
+      const done = (closed: boolean) => {
+        clearTimeout(deadline);
+        socket.destroy();
+        resolve({ closed, said, ms: performance.now() - started });
+      };
+      const deadline = setTimeout(() => done(false), deadlineMs);
+      socket.on('data', (chunk) => {
+        said += chunk.toString('latin1');
+      });
+      socket.on('close', () => done(true));
+      socket.on('error', () => done(true));
+    });
+  }
+
+  it('closes a connection whose headers do not arrive in time', async () => {
+    const port = await api();
+    // Half a request line, then nothing.
+    const ending = await connection(port, ['GET /hea'], 3000);
+    expect(ending.closed, `still open after ${ending.ms} ms`).toBe(true);
+    // Closed, or answered 408 before it was closed.
+    if (ending.said !== '') expect(ending.said).toContain(' 408 ');
+  }, 20_000);
+
+  it('closes a request whose body stalls', async () => {
+    const port = await api();
+    const head =
+      'POST /health HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n';
+    // The headers arrive in time; 10 of the 100 body bytes follow and then nothing.
+    const ending = await connection(port, [head, '{"abc":"de'], 3000);
+    expect(ending.closed, `still open after ${ending.ms} ms`).toBe(true);
+    if (ending.said !== '') expect(ending.said).toContain(' 408 ');
+  }, 20_000);
+
+  it('closes a connection that stays silent', async () => {
+    const port = await api();
+    const ending = await connection(port, [], 15_000);
+    // Nothing was sent, so the headers bound (300 ms) closes it, well inside the deadline.
+    expect(ending.closed, `still open after ${ending.ms} ms`).toBe(true);
+    if (ending.said !== '') expect(ending.said).toContain(' 408 ');
+  }, 30_000);
+
+  it('a request in time still answers', async () => {
+    const port = await api();
+    const request = 'GET /health HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n';
+    const ending = await connection(port, [request], 5000);
+    expect(ending.said).toContain(' 200 ');
+    expect(ending.said).toContain('"status"');
+    const res = await fetch(`http://127.0.0.1:${port}/health`);
+    expect(res.status).toBe(200);
+  }, 20_000);
+
+  it('keeps a live stream open past both bounds: its request ends with the headers and it only writes', async () => {
+    const port = await api();
+    // The child reads the same test database: a customer and a session made here are the child's too.
+    await testDb();
+    const issuer = await createTestApp();
+    let viewer: Awaited<ReturnType<typeof openStream>> | undefined;
+    try {
+      const customer = await makeCustomer(issuer);
+      const session = await openSession(issuer, { type: 'customer', id: customer.id });
+      viewer = await openStream(`http://127.0.0.1:${port}/store/v1/me/stream`, { ...SAME_ORIGIN, ...session.headers });
+      expect(viewer.status).toBe(200);
+      expect((await viewer.next('ready')).event).toBe('ready');
+      // A heartbeat comes every 5 s, so the second one proves the stream lived at least 5 s after the first: five times the request
+      // bound (1 s) and sixteen times the headers bound (0.3 s). The browser sends nothing after its request, so a bound on the silence
+      // of the connection (Bun resets it only on bytes that come in) would have closed the stream before it.
+      const first = await viewer.next('hb', 12_000);
+      const started = performance.now();
+      const second = await viewer.next('hb', 12_000);
+      expect([first.event, second.event]).toEqual(['hb', 'hb']);
+      expect(performance.now() - started).toBeGreaterThan(3000);
+      expect(viewer.isEnded).toBe(false);
+    } finally {
+      viewer?.close();
+      await issuer.close();
+    }
+  }, 40_000);
 });

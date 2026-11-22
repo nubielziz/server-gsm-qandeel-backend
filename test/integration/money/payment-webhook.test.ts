@@ -242,6 +242,45 @@ describe('POST /webhooks/payments/:gateway (card driver)', () => {
   });
 });
 
+describe('POST /webhooks/payments/:gateway (the character U+0000 and unpaired surrogates, decision 053)', () => {
+  it('accepts a correctly signed event whose texts hold U+0000 and stores it without the character', async () => {
+    const { invoice } = await world();
+    const event = JSON.parse(cardEvent(eventId(), invoice.number, { reference: 'pi_nul\u00001' })) as {
+      data: { object: Record<string, unknown> };
+    };
+    event.data.object.metadata = { ['note\u0000']: 'Card\u0000holder' };
+    const res = await send(JSON.stringify(event));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    const [payment] = await payments();
+    expect(payment).toBeDefined();
+    expect(payment!.gatewayTxnId).toBe('pi_nul1');
+    const raw = JSON.stringify(payment!.raw);
+    expect(raw).toContain('Cardholder');
+    expect(raw).toContain('"note"');
+    expect(raw).not.toContain('\\u0000');
+  });
+
+  it('accepts a correctly signed event whose texts hold an unpaired surrogate and stores it replaced by U+FFFD', async () => {
+    const { invoice } = await world();
+    const event = JSON.parse(cardEvent(eventId(), invoice.number, { reference: 'pi_lone\ud8001' })) as {
+      data: { object: Record<string, unknown> };
+    };
+    event.data.object.metadata = { ['note\udc00']: 'Card\ud800holder \u{1F600}' };
+    // JSON.stringify writes each lone surrogate as an escape: the body is valid JSON the database would refuse in a JSON column.
+    const res = await send(JSON.stringify(event));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    const [payment] = await payments();
+    expect(payment).toBeDefined();
+    expect(payment!.gatewayTxnId).toBe('pi_lone\ufffd1');
+    const raw = JSON.stringify(payment!.raw);
+    expect(raw).toContain('Card\ufffdholder \u{1F600}');
+    expect(raw).toContain('note\ufffd');
+    expect(raw).not.toMatch(/\\ud[89a-f]/i);
+  });
+});
+
 describe('POST /webhooks/payments/:gateway (crypto driver)', () => {
   const cryptoEvent = (id: string, invoiceNumber: string, type: string, confirmations: number, required = 3) =>
     JSON.stringify({

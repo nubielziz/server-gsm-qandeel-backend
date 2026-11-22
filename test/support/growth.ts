@@ -58,6 +58,11 @@ export interface AbandonedSpec {
   readonly imei?: string;
   /** Leave the session without a customer. */
   readonly noCustomer?: boolean;
+  /**
+   * Whether the customer's address was proven (a sign-in or verification link was used): default `true`, so the consent of a guest
+   * counts. `false` is a guest who only typed the address (decision 053): the same answer does not count yet.
+   */
+  readonly proven?: boolean;
 }
 
 /** What {@link insertAbandoned} made. */
@@ -90,6 +95,7 @@ export async function insertAbandoned(t: TestApp, db: Database, spec: AbandonedS
         email,
         name: spec.name ?? '',
         marketingOptIn: spec.optIn ?? consent === 'granted',
+        emailVerifiedAt: spec.proven === false ? null : spec.createdAt,
         status: spec.customerStatus ?? 'active',
         createdAt: spec.createdAt,
         updatedAt: spec.createdAt,

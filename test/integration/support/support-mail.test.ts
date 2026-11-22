@@ -84,9 +84,11 @@ describe('the ticket message job', () => {
       status: 'sent',
       dedupeKey: `outbox-${job.eventId}:email`,
     });
-    expect(row!.payload).toEqual({
-      variables: { ticketNumber: ticket.number, subject: 'Where is my unlock?', customerName: 'Victor Hale' },
-    });
+    // Decision 053: the receipt repeats nothing a visitor typed, so it carries the number alone (the link is a secret, not a variable).
+    expect(row!.payload).toEqual({ variables: { ticketNumber: ticket.number } });
+    expect(mail!.text).toContain('Hello,');
+    expect(mail!.text).not.toContain('Victor');
+    expect(mail!.text).not.toContain('Where is my unlock?');
     expect(JSON.stringify(row)).not.toContain(ticket.token!);
   });
 

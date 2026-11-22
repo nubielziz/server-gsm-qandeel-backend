@@ -62,6 +62,17 @@ export interface AppConfig {
     readonly trustProxy: TrustProxy;
     readonly bodyLimitBytes: number;
     /**
+     * `HTTP_HEADERS_TIMEOUT_MS`: how long the headers of one request may take to arrive (default 20 000). A connection that sends half a
+     * request line and stops is closed after this (decision 053).
+     */
+    readonly headersTimeoutMs: number;
+    /**
+     * `HTTP_REQUEST_TIMEOUT_MS`: how long a whole request, body included, may take (default 600 000); a 25 MiB upload finishes at about
+     * 0.35 Mbit/s. A request whose body stalls is cut after this (decision 053). It bounds the request, not the response: a live stream
+     * (its request ends with its headers) and a long download are not cut by it.
+     */
+    readonly requestTimeoutMs: number;
+    /**
      * Exact browser origins of the admin console (`CONSOLE_ORIGINS`): CORS on `/admin` and `/reference` and the Origin checks of the
      * staff surface (decision 045). Empty = none.
      */
@@ -356,6 +367,8 @@ const rawSchema = z.object({
   LOG_LEVEL: z.enum(LOG_LEVELS).optional(),
   TRUST_PROXY: z.string().optional(),
   BODY_LIMIT_BYTES: int(1024, 100 * 1024 * 1024).optional(),
+  HTTP_HEADERS_TIMEOUT_MS: int(100, 120_000).optional(),
+  HTTP_REQUEST_TIMEOUT_MS: int(1_000, 3_600_000).optional(),
   CORS_ORIGINS: z.string().optional(),
   CONSOLE_ORIGINS: z.string().optional(),
   SHOP_ORIGINS: z.string().optional(),
@@ -883,6 +896,13 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
     warnings.push({ variable, message });
   };
 
+  // Decision 053: the request time bounds. The headers bound must be shorter than the whole-request bound. There is no bound on the silence
+  // of a connection: Bun resets that timer only on bytes that come in, so a live stream (which only writes) would be cut by it.
+  const headersTimeoutMs = raw.HTTP_HEADERS_TIMEOUT_MS ?? 20_000;
+  const requestTimeoutMs = raw.HTTP_REQUEST_TIMEOUT_MS ?? 600_000;
+  if (headersTimeoutMs >= requestTimeoutMs)
+    fail('HTTP_HEADERS_TIMEOUT_MS', 'must be shorter than HTTP_REQUEST_TIMEOUT_MS');
+
   const trust = parseTrustProxy(raw.TRUST_PROXY);
   if (!trust.ok) fail('TRUST_PROXY', trust.message);
   // Decision 055: the API takes the client address from the proxies named here, so production states them (an explicit `false` is
@@ -1110,6 +1130,8 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       port: raw.PORT ?? 3000,
       trustProxy: trust.ok ? trust.value : false,
       bodyLimitBytes: raw.BODY_LIMIT_BYTES ?? 1024 * 1024,
+      headersTimeoutMs,
+      requestTimeoutMs,
       consoleOrigins,
       shopOrigins,
       errorsBaseUrl,
@@ -1336,6 +1358,8 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
       port: config.http.port,
       trustProxy: config.http.trustProxy,
       bodyLimitBytes: config.http.bodyLimitBytes,
+      headersTimeoutMs: config.http.headersTimeoutMs,
+      requestTimeoutMs: config.http.requestTimeoutMs,
       consoleOrigins: config.http.consoleOrigins,
       shopOrigins: config.http.shopOrigins,
       errorsBaseUrl: config.http.errorsBaseUrl,

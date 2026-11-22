@@ -48,9 +48,19 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/api/index.php', 'dhru-credentials', true)).toBe('upload');
     expect(publicLimiterFor('/v1/files', 'api-key', true)).toBe('upload');
     expect(publicLimiterFor('/client/files', 'merchant-session', true)).toBe('upload');
-    // The public routes keep their own limiter; webhooks and probes are never counted per IP.
+    // The public routes keep their own limiter.
     expect(publicLimiterFor('/client/auth/login', 'public', true)).toBe('ip');
-    expect(publicLimiterFor('/webhooks/payments/:gateway', 'gateway-signature', true)).toBeUndefined();
+  });
+
+  it('counts every incoming webhook against webhook-intake, matched or not', () => {
+    for (const largeBody of [false, true]) {
+      expect(publicLimiterFor('/webhooks/payments/:gateway', 'gateway-signature', largeBody)).toBe('webhook-intake');
+      expect(publicLimiterFor('/webhooks/disputes/:gateway', 'gateway-signature', largeBody)).toBe('webhook-intake');
+      expect(publicLimiterFor('/webhooks/telegram/:secret', 'url-secret', largeBody)).toBe('webhook-intake');
+      expect(publicLimiterFor('/webhooks/nope', undefined, largeBody)).toBe('webhook-intake');
+      expect(publicLimiterFor('/webhooks', undefined, largeBody)).toBe('webhook-intake');
+    }
+    expect(publicLimiterFor('/webhooksx/nope', undefined)).toBeUndefined();
   });
 
   it('counts a large body on an admin session route (the service picture upload) against upload', () => {
@@ -81,13 +91,20 @@ describe('publicLimiterFor', () => {
     expect(isLargeBody(undefined, undefined)).toBe(false);
   });
 
+  it('reads a multipart type the way the body parser does: leading whitespace does not hide it', () => {
+    // A chunked body of a type that starts with U+00A0 is still read by the multipart parser, up to 25 MiB.
+    expect(isLargeBody('\u00a0multipart/form-data; boundary=x', undefined)).toBe(true);
+    expect(isLargeBody('\u000b\u00a0Multipart/Form-Data', undefined)).toBe(true);
+    expect(isLargeBody('\u00a0application/json', undefined)).toBe(false);
+  });
+
   it('calls a form body without a length large on a route with a raised form limit (the Dhru endpoint), and no other body', () => {
     expect(isLargeBody('application/x-www-form-urlencoded', undefined, true)).toBe(true);
     // A body that declares a small length is bounded by it, whatever the route.
     expect(isLargeBody('application/x-www-form-urlencoded', '100', true)).toBe(false);
   });
 
-  it('leaves REST v1, Dhru, webhooks and the system routes to their own limits', () => {
+  it('leaves REST v1, Dhru and the system routes to their own limits', () => {
     const accesses: Array<AccessKind | undefined> = [
       'public',
       'api-key',
@@ -96,14 +113,7 @@ describe('publicLimiterFor', () => {
       undefined,
     ];
     for (const access of accesses) {
-      for (const path of [
-        '/v1/orders',
-        '/api/index.php',
-        '/webhooks/payments/:gateway',
-        '/health',
-        '/metrics',
-        '/docs',
-      ]) {
+      for (const path of ['/v1/orders', '/api/index.php', '/health', '/metrics', '/docs']) {
         expect(publicLimiterFor(path, access), `${path} ${String(access)}`).toBeUndefined();
       }
     }

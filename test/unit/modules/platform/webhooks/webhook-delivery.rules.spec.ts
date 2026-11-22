@@ -1,14 +1,18 @@
 // Unit tests of the webhook delivery rules: the events, the retry schedule, the envelope and the event id, the stored answer.
 import { describe, expect, it } from 'bun:test';
 import {
+  WEBHOOK_DELIVERY_RETENTION_DAYS,
+  WEBHOOK_ENDPOINT_DISABLED_EVENT,
   WEBHOOK_EVENT_NAMES,
   WEBHOOK_MAX_ATTEMPTS,
+  WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES,
   WEBHOOK_RESPONSE_BODY_LIMIT,
   buildEnvelope,
   eventIdOf,
   eventKeyOf,
   isWebhookEvent,
   nextStep,
+  pausesEndpoint,
   portalStatusOf,
   retryDelayMs,
   storableBody,
@@ -128,5 +132,20 @@ describe('portalStatusOf', () => {
     expect(portalStatusOf('delivered')).toBe('succeeded');
     expect(portalStatusOf('pending')).toBe('pending');
     expect(portalStatusOf('failed')).toBe('failed');
+  });
+});
+
+describe('the pause after failed deliveries (decision 053)', () => {
+  it('pausesEndpoint is false at 19 failed deliveries in a row and true from 20', () => {
+    expect(WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES).toBe(20);
+    expect(pausesEndpoint(0)).toBe(false);
+    expect(pausesEndpoint(19)).toBe(false);
+    expect(pausesEndpoint(20)).toBe(true);
+    expect(pausesEndpoint(21)).toBe(true);
+  });
+
+  it('names the notice event and keeps deliveries 90 days', () => {
+    expect(WEBHOOK_ENDPOINT_DISABLED_EVENT).toBe('webhook.endpoint_disabled');
+    expect(WEBHOOK_DELIVERY_RETENTION_DAYS).toBe(90);
   });
 });

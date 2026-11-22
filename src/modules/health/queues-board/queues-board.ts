@@ -105,6 +105,8 @@ export class QueuesBoard implements OnApplicationBootstrap {
     } catch (error) {
       const failure = error instanceof AppError ? error : new AppError('INTERNAL_ERROR');
       const entry = ERROR_CATALOG[failure.code];
+      // Decision 053: a refusal that carries a wait (the failed-session budget of the address) tells the caller how long.
+      if (failure.retryAfterSeconds !== undefined) void reply.header('retry-after', String(failure.retryAfterSeconds));
       await reply
         .code(entry.status)
         .header('content-type', 'application/problem+json; charset=utf-8')

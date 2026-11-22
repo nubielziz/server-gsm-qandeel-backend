@@ -1,5 +1,6 @@
 // The customer audience of notification campaigns (customers module, feature 23, plan section 5.3): active customers, accounts or
-// guests, by country, plus listed people; a marketing campaign also needs the customer's consent (`consentSql`).
+// guests, by country, plus listed people; no campaign reaches a customer whose address was never proven (decision 053), and a marketing campaign also
+// needs the customer's consent (`consentSql`).
 import { Injectable } from '@nestjs/common';
 import { type SQL, and, asc, eq, gt, inArray, notInArray, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
@@ -15,7 +16,7 @@ import {
   memberQuery,
 } from '../../platform';
 import { customers } from '../db/schema';
-import { consentSql } from '../infra/recovery.repository';
+import { consentSql, provenAddressSql } from '../infra/recovery.repository';
 
 const FLAGS: AudienceFlagsSql = {
   inApp: sql`${customers.hasAccount}`,
@@ -28,7 +29,9 @@ const FLAGS: AudienceFlagsSql = {
  *
  * Why: plan 5.1 and O3: only `active` customers (suspended, blocked and anonymized ones never); the segment's account and country
  * filters; listed people added, excluded people removed; a marketing campaign keeps only customers whose
- * `marketing_opt_in` is on and whose latest marketing consent record grants it (the predicate of the recovery mail).
+ * `marketing_opt_in` is on and whose latest marketing consent record grants it (the predicate of the recovery mail). Decision 053: every
+ * purpose (a service campaign too) keeps only customers whose address was proven (a sign-in or verification link was used, an invitation was
+ * accepted, or a checkout of theirs was paid), so a guest row made from a typed address that nobody confirmed is never written to.
  *
  * @param query the selection and purpose
  * @param withConsent false to leave the consent condition out (the preview's "no consent" count)
@@ -50,6 +53,7 @@ export function customerAudienceSql(query: AudienceQuery, withConsent = true): S
   const selected = parts.length === 0 ? sql`false` : (or(...parts) ?? sql`false`);
   return and(
     eq(customers.status, 'active'),
+    provenAddressSql,
     selected,
     query.exclude.length > 0 ? notInArray(customers.id, [...query.exclude]) : undefined,
     withConsent && query.purpose === 'marketing' ? consentSql : undefined,

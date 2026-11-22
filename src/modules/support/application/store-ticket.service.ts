@@ -8,8 +8,9 @@ import { DbService } from '../../../infra/db';
 import { RateLimitService } from '../../../infra/rate-limit';
 import { CustomerDirectory } from '../../customers';
 import type { SupportTicket, TicketCategory } from '../db/schema';
+import { PROVEN_TICKET_NOTE, UNPROVEN_TICKET_NOTE, isRequesterProven } from '../domain/requester-proof';
 import { PRIORITY_TARGET_MS, defaultPriority } from '../domain/ticket-sla';
-import { findOrderByTrackingToken } from '../infra/support-foreign-reads';
+import { findOrderByTrackingToken, findRequester } from '../infra/support-foreign-reads';
 import {
   type MessageRow,
   findTicket,
@@ -17,8 +18,10 @@ import {
   insertTicket,
   listMessageRows,
   lockTicket,
+  markRequesterProven,
   updateTicket,
 } from '../infra/ticket.repository';
+import { isLockedForRequester } from './requester-lock';
 import { TicketAttachmentService } from './ticket-attachment.service';
 import { TicketEvents } from './ticket-events';
 import { TicketMailOutbox } from './ticket-mail-outbox';
@@ -54,17 +57,23 @@ const refuse = (field: string, code: string, message: string) =>
  * Q8): a message is `409 TICKET_RESOLVED`, and staff reopen the ticket to continue. The rating is one answer, 1 to 5, only once the
  * ticket is resolved, and the ticket stays resolved (no `closed` status).
  *
- * The receipt email repeats the visitor's subject to the address they typed, so the form could relay spam to a stranger: besides Turnstile
- * and the per-IP limit, one email address opens at most 3 tickets an hour (case-insensitive, `429 RATE_LIMITED` with `Retry-After`,
- * limiter `ticket-email` of decision 021). The order-token path writes to the order's own customer, who the visitor proved to be, and is
- * not counted here.
+ * The receipt email goes to an address anyone can type, so it could be used to mail a stranger: besides Turnstile and the per-IP limit, one
+ * email address gets at most 3 new tickets an hour (case-insensitive, `429 RATE_LIMITED` with `Retry-After`, limiter `ticket-email` of
+ * decision 021). The count is made for the typed address, and with an order link for the address of the order's customer (the receipt goes
+ * there), so the cap holds on both paths (decision 053). The receipt holds the ticket number and the link and nothing a visitor typed.
+ *
+ * Decision 053: a ticket opened with a typed email (no order link) is unproven: `requester_proven_at` is null until the link that was
+ * mailed to that address is first used (the ticket page is read, or a message is written with the link). Until then the ticket is not in the
+ * customer's account list, its live events do not reach the account stream, its replay leaves it out and a resolve sends no satisfaction
+ * survey; staff see an internal system note at the start of the thread and another when the address is confirmed.
  *
  * Feature 28: the customer's message is written by `TicketThreadService` (attachments, the `ticket-message` limit, the doorbell), the views
  * carry the attachments and the seen marks, and a new ticket and a rating ring `ticket updated` so the console sees them at once.
  *
  * Side effects: counts a point of the `ticket-email` limiter on the cache Redis (a hashed key, one hour); may insert a guest `customers`
- * row through the customers module; inserts `support_tickets` and `ticket_messages` rows, and for a new ticket the
- * `support.ticket_mail` outbox event of its receipt, in one transaction; rings the ticket doorbells after the commit. Time comes from
+ * row through the customers module; inserts `support_tickets` and `ticket_messages` rows (a system note for an unproven ticket), and for a new
+ * ticket the `support.ticket_mail` outbox event of its receipt, in one transaction; the first use of the link sets
+ * `support_tickets.requester_proven_at` and writes the second note; rings the ticket doorbells after the commit. Time comes from
  * the injected clock (decision 031).
  */
 @Injectable()
@@ -90,7 +99,8 @@ export class StoreTicketService {
    *   caller already holds that credential). The email path gets no token: it files the ticket under whoever owns the address, so the
    *   token would let a stranger read that customer's thread. The receipt email carries the link.
    * @throws {AppError} `VALIDATION_FAILED` (422 on `orderToken` for a token that names no storefront order, on `email` when neither an
-   *   email nor an order token was given); `RATE_LIMITED` (429 with `Retry-After`) from the fourth ticket of one email address in an hour
+   *   email nor an order token was given); `RATE_LIMITED` (429 with `Retry-After`) from the fourth ticket in an hour of one email address
+   *   (the typed one, or the order's customer's with an order link)
    */
   async open(input: OpenStoreTicketInput): Promise<StoreTicketView & { token?: string }> {
     // Counted before anything is written, so a refused call leaves no guest customer or ticket behind. `compositeKey` lower-cases and
@@ -115,6 +125,14 @@ export class StoreTicketService {
             ? this.tokens.equals(order.tokenHash, hash)
             : order.token !== null && this.tokens.equals(order.token, input.orderToken));
         if (!order || !valid) throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
+        // Decision 053: the receipt goes to the order's customer, so the per-address cap counts this path too.
+        const requester = await findRequester(tx, 'customer', order.customerId);
+        await this.limits.enforce(
+          'ticket-email',
+          requester?.email
+            ? RateLimitService.compositeKey(requester.email)
+            : RateLimitService.compositeKey('order', String(order.id)),
+        );
         orderId = order.id;
         customerId = order.customerId;
         provedByOrder = true;
@@ -142,6 +160,8 @@ export class StoreTicketService {
         token: null,
         tokenHash: issued.hash,
         tokenEnc: issued.enc,
+        // Decision 053: only the order link proves who is writing; a typed address is unproven until its mailed link is used.
+        requesterProvenAt: provedByOrder ? now : null,
         createdAt: now,
         updatedAt: now,
       });
@@ -155,6 +175,17 @@ export class StoreTicketService {
       });
       // The first message is the requester's newest (staff's `hasUnread`, feature 28).
       const stored = await updateTicket(tx, ticket.id, { lastRequesterMessageId: message.id, updatedAt: now });
+      if (!provedByOrder) {
+        const note = await insertMessage(tx, {
+          ticketId: ticket.id,
+          authorType: 'system',
+          authorId: null,
+          body: UNPROVEN_TICKET_NOTE,
+          isInternal: true,
+          createdAt: now,
+        });
+        this.events.message(ticket.id, note.id);
+      }
       // The receipt is sent by the job, which re-reads the customer: an anonymized one (reached through an old order link) gets nothing.
       await this.mail.received(work, ticket);
       this.events.updated(ticket.id);
@@ -166,6 +197,8 @@ export class StoreTicketService {
   /**
    * Reads a ticket.
    *
+   * Decision 053: reading a ticket of the contact form with the link that was mailed to the typed address confirms that address (once).
+   *
    * @param id the ticket id the token resolved to
    * @returns the ticket and its public messages
    * @throws {AppError} `NOT_FOUND` when the ticket no longer exists
@@ -173,6 +206,7 @@ export class StoreTicketService {
   async show(id: number): Promise<StoreTicketView> {
     const ticket = await findTicket(this.db.db, id);
     if (!ticket) throw notFound();
+    if (!isRequesterProven(ticket)) await this.confirmRequester(id);
     return this.view(ticket, await listMessageRows(this.db.db, id, true));
   }
 
@@ -184,12 +218,40 @@ export class StoreTicketService {
    * @returns the new message
    * @throws {AppError} `NOT_FOUND` when the ticket no longer exists; `TICKET_RESOLVED` (409: the ticket is resolved, nothing is written);
    *   `RATE_LIMITED`; `VALIDATION_FAILED` (422 on `fileIds`)
+   *
+   * Decision 053: writing with the link confirms the address of an unproven ticket, like reading it (a write that a resolved ticket refuses
+   * changes nothing, the confirmation included).
    */
-  write(
+  async write(
     id: number,
     input: { readonly body: string; readonly fileIds?: readonly number[] | undefined },
   ): Promise<StoreMessageView> {
+    const ticket = await findTicket(this.db.db, id);
+    // A write that a resolved ticket refuses changes nothing (B220), so it does not confirm the address either: opening the page does.
+    if (ticket && !isRequesterProven(ticket) && !isLockedForRequester(ticket)) await this.confirmRequester(id);
     return this.thread.write(id, { via: 'link' }, input);
+  }
+
+  /**
+   * Confirms the requester's address of a ticket the first time its link is used.
+   *
+   * Why: decision 053. The link was mailed only to the typed address, so whoever holds it reads that mailbox. The guarded update sets the
+   * time once; only the call that set it writes the staff note.
+   */
+  private async confirmRequester(ticketId: number): Promise<void> {
+    await this.db.runInTransaction(async ({ tx }) => {
+      const now = this.clock.now();
+      if (!(await markRequesterProven(tx, ticketId, now))) return;
+      const note = await insertMessage(tx, {
+        ticketId,
+        authorType: 'system',
+        authorId: null,
+        body: PROVEN_TICKET_NOTE,
+        isInternal: true,
+        createdAt: now,
+      });
+      this.events.message(ticketId, note.id);
+    });
   }
 
   /**

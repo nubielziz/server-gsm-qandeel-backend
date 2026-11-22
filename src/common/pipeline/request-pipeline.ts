@@ -8,10 +8,11 @@ import { ProblemExceptionFilter } from '../errors';
  * The stages of the request pipeline that run as Fastify hooks, in the order they run (decision 018, ARCHITECTURE § 3).
  *
  * Why: after CORS and the request id, a request meets the IP rules (a blocked address is refused before anything else), then
- * maintenance, then the per-IP rate limit; authentication, CSRF and permissions are Nest guards that run later. A test
- * pins this list.
+ * maintenance, then the per-IP rate limit, then (decision 053) the upload session check; authentication, CSRF and permissions are
+ * Nest guards that run later. The fourth stage reads no body and refuses a multipart body of a session-cookie route unless the
+ * request carries a live session. A test pins this list.
  */
-export const PIPELINE_STAGES = ['ip-rules', 'maintenance', 'rate-limit'] as const;
+export const PIPELINE_STAGES = ['ip-rules', 'maintenance', 'rate-limit', 'upload-session'] as const;
 
 /** One value of {@link PIPELINE_STAGES}. */
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
@@ -39,7 +40,7 @@ const PHASES: readonly PipelinePhase[] = ['onRequest', 'preValidation'];
  * Collects the hook of each pipeline stage and installs them on Fastify in the order of {@link PIPELINE_STAGES}.
  *
  * Why: decision 018 fixes the order of the checks that run before authentication, and each check lives in a different
- * place (identity owns the IP rules, platform owns maintenance, the rate-limit infrastructure owns the limiter). Modules
+ * place (identity owns the IP rules and the upload session check, platform owns maintenance, the rate-limit infrastructure owns the limiter). Modules
  * register their handler in `onModuleInit`; `configureApp` installs one hook per phase after CORS, the request id, cookies
  * and the security headers, so a refusal still carries the CORS and security headers. A stage with no handler (a test
  * app without Redis) is skipped.

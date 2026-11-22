@@ -1,6 +1,7 @@
 // Integration tests of the storefront receipt upload (feature 21, plan § 7.1 route 9): a PDF, JPEG or PNG of the signed-in customer, stored
 // as the customer's file; another type, an empty file, a declared body over 5 MiB, no session and no CSRF token are refused.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
+import { Readable } from 'node:stream';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -49,6 +50,19 @@ async function upload(store: StoreClient, name: string, type: string, bytes: Uin
   return multipartRequest(t, '/store/v1/files', form, headers, '127.0.0.1');
 }
 
+/** The headers a signed-in store client sends with a mutation: origin, session and CSRF cookies and the CSRF header. */
+function sessionHeaders(store: StoreClient): Record<string, string> {
+  const cookies = [STORE_SESSION_COOKIE, STORE_CSRF_COOKIE].flatMap((cookie) => {
+    const value = store.cookie(cookie);
+    return value === undefined ? [] : [`${cookie}=${value}`];
+  });
+  return {
+    origin: STORE_ORIGIN,
+    cookie: cookies.join('; '),
+    ...(store.csrf === undefined ? {} : { 'x-csrf-token': store.csrf }),
+  };
+}
+
 async function signedIn() {
   const customer = await makeCustomer(t);
   const store = new StoreClient(t);
@@ -80,6 +94,22 @@ describe('POST /store/v1/files', () => {
     const { store } = await signedIn();
     const res = await upload(store, 'big.jpg', 'image/jpeg', new Uint8Array(5 * 1024 * 1024 + 70 * 1024));
     expect(res.statusCode).toBe(413);
+  });
+
+  it('refuses a receipt body over 5 MiB that declares no length, before it is parsed (decision 053)', async () => {
+    const { store } = await signedIn();
+    // Not a valid multipart body on purpose: a refusal before the parser is a 413, a parse of these bytes would be a 400.
+    const chunks = Array.from({ length: 6 }, () => Buffer.alloc(1024 * 1024, 97));
+    const res = await t.app.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      remoteAddress: '127.0.0.1',
+      headers: { ...sessionHeaders(store), 'content-type': 'multipart/form-data; boundary=gsm' },
+      payload: Readable.from(chunks),
+    });
+    expect(res.statusCode).toBe(413);
+    const { db } = await testDb();
+    expect(await db.select().from(s.files)).toHaveLength(0);
   });
 
   it('needs a session and the CSRF token', async () => {

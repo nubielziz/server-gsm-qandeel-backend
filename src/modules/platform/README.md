@@ -249,6 +249,21 @@ again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the 
 submission or a receipt (features 8 and 17, B161, B163). `GET /v1/files/:id` (scope `orders:read`) redirects like the other downloads and
 is the merchant's own files only (`404` for anything else). No audit row for a merchant's upload (B121).
 
+**Quotas, the session precheck, the byte bound and the janitor (decision 053).** Every upload that a merchant or a customer makes is counted
+per owner over the `files` rows whose key starts with an upload area (`files/`, and `tickets-` for the customer), so a generated document never counts
+(`files/upload-quota.ts`: a merchant that waits for approval keeps at most 10 files and 50 MiB in all; an approved merchant 500 files and 5 GiB in 24 hours; a
+customer 30 files and 100 MiB in 24 hours, receipts and ticket-link uploads together; one ticket link 20 files and 50 MiB in 24 hours, checked together with the customer's;
+staff uploads have no quota). The count is checked before the object is written (no object for an obvious refusal) and again, under a transaction advisory lock of the owner
+(`lockUploadOwner`), together with the row insert, so two uploads that run together cannot both take the last place. A refusal is `422 VALIDATION_FAILED` on `file` with
+`code: 'quota'` and a sentence that names the bound. The approved/pending split reads `clients.status` (`merchantIsApproved`, a documented deviation of decision 016 like
+`ownsOrderFile`: identity exports no reader platform may import, decision 032). The routes that sign in with a session cookie (`/client/files`, `/store/v1/files`
+and the three console uploads) read a multipart body only when the request carries a live session (identity's `upload-session` pipeline stage); the 5 MiB route
+bound of the store and ticket uploads holds for the bytes read (`common/capped-body.ts`), whether or not a length is declared.
+**The janitor** (`files/upload-janitor.ts`, job `upload_janitor`, daily 04:30 UTC, worker-only `PlatformRetentionModule`) deletes every `files` row stored more than 7 days
+ago that nothing references (the one list `unreferenced` in `infra/file.repository.ts`: the three array columns and every foreign key), one row per statement that repeats
+the whole test for that row, its object after the commit; 500 candidates a batch, at most 40 batches a run. The only race left is an attach through an array column that is
+not committed yet at the moment of the delete.
+
 `FileUploadService.discard(clientId, fileId)` (P4a, MISMATCHES B166) takes a file back that the caller stored a moment ago and no longer
 needs. It deletes the merchant's `files` row (`owner_type client`, `owner_id` the merchant) and then its object, and answers `true` once
 the row is removed (an object that then fails to delete is only logged). It keeps a file that another record points at, and answers `false` for it, for another merchant's file and
@@ -355,7 +370,8 @@ upload routes are feature 7a's; invoice PDFs are written here as the merchant's 
 ## Jobs and schedules
 
 The relay tick: `outbox-relay-tick`, every second, queue `outbox-relay`, job `tick` (processor `OutboxRelayProcessor`). Listed
-in `docs/queues.md`. The webhook deliveries (7b) and the notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
+in `docs/queues.md`. Decision 053 adds two daily jobs on `maintenance` in the worker-only `PlatformRetentionModule` (`jobs/platform-retention.module.ts`): `upload_janitor` (04:30 UTC) and
+`webhook_delivery_retention` (04:40 UTC); both record their runs in `job_runs` through the `JOB_RUN_RECORDER` port. The webhook deliveries (7b) and the notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
 Decision 055 adds `outbox_purge` (above) and `lost_work_reconcile` (below).
 
 ### Lost work (`lost-work/`, decision 055)
@@ -464,9 +480,9 @@ Specs: MISMATCHES B156 (portal), RESOLUTIONS identity-platform-12 (the staff log
 |---|---|---|
 | `GET /client/webhooks` | merchant | the merchant's endpoints, newest first, `x-total-count`; never the secret |
 | `POST /client/webhooks` | merchant | `{ url, events, isActive? }` → `201 { endpoint, secret }`, `Cache-Control: no-store`; https with a public host (SSRF guard of decision 023, `422` on `url`), events a subset of the four (`422` on `events.N`), at most 5 endpoints (`422` on `url`, advisory lock against races); the secret is `whsec_` + 32 random bytes, stored AES-GCM (AAD `webhook_endpoints.secret_enc`), shown once |
-| `PATCH /client/webhooks/:id` | merchant | url, events, isActive; turning an endpoint back on resets `failureCount`; another merchant's or unknown id is `404` |
+| `PATCH /client/webhooks/:id` | merchant | url, events, isActive; turning an endpoint back on resets `failureCount` and the count of failed deliveries in a row (decision 053); another merchant's or unknown id is `404` |
 | `DELETE /client/webhooks/:id` | merchant | `204`; the deliveries go with it (`ON DELETE CASCADE`) |
-| `POST /client/webhooks/:id/test` | merchant | `202 { deliveryId }`: a signed `ping` delivery `{ message, endpointId }`; `409 INVALID_TRANSITION` for a paused endpoint; if the queue cannot take the job the delivery is removed and the answer is `503` |
+| `POST /client/webhooks/:id/test` | merchant | `202 { deliveryId }`: a signed `ping` delivery `{ message, endpointId }`; `409 INVALID_TRANSITION` for a paused endpoint; `429 RATE_LIMITED` from the eleventh test of a merchant in an hour (limiter `webhook-test`, key `client:<id>`, decision 053; counted after the ownership and switched-on checks, before the delivery is inserted); if the queue cannot take the job the delivery is removed and the answer is `503` |
 | `GET /client/webhooks/:id/deliveries` | merchant | newest first: `{ id, event, attempt, status (pending, succeeded, failed), responseCode (0 without an answer), error (''), nextRetryAt, createdAt }` |
 | `GET /admin/webhook-deliveries` | `webhooks:read` | the log: delivery columns plus `endpoint {id, url}` and `client {id, name}`; filters `status` (`delivered`, `pending`, `failed`), `event`, `clientId`; `q` over merchant, event and address |
 | `GET /admin/webhook-deliveries/:id` | `webhooks:read` | the same row (it carries `payload`, `responseBody`, `error`) |
@@ -501,10 +517,17 @@ then `failed`. The row is the truth (`attempt`, `next_retry_at`, `response_code`
 Guarded writes (`status = 'pending' and attempt = n`) make a job that runs twice, or after a manual retry, harmless; sends are at least once, and the same
 event id on every retry lets the receiver drop repeats. `failure_count` of the endpoint counts failed attempts and resets on a success or when the endpoint is switched on.
 
+**Pause after failed deliveries and retention (decision 053).** A delivery that ends `failed` while its endpoint is on adds one to `webhook_endpoints.consecutive_failed_deliveries` (an
+attempt that is only retried counts nothing); a delivered one, or turning the endpoint on, sets it to 0. At 20 the same transaction switches the endpoint off (guarded
+`WHERE is_active`, so once) and writes the outbox event `webhook.endpoint_disabled` `{ clientId, endpointId }`; the notification planner turns it into the new transactional merchant email
+`webhook.endpoint_disabled` ("A webhook endpoint was switched off", variables `merchantName`, `url`, `count`; never a preference; no in-app text). `failureCount` on the wire keeps its
+meaning (failed attempts). Deliveries created more than 90 days ago that are not `pending` are deleted by the daily job `webhook_delivery_retention` (04:40 UTC, batches of 1000,
+at most 100 batches a run).
+
 `WEBHOOK_TARGET_POLICY` (optional token) lets tests give the sender a local server and a stand-in DNS; nothing provides it in production.
 
 Open points: nothing re-queues a pending delivery whose job was lost (the queue Redis lost its data): `webhook_deliveries_retry_idx` supports a sweep for 12b;
-an endpoint is never switched off automatically after many failures; `invoice.paid` needs feature 8 to register its route and write `payload.clientId`.
+an endpoint is switched off after 20 failed deliveries in a row (decision 053); `invoice.paid` needs feature 8 to register its route and write `payload.clientId`.
 
 ## Notifications (feature 12a)
 
@@ -528,7 +551,7 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 **The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
 use with a sample of each, whether the message is transactional (always sent, not in a merchant's preferences) and its defaults. Built in: the three merchant
 mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approved`, `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
-opts in), the bot's `telegram.linked` and `telegram.unlinked`, the six customer events of the console's Customer emails tab (their producers are the storefront
+opts in), the bot's `telegram.linked` and `telegram.unlinked`, the transactional `webhook.endpoint_disabled` (decision 053: an endpoint switched off after 20 failed deliveries in a row; `notifications` route only, no webhook route, no in-app text), the six customer events of the console's Customer emails tab (their producers are the storefront
 features) and the four transactional customer account mails of feature 14b (`customer.magic_link`, `customer.password_reset`, `customer.invited`,
 `customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). Feature 12b adds two staff events, `alert.fired` and `alert.resolved` (email and Telegram,
 always sent), for the messages of alerts. They go to no person's row but to the ops mailbox(es) and chat of the configuration

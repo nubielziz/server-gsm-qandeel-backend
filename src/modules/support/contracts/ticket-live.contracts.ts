@@ -35,7 +35,7 @@ const ReadBody = z.object({
 const UPLOAD_RULES =
   'One file (`multipart/form-data`, one part named `file`): a PDF, JPEG or PNG of 1 byte to 5 MiB whose content starts with the ' +
   "type's magic bytes. Another type, or a content that is not what it claims, is `422` on `file` (`type`); an empty file `422` " +
-  '(`empty`); more than 5 MiB `413` (a declared body over 5 MiB is refused before it is read). The answer is the stored file; its id ' +
+  '(`empty`); more than 5 MiB `413`: a body over 5 MiB is refused before it is parsed, whether or not it declares its length. The answer is the stored file; its id ' +
   'goes into `fileIds` of the next message. There is no virus scan: files are never shown inline, only downloaded through a link.';
 
 const DOWNLOAD_RULES =
@@ -120,7 +120,8 @@ export const uploadStoreTicketFile = defineRoute({
   summary: 'Upload an attachment for a support ticket',
   description:
     `${UPLOAD_RULES} The file belongs to the ticket's customer. A resolved ticket is closed for the customer: \`409 TICKET_RESOLVED\` ` +
-    'and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address).',
+    'and nothing is stored (staff reopen the ticket first). Counted against `upload` (20 a minute per address). A ticket link can upload ' +
+    '20 files (50 MiB) in 24 hours, and its customer 30 (100 MiB) (`422` on `file`, `quota`; decision 053).',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',
@@ -194,7 +195,7 @@ export const supportTicketTyping = defineRoute({
 export const uploadSupportTicketFile = defineRoute({
   key: 'POST /admin/support-tickets/:id/files',
   summary: 'Upload an attachment for a reply or a note',
-  description: `${UPLOAD_RULES} The file belongs to the staff member. Audited as \`attached file to ticket\`.`,
+  description: `${UPLOAD_RULES} The file belongs to the staff member. Audited as \`attached file to ticket\`. A multipart body is read only with a live staff session.`,
   tags: ['support-tickets'],
   surface: 'admin',
   access: 'staff-permission',

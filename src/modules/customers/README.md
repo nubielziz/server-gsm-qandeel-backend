@@ -147,7 +147,8 @@ and `domain/customer-export.ts`, and the reads and writes that reach other modul
   (`ON CONFLICT DO NOTHING`: an existing entry stays as it is and is not linked). `{ blocked: false }` sets `active`, risk `high` to
   `medium`, and deletes only the manual entries `WHERE customer_id = :id`. `ALREADY_BLOCKED`, `NOT_BLOCKED`, `ANONYMIZED` are `409`.
 - **Export** (`GET /admin/customers/:id/export`, `customers:privacy`, RESOLUTIONS b2c-8): a `customer-<id>.json` download of the profile,
-  orders with their IMEI, payments without card data, consents, checkout sessions, support tickets with their public messages, IMEI
+  orders with their IMEI, payments without card data, consents, checkout sessions, support tickets with their public messages (only a
+  ticket whose requester's address is confirmed: `requesterProven()` of the support schema, decision 053), IMEI
   checks and data requests (what the customer gave and did: no internal notes, risk level, suspension reason or blocklist entries); closes the customer's waiting export request and is audited `exported data of`. The contract sets
   `originCheck: true`: the CSRF guard asks for `Sec-Fetch-Site: same-origin` or an `Origin` that is one of the console's origins (`CONSOLE_ORIGINS`), else `403
   CSRF_FAILED`. No copy of the file is kept.
@@ -181,6 +182,11 @@ resolutions `b2c-10` and `b2c-14`.
 - **Consent** (`consentSql`): the latest `marketing` record of the session's customer (append only, a withdrawal is a new `granted = false` row) is a
   grant AND the customer's own `marketing_opt_in` is on. A guest's choice is the record its checkout wrote (14a), an account holder's the record its
   account page wrote (14b); a switch turned off by staff stops the mail even without a withdrawal record. A session with no customer has no consent.
+  **Effective consent needs a proven address (decision 053):** `consentSql` also requires `provenAddressSql`: `customers.email_verified_at` is set (a used sign-in or verification link, or an
+  accepted invitation) or a checkout of the customer has `status = 'paid'` (a paid order by that guest). Anyone can type an address at a guest checkout, so the answer recorded there
+  stays as proof (the proof row of RESOLUTIONS b2c-12 and the switch are still written) and counts from the moment the address is proven. The same predicate answers the recovery
+  sweep, the abandoned list's `marketingConsent` and `canRecover` and marketing campaigns. Residual, by decision: an answer typed before the owner proved the address counts after the
+  proof; every marketing mail carries the unsubscribe link and header.
 - **List**: sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered); rows carry the email masked
   (`ab•••@domain`; `q` searches the full address), the USD basket with the locked rate, the service name (`StorefrontServices.names`, one batch per
   page), `status` judged on the clock (`effectiveStatus`), `utm`, `orderId`, `marketingConsent` and `canRecover`. Sorts `createdAt` (default, newest
@@ -213,7 +219,9 @@ resolutions `b2c-10` and `b2c-14`.
 `notifications/customer-audience.ts` is the customer audience provider of the platform's notification center, registered with
 `NotificationAudiences` by `CustomerNotificationsModule` at boot (imported by `CustomersModule` and the worker). It selects active
 customers (suspended, blocked and anonymized ones never), by account and country, and for a marketing campaign only those
-whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`, the recovery mail's predicate). The
+whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`, the recovery mail's predicate). **No campaign of any purpose (a service campaign
+too) reaches a customer whose address was never proven** (`provenAddressSql`, decision 053: a used sign-in or verification link, an accepted invitation, or a paid checkout), so guest
+rows made from typed addresses that nobody confirmed are never written to; the preview's "no consent" count keeps that condition. The
 same predicate answers the preview count, the fan-out's pages and the send-time check, so consent withdrawn after the fan-out stops the
 message. The provider only reads `customers` and `consent_records`.
 

@@ -57,7 +57,7 @@
   "paths": {
     "/api/index.php": {
       "post": {
-        "description": "The Dhru Fusion v6.1 compatible endpoint (decision 026): `username`, `apiaccesskey`, `action` and `parameters` (base64 of a JSON object) as a form body (`multipart/form-data` and JSON are accepted too). Eight actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `placeimeiorderbulk`, `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Every answer is HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ \"SUCCESS\": [ ... ], \"apiversion\": \"6.1\" }` or `{ \"ERROR\": [ { \"MESSAGE\": \"...\" } ], \"apiversion\": \"6.1\" }`; a bulk action answers `{ \"<request id>\": { \"SUCCESS\" | \"ERROR\": [ ... ] }, ..., \"apiversion\": \"6.1\" }`. A wrong credential is \"Authentication Failed\", an unknown action \"Invalid Action\". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply.",
+        "description": "The Dhru Fusion v6.1 compatible endpoint (decision 026): `username`, `apiaccesskey`, `action` and `parameters` (base64 of a JSON object) as a form body (`multipart/form-data` and JSON are accepted too). Eight actions: `accountinfo`, `imeiservicelist`, `placeimeiorder`, `placeimeiorderbulk`, `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Every answer is HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ \"SUCCESS\": [ ... ], \"apiversion\": \"6.1\" }` or `{ \"ERROR\": [ { \"MESSAGE\": \"...\" } ], \"apiversion\": \"6.1\" }`; a bulk action answers `{ \"<request id>\": { \"SUCCESS\" | \"ERROR\": [ ... ] }, ..., \"apiversion\": \"6.1\" }`. A wrong credential is \"Authentication Failed\", an unknown action \"Invalid Action\". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply. A text in the decoded `parameters` or `CUSTOMFIELD` may not hold the character U+0000 or an unpaired surrogate.",
         "operationId": "postApiIndexPhp",
         "parameters": [],
         "requestBody": {
@@ -504,7 +504,7 @@
                   {
                     "type": "object",
                     "title": "placeimeiorderbulk",
-                    "description": "Place several orders. `parameters` is an object keyed by the caller's request id, each entry the parameters of `placeimeiorder`. The answer has one entry per request id: `{ \"SUCCESS\": [...] }` or `{ \"ERROR\": [...] }`. Each order is placed on its own (a refused one never stops the others); at most 100 per call.",
+                    "description": "Place several orders. `parameters` is an object keyed by the caller's request id, each entry the parameters of `placeimeiorder`. The answer has one entry per request id: `{ \"SUCCESS\": [...] }` or `{ \"ERROR\": [...] }`. Each order is placed on its own (a refused one never stops the others); at most 100 per call. A request id has 1 to 64 characters. The call costs one point of the key’s per-minute limit per item (at most the whole limit).",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -697,7 +697,7 @@
                   {
                     "type": "object",
                     "title": "getimeiorderbulk",
-                    "description": "Status of several orders. `parameters` is an object keyed by the caller's request id, each entry `{ \"ID\": <order> }`; the answer has one entry per request id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call.",
+                    "description": "Status of several orders. `parameters` is an object keyed by the caller's request id, each entry `{ \"ID\": <order> }`; the answer has one entry per request id with the `STATUS` and `CODE` of `getimeiorder` or an error; at most 100 per call. A request id has 1 to 64 characters.",
                     "required": [
                       "username",
                       "apiaccesskey",
@@ -1790,7 +1790,7 @@
     },
     "/v1/files": {
       "post": {
-        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The id is what a File service order takes as its input file (`fileId` of `POST /v1/orders`). Maintenance with the order scope refuses the upload like an order. Scope `orders:write`.",
+        "description": "Uploads one file (`multipart/form-data` with one part named `file`, any media type, 1 byte to 25 MiB). The name is reduced to its base name without control characters (at most 200 characters). The object goes to the files bucket and a file owned by the merchant is recorded with its size and SHA-256. A missing or empty file is `422` on `file`; more than 25 MiB is `413`. The id is what a File service order takes as its input file (`fileId` of `POST /v1/orders`). Maintenance with the order scope refuses the upload like an order. Scope `orders:write`. A merchant waiting for approval can keep at most 10 uploaded files (50 MiB); an approved merchant can upload 500 files (5 GiB) in 24 hours; over a bound is `422` on `file` with the code `quota` (decision 053).",
         "operationId": "postV1Files",
         "parameters": [],
         "requestBody": {
@@ -5754,7 +5754,7 @@
     },
     "/v1/orders/bulk": {
       "post": {
-        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for 7 days (after that the stored answer is gone and the same key places new orders).",
+        "description": "Places up to 100 orders in one request, each item exactly as `POST /v1/orders` would (the price, the price guard, the duplicate rule, the hold). The answer has one result per item, in the order sent: `ok: true` with the order, or `ok: false` with the refusal (`code`, `status`, `detail`, field `errors`, and `listedPrice` and `currentPrice` for a changed price). An item that is refused places nothing and never stops the others; the items draw on one wallet in the order sent, so a later item may be refused for lack of funds. The answer is `200` even when every item was refused. An `Idempotency-Key` stores the whole answer and replays it for 7 days (after that the stored answer is gone and the same key places new orders). The call costs one point of the key’s per-minute limit per order (at most the whole limit), so `RateLimit-Remaining` drops by the number of orders; a bulk larger than what is left of the minute is `429 RATE_LIMITED` (decision 053).",
         "operationId": "postV1OrdersBulk",
         "parameters": [
           {

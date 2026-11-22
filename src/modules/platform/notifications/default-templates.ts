@@ -1,7 +1,9 @@
 // The default templates of the merchant events, the customer account mails, the alert messages, the storefront order, payment and
-// refund mails and the hourly message about following retail prices (platform module, features 12a, 14b, 12b, 16 and 31): English
-// email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018 (storefront mails), 0044 (retail
-// prices) and 0054 (the customer's security notice, decision 047) insert the same rows into a fresh database (a spec finds every row of this file in them); the console edits them afterwards.
+// refund mails, the hourly message about following retail prices and the notice of a switched-off webhook endpoint (platform module, features
+// 12a, 14b, 12b, 16, 31 and 43): English email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018
+// (storefront mails), 0044 (retail prices), 0054 (the customer's security notice, decision 047) and the one ending `_public_abuse_limits`
+// (the webhook notice, decision 053) insert the same rows into a fresh database (a spec finds every row of this file in them); the console
+// edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template: one per event, channel and audience (decision 039: templates have no language). */
@@ -128,6 +130,13 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     audience: 'merchant',
     subject: '',
     body: 'Order {{orderId}} was rejected. {{resultComment}}',
+  },
+  {
+    event: 'webhook.endpoint_disabled',
+    channel: 'email',
+    audience: 'merchant',
+    subject: 'A webhook endpoint was switched off',
+    body: 'Hi {{merchantName}},\n\nYour webhook endpoint {{url}} did not accept the last {{count}} deliveries, so it was switched off and no more events are sent to it.\n\nCheck the endpoint, then turn it on again in the merchant portal; its count of failed deliveries starts again from zero.',
   },
   {
     event: 'telegram.linked',

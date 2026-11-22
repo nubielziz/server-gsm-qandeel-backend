@@ -74,12 +74,15 @@ export async function seedGrowth(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
     s.customers,
     emails.map((email, index) => {
       const row = newest.get(email)!;
+      const agreed = agreedToMarketing(demoNumericId(row.id));
       return {
         id: FIRST_INVENTED_ID + index,
         email,
         country: row.country,
         hasAccount: false,
-        marketingOptIn: agreedToMarketing(demoNumericId(row.id)),
+        marketingOptIn: agreed,
+        // The demo's buyers who agreed are people whose address was confirmed (decision 053): only then does the answer count, as the mock shows.
+        emailVerifiedAt: agreed ? toDate(row.created)! : null,
         createdAt: toDate(firstSeen.get(email))!,
         updatedAt: toDate(row.created)!,
       };

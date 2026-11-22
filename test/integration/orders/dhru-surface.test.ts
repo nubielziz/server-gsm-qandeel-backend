@@ -57,6 +57,21 @@ beforeEach(async () => {
 
 const ENVELOPE_KEYS = ['SUCCESS', 'apiversion'];
 
+/** A valid IMEI (15 digits, Luhn check digit) for a number, so a test can place as many orders as it needs. */
+function imeiOf(n: number): string {
+  const digits = `35${String(n).padStart(12, '0')}`;
+  let sum = 0;
+  [...digits].reverse().forEach((digit, index) => {
+    let value = Number(digit);
+    if (index % 2 === 0) {
+      value *= 2;
+      if (value > 9) value -= 9;
+    }
+    sum += value;
+  });
+  return `${digits}${(10 - (sum % 10)) % 10}`;
+}
+
 /** The message of an ERROR answer. */
 const messageOf = (answer: { ERROR?: Array<{ MESSAGE: string }> }) => answer.ERROR?.[0]?.MESSAGE;
 
@@ -451,6 +466,69 @@ describe('placeimeiorderbulk', () => {
     const res = await dhru.raw('placeimeiorderbulk', { a: { ID: world.auto.serviceId, IMEI: '1' } });
     expect(res.statusCode).toBe(200);
     expect(messageOf(body(res).a)).toContain('IMEI is not valid');
+  });
+
+  it('refuses a bulk whose item id is empty or longer than 64 characters, before any item runs', async () => {
+    const { db } = await testDb();
+    const good = { ID: world.manual.serviceId, IMEI: IMEIS[1] };
+    for (const id of ['', 'x'.repeat(65)]) {
+      const answer = await dhru.call('placeimeiorderbulk', {
+        fine: good,
+        [id]: { ID: world.manual.serviceId, IMEI: IMEIS[2] },
+      });
+      expect(messageOf(answer)).toBe('An item id must have 1 to 64 characters.');
+    }
+    expect(await db.select().from(s.orders)).toHaveLength(0);
+    // 64 characters is fine.
+    const edge = 'y'.repeat(64);
+    const placed = await dhru.call('placeimeiorderbulk', { [edge]: good });
+    expect(placed[edge].SUCCESS[0].MESSAGE).toBe('Order received');
+  });
+
+  it('charges one point for a read bulk however many ids it carries', async () => {
+    const { db } = await testDb();
+    const limited = await credentialsFor(t, db, world.merchant.id, { rateLimitPerMin: 3 });
+    const client = dhruClient(t, limited);
+    const read = await client.call('getimeiorderbulk', {
+      a: { ID: 1 },
+      b: { ID: 2 },
+      c: { ID: 3 },
+      d: { ID: 4 },
+      e: { ID: 5 },
+    });
+    expect(Object.keys(read)).toEqual(expect.arrayContaining(['a', 'b', 'c', 'd', 'e']));
+    expect(messageOf(await client.call('accountinfo'))).toBeUndefined();
+    expect(messageOf(await client.call('accountinfo'))).toBeUndefined();
+    expect(messageOf(await client.call('accountinfo'))).toContain('Too many requests');
+  });
+
+  it('charges one point per item of a placement bulk', async () => {
+    const { db } = await testDb();
+    await db
+      .update(s.ledgerAccounts)
+      .set({ balance: '1000.0000' })
+      .where(
+        and(
+          eq(s.ledgerAccounts.ownerType, 'client'),
+          eq(s.ledgerAccounts.ownerId, world.merchant.id),
+          eq(s.ledgerAccounts.kind, 'client_wallet'),
+        ),
+      );
+    const limited = await credentialsFor(t, db, world.merchant.id, { rateLimitPerMin: 10 });
+    const client = dhruClient(t, limited);
+    const items = (from: number, count: number) =>
+      Object.fromEntries(
+        Array.from({ length: count }, (_, index) => [
+          `r${from + index}`,
+          { ID: world.manual.serviceId, IMEI: imeiOf(from + index) },
+        ]),
+      );
+    const six = await client.call('placeimeiorderbulk', items(1, 6));
+    expect(Object.keys(six).filter((key) => key.startsWith('r'))).toHaveLength(6);
+    // Six of the ten points are gone: five more do not fit in the minute, and nothing is placed.
+    const refused = await client.call('placeimeiorderbulk', items(100, 5));
+    expect(messageOf(refused)).toContain('Too many requests');
+    expect(await db.select().from(s.orders)).toHaveLength(6);
   });
 });
 

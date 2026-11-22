@@ -1,9 +1,11 @@
 // Unit tests of the default templates (features 12a, 14b, 12b, 16 and 31): they use only their event's placeholders, cover every merchant
 // event the platform wires, the four customer account mails, both alert events, the five storefront mails of feature 16 and the hourly
-// message about retail prices, migrations 0011, 0012, 0015, 0018, 0044 and 0054 together insert exactly these rows, and `defaultTemplatesSql()`
-// writes today's shape (no language, decision 039).
+// message about retail prices and the notice of a switched-off webhook endpoint, migrations 0011, 0012, 0015, 0018, 0044 and 0054 and the
+// feature-43 migration (found by its suffix) together insert exactly these rows, and `defaultTemplatesSql()` writes today's shape (no
+// language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { insertedTemplates } from '../../../../support/applied-templates';
+import { migrationFileName } from '../../../../support/migration-files';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from '@src/modules/platform/notifications/default-templates';
 import {
   BUILT_IN_EVENTS,
@@ -78,6 +80,8 @@ const MIGRATIONS = [
   '0018_refund_declined_template.sql',
   '0044_retail_follow_templates.sql',
   '0054_customer_security_notice.sql',
+  // Decision 053 (found by its name, not its number: migrations are renumbered when branches merge).
+  migrationFileName('_public_abuse_limits.sql'),
 ] as const;
 
 /** The customer events feature 16 sends through `StorefrontMails`, with the placeholder each one's text must use to say what it is about. */
@@ -210,5 +214,22 @@ describe('the retail price templates (feature 31)', () => {
       for (const name of ['changed', 'waiting', 'detached', 'link'])
         expect(template.body, `${template.channel} {{${name}}}`).toContain(`{{${name}}}`);
     }
+  });
+});
+
+describe('the notice of a switched-off webhook endpoint (decision 053)', () => {
+  it('is a transactional merchant email that names the address and the count', () => {
+    const definition = registry.get('webhook.endpoint_disabled', 'merchant');
+    expect(definition).toMatchObject({
+      channels: ['email'],
+      variables: ['merchantName', 'url', 'count'],
+      transactional: true,
+    });
+    const template = DEFAULT_TEMPLATES.find((t) => t.event === 'webhook.endpoint_disabled');
+    expect(template).toMatchObject({ channel: 'email', audience: 'merchant' });
+    for (const placeholder of ['{{merchantName}}', '{{url}}', '{{count}}'])
+      expect(template!.body).toContain(placeholder);
+    // A transactional event is never listed in a merchant's preferences.
+    expect(registry.merchantPreferenceEvents().some((event) => event.key === 'webhook.endpoint_disabled')).toBe(false);
   });
 });

@@ -124,6 +124,7 @@ Outbox events produced: `supplier.quick_add` (queue `imports`, job `supplier_qui
 | `supplier-poll` | `supplier_poll_tick`, `poll` | tick every minute (`supplier-poll-tick`) | `SupplierPollProcessor` |
 | `supplier-sync` | `supplier_sync`, `price_sync`, `balance_check` | every 15 and every 30 minutes (`supplier-price-sync`, `supplier-balance-check`) | `SupplierSyncProcessor`, scheduled runs in `job_runs` |
 | `imports` | `supplier_quick_add` (outbox event `supplier.quick_add`) | event-driven | `QuickAddProcessor` calls `QuickAddRunner.run`; recorded in `supplier_import_runs`, not in `job_runs` |
+| `maintenance` | `supplier_log_retention` | daily 04:50 UTC (`supplier-log-retention`) | `SupplierLogRetentionProcessor` calls `SupplierLogRetention.run` (decision 053): the call log (`supplier_api_logs`) is kept 90 days; batches of 1000 by id, at most 100 batches a run; recorded in `job_runs` with `processed` and `result.deleted`. The poll reads only the newest `getimeiorder` log of each open order (minutes old), so no live read depends on an old row |
 
 Idempotency keys, retry policies and the claim rule: `docs/queues.md`. Settings read: `catalog.importDefaultSlaMinutes` (default 1440), `orders.poll_slow_after_hours` (default 24), `suppliers.allowPlainHttp` (default off), all editable through `PATCH /admin/settings`; `suppliers.allowPlainHttp` is changed by an Owner only (decision 051).
 

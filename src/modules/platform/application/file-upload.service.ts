@@ -7,7 +7,19 @@ import { AppError } from '../../../common/errors';
 import { DbService, isForeignKeyViolation } from '../../../infra/db';
 import { DEFAULT_MAX_OBJECT_BYTES, StorageService } from '../../../infra/storage';
 import { PROOF_MIME_TYPES } from '../files/stored-files';
-import { deleteUnreferencedClientFile, insertFile } from '../infra/file.repository';
+import {
+  CUSTOMER_DAILY_QUOTA,
+  MERCHANT_DAILY_QUOTA,
+  PENDING_MERCHANT_QUOTA,
+  type UploadQuotaRule,
+  assertUploadQuota,
+} from '../files/upload-quota';
+import {
+  deleteUnreferencedClientFile,
+  insertFile,
+  lockUploadOwner,
+  merchantIsApproved,
+} from '../infra/file.repository';
 
 /** The largest file a merchant may upload: 25 MiB (B157). */
 export const MAX_UPLOAD_BYTES = DEFAULT_MAX_OBJECT_BYTES;
@@ -75,6 +87,11 @@ export function cleanMediaType(declared: string): string {
  * here (never from the name), a `files` row owned by the merchant (`owner_type client`) with the size and the SHA-256. A storefront
  * customer uploads a transfer receipt the same way (feature 21): proof types only, at most 5 MiB, owned by the customer.
  *
+ * Quotas (decision 053): a merchant that waits for approval keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most
+ * 500 files (5 GiB) in 24 hours; a customer 30 files (100 MiB) in 24 hours. They are checked before the object is written (no object is
+ * stored for an obvious refusal) and again, under a transaction lock of the owner, together with the row insert (exact under concurrency).
+ * A refusal is `422 VALIDATION_FAILED` on `file` with the code `quota`.
+ *
  * Side effects: one object in storage, one `files` row; the access is logged at info without the file name. An object whose row could
  * not be written is deleted again (best effort).
  *
@@ -96,10 +113,12 @@ export class FileUploadService {
    * @param clientId the merchant who owns the file
    * @param input the file name, media type and content
    * @returns the stored file
-   * @throws {AppError} `VALIDATION_FAILED` on `file` (empty), `PAYLOAD_TOO_LARGE` (over 25 MiB), `UNAVAILABLE` (storage is down)
+   * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, or `quota`: decision 053), `PAYLOAD_TOO_LARGE` (over 25 MiB), `UNAVAILABLE`
+   *   (storage is down)
    */
   async upload(clientId: number, input: UploadInput): Promise<StoredFileView> {
-    return this.store({ type: 'client', id: clientId }, input, MAX_UPLOAD_BYTES);
+    const rules = (await merchantIsApproved(this.db.db, clientId)) ? [MERCHANT_DAILY_QUOTA] : [PENDING_MERCHANT_QUOTA];
+    return this.store({ type: 'client', id: clientId }, input, MAX_UPLOAD_BYTES, rules);
   }
 
   /**
@@ -114,7 +133,7 @@ export class FileUploadService {
    * @param input the file name, media type and content
    * @param maxBytes the largest file (the route's limit)
    * @returns the stored file
-   * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, `type`), `PAYLOAD_TOO_LARGE`, `UNAVAILABLE` (storage is down)
+   * @throws {AppError} `VALIDATION_FAILED` on `file` (`empty`, `type`, `quota`: decision 053), `PAYLOAD_TOO_LARGE`, `UNAVAILABLE` (storage is down)
    */
   async uploadForCustomer(customerId: number, input: UploadInput, maxBytes: number): Promise<StoredFileView> {
     if (input.data.length > 0 && !PROOF_MIME_TYPES.includes(cleanMediaType(input.mime))) {
@@ -123,13 +142,14 @@ export class FileUploadService {
         errors: [{ field: 'file', code: 'type', message: 'Upload a PDF, JPEG or PNG file.' }],
       });
     }
-    return this.store({ type: 'customer', id: customerId }, input, maxBytes);
+    return this.store({ type: 'customer', id: customerId }, input, maxBytes, [CUSTOMER_DAILY_QUOTA]);
   }
 
   private async store(
     owner: { readonly type: 'client' | 'customer'; readonly id: number },
     input: UploadInput,
     maxBytes: number,
+    rules: readonly UploadQuotaRule[],
   ): Promise<StoredFileView> {
     if (input.data.length === 0) {
       throw new AppError('VALIDATION_FAILED', {
@@ -145,18 +165,24 @@ export class FileUploadService {
     const filename = cleanUploadName(input.filename);
     const mime = cleanMediaType(input.mime);
     const now = this.clock.now();
+    // Decision 053: an obvious refusal stores no object; the count is checked again under the owner's lock with the insert.
+    await assertUploadQuota(this.db.db, owner, rules, input.data.length, now);
     const key = `files/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${randomUUID()}`;
     const object = await this.storage.put(key, input.data, { contentType: mime, maxBytes });
     try {
-      const row = await insertFile(this.db.db, {
-        bucket: object.bucket,
-        key: object.key,
-        filename,
-        mime,
-        size: object.size,
-        sha256: object.sha256,
-        ownerType: owner.type,
-        ownerId: owner.id,
+      const row = await this.db.runInTransaction(async ({ tx }) => {
+        await lockUploadOwner(tx, owner);
+        await assertUploadQuota(tx, owner, rules, object.size, now);
+        return insertFile(tx, {
+          bucket: object.bucket,
+          key: object.key,
+          filename,
+          mime,
+          size: object.size,
+          sha256: object.sha256,
+          ownerType: owner.type,
+          ownerId: owner.id,
+        });
       });
       this.logger.log(`file ${row.id} uploaded by ${owner.type} ${owner.id} (${row.size} bytes, ${row.mime})`);
       return {

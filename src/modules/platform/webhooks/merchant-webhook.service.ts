@@ -5,6 +5,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { EncryptionService, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
+import { RateLimitService } from '../../../infra/rate-limit';
 import type { MerchantRef } from './merchant-ref';
 import { buildEnvelope, MAX_ENDPOINTS_PER_MERCHANT, PING_EVENT } from './webhook-delivery.rules';
 import {
@@ -57,8 +58,12 @@ const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
  * signing secret is generated here, stored encrypted (AES-GCM, AAD `webhook_endpoints.secret_enc`) and shown once, like an API
  * key. Another merchant's endpoint is `404`, like an unknown one. Merchant routes write no audit row (B121).
  *
- * Side effects: writes `webhook_endpoints`; deleting one deletes its `webhook_deliveries`; `test` inserts a `webhook_deliveries`
- * row and adds a job to the `merchant-webhooks` queue; a changed address costs one DNS lookup.
+ * Decision 053: a merchant sends at most 10 test deliveries an hour (limiter `webhook-test`, key `client:<id>`); an endpoint whose last 20
+ * deliveries all failed is switched off by the delivery engine, and turning it on again resets that count and `failureCount`.
+ *
+ * Side effects: writes `webhook_endpoints`; deleting one deletes its `webhook_deliveries`; `test` counts a point of the `webhook-test`
+ * limiter on the cache Redis, inserts a `webhook_deliveries` row and adds a job to the `merchant-webhooks` queue; a changed address costs
+ * one DNS lookup.
  *
  * @see docs/contract/MISMATCHES.md (B156)
  */
@@ -69,6 +74,7 @@ export class MerchantWebhookService {
     private readonly tokens: TokenService,
     private readonly encryption: EncryptionService,
     private readonly deliveries: WebhookDeliveries,
+    private readonly limits: RateLimitService,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(WEBHOOK_TARGET_POLICY) private readonly policy?: WebhookTargetPolicy,
   ) {}
@@ -124,7 +130,8 @@ export class MerchantWebhookService {
    * @param merchant the signed-in merchant
    * @param id the endpoint id
    * @param changes the fields to change; a missing one stays as it is
-   * @returns the endpoint after the change; turning it on again resets its failure count
+   * @returns the endpoint after the change; turning it on again resets its failure count and the count of failed deliveries in a row
+   *   that switches an endpoint off after 20 (decision 053)
    * @throws {AppError} `NOT_FOUND` (404); `VALIDATION_FAILED` (422) on `url`
    */
   async update(
@@ -149,7 +156,7 @@ export class MerchantWebhookService {
         ...(changes.url === undefined ? {} : { url: changes.url }),
         ...(changes.events === undefined ? {} : { events: unique(changes.events) }),
         ...(changes.isActive === undefined ? {} : { isActive: changes.isActive }),
-        ...(switchingOn ? { failureCount: 0 } : {}),
+        ...(switchingOn ? { failureCount: 0, consecutiveFailedDeliveries: 0 } : {}),
       });
       return endpointToWire(updated);
     });
@@ -177,8 +184,9 @@ export class MerchantWebhookService {
    * @param merchant the signed-in merchant
    * @param id the endpoint id
    * @returns the id of the delivery; its progress is in the endpoint's delivery log
-   * @throws {AppError} `NOT_FOUND` (404); `INVALID_TRANSITION` (409) for a paused endpoint; `UNAVAILABLE` (503) when the queue
-   *   cannot take the job (the delivery is removed again, so nothing is left waiting)
+   * @throws {AppError} `NOT_FOUND` (404); `INVALID_TRANSITION` (409) for a paused endpoint; `RATE_LIMITED` (429 with `Retry-After`) from
+   *   the eleventh test of a merchant in an hour (decision 053; nothing is queued); `UNAVAILABLE` (503) when the queue cannot take the
+   *   job (the delivery is removed again, so nothing is left waiting)
    */
   async test(merchant: MerchantRef, id: number): Promise<{ deliveryId: number }> {
     const endpoint = await findEndpoint(this.db.db, id);
@@ -186,6 +194,8 @@ export class MerchantWebhookService {
       throw new AppError('NOT_FOUND', { detail: 'No such webhook endpoint.' });
     if (!endpoint.isActive)
       throw new AppError('INVALID_TRANSITION', { detail: 'This endpoint is switched off. Turn it on to send a test.' });
+    // Decision 053: counted after the ownership and switched-on checks and before anything is written.
+    await this.limits.enforce('webhook-test', `client:${merchant.clientId}`);
     const now = this.clock.now();
     // 18 random bytes make exactly 24 base64url characters, the length of every other event id.
     const eventId = `evt_${this.tokens.random(18)}`;

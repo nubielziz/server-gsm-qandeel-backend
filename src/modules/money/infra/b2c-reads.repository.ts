@@ -152,7 +152,7 @@ export interface EvidenceFacts {
   }>;
   /** Earlier completed storefront orders of the customer that were paid and never disputed. */
   readonly priorPaidOrders: number;
-  /** Support tickets of the customer around the order (within five days) or about it. */
+  /** Support tickets of the customer around the order (within five days) or about it; a ticket whose address is not confirmed is not the customer's (decision 053). */
   readonly tickets: ReadonlyArray<{ number: string; subject: string }>;
 }
 
@@ -197,6 +197,7 @@ export async function loadEvidenceFacts(
       and(
         eq(s.supportTickets.requesterType, 'customer'),
         eq(s.supportTickets.requesterId, order.customerId),
+        s.requesterProven(),
         sql`(${s.supportTickets.orderId} = ${order.id} or (${s.supportTickets.createdAt} >= ${new Date(order.placedAt.getTime() - FIVE_DAYS_MS)} and ${s.supportTickets.createdAt} <= ${new Date(order.placedAt.getTime() + FIVE_DAYS_MS)}))`,
       ),
     )

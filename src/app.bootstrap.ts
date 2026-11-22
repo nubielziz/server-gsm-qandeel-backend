@@ -40,10 +40,28 @@ export function toFastifyTrustProxy(trust: TrustProxy): FastifyTrustProxy {
 }
 
 /**
+ * How often the server checks its connections against the time bounds: a quarter of the headers bound, from 100 ms to 5 s.
+ *
+ * Why: decision 053. The runtime closes a connection whose headers or body are late only when it runs its check, so the check must be
+ * frequent enough for the bound to mean what it says, and rare enough to cost nothing.
+ *
+ * @param headersTimeoutMs the headers bound (`HTTP_HEADERS_TIMEOUT_MS`)
+ * @returns the interval in milliseconds
+ */
+export function timeoutCheckIntervalMs(headersTimeoutMs: number): number {
+  return Math.min(5000, Math.max(100, Math.floor(headersTimeoutMs / 4)));
+}
+
+/**
  * Creates the Fastify adapter with the options that must be set at construction.
  *
  * Why: trusted proxies decide the client IP (IP rules, rate limits), the body limit protects memory (decision 018) and
- * the request id function gives every request the id used in headers, errors and logs (decision 012).
+ * the request id function gives every request the id used in headers, errors and logs (decision 012). Decision 053: the server sets
+ * two time bounds: the headers of a request (`headersTimeout`) and the whole request, body included (`requestTimeout`). The request bound
+ * lets the largest upload (25 MiB) finish at about 0.35 Mbit/s, and a live stream's request ends with its headers, so neither bound cuts a
+ * stream that only writes. Fastify's `connectionTimeout` (the silence on a connection) is left unset on purpose: Bun resets that timer only
+ * on bytes that come in, never on bytes written, so it would cut every live stream and every long download at its bound.
+ * `keepAliveTimeout` stays Fastify's (72 s).
  *
  * @param config the process configuration
  * @returns the adapter to pass to `NestFactory.create`
@@ -53,6 +71,12 @@ export function createAppAdapter(config: AppConfig): FastifyAdapter {
   const adapter = new FastifyAdapter({
     trustProxy: toFastifyTrustProxy(config.http.trustProxy),
     bodyLimit: config.http.bodyLimitBytes,
+    requestTimeout: config.http.requestTimeoutMs,
+    http: {
+      headersTimeout: config.http.headersTimeoutMs,
+      requestTimeout: config.http.requestTimeoutMs,
+      connectionsCheckingInterval: timeoutCheckIntervalMs(config.http.headersTimeoutMs),
+    },
     genReqId: resolveRequestId,
     // Fastify answers a malformed URL itself, before Nest sees the request; send it through the same filter. Router-level
     // errors skip the request hooks (no CORS headers, access log or duration sample); browsers never send such URLs.

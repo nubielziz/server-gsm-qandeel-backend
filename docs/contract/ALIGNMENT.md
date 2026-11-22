@@ -49,7 +49,8 @@ Disagreements are B-entries; nothing is picked silently.
   downloads `GET /admin/orders/export` and `GET /admin/reports/client-statement/:clientId` (decision 045); they set the contract flag
   `originCheck: true`: the CSRF guard requires `Sec-Fetch-Site: same-origin` or an `Origin` that is one of the console's origins
   (`CONSOLE_ORIGINS`), else `403 CSRF_FAILED`; the console downloads them with `fetch` from its own origin and sends no CSRF token
-  on them.
+  on them. One more, on the storefront: `GET /store/v1/tickets/:token` confirms the address of a contact-form ticket the first time
+  its link is opened (it sets `requester_proven_at` once, decision 053); the answer is unchanged.
 
 ## 2. Lists (simple-rest dialect)
 
@@ -133,6 +134,8 @@ Disagreements are B-entries; nothing is picked silently.
 - Validation `422 VALIDATION_FAILED` (one item per issue); malformed JSON `400 BAD_REQUEST`; show routes answer `404
   NOT_FOUND` (the console renders a not-found view); `429 RATE_LIMITED` always with `Retry-After`; business refusals are
   the 409/422 codes of `error-codes.md`, each mapped to the field the console highlights where it has one.
+- A string anywhere in the path, the query or the body (an object key included) that holds the character U+0000 or an unpaired surrogate is `422 VALIDATION_FAILED`
+  with one item for that input (`code: invalid_format`); the incoming webhooks (`/webhooks/*`) are not judged this way (decision 053).
 - `X-Request-Id` on every response (errors and successes); the body repeats it as `requestId`.
 
 ## 6. Headers, cookies and CORS

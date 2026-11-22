@@ -44,8 +44,9 @@ export const SUPPORT_EVENTS: readonly NotificationEventDefinition[] = [
   customerEvent({
     key: SUPPORT_TICKET_RECEIVED_EVENT,
     label: 'Ticket received',
-    description: 'A customer opened a support ticket: the receipt with the link to follow it.',
-    variables: ['customerName', 'ticketNumber', 'subject', 'link'],
+    description:
+      'A customer opened a support ticket: the receipt with the ticket number and the link to follow it. It repeats nothing the customer typed (decision 053).',
+    variables: ['ticketNumber', 'link'],
     // Feature 23, S6: the receipt holds the only link to the ticket, so a suspended or blocked customer still gets it.
     transactional: true,
     // Decision 047: the link is the ticket's capability token, a credential: its template keeps the link rules.

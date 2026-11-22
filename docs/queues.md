@@ -153,6 +153,10 @@ Delivers signed events to the webhook endpoints of merchants.
   `status = 'pending' and attempt = <this attempt>`, so a job that runs twice, or after a manual retry, records nothing twice. A job whose row has moved on only makes sure the current attempt has its job. Sends are at least
   once; the same `X-GSM-Event-Id` on every retry lets the receiver drop repeats.
 - **Retry policy:** 8 attempts, exponential backoff from 10 min (jitter 20 %), about 21 hours in total, matching the public rule "8 attempts over about 24 h" (`docs/contract/ALIGNMENT.md` § 7). The worker itself schedules the retries of an HTTP outcome and writes them to the row: a failed attempt n (a non-2xx answer, no answer within 10 s, a refused connection) sets `attempt = n + 1`, `next_retry_at` to `10 min x 2^(n-1)` shortened by up to 20 % at random, and adds the delayed job `webhook-<delivery>-<n + 1>`; after the 8th attempt the delivery is `failed` (a manual retry by staff is one more attempt, never a new ladder). A refusal that cannot change (the address no longer passes the SSRF guard) fails the delivery at once. The queue's own policy above only covers a job that throws (Postgres or Redis failed); every such run is safe to repeat.
+- **Pause after failed deliveries (decision 053):** a delivery that ends `failed` while its endpoint is on adds one to `webhook_endpoints.consecutive_failed_deliveries` (an attempt that is only retried counts nothing; a
+  delivered one, or the merchant turning the endpoint on, sets it to 0; `failure_count` keeps counting failed attempts). At 20 the same transaction switches the endpoint off (guarded `WHERE is_active`, so once) and writes the outbox
+  event `webhook.endpoint_disabled` `{ clientId, endpointId }`, which the `notifications` queue turns into the merchant's email (see "Outbox event types").
+- **Retention (decision 053):** deliveries created more than 90 days ago that are not `pending` are deleted by the daily job `webhook_delivery_retention` (`maintenance`, below).
 - **Schedule:** none (event-driven). A pending delivery whose job was lost is re-armed by `lost_work_reconcile` (decision 055): overdue by 10 minutes with its job `webhook-<delivery>-<attempt>` missing, or finished without moving the row, it gets that job again (`webhook_deliveries_retry_idx` serves the search). The reconcile re-arms deliveries, not the fan-out: an outbox job of a merchant event lost before it created its deliveries is not asked for again (a fan-out pass is a later feature).
 
 ## notifications
@@ -164,7 +168,8 @@ Sends emails and Telegram messages.
   - `notification.send` (`NotificationSendProcessor`, `src/modules/platform/notifications/notification.processors.ts`): sends one `notifications` row. Added by the
     relay for the outbox event `notification.send` (written with the row by `NotificationService.enqueue`), and, delayed, for a digest row.
   - `notification.plan` (`NotificationPlanProcessor`): turns an outbox event a merchant may want to hear about into notifications (`EventNotifier`): `wallet.low_balance`,
-    `order.status_changed` (`order.completed`, `order.failed` for merchants who opted in), `service.price_changed` (the daily digest) and, once the lead adds their routes at
+    `order.status_changed` (`order.completed`, `order.failed` for merchants who opted in), `service.price_changed` (the daily digest), `webhook.endpoint_disabled` (decision 053: the merchant's
+    transactional email "A webhook endpoint was switched off", once per outbox event; the endpoint is re-read, and one that is gone or belongs to another merchant is skipped) and, once the lead adds their routes at
     the merge of feature 8, `invoice.paid` and `deposit.approved`. It is registered next to the event's other consumer (the merchant webhooks): one outbox event, one job per queue.
   - `merchant.email_verification`, `merchant.password_reset`, `merchant.invited` (identity, `src/modules/identity/jobs/merchant-mail.processors.ts`, feature 2b/12a): rotate the
     link's token on its `auth_tokens` row and send the mail with the clear link as a secret that is never stored.
@@ -410,7 +415,7 @@ Draws the PDF tax receipt of a paid storefront order and stores it (`GET /store/
 Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.
 
 - **Concurrency:** 2 per worker process.
-- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), `lost_work_reconcile`, every 5 minutes, and `outbox_purge`, daily at 04:50 UTC (platform module, decision 055, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below). The others are built by their features, each
+- **Jobs:** `ip_rule_hits_flush`, every minute, `session_purge`, daily at 03:15 UTC, `client_group_promotion`, nightly at 03:30 UTC (identity module, below), `payment_auto_credit`, every minute, and `fx_refresh`, hourly, and `refund.process`, event-driven (money module, below), `checkout_recovery_sweep`, every 5 minutes (customers module, below), `notification_campaign_sweep`, every minute, `notification_reconcile`, every 5 minutes, and `notification_retention`, daily at 04:20 UTC (platform module, feature 23, below), `service_price_scan`, event-driven (catalog module, below), `retail_price_follow`, after a price change and every hour, and `category_names_clean`, once, asked for by a migration (catalog module, feature 31, below), `field_patterns_review`, once, asked for by a migration (catalog module, feature 41, below), `checkout_tokens_seal`, `tracking_tokens_seal` and `ticket_tokens_seal`, once, asked for by a migration (customers, orders and support modules, feature 44, below), and the four health jobs `service_checks` (every minute), `service_checks_purge` (03:30 UTC), `job_runs_reaper` (every 5 minutes) and `db_size_sample` (03:45 UTC) (health module, below), `support_reply_mail_sweep`, every minute, and `ticket_attachment_retention`, nightly at 03:30 UTC (support module, feature 28, below), `dispatch_sweep`, every minute (suppliers module, decision 044, below), `lost_work_reconcile`, every 5 minutes, and `outbox_purge`, daily at 04:50 UTC (platform module, decision 055, below), and the storefront search jobs `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`, default 15, and once at worker boot), `search_rebuild` (nightly at 03:40 UTC, and on demand), `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (daily 04:10 UTC) (storefront module, feature 29, below), and the three clean-ups of decision 053: `upload_janitor` (daily 04:30 UTC) and `webhook_delivery_retention` (daily 04:40 UTC) (platform module) and `supplier_log_retention` (daily 04:50 UTC) (suppliers module), below. The others are built by their features, each
   registered with `@QueueProcessor('maintenance', '<job name>')` and wrapped with `JobRunsService.run`:
   `ledger_integrity` (12b, nightly 02:30 UTC, below), `accruals` (daily 01:00 UTC), `reminders` (every 10 minutes). `idempotency_purge` (daily 04:10 UTC,
 orders module, below) is built. `storefront_popularity` (every 30 minutes, storefront module, below) is built. `data_retention`
@@ -439,7 +444,9 @@ orders module, below) is built. `storefront_popularity` (every 30 minutes, store
   (`src/modules/platform/lost-work/lost-work.module.ts`) and `outbox-purge` at 04:50 UTC (`src/modules/platform/outbox/outbox-relay.module.ts`,
   decision 055); the health jobs in
   `src/modules/health/jobs/health-jobs.module.ts`; `support-reply-mail-sweep` every minute and `ticket-attachment-retention` at 03:30 UTC
-  (`src/modules/support/support-jobs.module.ts`); the others are registered with `JobSchedulerRegistry` by the owning
+  (`src/modules/support/support-jobs.module.ts`); `upload-janitor` at 04:30 UTC and `webhook-delivery-retention` at 04:40 UTC
+  (`src/modules/platform/jobs/platform-retention.module.ts`); `supplier-log-retention` at 04:50 UTC
+  (`src/modules/suppliers/jobs/supplier-jobs.module.ts`); the others are registered with `JobSchedulerRegistry` by the owning
   features.
 
 ### Storefront popularity (storefront module, `src/modules/storefront/jobs/`)
@@ -496,8 +503,8 @@ None of these writes documents through the services alias (the `search-index` qu
 
 - **`data_retention`** (daily 03:00 UTC, `ImeiRetention`): reads the setting `imeiRetentionDays` (a whole number from 0 to 3650, default 180,
   `0` means do not keep) and sets `imei_enc`, `imei_hash` and `cached_until` of every `imei_checks` row created before the cutoff (the
-  clock's time minus the days) to NULL together, in batches of 1000 by id, at most 50 batches a run (a larger backlog continues the next
-  night). Payload: none (a manual run carries `{ runId }`). Idempotent: an erased row is not matched again, a parallel run finds fewer rows.
+  clock's time minus the days) to NULL together, in batches of 1000 by id, until a batch is short, at most 2000 batches a run (2 000 000 checks; a
+  larger backlog continues the next night, and the run logs a warning with the counts when it stops at the cap, decision 053). Payload: none (a manual run carries `{ runId }`). Idempotent: an erased row is not matched again, a parallel run finds fewer rows.
   Recorded in `job_runs` (`processed` is the number of checks erased). The staff log then shows the TAC and bullets.
 
 ### Support chat (support module, `src/modules/support/jobs/`, feature 28)
@@ -698,6 +705,45 @@ The daily clean-up of the notification center (feature 23, `NotificationRetentio
 - **Recorded in `job_runs`** (job `notification_retention`, `processed` = rows deleted, `result` = `{ inboxRead, inboxOld, log }`) on every run.
 - **Retry policy:** the queue's (3 attempts, backoff from 1 min); a backlog beyond 50 000 rows a table is finished by the next nights.
 
+### `upload_janitor` (platform module, decision 053)
+
+The daily deletion of stored files that nothing has used for 7 days (`UploadJanitor`, `src/modules/platform/files/upload-janitor.ts`; the processor and the
+schedule are in the worker-only `PlatformRetentionModule`, `src/modules/platform/jobs/platform-retention.module.ts`).
+
+- **Trigger:** the scheduler `upload-janitor` daily at 04:30 UTC (`30 4 * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** every `files` row created more than 7 days before the run (the injected clock) that no record references (the three array columns
+  `ticket_messages.file_ids`, `kyc_submissions.file_ids`, `disputes.evidence_file_ids` and every foreign key that names a file: orders, invoices, payments, data requests,
+  service listings, payment gateway logos) is deleted, one row per statement, in the transaction of that statement; its object is deleted after the commit. Every area counts: uploads,
+  generated documents that lost their reference (an invoice re-render leaves the old PDF unreferenced) and old pictures. 500 candidates a batch, at most 40 batches a run (a larger
+  backlog continues the next night).
+- **Idempotency:** a deleted row cannot be deleted twice and a parallel run finds fewer rows. Each delete repeats the whole "nothing references it" test for its row, so a file that
+  something started to use meanwhile is kept; a foreign-key violation on one row keeps that row (counted as `kept`) and the run goes on. The only race left is an attach through an
+  array column that is not committed yet at the moment of the delete (7 days after the upload).
+- **Recorded in `job_runs`** (job `upload_janitor`, `processed` = rows deleted, `result` = `{ deleted, kept }`) on every run.
+- **Retry policy:** the queue's (3 attempts, backoff from 1 min).
+
+### `webhook_delivery_retention` (platform module, decision 053)
+
+The daily deletion of old merchant webhook deliveries (`WebhookDeliveryRetention`, `src/modules/platform/webhooks/webhook-delivery-retention.ts`, in `PlatformRetentionModule`).
+
+- **Trigger:** the scheduler `webhook-delivery-retention` daily at 04:40 UTC (`40 4 * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** deletes the `webhook_deliveries` rows created more than 90 days before the run whose status is not `pending`, in batches of 1000 by id (`DELETE ... WHERE id IN (SELECT id ... ORDER BY id LIMIT 1000)`), at most 100 batches a run.
+- **Idempotency:** a deleted row cannot be deleted twice; a repeat or a parallel run only finds fewer rows. A `pending` delivery is never deleted.
+- **Recorded in `job_runs`** (`processed` = rows deleted, `result` = `{ deleted }`) on every run. **Retry policy:** the queue's.
+
+### `supplier_log_retention` (suppliers module, decision 053)
+
+The daily deletion of old supplier call logs (`SupplierLogRetention`, `src/modules/suppliers/jobs/supplier-log-retention.ts`, in `SupplierJobsModule`).
+
+- **Trigger:** the scheduler `supplier-log-retention` daily at 04:50 UTC (`50 4 * * *`), or a manual run.
+- **Payload:** none (a manual run carries `{ runId }`).
+- **What it does:** deletes the `supplier_api_logs` rows created more than 90 days before the run, in batches of 1000 by id, at most 100 batches a run. No table references a log row, and the
+  supplier poll reads only the newest `getimeiorder` log of each open order (minutes old), so no live read is affected.
+- **Idempotency:** a deleted row cannot be deleted twice; a repeat or a parallel run only finds fewer rows.
+- **Recorded in `job_runs`** (`JobRunsService.run`, `processed` = rows deleted, `result` = `{ deleted }`) on every run. **Retry policy:** the queue's.
+
 ### `fx_refresh` (money module)
 
 Refreshes the exchange rates every hour, with the same code as `POST /admin/currencies/refresh-fx` (`FxRefreshService`, decision 029).
@@ -895,6 +941,7 @@ none); the job id is `outbox-<event id>`.
 | `storefront.publish_apply` | `imports` | `publish_apply` | `runId` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`, loaded by the API and the worker through `PublishEngineModule`), written by `PublishOutbox` in the transaction that moves a run to `queued` (feature 31); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `PublishApplyProcessor` (`src/modules/storefront/publish/jobs/`) |
 | `storefront.publish_set_listed` | `imports` | `publish_set_listed` | `runId`, `listed`, `requestedBy` (aggregate: `listing_publish_runs`) | storefront (`PublishOutboxRoutes`), written by `PublishOutbox` in the transaction that queues a run switch (feature 31); also written by `lost_work_reconcile` with `reconcile: true` (decision 055). The processor is `PublishSetListedProcessor` (`src/modules/storefront/publish/jobs/`) |
 | `supplier.quick_add_done` | `imports` | `publish_from_quick_add` | `runId`, `supplierId`, `requestedBy`, `listed` (aggregate: `supplier_import_runs`) | suppliers (`QuickAddOutbox.done`, written in the transaction that closes a Quick add run that asked to publish and created services; feature 31); the route is registered by the storefront's `PublishOutboxRoutes` (the suppliers module never imports the storefront). The processor is `PublishFromQuickAddProcessor` (`src/modules/storefront/publish/jobs/`) |
+| `webhook.endpoint_disabled` | `notifications` | `notification.plan` | `clientId`, `endpointId` (aggregate: `webhook_endpoints`) | platform (`NotificationRoutes`; the producer is `WebhookDeliveries`, which writes it in the transaction that switches the endpoint off after 20 failed deliveries in a row, decision 053) |
 
 `invoice.paid` (feature 8) routes to `merchant-webhooks` (`InvoiceOutbox`) and to `notifications` (`notification.plan`, registered by the platform's `NotificationRoutes` since the 12a merge): every credited top-up tells the merchant once. `deposit.approved` has a registry entry and default templates but no producer: a credited top-up already writes `invoice.paid`, and emitting both would send two messages per top-up (B-entry of 12a). A test app plans a job directly through `test/support/notifications.ts` (`eventJob`).
 
@@ -916,6 +963,9 @@ Registered with `JobSchedulerRegistry.register` in `onModuleInit`; the worker up
 | `notification-retention` | `maintenance` | `notification_retention` | daily 04:20 UTC | platform (`src/modules/platform/notifications/campaigns/campaign-engine.module.ts`) |
 | `lost-work-reconcile` | `maintenance` | `lost_work_reconcile` | every 5 minutes | platform (`src/modules/platform/lost-work/`) |
 | `outbox-purge` | `maintenance` | `outbox_purge` | daily 04:50 UTC | platform (`src/modules/platform/outbox/`) |
+| `upload-janitor` | `maintenance` | `upload_janitor` | daily 04:30 UTC | platform (`src/modules/platform/jobs/`) |
+| `webhook-delivery-retention` | `maintenance` | `webhook_delivery_retention` | daily 04:40 UTC | platform (`src/modules/platform/jobs/`) |
+| `supplier-log-retention` | `maintenance` | `supplier_log_retention` | daily 04:50 UTC | suppliers (`src/modules/suppliers/jobs/`) |
 | `service-checks` | `maintenance` | `service_checks` | every minute | health (`src/modules/health/jobs/`) |
 | `service-checks-purge` | `maintenance` | `service_checks_purge` | daily 03:30 UTC | health (`src/modules/health/jobs/`) |
 | `job-runs-reaper` | `maintenance` | `job_runs_reaper` | every 5 minutes | health (`src/modules/health/jobs/`) |

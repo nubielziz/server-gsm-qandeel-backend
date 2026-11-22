@@ -1,7 +1,7 @@
 // Support tables (map domain J): tickets from customers and merchants, their messages and reply templates.
 // Conventions: decision 027; schema additions: MISMATCHES B116, the ticket token (feature 17), the seen marks, the reply-mail columns and
 // the notify channel (feature 28), the token's hash and copy (decision 054); ownership: scripts/module-map.mjs.
-import { sql } from 'drizzle-orm';
+import { type SQL, isNotNull, sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { bigId, bigintList, createdAt, fk, inList, lower, pk, timestampTz, updatedAt } from '../../../infra/db/columns';
 import { staffUsers } from '../../identity/db/schema';
@@ -120,6 +120,8 @@ export const supportTickets = pgTable(
     tokenHash: text(),
     /** the ticket link token as AES-GCM text, AAD support_tickets.token_enc (decisions 019, 054) */
     tokenEnc: text(),
+    /** when the requester's address was proven (decision 053): when the ticket was made, except a ticket of the public form opened with a typed email, which is null until its link is first used; while null the ticket stays off the customer's account */
+    requesterProvenAt: timestampTz().defaultNow(),
     /** when the satisfaction survey was queued; set once, in the resolve transaction, and never cleared (one survey per ticket) */
     surveySentAt: timestampTz(),
     /** the newest public staff message the requester has seen (feature 28: one seen mark per side, it only moves forward) */
@@ -175,6 +177,21 @@ export type SupportTicket = typeof supportTickets.$inferSelect;
 
 /** A row to insert into `support_tickets`. */
 export type NewSupportTicket = typeof supportTickets.$inferInsert;
+
+/**
+ * The condition "the requester's address of the ticket is proven", for a query on `support_tickets`.
+ *
+ * Why: decision 053. A ticket opened on the public form with a typed email address is not the address owner's until the mailed link is
+ * used, so it is left out of everything that lists a customer's own tickets: the account list, the replay of the live account stream, the
+ * customer's data export and the evidence of their orders. The one expression, here beside the column, is shared by those reads (the
+ * reads of other modules reach this table through the schema barrel, so none of them copies the test); the in-memory twin for a row
+ * already read is `isRequesterProven` (`domain/requester-proof.ts`).
+ *
+ * @returns the SQL condition `requester_proven_at is not null`
+ */
+export function requesterProven(): SQL {
+  return isNotNull(supportTickets.requesterProvenAt);
+}
 
 /**
  * Ticket messages from the customer, a staff member or the system, plus internal notes.

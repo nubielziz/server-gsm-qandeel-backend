@@ -9,7 +9,13 @@ export type {
   DhruParamsOf,
   DhruResultOf,
 } from './define-dhru-action';
-export { DHRU_MAX_BULK_ITEMS, DhruGateway } from './dhru-gateway';
+export {
+  DHRU_BULK_PLACEMENT_ACTION,
+  DHRU_MAX_BULK_ITEMS,
+  DHRU_MAX_ITEM_ID_LENGTH,
+  DhruGateway,
+  bulkPlacementItems,
+} from './dhru-gateway';
 export type { DhruCall, DhruCaller, DhruExecution, DhruHandler } from './dhru-gateway';
 export {
   DHRU_HEADERS,

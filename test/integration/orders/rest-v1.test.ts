@@ -482,6 +482,70 @@ describe('POST /v1/orders', () => {
   });
 });
 
+/** A valid IMEI (15 digits, Luhn check digit) for a number, so a test can place as many orders as it needs. */
+function imeiOf(n: number): string {
+  const body = `35${String(n).padStart(12, '0')}`;
+  let sum = 0;
+  [...body].reverse().forEach((digit, index) => {
+    let value = Number(digit);
+    if (index % 2 === 0) {
+      value *= 2;
+      if (value > 9) value -= 9;
+    }
+    sum += value;
+  });
+  return `${body}${(10 - (sum % 10)) % 10}`;
+}
+
+describe('POST /v1/orders/bulk: the points of a bulk (decision 053)', () => {
+  const bulk = (client: ReturnType<typeof v1Client>, from: number, count: number) =>
+    client.post('/v1/orders/bulk', {
+      orders: Array.from({ length: count }, (_, index) => ({
+        serviceId: world.manual.serviceId,
+        imei: imeiOf(from + index),
+      })),
+    });
+
+  it('charges one point of the key’s limit per order of a bulk', async () => {
+    const { db } = await testDb();
+    await db.update(s.ledgerAccounts).set({ balance: '1000.0000' }).where(walletAccountOf(world.merchant.id));
+    const limited = await credentialsFor(t, db, world.merchant.id, { rateLimitPerMin: 10 });
+    const client = v1Client(t, limited.key);
+    const first = await bulk(client, 1, 8);
+    expect(first.statusCode).toBe(200);
+    expect(first.headers['ratelimit-limit']).toBe('10');
+    expect(first.headers['ratelimit-remaining']).toBe('2');
+    expect(body(first).results.every((result: { ok: boolean }) => result.ok)).toBe(true);
+    // A bulk larger than what is left of the minute is 429 like any call over the limit, and places nothing.
+    const refused = await bulk(client, 100, 3);
+    expect(refused.statusCode).toBe(429);
+    expect(body(refused).code).toBe('RATE_LIMITED');
+    expect(refused.headers['ratelimit-remaining']).toBe('0');
+    expect(await db.select().from(s.orders)).toHaveLength(8);
+    // The most a bulk can cost is the whole limit: a bulk of 12 is charged 10 and all 12 are placed.
+    await clearApiKeyCaches(t);
+    const large = await bulk(client, 200, 12);
+    expect(large.statusCode).toBe(200);
+    expect(large.headers['ratelimit-limit']).toBe('10');
+    expect(large.headers['ratelimit-remaining']).toBe('0');
+    expect(body(large).results).toHaveLength(12);
+    expect(await db.select().from(s.orders)).toHaveLength(20);
+  });
+
+  it('still charges one point for every other call, and for a bulk of one', async () => {
+    const { db } = await testDb();
+    const limited = await credentialsFor(t, db, world.merchant.id, { rateLimitPerMin: 5 });
+    const client = v1Client(t, limited.key);
+    expect((await client.get('/v1/account')).headers['ratelimit-remaining']).toBe('4');
+    expect((await bulk(client, 300, 1)).headers['ratelimit-remaining']).toBe('3');
+    expect(
+      (await client.post('/v1/orders', { serviceId: world.manual.serviceId, imei: imeiOf(301) })).headers[
+        'ratelimit-remaining'
+      ],
+    ).toBe('2');
+  });
+});
+
 describe('POST /v1/orders/bulk', () => {
   it('answers each item on its own: placed orders and refusals side by side, in the order sent, drawing on one wallet', async () => {
     const { db } = await testDb();

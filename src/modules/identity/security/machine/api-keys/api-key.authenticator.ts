@@ -6,7 +6,12 @@ import { CLOCK, type Clock } from '../../../../../common/clock';
 import { constantTimeEqual } from '../../../../../infra/crypto';
 import { type IpAddress, formatIpAddress, ipRateLimitKey, parseIpAddress } from '../../../../../common/ip-address';
 import type { Surface } from '../../../../../common/surface';
-import { type RateLimitResult, RateLimitService, rateLimitedError } from '../../../../../infra/rate-limit';
+import {
+  RATE_LIMITERS,
+  type RateLimitResult,
+  RateLimitService,
+  rateLimitedError,
+} from '../../../../../infra/rate-limit';
 import type { ApiKeyPrincipal } from '../../principal';
 import { ApiKeyDirectory } from './api-key.directory';
 import { type ApiKeyRefusalReason, type ApiKeyView, checkApiKey, refusalFor } from './api-key.rules';
@@ -19,6 +24,11 @@ export interface ApiKeyCredentials {
   readonly username?: string | undefined;
   /** The scope the key must list. */
   readonly scope: string;
+  /**
+   * How many points of the key's per-minute limit the call costs, default 1: a bulk placement costs one per item, at most the key's
+   * whole limit (decision 053).
+   */
+  readonly points?: number | undefined;
   /** The surface, which words the refusals (problem+json, or the Dhru envelope). */
   readonly surface: Surface;
   /**
@@ -35,7 +45,9 @@ export interface ApiKeyCredentials {
  * by keyed hash, then check revoked/expired, the merchant's status, `allowed_ips` (CIDR, IPv4 and IPv6), the scope and the
  * key's per-minute limit (decision 021; the limit is counted only after every other check passed, so a refused call costs the
  * merchant nothing). Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because
- * REST v1 and Dhru have no per-IP stage in the pipeline and an unknown key has no per-key limit to hit.
+ * REST v1 and Dhru have no per-IP stage in the pipeline and an unknown key has no per-key limit to hit. Decision 053: that budget is read
+ * before the key is looked up, so an address that used it up costs no lookup; a bulk placement costs one point per item (`points`), at
+ * most the key's whole limit, in the one `consume`, so the `RateLimit-*` headers stay true.
  *
  * Side effects: reads the key cache and, on a miss, `api_keys` and `clients`; counts points in the cache Redis; writes
  * `api_keys.last_used_at` at most once a minute; tells the caller the key's limit figures through `onRateLimit` (REST v1 sends
@@ -71,6 +83,9 @@ export class ApiKeyAuthenticator {
 
     // Nothing was sent: refuse without a lookup and without counting (it costs us nothing).
     if (key === undefined) throw refuse('unauthenticated');
+    // Decision 053: an address that used up its unknown-key budget is answered without a lookup.
+    const budget = await this.limits.peek('ip', failureKey(address));
+    if (!budget.allowed) throw rateLimitedError(budget.retryAfterSeconds);
     const view = await this.directory.findByKey(key);
     if (!view || (username !== undefined && !sameUsername(view.client.username, username))) {
       await this.chargeFailure(address);
@@ -84,7 +99,11 @@ export class ApiKeyAuthenticator {
     // A stored limit below 1 is a data error (the limiter would throw): the limiter's default applies instead.
     const options =
       Number.isInteger(view.rateLimitPerMin) && view.rateLimitPerMin >= 1 ? { limit: view.rateLimitPerMin } : {};
-    const limit = await this.limits.consume('api-key', String(view.id), 1, options);
+    const keyLimit = options.limit ?? RATE_LIMITERS['api-key'].points;
+    // A bulk costs one point per item, but never more than the key's whole limit (or the documented 100-item bulk could never pass).
+    const wanted = Number.isInteger(credentials.points) ? (credentials.points as number) : 1;
+    const points = Math.max(1, Math.min(wanted, keyLimit));
+    const limit = await this.limits.consume('api-key', String(view.id), points, options);
     onRateLimit?.(limit);
     if (!limit.allowed) throw rateLimitedError(limit.retryAfterSeconds);
 
@@ -101,7 +120,7 @@ export class ApiKeyAuthenticator {
 
   /** Counts one point against the address that presented an unknown key; the budget used up is a `429`. */
   private async chargeFailure(address: IpAddress | undefined): Promise<void> {
-    const result = await this.limits.consume('ip', `api-key-failures:${ipRateLimitKey(address)}`);
+    const result = await this.limits.consume('ip', failureKey(address));
     if (!result.allowed) throw rateLimitedError(result.retryAfterSeconds);
   }
 
@@ -115,6 +134,11 @@ export class ApiKeyAuthenticator {
       );
     }
   }
+}
+
+/** The key of the unknown-key budget of a client address, on the `ip` limiter. */
+function failureKey(address: IpAddress | undefined): string {
+  return `api-key-failures:${ipRateLimitKey(address)}`;
 }
 
 /** Dhru usernames are unique case-insensitively (`clients.username`). */

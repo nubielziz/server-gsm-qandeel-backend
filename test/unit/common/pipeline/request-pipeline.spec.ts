@@ -25,8 +25,8 @@ const request = {} as FastifyRequest;
 const reply = (sent = false) => ({ sent }) as unknown as FastifyReply;
 
 describe('PIPELINE_STAGES', () => {
-  it('is the order of decision 018: IP rules, maintenance, per-IP rate limit', () => {
-    expect<string[]>([...PIPELINE_STAGES]).toEqual(['ip-rules', 'maintenance', 'rate-limit']);
+  it('is the order of decision 018: IP rules, maintenance, per-IP rate limit, then the upload session check (decision 053)', () => {
+    expect<string[]>([...PIPELINE_STAGES]).toEqual(['ip-rules', 'maintenance', 'rate-limit', 'upload-session']);
   });
 });
 

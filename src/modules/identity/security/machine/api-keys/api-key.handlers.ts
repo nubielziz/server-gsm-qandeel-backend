@@ -8,6 +8,7 @@ import type { AccessHandler } from '../../access-handlers';
 import type { AccessState } from '../../access-state';
 import type { ApiKeyAuthenticator } from './api-key.authenticator';
 import { DHRU_SCOPE } from './api-key.rules';
+import { requestPoints } from './request-points';
 
 /**
  * Reads the key of an `Authorization: Bearer <key>` header.
@@ -91,6 +92,7 @@ export class ApiKeyAccessHandler implements AccessHandler {
       key: bearerKeyOf(request.headers.authorization),
       // A v1 route without a scope cannot exist (defineRoute refuses it); the empty scope is refused for every key, `*` included.
       scope: contract.permission ?? '',
+      points: requestPoints(contract.key, request.body),
       surface: contract.surface,
       onRateLimit: reply ? (result) => setRateLimitHeaders(reply, result) : undefined,
     });
@@ -122,6 +124,7 @@ export class DhruCredentialsAccessHandler implements AccessHandler {
       key: credentials?.apiAccessKey,
       username: credentials?.username,
       scope: DHRU_SCOPE,
+      points: requestPoints(contract.key, request.body),
       surface: contract.surface,
     });
     return { principal };

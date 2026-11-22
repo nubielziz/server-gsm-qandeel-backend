@@ -131,6 +131,7 @@ describe('RAISED_BODY_LIMITS and isFormContentType', () => {
   it('knows form content types, with parameters and in any case', () => {
     expect(isFormContentType('application/x-www-form-urlencoded; charset=utf-8')).toBe(true);
     expect(isFormContentType('Multipart/Form-Data; boundary=x')).toBe(true);
+    expect(isFormContentType('\u00a0multipart/form-data; boundary=x')).toBe(true);
     expect(isFormContentType('application/json')).toBe(false);
     expect(isFormContentType(undefined)).toBe(false);
   });

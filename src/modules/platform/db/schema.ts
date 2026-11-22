@@ -398,6 +398,8 @@ export const webhookEndpoints = pgTable(
     events: textList(),
     isActive: boolean().notNull().default(true),
     failureCount: integer().notNull().default(0),
+    /** deliveries in a row that ended failed while the endpoint was on; 20 switch it off (decision 053); a delivered one or turning the endpoint on sets it to 0 */
+    consecutiveFailedDeliveries: integer().notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

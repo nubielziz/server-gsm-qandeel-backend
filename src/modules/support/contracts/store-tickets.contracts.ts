@@ -127,8 +127,10 @@ export const openStoreTicket = defineRoute({
     'reply target; the customer gets a receipt email whose link holds the ticket token, the whole credential of the next three routes. ' +
     'The answer carries `token` only when `orderToken` was given (the caller already holds the order link); with `email` alone it has no ' +
     'token, because anyone can type an address and the ticket is filed under the customer who owns it: the receipt link is the only way in. ' +
-    'An address may open 3 new tickets an hour (case-insensitive), so the receipt email cannot relay spam: the fourth is `429 RATE_LIMITED` ' +
-    `with \`Retry-After\`. Needs the anti-bot token (\`X-Turnstile-Token\`). ${NO_STORE}`,
+    'An address may get 3 new tickets an hour (case-insensitive), counted for the typed `email` and, with `orderToken`, for the address of the ' +
+    "order's customer: the fourth is `429 RATE_LIMITED` with `Retry-After`. The receipt email repeats nothing that was typed (no name, no " +
+    'subject): it holds the ticket number and the link. A ticket opened with a typed `email` is listed in that customer’s account only once ' +
+    `its link has been opened (decision 053). Needs the anti-bot token (\`X-Turnstile-Token\`). ${NO_STORE}`,
   tags: ['support-tickets'],
   surface: 'store',
   access: 'public',
@@ -163,7 +165,8 @@ export const showStoreTicket = defineRoute({
   description:
     'The conversation of the ticket the token names, without internal notes or system messages. An unknown, malformed or wrong token is ' +
     '`404`. A ticket’s link stops working 180 days after the ticket was resolved (also `404`); reopening the ticket opens it again. ' +
-    `Lookups are limited to 30 a minute per address. ${NO_STORE}`,
+    'Opening a ticket filed on the contact form with a typed email confirms that address: the ticket then shows in the customer’s account ' +
+    `(decision 053). Lookups are limited to 30 a minute per address. ${NO_STORE}`,
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',
@@ -182,7 +185,8 @@ export const writeOnStoreTicket = defineRoute({
     'resolved ticket is closed for the customer: `409 TICKET_RESOLVED` ("This ticket is closed. Open a new ticket if you still need help."), ' +
     'nothing is written, and staff must reopen it before the customer can write again. `fileIds` attaches files uploaded with `POST /store/v1/tickets/:token/files` ' +
     "(at most 5, the customer's own PDF, JPEG or PNG of 5 MiB); `body` may be `''` when a file is attached. One ticket takes 20 messages " +
-    'a minute (`429 RATE_LIMITED` with `Retry-After`). The answer is the new message; staff see it at once on their live stream.',
+    'a minute (`429 RATE_LIMITED` with `Retry-After`). A message written with the link confirms the address in the same way (decision 053). ' +
+    'The answer is the new message; staff see it at once on their live stream.',
   tags: ['support-tickets'],
   surface: 'store',
   access: 'ticket-token',

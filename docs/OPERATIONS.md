@@ -545,7 +545,9 @@ enrolment): entering them again seals them with the active key. The twelve encry
   driver for every service, decision 055); a rotation in `/etc/docker/daemon.json` (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`)
   is still useful for any other container on the host.
 - **Health:** `GET /health` always answers 200 with `ok`, `degraded` or `down` and the checks; `GET /health?strict=1` answers 503 when
-  Postgres is down (this is what the container healthcheck calls). The System health pages of the console show the same and more.
+  Postgres is down (this is what the container healthcheck calls). The answer comes from a check at most 3 seconds old, one check at a time
+  per API process (decision 053), so a probe, however often it is called, costs the dependencies one check every 3 seconds; `?strict=1` reads the
+  same check and only changes the status code. The System health pages of the console show the same and more.
 - **Metrics:** `/metrics` of the API and the worker (port 9464) need `Authorization: Bearer <METRICS_TOKEN>` and are reachable only inside
   the compose network. Prometheus scrapes both every 15 s; nothing is published. To look at one by hand:
   `gsmc exec api bun -e "console.log(await (await fetch('http://127.0.0.1:3000/metrics', {headers: {authorization: 'Bearer ' + process.env.METRICS_TOKEN}})).text())"`.
@@ -801,6 +803,32 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - **Two-step sign-in of a merchant needs a confirmed email address.** Starting the setup or confirming it answers `409` ("Confirm your
   email address first; two-step sign-in can be switched on after that.") while the merchant's email is not confirmed: send the
   verification link first. Switching it off and signing in with a code are not affected.
+
+### Public surface limits (decision 053)
+
+- **Request time bounds.** Two settings in `.env.production`, both optional (the defaults are safe): `HTTP_HEADERS_TIMEOUT_MS` (default 20000, 100 to
+  120000: the headers of a request must arrive within it, so a connection that sends half a request line and stops is closed) and
+  `HTTP_REQUEST_TIMEOUT_MS` (default 600000, 1000 to 3600000: the whole request, body included; a 25 MiB upload finishes at about 0.35 Mbit/s, so a
+  slower line is cut). The boot refuses a headers bound that is not shorter than the request bound. Neither bound cuts a live stream or a long
+  download: they end with the request, and the response only writes. There is no setting for the silence of a connection, because Bun resets that timer
+  only on bytes that come in, so it would cut every live stream at its bound. To allow slower uploads raise `HTTP_REQUEST_TIMEOUT_MS` and run
+  `gsmc up -d api`; Caddy's own timeouts are separate. A request cut by a bound is closed or answered `408` without a handler running.
+- **Kept for a limited time.** Merchant webhook deliveries and supplier call logs are deleted after 90 days (daily jobs `webhook_delivery_retention` at
+  04:40 UTC and `supplier_log_retention` at 04:50 UTC; a delivery that is still waiting for an attempt is never deleted). Stored files that no record references are
+  deleted 7 days after they were stored (daily job `upload_janitor` at 04:30 UTC), so an upload that nobody used is gone within a week. Every run is in the jobs
+  list of the console (`GET /admin/system/jobs`) with its counts.
+- **Upload quotas.** A merchant that waits for approval keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most 500 files (5 GiB) in 24 hours; a
+  customer 30 files (100 MiB) in 24 hours, receipts and ticket files together; one ticket link 20 files (50 MiB) in 24 hours. Over a bound the upload is
+  `422` on `file` with the code `quota`. Generated documents (invoices, receipts) and staff uploads never count. The numbers are constants in
+  `src/modules/platform/files/upload-quota.ts`: a merchant who needs more is a code change today.
+- **Incoming webhooks and failed sessions.** Every request under `/webhooks` is counted per client address (600 a minute, limiter `webhook-intake`) before the
+  route reads anything; a refused sender retries. A session cookie that names no live session, and an API key that does not exist, cost one point of a budget of the
+  client address (300 a minute, per audience); once it is used up the address is answered `429` until the minute ends, and a multipart body of an upload route is read only
+  with a live session. A bulk placement (REST v1 `POST /v1/orders/bulk`, Dhru `placeimeiorderbulk`) costs one point of the key's per-minute limit per item, at most the
+  whole limit.
+- **Switched-off webhook endpoints.** An endpoint that did not accept 20 deliveries in a row is switched off and the merchant gets the email "A webhook endpoint was switched
+  off"; the merchant turns it on again in the portal, which starts a new count. A merchant can send 10 test deliveries an hour.
+- Nothing new has to be set before go-live: the defaults of this section are safe.
 
 ## 7. Owner checklists
 

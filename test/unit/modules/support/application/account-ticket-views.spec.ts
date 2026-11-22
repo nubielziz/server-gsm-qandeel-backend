@@ -31,6 +31,7 @@ const ticket = (values: Partial<SupportTicket> = {}): SupportTicket => ({
   token: null,
   tokenHash: null,
   tokenEnc: null,
+  requesterProvenAt: at(0),
   surveySentAt: null,
   requesterSeenMessageId: null,
   requesterSeenAt: null,

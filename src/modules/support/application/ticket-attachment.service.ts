@@ -7,14 +7,18 @@ import { AppError, type FieldError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import {
   AuditService,
+  CUSTOMER_DAILY_QUOTA,
   type FileMeta,
   SUPPORT_SETTINGS,
   SettingsReader,
   StoredFiles,
   type UploadInput,
+  assertUploadQuota,
   auditStaffFileOpening,
   cleanMediaType,
   cleanUploadName,
+  lockUploadOwner,
+  ticketDailyQuota,
 } from '../../platform';
 import type { SupportTicket } from '../db/schema';
 import {
@@ -111,7 +115,8 @@ export class TicketAttachmentService {
    * @returns the stored file; its id goes into `fileIds` of the next message
    * @throws {AppError} `NOT_FOUND` (no such ticket, or a link of a ticket that has no customer); `TICKET_RESOLVED` (409: a requester's
    *   upload for a resolved ticket, which takes no message, so the file would be an orphan; staff may still upload); `VALIDATION_FAILED`
-   *   (422 on `file`: `empty`, `type`); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
+   *   (422 on `file`: `empty`, `type`, `quota`: a ticket link takes 20 files (50 MiB) and its customer 30 files (100 MiB) in 24 hours,
+   *   decision 053; staff uploads have no quota); `PAYLOAD_TOO_LARGE` (over 5 MiB); `UNAVAILABLE` (the object store is down)
    */
   async upload(ticketId: number, uploader: Uploader, input: UploadInput): Promise<UploadedAttachment> {
     const mime = cleanMediaType(input.mime);
@@ -142,6 +147,18 @@ export class TicketAttachmentService {
         uploader.side === 'staff'
           ? { type: 'staff', id: uploader.staffId }
           : { type: ticket.requesterType, id: ticket.requesterId };
+      // Decision 053: a requester's upload counts against the ticket's quota and the customer's, checked under the owner's lock before the
+      // object is written (the lock lasts until this transaction ends).
+      if (uploader.side === 'requester') {
+        await lockUploadOwner(tx, { type: ticket.requesterType, id: ticket.requesterId });
+        await assertUploadQuota(
+          tx,
+          { type: ticket.requesterType, id: ticket.requesterId },
+          [ticketDailyQuota(ticket.id), CUSTOMER_DAILY_QUOTA],
+          input.data.length,
+          this.clock.now(),
+        );
+      }
       const stored = await this.files.store(tx, {
         ownerType: owner.type,
         ownerId: owner.id,

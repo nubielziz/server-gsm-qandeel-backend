@@ -1,6 +1,6 @@
 // HTTP controller of the incoming payment confirmation (map domain E, stage 8, route POST /webhooks/payments/:gateway).
 import { Body, Controller } from '@nestjs/common';
-import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
+import { type BodyOf, type ResultOf, Route, withoutForbiddenText } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type Principal } from '../../identity';
 import { PaymentWebhookService } from '../application/payment-webhook.service';
@@ -20,6 +20,10 @@ export class PaymentWebhookController {
   /**
    * Records a verified payment confirmation.
    *
+   * Decision 053: the body of a webhook is not refused for the character U+0000 or an unpaired surrogate (a gateway would repeat the
+   * event); the first is removed and the second replaced from every text and key here, before anything is stored (the payment's `raw`
+   * event, ids, references), so the signed body is accepted as usual.
+   *
    * @param principal the verified webhook delivery
    * @param body the gateway's event
    * @returns `{ received: true }`
@@ -31,6 +35,6 @@ export class PaymentWebhookController {
     @Body() body: BodyOf<typeof paymentWebhook>,
   ): Promise<ResultOf<typeof paymentWebhook>> {
     if (principal?.kind !== 'webhook') throw new AppError('WEBHOOK_SIGNATURE_INVALID');
-    return this.webhook.handle(principal.gateway, body);
+    return this.webhook.handle(principal.gateway, withoutForbiddenText(body));
   }
 }

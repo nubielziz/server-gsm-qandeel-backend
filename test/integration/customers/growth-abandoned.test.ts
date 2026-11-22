@@ -51,6 +51,65 @@ async function listAll(query = '') {
 const flagOf = (rows: Array<{ id: number; canRecover: boolean }>, id: number) =>
   rows.find((row) => row.id === id)?.canRecover;
 
+describe('GET /admin/checkouts/abandoned: the address must be proven (decision 053)', () => {
+  it('shows marketingConsent false and canRecover false for an unproven guest, and true once the address is proven', async () => {
+    const { db } = await testDb();
+    const typed = await insertAbandoned(t, db, {
+      serviceId: serviceId(),
+      createdAt: ago(2 * 60 * MINUTE),
+      proven: false,
+    });
+    const proven = await insertAbandoned(t, db, { serviceId: serviceId(), createdAt: ago(2 * 60 * MINUTE) });
+    const rows = (await listAll()).body as Array<{ id: number; marketingConsent: boolean; canRecover: boolean }>;
+    expect(rows.find((row) => row.id === typed.sessionId)).toMatchObject({
+      marketingConsent: false,
+      canRecover: false,
+    });
+    expect(rows.find((row) => row.id === proven.sessionId)).toMatchObject({ marketingConsent: true, canRecover: true });
+    // The "Needs a reminder" filter leaves the unproven one out.
+    const needing = (await listAll('&canRecover=true')).body as Array<{ id: number }>;
+    expect(needing.map((row) => row.id)).toEqual([proven.sessionId]);
+    // A sign-in link used since proves the address: the recorded answer counts from then on.
+    await db
+      .update(s.customers)
+      .set({ emailVerifiedAt: new Date(clock.nowMs()) })
+      .where(eq(s.customers.id, typed.customerId!));
+    const after = (await listAll()).body as Array<{ id: number; marketingConsent: boolean; canRecover: boolean }>;
+    expect(after.find((row) => row.id === typed.sessionId)).toMatchObject({ marketingConsent: true, canRecover: true });
+  });
+
+  it('counts a paid checkout of the customer as a proof of the address', async () => {
+    const { db } = await testDb();
+    const typed = await insertAbandoned(t, db, {
+      serviceId: serviceId(),
+      createdAt: ago(2 * 60 * MINUTE),
+      proven: false,
+    });
+    const consentOf = async () =>
+      ((await listAll()).body as Array<{ id: number; marketingConsent: boolean }>).find(
+        (row) => row.id === typed.sessionId,
+      )?.marketingConsent;
+    expect(await consentOf()).toBe(false);
+    // The same guest paid another checkout (a paid order by that guest): the address is proven.
+    await db.insert(s.checkoutSessions).values({
+      token: 'paid-checkout-token-0001',
+      customerId: typed.customerId!,
+      email: typed.email,
+      serviceId: serviceId(),
+      currency: 'USD',
+      fxRate: '1',
+      netAmount: '4.7900',
+      grossAmount: '4.7900',
+      utm: {},
+      status: 'paid',
+      expiresAt: ago(-30 * MINUTE),
+      createdAt: ago(3 * 60 * MINUTE),
+      updatedAt: ago(3 * 60 * MINUTE),
+    });
+    expect(await consentOf()).toBe(true);
+  });
+});
+
 describe('GET /admin/checkouts/abandoned', () => {
   it('lists a row the way the console reads it: masked email, USD basket with the locked rate, service, status judged on the clock, consent and verdict', async () => {
     const { db } = await testDb();

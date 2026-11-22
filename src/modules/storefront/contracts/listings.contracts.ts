@@ -289,7 +289,7 @@ export const uploadListingImage = defineRoute({
     'and the `imageUrl` of the answer and of the public service cards. Refusals are `422` on `file` with the code: `empty`, ' +
     '`unsupported_type`, `corrupt`, `animated`, `too_small`, `too_large_dimensions`, `rotated` (a JPEG whose EXIF turns it: save it ' +
     'upright); more than 2 MiB is `413`. A JSON or form body has no file part, so it is `422` on `file`; a body of a type the API does ' +
-    'not read is `415`. Audited (`uploaded image for`).',
+    'not read is `415`. A multipart body is read only with a live staff session. Audited (`uploaded image for`).',
   tags: ['storefront-listings'],
   surface: 'admin',
   access: 'staff-permission',

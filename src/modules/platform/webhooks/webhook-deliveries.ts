@@ -7,11 +7,14 @@ import { DbService } from '../../../infra/db';
 import { HttpRequestError, OutboundHttp, type HttpFailure } from '../../../infra/http';
 import { QueuesService, queueJobId } from '../../../infra/queues';
 import type { WebhookDelivery } from '../db/schema';
+import { OutboxService } from '../outbox/outbox.service';
 import {
+  WEBHOOK_ENDPOINT_DISABLED_EVENT,
   WEBHOOK_ERROR_LIMIT,
   WEBHOOK_MAX_RESPONSE_BYTES,
   WEBHOOK_TIMEOUT_MS,
   nextStep,
+  pausesEndpoint,
   storableBody,
   truncate,
 } from './webhook-delivery.rules';
@@ -21,7 +24,12 @@ import {
   findDeliveryToSend,
   recordAttempt,
 } from './webhook-delivery.repository';
-import { bumpFailureCount, resetFailureCount } from './webhook-endpoint.repository';
+import {
+  bumpFailureCount,
+  countFailedDelivery,
+  resetFailureCount,
+  switchOffAfterFailures,
+} from './webhook-endpoint.repository';
 import { WEBHOOK_TARGET_POLICY, type WebhookTargetPolicy } from './webhook-target-policy';
 
 /** The queue every webhook job runs on, and the name of the job that sends one attempt of a delivery. */
@@ -79,7 +87,12 @@ function failureText(error: HttpRequestError): string {
  * The address is checked again at every send (decision 023): a host that now resolves to a private address is refused and the
  * delivery fails at once, because waiting cannot change that.
  *
- * Side effects: one HTTP POST per attempt; updates `webhook_deliveries` and `webhook_endpoints.failure_count`; adds jobs to the
+ * Decision 053: a delivery that ends `failed` while its endpoint is on adds one to `webhook_endpoints.consecutive_failed_deliveries`; a
+ * delivered one sets it to 0. At 20 the same transaction switches the endpoint off (guarded `WHERE is_active`, so once) and writes the
+ * outbox event `webhook.endpoint_disabled` `{ clientId, endpointId }`, which the notification planner turns into the merchant's email.
+ *
+ * Side effects: one HTTP POST per attempt; updates `webhook_deliveries`, `webhook_endpoints.failure_count`,
+ * `consecutive_failed_deliveries` and `is_active`; may write the `webhook.endpoint_disabled` outbox event; adds jobs to the
  * `merchant-webhooks` queue.
  *
  * @see docs/queues.md (merchant-webhooks)
@@ -93,6 +106,7 @@ export class WebhookDeliveries {
     private readonly queues: QueuesService,
     private readonly outbound: OutboundHttp,
     private readonly encryption: EncryptionService,
+    private readonly outbox: OutboxService,
     @Inject(CLOCK) private readonly clock: Clock,
     @Optional() @Inject(WEBHOOK_TARGET_POLICY) private readonly policy?: WebhookTargetPolicy,
   ) {}
@@ -246,8 +260,26 @@ export class WebhookDeliveries {
     return this.db.runInTransaction(async ({ tx }) => {
       const written = await recordAttempt(tx, delivery.id, delivery.attempt, outcome, result);
       if (!written) return false;
-      if (outcome.status === 'delivered') await resetFailureCount(tx, endpointId);
-      else await bumpFailureCount(tx, endpointId);
+      if (outcome.status === 'delivered') {
+        await resetFailureCount(tx, endpointId);
+        return true;
+      }
+      await bumpFailureCount(tx, endpointId);
+      if (outcome.status === 'failed') {
+        // Decision 053: 20 failed deliveries in a row switch the endpoint off, once, and the merchant is told through the outbox.
+        const bumped = await countFailedDelivery(tx, endpointId);
+        if (bumped && pausesEndpoint(bumped.consecutive)) {
+          const off = await switchOffAfterFailures(tx, endpointId);
+          if (off) {
+            await this.outbox.add(tx, {
+              type: WEBHOOK_ENDPOINT_DISABLED_EVENT,
+              aggregateType: 'webhook_endpoints',
+              aggregateId: endpointId,
+              payload: { clientId: off.clientId, endpointId },
+            });
+          }
+        }
+      }
       return true;
     });
   }

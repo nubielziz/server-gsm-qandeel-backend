@@ -3,7 +3,9 @@
 //
 // DEVIATION to resolve when the orders module exports a lookup for it: decision 016 wants this read through the owning module's public
 // service. The orders module has none yet, so `ownsOrderFile` reads `orders` with a plain select, like catalog's and money's foreign-read files.
-import { and, eq, or, sql } from 'drizzle-orm';
+// The same holds for `merchantIsApproved` (decision 053): the identity module exports no reader the platform may import (decision 032), so it
+// reads `clients.status` with a plain select. The upload quotas and the janitor of feature 43 live here too (decision 053).
+import { and, eq, or, sql, type SQL } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { type NewStoredFile, type StoredFile, files } from '../db/schema';
 import type { FileReferences } from '../files/file-kinds';
@@ -33,6 +35,77 @@ export async function insertFile(db: DbExecutor, row: NewStoredFile): Promise<St
 }
 
 /**
+ * Counts the files an owner holds under some key prefixes, and their bytes.
+ *
+ * Why: decision 053. The upload quotas count only the files a person uploaded (keys under `files/` and `tickets-`), so a generated
+ * document of the same owner (an invoice PDF, a receipt) never counts against them.
+ *
+ * @param db the database or a transaction
+ * @param owner the merchant or customer who owns the files
+ * @param keyPrefixes the object key prefixes that count (at least one)
+ * @param since only files created after this time count; `null` counts everything the owner holds
+ * @returns the number of files and their total size in bytes
+ */
+export async function uploadUsage(
+  db: DbExecutor,
+  owner: { readonly type: 'client' | 'customer'; readonly id: number },
+  keyPrefixes: readonly string[],
+  since: Date | null,
+): Promise<{ files: number; bytes: number }> {
+  const prefixes = sql.join(
+    keyPrefixes.map((prefix) => sql`starts_with(${files.key}, ${prefix})`),
+    sql` or `,
+  );
+  const result = await db.execute(sql`
+    select count(*)::int as files, coalesce(sum(${files.size}), 0)::bigint as bytes
+    from ${files}
+    where ${files.ownerType} = ${owner.type} and ${files.ownerId} = ${owner.id}
+      and (${prefixes})
+      ${since === null ? sql`` : sql`and ${files.createdAt} > ${since}`}
+  `);
+  const row = result.rows[0] as { files: number; bytes: string | number } | undefined;
+  return { files: Number(row?.files ?? 0), bytes: Number(row?.bytes ?? 0) };
+}
+
+/**
+ * Takes the transaction lock of an owner's uploads.
+ *
+ * Why: decision 053. The quota is checked and the row inserted under this lock, so two uploads of one owner that run together cannot both
+ * take the last place (the precedent: `api-key-manage.repository`).
+ *
+ * Side effects: `pg_advisory_xact_lock`, released at the end of the transaction.
+ *
+ * @param tx the transaction that will insert the file row
+ * @param owner the merchant or customer who owns the file
+ */
+export async function lockUploadOwner(
+  tx: DbExecutor,
+  owner: { readonly type: 'client' | 'customer'; readonly id: number },
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended('upload-quota:' || ${owner.type} || ':' || ${String(owner.id)}, 0))`,
+  );
+}
+
+/**
+ * Tells whether a merchant is approved.
+ *
+ * Why: decision 053. A merchant waiting for approval has a smaller upload quota than an active one.
+ *
+ * @param db the database or a transaction
+ * @param clientId the merchant
+ * @returns true when `clients.status` is `active`; a missing row is not approved
+ */
+export async function merchantIsApproved(db: DbExecutor, clientId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ status: s.clients.status })
+    .from(s.clients)
+    .where(eq(s.clients.id, clientId))
+    .limit(1);
+  return row?.status === 'active';
+}
+
+/**
  * Tells whether a file is the input or the result file of one of a merchant's own orders.
  *
  * @param db the database or a transaction
@@ -55,10 +128,11 @@ export async function ownsOrderFile(db: DbExecutor, clientId: number, fileId: nu
  * Deletes a merchant's file row when nothing points at it, and says where the object was.
  *
  * Why: P4a (B166). A Dhru file order stores the upload before it places the order; when the placement is refused the file must not stay.
- * "Nothing points at it" covers every kind of reference: the foreign keys (an order's input or result file, an invoice PDF, a payment receipt,
- * a data request, a storefront image) make the delete fail, and the three tables that keep file ids in an array, which the database cannot
- * enforce (KYC submissions, ticket messages, dispute evidence), are checked in the statement. DEVIATION like {@link ownsOrderFile}: decision
- * 016 wants those reads through the owning modules; this one statement is the single place that names their tables.
+ * "Nothing points at it" is the one list of references, {@link unreferenced}: the tables that keep file ids in an array, which the database
+ * cannot enforce (KYC submissions, ticket messages, dispute evidence), and every foreign key (an order's input or result file, an invoice
+ * PDF, a payment receipt, a data request, a storefront image, a gateway logo). A reference written at the same moment still makes the
+ * delete fail on its foreign key. DEVIATION like {@link ownsOrderFile}: decision 016 wants those reads through the owning modules; that
+ * list is the single place that names their tables.
  *
  * Side effects: deletes one `files` row.
  *
@@ -76,13 +150,65 @@ export async function deleteUnreferencedClientFile(
   const result = await db.execute(sql`
     delete from files
     where id = ${fileId} and owner_type = 'client' and owner_id = ${clientId}
-      and not exists (select 1 from kyc_submissions where file_ids @> array[${fileId}]::bigint[])
-      and not exists (select 1 from ticket_messages where file_ids @> array[${fileId}]::bigint[])
-      and not exists (select 1 from disputes where evidence_file_ids @> array[${fileId}]::bigint[])
+      and ${unreferenced('files')}
     returning bucket, key
   `);
   const row = result.rows[0] as { bucket: string; key: string } | undefined;
   return row;
+}
+
+/**
+ * The condition "nothing references this file": the three array columns and the foreign-key columns that name a file.
+ *
+ * Why: the one list of references, written once for the delete of known ids and for the janitor (decision 053). The three tables that
+ * keep file ids in an array (the database cannot enforce them) and every foreign key are checked, so a statement that uses it never fails
+ * on a foreign key and never deletes a file something uses. A new column that names a file must be added here: a tooling test reads the
+ * schema and fails, naming the table and column, when a foreign key to `files` or an array column of file ids is missing from this list
+ * (`test/tooling/file-references.test.ts`).
+ *
+ * @param alias the alias of the `files` table in the statement (a plain identifier written by the caller, never user input)
+ * @returns the SQL condition
+ */
+export function unreferenced(alias: string): SQL {
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`Not a table alias: ${alias}`);
+  const id = sql.raw(`${alias}.id`);
+  return sql`
+        not exists (select 1 from ticket_messages where file_ids @> array[${id}])
+    and not exists (select 1 from kyc_submissions where file_ids @> array[${id}])
+    and not exists (select 1 from disputes where evidence_file_ids @> array[${id}])
+    and not exists (select 1 from orders where input_file_id = ${id} or result_file_id = ${id})
+    and not exists (select 1 from invoices where pdf_file_id = ${id})
+    and not exists (select 1 from payments where receipt_file_id = ${id})
+    and not exists (select 1 from data_requests where file_id = ${id})
+    and not exists (select 1 from service_listings where image_file_id = ${id} or og_file_id = ${id})
+    and not exists (select 1 from payment_gateways where logo_file_id = ${id})`;
+}
+
+/**
+ * Finds the files stored before a time that nothing references, in id order.
+ *
+ * Why: the janitor of decision 053 deletes the files nothing used for 7 days. It reads a page after the last id it saw, so a file that
+ * is kept (something started to use it) is not read again in the same run.
+ *
+ * @param db the database
+ * @param before only files created before this time
+ * @param afterId only ids greater than this
+ * @param limit the page size
+ * @returns the ids, ascending
+ */
+export async function staleUnreferencedFileIds(
+  db: DbExecutor,
+  before: Date,
+  afterId: number,
+  limit: number,
+): Promise<number[]> {
+  const result = await db.execute(sql`
+    select f.id from files f
+    where f.id > ${afterId} and f.created_at < ${before} and ${unreferenced('f')}
+    order by f.id
+    limit ${limit}
+  `);
+  return (result.rows as { id: string | number }[]).map((row) => Number(row.id));
 }
 
 /**
@@ -113,15 +239,7 @@ export async function deleteUnreferencedFiles(
   const result = await db.execute(sql`
     delete from files f
     where f.id = any(${list})
-      and not exists (select 1 from ticket_messages where file_ids @> array[f.id])
-      and not exists (select 1 from kyc_submissions where file_ids @> array[f.id])
-      and not exists (select 1 from disputes where evidence_file_ids @> array[f.id])
-      and not exists (select 1 from orders where input_file_id = f.id or result_file_id = f.id)
-      and not exists (select 1 from invoices where pdf_file_id = f.id)
-      and not exists (select 1 from payments where receipt_file_id = f.id)
-      and not exists (select 1 from data_requests where file_id = f.id)
-      and not exists (select 1 from service_listings where image_file_id = f.id or og_file_id = f.id)
-      and not exists (select 1 from payment_gateways where logo_file_id = f.id)
+      and ${unreferenced('f')}
     returning f.id, f.bucket, f.key
   `);
   return (result.rows as { id: string | number; bucket: string; key: string }[]).map((row) => ({

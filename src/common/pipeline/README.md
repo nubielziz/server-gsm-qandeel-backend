@@ -9,6 +9,7 @@ hooks, cheap and independent of the Nest guards, and they run in one explicit or
 | 1 | `ip-rules`                | identity: `src/modules/identity/security/ip-rules/`        | `403 IP_NOT_ALLOWED`                                 |
 | 2 | `maintenance`             | platform: `src/modules/platform/maintenance/`              | `503 MAINTENANCE` (Dhru envelope on `/api/index.php`) |
 | 3 | `rate-limit`              | rate-limit infrastructure: `src/infra/rate-limit/public-ip-limit.hook.ts` | `429 RATE_LIMITED` with `Retry-After` |
+| 4 | `upload-session`          | identity: `src/modules/identity/security/upload-session.hook.ts` | `401 UNAUTHORIZED` (no live session), `429 RATE_LIMITED` (the failed-lookup budget of the address) |
 
 Authentication, CSRF and permissions are Nest guards and run after these.
 
@@ -28,8 +29,11 @@ Authentication, CSRF and permissions are Nest guards and run after these.
   still before any guard). Only maintenance uses the second, to see the Dhru `action` field. A `multipart/form-data` body is parsed
   before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the three routes that take one (`/api/index.php`,
   `/v1/files`, `/client/files`; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
+- The fourth stage (decision 053) reads no body: a multipart body of a route that signs in with a session cookie (the portal upload, the
+  customer receipt upload, the three console uploads) is read only when the request carries a live session of the route's audience;
+  `401` otherwise. The full checks (suspension, stage, approval, CSRF, permission) stay in the access guard.
 - A stage without a handler is skipped; `onApplicationBootstrap` logs a warning naming it (a test app without Redis has none).
-  The real application has all three, which `test/integration/infra/pipeline-hooks.test.ts` checks.
+  The real application has all four, which `test/integration/infra/pipeline-hooks.test.ts` checks.
 
 ## Deciding by path: `requestPath`
 

@@ -1,13 +1,17 @@
 // Unit tests of the multipart body parser (decision 026 note, B157): text fields, file parts, the fields that must never become keys, and the
 // refusal of a body that is not multipart.
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { Readable } from 'node:stream';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { AppError } from '@src/common/errors';
 import {
   MULTIPART_MAX_BYTES,
   MULTIPART_ROUTES,
   MULTIPART_ROUTE_LIMITS,
   UploadedFile,
+  isMultipartContentType,
   parseMultipart,
+  registerMultipartBodies,
 } from '@src/common/multipart';
 
 /** Encodes a form as a multipart body and its content type, the way a client sends it. */
@@ -83,6 +87,30 @@ describe('parseMultipart', () => {
   });
 });
 
+describe('isMultipartContentType', () => {
+  it('knows multipart/form-data with parameters and in any case', () => {
+    expect(isMultipartContentType('multipart/form-data; boundary=x')).toBe(true);
+    expect(isMultipartContentType('Multipart/Form-Data')).toBe(true);
+    expect(isMultipartContentType('multipart/form-data ; boundary=x')).toBe(true);
+  });
+
+  it('reads the type the way Fastify picks the body parser: leading whitespace is dropped', () => {
+    expect(isMultipartContentType('\u00a0multipart/form-data; boundary=x')).toBe(true);
+    expect(isMultipartContentType('\u00a0\u00a0Multipart/Form-Data')).toBe(true);
+    expect(isMultipartContentType('\u000b\u000cmultipart/form-data; boundary=x')).toBe(true);
+    expect(isMultipartContentType('\ufeffmultipart/form-data; boundary=x')).toBe(true);
+  });
+
+  it('is false for any other type and for none', () => {
+    expect(isMultipartContentType('application/json')).toBe(false);
+    expect(isMultipartContentType('application/x-www-form-urlencoded')).toBe(false);
+    expect(isMultipartContentType('text/multipart/form-data')).toBe(false);
+    expect(isMultipartContentType('\u00a0application/json')).toBe(false);
+    expect(isMultipartContentType('')).toBe(false);
+    expect(isMultipartContentType(undefined)).toBe(false);
+  });
+});
+
 describe('the multipart limits', () => {
   it('leaves room for the form fields around a 25 MiB file, on the routes that take uploads', () => {
     expect(MULTIPART_MAX_BYTES).toBeGreaterThan(25 * 1024 * 1024);
@@ -107,5 +135,129 @@ describe('the multipart limits', () => {
       '/admin/support-tickets/:id/files': bound,
     });
     for (const route of MULTIPART_ROUTE_LIMITS.keys()) expect(MULTIPART_ROUTES.has(route), route).toBe(true);
+  });
+});
+
+describe('the per-route bound holds for the bytes read (decision 053)', () => {
+  const BOUND = 5 * 1024 * 1024 + 64 * 1024;
+  const MIB = 1024 * 1024;
+  let app: FastifyInstance | undefined;
+
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  /** A bare Fastify with the multipart parser and hooks, and an echo route on a bounded upload route. */
+  async function build(): Promise<FastifyInstance> {
+    const fastify = Fastify({ bodyLimit: MIB });
+    registerMultipartBodies(fastify);
+    fastify.post('/store/v1/files', (request) => ({
+      size: (request.body as { file?: UploadedFile }).file?.size ?? null,
+    }));
+    // A route that takes no multipart body: the refusal must come before the body is read.
+    fastify.post('/admin/staff', () => ({ ok: true }));
+    await fastify.ready();
+    app = fastify;
+    return fastify;
+  }
+
+  const BOUNDARY = 'gsmboundary';
+  const head = Buffer.from(
+    `--${BOUNDARY}\r\nContent-Disposition: form-data; name="file"; filename="a.pdf"\r\nContent-Type: application/pdf\r\n\r\n`,
+  );
+  const tail = Buffer.from(`\r\n--${BOUNDARY}--\r\n`);
+  const headers = { 'content-type': `multipart/form-data; boundary=${BOUNDARY}` };
+
+  /** The chunks of a valid multipart body whose file part has `size` bytes. */
+  const chunksOf = (size: number): Buffer[] => [
+    head,
+    ...Array.from({ length: Math.ceil(size / MIB) }, (_, index) => Buffer.alloc(Math.min(MIB, size - index * MIB), 97)),
+    tail,
+  ];
+
+  it('holds the store upload route to its bound while a body without a length streams in', async () => {
+    const fastify = await build();
+    const res = await fastify.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      headers,
+      payload: Readable.from(chunksOf(6 * MIB)),
+    });
+    expect(res.statusCode).toBe(413);
+  });
+
+  it('still parses a body under the bound without a length', async () => {
+    const fastify = await build();
+    const res = await fastify.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      headers,
+      payload: Readable.from(chunksOf(MIB)),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ size: MIB });
+  });
+
+  it('still refuses a declared length over the bound before reading', async () => {
+    const fastify = await build();
+    const res = await fastify.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      headers,
+      payload: Buffer.concat(chunksOf(6 * MIB)),
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.json().message).toBe('The body is larger than this endpoint takes.');
+    expect(Buffer.concat(chunksOf(6 * MIB)).length).toBeGreaterThan(BOUND);
+  });
+
+  it('refuses a declared length that is not a number', async () => {
+    const fastify = await build();
+    const res = await fastify.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      headers: { ...headers, 'content-length': 'many' },
+      payload: Buffer.concat(chunksOf(1024)),
+    });
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBeLessThan(500);
+  });
+
+  it('refuses a multipart body on a route that takes none before reading it, whatever whitespace leads the content type', async () => {
+    const fastify = await build();
+    for (const type of [
+      headers['content-type'],
+      `\u00a0${headers['content-type']}`,
+      `\u000b${headers['content-type']}`,
+    ]) {
+      let produced = 0;
+      function* chunks() {
+        for (let index = 0; index < 30; index += 1) {
+          produced += 1;
+          yield Buffer.alloc(MIB, 97);
+        }
+      }
+      const res = await fastify.inject({
+        method: 'POST',
+        url: '/admin/staff',
+        headers: { 'content-type': type },
+        payload: Readable.from(chunks()),
+      });
+      expect(res.statusCode, JSON.stringify(type)).toBe(415);
+      // The body was never asked for: the refusal came at the headers.
+      expect(produced, JSON.stringify(type)).toBeLessThan(5);
+    }
+  });
+
+  it('holds the store upload route to its bound when the content type starts with whitespace', async () => {
+    const fastify = await build();
+    const res = await fastify.inject({
+      method: 'POST',
+      url: '/store/v1/files',
+      headers: { 'content-type': `\u00a0${headers['content-type']}` },
+      payload: Readable.from(chunksOf(6 * MIB)),
+    });
+    expect(res.statusCode).toBe(413);
   });
 });

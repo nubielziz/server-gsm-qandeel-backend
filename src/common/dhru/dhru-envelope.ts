@@ -1,5 +1,6 @@
 // The Dhru Fusion v6.1 wire format that is not specific to one action (decision 026): the envelope of a success, the headers, how the
 // base64 JSON `parameters` and `customfield` fields are read, and the status numbers of an order. Pure; no I/O.
+import { forbiddenTextPathOf } from '../contract/forbidden-characters';
 import { AppError } from '../errors';
 import { DHRU_API_VERSION } from '../errors/dhru-formatter';
 
@@ -99,14 +100,20 @@ export function readParameters(raw: unknown): Record<string, unknown> {
  * Why: decision 026: it is again base64 JSON inside `parameters`; an object is accepted as it is. Numbers and booleans become text
  * (the order stores text); `null` and empty values are left out; a nested value is not a field value.
  *
+ * Decision 053: a key or a text that holds the character U+0000 or an unpaired surrogate refuses the item (Postgres refuses them in text
+ * or JSON); it is judged here because the value arrives encoded and never passes the validation guard.
+ *
  * @param raw the parameter
  * @returns the values by key, as text
- * @throws {AppError} `VALIDATION_FAILED` ("Invalid custom fields") when the value is not an object of simple values
+ * @throws {AppError} `VALIDATION_FAILED` ("Invalid custom fields") when the value is not an object of simple values or holds U+0000 or an
+ *   unpaired surrogate
  */
 export function readCustomFields(raw: unknown): Record<string, string> {
   if (raw === undefined || raw === null || raw === '') return {};
   const fields = typeof raw === 'string' ? decodeBase64Object(raw) : raw;
   if (!isObject(fields)) throw new AppError('VALIDATION_FAILED', { detail: 'Invalid custom fields' });
+  if (forbiddenTextPathOf(fields) !== undefined)
+    throw new AppError('VALIDATION_FAILED', { detail: 'Invalid custom fields' });
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (value === null || value === '') continue;

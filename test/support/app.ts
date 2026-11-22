@@ -30,6 +30,7 @@ import { MerchantAdminModule } from '@src/modules/identity/merchant-admin.module
 import { MerchantAuthModule } from '@src/modules/identity/merchant-auth.module';
 import { StaffAuthModule } from '@src/modules/identity/staff-auth.module';
 import { IpRulesModule } from '@src/modules/identity/security/ip-rules/ip-rules.module';
+import { UploadSessionModule } from '@src/modules/identity/security/upload-session.module';
 import { HealthAdminModule } from '@src/modules/health';
 import { MoneyAdminModule } from '@src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '@src/modules/orders';
@@ -120,6 +121,8 @@ const NEEDS_DATABASE_AND_CACHE = [
   SettingsModule,
   MaintenanceModule,
   IpRulesModule,
+  // Decision 053: the upload session stage asks the session authenticator.
+  UploadSessionModule,
   StaffAuthModule,
   AccessAdminModule,
   MerchantAdminModule,

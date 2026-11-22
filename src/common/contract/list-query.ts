@@ -389,7 +389,7 @@ function parse(
 
   // Search text.
   let search: ParsedListQuery['search'];
-  // Control characters (a NUL byte made Postgres answer 500) are not part of a search: they are dropped before the text is read.
+  // Control characters other than U+0000 (U+0000 and an unpaired surrogate are refused for every request text by the validation guard, decision 053) are not part of a search: they are dropped before the text is read.
   const searchText = single('q')?.replace(CONTROL_CHARACTERS, '').trim();
   if (searchText) {
     if (!descriptor.search) fail('q', 'This list does not support search.');

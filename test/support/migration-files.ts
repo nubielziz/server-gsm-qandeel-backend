@@ -5,6 +5,19 @@ import { join } from 'node:path';
 const DRIZZLE_DIR = join(import.meta.dir, '../../drizzle');
 
 /**
+ * The file name of the migration that ends with a suffix.
+ *
+ * @param suffix the part after the number, for example `_public_abuse_limits.sql`
+ * @returns the file name in `drizzle/`
+ * @throws {Error} when no file, or more than one, ends with the suffix
+ */
+export function migrationFileName(suffix: string): string {
+  const names = readdirSync(DRIZZLE_DIR).filter((name) => name.endsWith(suffix));
+  if (names.length !== 1) throw new Error(`Expected one migration ending with ${suffix}, found ${names.length}.`);
+  return names[0]!;
+}
+
+/**
  * The text of the migration whose file name ends with a suffix.
  *
  * @param suffix the part after the number, for example `_supplier_safety.sql`

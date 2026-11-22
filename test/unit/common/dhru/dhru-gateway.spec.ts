@@ -5,7 +5,14 @@ import { z } from 'zod';
 import type { MetricsService } from '@src/infra/metrics/metrics.service';
 import { AppError } from '@src/common/errors';
 import type { AnyDhruAction } from '@src/common/dhru/define-dhru-action';
-import { DHRU_MAX_BULK_ITEMS, DhruGateway, type DhruCaller, type DhruExecution } from '@src/common/dhru/dhru-gateway';
+import {
+  DHRU_MAX_BULK_ITEMS,
+  DHRU_MAX_ITEM_ID_LENGTH,
+  DhruGateway,
+  type DhruCaller,
+  type DhruExecution,
+  bulkPlacementItems,
+} from '@src/common/dhru/dhru-gateway';
 
 const caller: DhruCaller = { clientId: 7, clientName: 'Cairo GSM Lab', keyId: 3 };
 
@@ -162,5 +169,84 @@ describe('DhruGateway.execute (a bulk action)', () => {
       Array.from({ length: DHRU_MAX_BULK_ITEMS }, (_, index) => [`r${index}`, { ID: 1 }]),
     );
     expect(Object.keys(await g.execute(call('getmany', b64(exact)))).length).toBe(DHRU_MAX_BULK_ITEMS + 1);
+  });
+});
+
+describe('DhruGateway.execute: the character U+0000, unpaired surrogates and the bulk item ids (decision 053)', () => {
+  it('refuses a call whose decoded parameters hold U+0000', async () => {
+    const { gateway: g } = gateway();
+    let ran = 0;
+    g.bind(contract('getthing'), () => {
+      ran += 1;
+      return { STATUS: 0, CODE: '' };
+    });
+    const error = await refusal(g.execute(call('getthing', b64({ ID: 7, note: 'a\u0000b' }))));
+    expect(error.code).toBe('VALIDATION_FAILED');
+    expect(error.detail).toBe('Invalid parameters: a text holds the character U+0000 or an unpaired surrogate.');
+    expect((await refusal(g.execute(call('getthing', { ['k\u0000']: 1, ID: 7 })))).detail).toBe(
+      'Invalid parameters: a text holds the character U+0000 or an unpaired surrogate.',
+    );
+    expect(ran).toBe(0);
+  });
+
+  it('refuses a call whose decoded parameters hold a lone high or low surrogate, and accepts an emoji', async () => {
+    const { gateway: g } = gateway();
+    let ran = 0;
+    g.bind(contract('getthing'), () => {
+      ran += 1;
+      return { STATUS: 0, CODE: '' };
+    });
+    const sentence = 'Invalid parameters: a text holds the character U+0000 or an unpaired surrogate.';
+    // JSON.stringify writes a lone surrogate as an escape, so it survives the base64 round trip.
+    for (const lone of ['\ud800', '\udc00']) {
+      const error = await refusal(g.execute(call('getthing', b64({ ID: 7, note: `a${lone}b` }))));
+      expect(error.code, lone).toBe('VALIDATION_FAILED');
+      expect(error.detail, lone).toBe(sentence);
+      expect((await refusal(g.execute(call('getthing', { [`k${lone}`]: 1, ID: 7 })))).detail, lone).toBe(sentence);
+    }
+    expect(ran).toBe(0);
+    await g.execute(call('getthing', b64({ ID: 7, note: 'ok \u{1F600}' })));
+    expect(ran).toBe(1);
+  });
+
+  it('refuses a bulk item id that is empty or longer than 64 characters before any item runs', async () => {
+    const { gateway: g } = gateway();
+    let ran = 0;
+    g.bind(contract('getmany', { bulk: true }), () => {
+      ran += 1;
+      return { STATUS: 0, CODE: '' };
+    });
+    const tooLong = 'x'.repeat(DHRU_MAX_ITEM_ID_LENGTH + 1);
+    for (const id of ['', tooLong]) {
+      const error = await refusal(g.execute(call('getmany', b64({ fine: { ID: 1 }, [id]: { ID: 2 } }))));
+      expect(error.detail).toBe('An item id must have 1 to 64 characters.');
+    }
+    expect(ran).toBe(0);
+    const edge = 'x'.repeat(DHRU_MAX_ITEM_ID_LENGTH);
+    const answer = await g.execute(call('getmany', b64({ [edge]: { ID: 1 } })));
+    expect(Object.keys(answer)).toContain(edge);
+    expect(ran).toBe(1);
+  });
+});
+
+describe('bulkPlacementItems', () => {
+  const body = (action: string, parameters: unknown) => ({ action, parameters });
+
+  it('counts the item ids of placeimeiorderbulk only', () => {
+    const items = { a: { ID: 1 }, b: { ID: 2 }, c: { ID: 3 } };
+    expect(bulkPlacementItems(body('placeimeiorderbulk', b64(items)))).toBe(3);
+    expect(bulkPlacementItems(body(' PlaceImeiOrderBulk ', items))).toBe(3);
+  });
+
+  it('does not count apiversion, and answers 1 for getimeiorderbulk, unreadable parameters and other actions', () => {
+    expect(bulkPlacementItems(body('placeimeiorderbulk', b64({ apiversion: '6.1', a: { ID: 1 } })))).toBe(1);
+    expect(bulkPlacementItems(body('placeimeiorderbulk', b64({ apiversion: '6.1', a: {}, b: {} })))).toBe(2);
+    expect(bulkPlacementItems(body('getimeiorderbulk', b64({ a: {}, b: {}, c: {} })))).toBe(1);
+    expect(bulkPlacementItems(body('placeimeiorder', b64({ ID: 1 })))).toBe(1);
+    expect(bulkPlacementItems(body('placeimeiorderbulk', '%%%'))).toBe(1);
+    expect(bulkPlacementItems(body('placeimeiorderbulk', undefined))).toBe(0);
+    expect(bulkPlacementItems(undefined)).toBe(1);
+    expect(bulkPlacementItems('text')).toBe(1);
+    expect(bulkPlacementItems({ action: 7 })).toBe(1);
   });
 });
