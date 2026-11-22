@@ -227,20 +227,29 @@ export async function countEventsOfType(
 }
 
 /**
- * Tells whether a settlement of this order already booked a supplier cost.
+ * Tells whether a settlement of this order already booked the supplier cost of the order's current supplier acceptance.
  *
  * Why: B17 (decision 024): a reopen reverses revenue only and the cost stays booked, so a later completion must not book it a
- * second time. Every `settle` event records the cost it booked in `data.cost`.
+ * second time; it books the cost again only for a new supplier charge. Every `settle` event records the cost it booked in
+ * `data.cost`, and every acceptance by a supplier that gives the order its reference writes an event: `ack` for the answer of a
+ * send, or a `review` with `data.referenceStored` true for an acceptance recorded after the order moved on. An acceptance written
+ * after the newest settlement that booked a cost is a new supplier charge, so its cost is not booked yet. Event ids give the order.
  *
- * @param db the transaction
+ * @param db the transaction (the order row is locked by the transition's guarded update)
  * @param orderId the order
- * @returns true when an earlier `settle` event booked a cost above zero
+ * @returns true when an earlier `settle` event booked a cost above zero and no supplier acceptance was recorded after it
  */
 export async function costAlreadyBooked(db: DbExecutor, orderId: number): Promise<boolean> {
   const result = await db.execute<{ booked: boolean }>(sql`
     select exists (
-      select 1 from ${orderEvents}
-      where order_id = ${orderId} and type = 'settle' and coalesce((data->>'cost')::numeric, 0) > 0
+      select 1 from ${orderEvents} settled
+      where settled.order_id = ${orderId} and settled.type = 'settle'
+        and coalesce((settled.data->>'cost')::numeric, 0) > 0
+        and not exists (
+          select 1 from ${orderEvents} accepted
+          where accepted.order_id = ${orderId} and accepted.id > settled.id
+            and (accepted.type = 'ack' or (accepted.type = 'review' and accepted.data->>'referenceStored' = 'true'))
+        )
     ) as booked`);
   return result.rows[0]?.booked === true;
 }

@@ -194,7 +194,7 @@ export class OrderTransitions {
 
     // Lock order (feature 11): a reversal locks the order's commission accruals before the ledger locks any wallet, as an approval does.
     await this.completions.beforeMove(tx, updated, decision.money);
-    // A settlement is numbered by how many completions came before it, and books the supplier cost only once (B17).
+    // A settlement is numbered by how many completions came before it, and books the supplier cost once per supplier acceptance (B17).
     const settling = decision.money === 'complete' || decision.money === 'b2c_deliver';
     const completions = settling ? await countEventsOfType(tx, order.id, 'completed') : 0;
     const moved = await this.ledger.move(tx, updated, decision.money, {

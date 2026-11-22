@@ -63,8 +63,8 @@ the one `POST /api/index.php` transport route.
   custom field by sort (server, remote) or the first field's value or the file name (file). The wire sends `''` for none.
 - **Money** (`application/order-ledger.ts`): placement holds (`order`: wallet to hold); a reply settles (`complete`: hold to
   revenue, plus supplier prepaid to cost of goods only when the order has a supplier **and** a supplier reference, and only if no
-  earlier settlement booked the cost: B17); a reject or a cancel releases (`reject`); a reopen moves the revenue back to the hold and a
-  B2B refund moves it straight to the wallet (`reopen` and `refund` builders in money's `domain/money-events.ts`, kinds `adjustment`
+  earlier settlement booked the cost of the supplier's current acceptance: B17, a new send the supplier accepted after a reopen
+  is a new charge); a reject or a cancel releases (`reject`); a reopen moves the revenue back to the hold and a B2B refund moves it straight to the wallet (`reopen` and `refund` builders in money's `domain/money-events.ts`, kinds `adjustment`
   and `refund`, the console's words), both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (a second completion after
   a reopen is `order:<id>:settle:2`, and so on), `order:<id>:release`, `order:<id>:refund` (B2C), and `reverse:<settlement id>` for a
   reopen or a B2B refund: decision 024's key, which `MerchantSpend` reads to stop counting a reversed settlement (the brief's

@@ -46,7 +46,10 @@ export interface MoveContext {
   readonly actor: LedgerActor;
   /** How many times the order was completed before this one: the settle key of a second completion is numbered. */
   readonly completedBefore: number;
-  /** True when an earlier settlement already booked the supplier cost (B17: a reopen keeps the cost). */
+  /**
+   * True when an earlier settlement already booked the supplier cost of the order's current supplier acceptance (B17: a reopen keeps
+   * the cost; a supplier that accepted the order again since then is a new charge).
+   */
   readonly costBooked: boolean;
   /** The storefront refund an approval is paying out (feature 16): its journal is the refund's, not a new automatic refund's. */
   readonly refundId?: number | undefined;
@@ -63,9 +66,9 @@ const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
  * Posts the ledger side of order transitions.
  *
  * Why: decision 024 and 025 and the brief: placement holds the price (`order`), completion settles it (`complete`: hold to
- * revenue, with the cost lines only when a supplier executed the order and no earlier settlement booked the cost), rejection
- * releases it (`reject`), a reopen moves the revenue back to the hold and a B2B refund moves it to the wallet, both keeping the
- * cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
+ * revenue, with the cost lines only when a supplier executed the order and no earlier settlement booked the cost of the
+ * same supplier acceptance), rejection releases it (`reject`), a reopen moves the revenue back to the hold and a B2B refund
+ * moves it to the wallet, both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
  * `order:<id>:refund` (B2C, or `refund:<id>` for an approved refund, posted by `B2cRefunds`; none while `autoRefundFailed` is off and the
  * system rejected the order: a refund request waits for staff instead), and `reverse:<settlement id>` for a reopen or a B2B refund, the key `MerchantSpend` reads to stop
  * counting a reversed settlement. A repeated key posts nothing, so a retried or doubled transition never moves money twice.
@@ -203,7 +206,7 @@ export class OrderLedger {
     }
   }
 
-  /** The supplier cost a settlement books: only when a supplier executed the order and no earlier settlement booked it. */
+  /** The supplier cost a settlement books: only for a supplier's acceptance that no earlier settlement booked. */
   private costToBook(order: Order, context: MoveContext): Money {
     if (context.costBooked || order.supplierId === null || order.supplierRef === null) return Money.zero();
     return Money.of(order.totalCost);
