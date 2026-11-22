@@ -9,6 +9,7 @@ export { StorefrontMoney } from './application/storefront-money';
 export type { StorefrontCurrency, StorefrontPaymentMethod, TaxInForce } from './application/storefront-money';
 export { OrderSettlements } from './application/order-settlements';
 export type { Settlement } from './application/order-settlements';
+export { orderPaymentStatus } from './application/order-payment-status';
 export { WalletLowBalanceWatch } from './application/wallet-low-balance-watch';
 export { LOW_BALANCE_THRESHOLD_KEY, availableOf, crossedBelow, thresholdFrom } from './domain/low-balance';
 export { LedgerPoster, LedgerRefRequiredError, postTransaction } from './application/post-transaction';

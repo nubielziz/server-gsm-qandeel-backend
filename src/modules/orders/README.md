@@ -30,7 +30,12 @@ the one `POST /api/index.php` transport route.
   (`OrderRow.everDispatched`, one `EXISTS` in the same select) feeds `canCancel`, so the button and the route agree; such an order is
   cancelled by staff. `orderStateOf` is the one conversion of a stored order to the machine's state (a `pending`
   order with `sent_at` set, claimed by an earlier release, counts as `dispatching`); `wireDispatchState` shows `dispatching` as
-  `pending`, so no response, queue or contract enum changes.
+  `pending`, so no response, queue or contract enum changes. A storefront order is released from a risk hold or sent to a supplier only
+  while its payment stands: the machine's state carries `paymentStop` (`disputed` while a dispute is open, `returned` once the payment
+  was charged back or refunded in full, `paymentStopOf`), read through the money module's `orderPaymentStatus` only for the risk
+  release, a staff send and a change of supplier that sends (`paymentCanStop`), never for a merchant's order; those are `409
+  INVALID_TRANSITION` with `PAYMENT_STOP_REASONS` as the detail, and the dispatch job stops such an order in `needs_attention` with the
+  same sentence before it claims it (`OrderSupplierMoves.paymentStop`). Refunding or rejecting the order stays open.
 - **Completion listeners** (feature 11, `application/order-completion-listeners.ts`, module `OrderCompletionModule`): a leaf list that
   `OrderTransitions.apply` and the stock delivery in `OrderPlacement.deliverFromStock` call inside their transaction: `completed` after a
   settlement (`complete`; a stock delivery), `reversed` after a `reopen` or a B2B `refund`; any other money move (hold release, B2C
@@ -226,7 +231,7 @@ inputs and costs of up to 100,000 orders, and the reports permission already sho
 Exports `OrdersModule` (with `OrdersOutboxModule`, which the worker loads, and `OrdersAdminModule`, the routes and use cases), the pure
 rules (`decideOrderAction`, `deriveQueue`, `isOpen`, `placementDispatchState`, `orderStateOf`, `wireDispatchState`, `WIRE_DISPATCH_STATES`, `mainInputOf`), the SQL fragments (`pastSlaPredicate`,
 `queueSql`, `channelSql`), the services other features call (`OrderPlacement` for Dhru, REST v1 (7a) and the storefront; `OrderCompletionListeners` and `OrderCompletionModule` for the modules that react to a completion or a reversal; `OrderTransitions`
-for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance` and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
+for the risk actions, with `refusalError`, `SEND_IN_PROGRESS_DETAIL` and `CHANGED_FIRST_DETAIL`; `OrderSupplierMoves`, the door of the supplier flows (its claim, its guarded moves, `recordLateAcceptance`, `paymentStop` with `PAYMENT_STOP_REASONS` and the type `PaymentStop`, and the readers of the dispatch sweep, with the types `UnansweredClaim`, `UnclaimedOrder` and `LateAcceptance`), and `OrdersEngineModule`, which provides both without routes for
 the worker; `OrderReadService`), the outbox event names (`ORDER_OUTBOX_EVENTS`, `OrderOutbox`) and the
 vocabularies and row types of the two tables. Other modules import only `src/modules/orders/index.ts` (lint rule
 `gsm/module-boundaries`).

@@ -4,7 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
-import { StorefrontMails } from '../../money';
+import { StorefrontMails, orderPaymentStatus } from '../../money';
 import { AuditService } from '../../platform';
 import type { Order } from '../db/schema';
 import {
@@ -12,8 +12,12 @@ import {
   type OrderRefusal,
   type OrderRefused,
   type OrderTransition,
+  PAYMENT_STOP_REASONS,
+  type PaymentStop,
   decideOrderAction,
   orderStateOf,
+  paymentCanStop,
+  paymentStopOf,
 } from '../domain/order-machine';
 import { type TimelineActor, VERIFICATION_REFUND_REASON, transitionLines } from '../domain/order-timeline';
 import { merchantOf } from '../infra/foreign-reads.repository';
@@ -97,16 +101,39 @@ const REFUSAL_DETAILS: Readonly<Record<OrderRefusal, string>> = {
  * Turns a refusal of the machine into the error the route answers.
  *
  * Why: decision 044: an action refused only because the supplier is being called gets a sentence that says to wait; the code stays
- * `ALREADY_SENT`, so no client needs a new case.
+ * `ALREADY_SENT`, so no client needs a new case. An action refused because of the payment of a storefront order says so; the code stays
+ * `INVALID_TRANSITION`.
  *
- * @param refused the machine's refusal, or the whole refused decision (its `sending` flag picks the wait sentence)
+ * @param refused the machine's refusal, or the whole refused decision (its `sending` flag picks the wait sentence, its `payment` flag
+ *   the payment's sentence)
  * @returns the `409` error with its readable detail
  */
 export function refusalError(refused: OrderRefusal | OrderRefused): AppError {
   if (typeof refused === 'string') return new AppError(refused, { detail: REFUSAL_DETAILS[refused] });
+  if (refused.payment !== undefined) {
+    return new AppError(refused.refusal, { detail: PAYMENT_STOP_REASONS[refused.payment] });
+  }
   return new AppError(refused.refusal, {
     detail: refused.sending === true ? SEND_IN_PROGRESS_DETAIL : REFUSAL_DETAILS[refused.refusal],
   });
+}
+
+/**
+ * Reads what the payment of a storefront order says about releasing it from a risk hold or sending it to a supplier.
+ *
+ * Why: a storefront order whose payment is disputed, charged back or refunded in full is not released or sent (the machine's
+ * `paymentStop`); the payment belongs to the money module, which answers its status. A merchant's order is never read.
+ *
+ * @param db the database or the caller's transaction
+ * @param order the order
+ * @returns the stop, or `undefined` when the payment stands or the order is a merchant's
+ */
+export async function paymentStopOfOrder(
+  db: DbExecutor,
+  order: Pick<Order, 'id' | 'clientId'>,
+): Promise<PaymentStop | undefined> {
+  if (order.clientId !== null) return undefined;
+  return paymentStopOf(await orderPaymentStatus(db, order.id));
 }
 
 /** The ledger records a supplier's action as the system's: only staff, merchants, customers and the system post. */
@@ -148,8 +175,9 @@ export class OrderTransitions {
    * @param request the order, the action, who acts and the texts that go with it
    * @returns the order after the change, whether anything was written, and the machine's decision
    * @throws {AppError} `NOT_FOUND` (an unknown order, or another merchant's); the machine's `409` refusals (`ALREADY_SENT` also while
-   *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event); whatever the
-   *   request's `authorize` throws (`FORBIDDEN`, decision 046); `INVALID_TRANSITION` when the guarded update found the order already
+   *   the order is being sent to its supplier, and for a merchant's cancel of an order that has a `dispatch` event;
+   *   `INVALID_TRANSITION` for the release of a held storefront order whose payment is disputed, charged back or refunded in full); whatever
+   *   the request's `authorize` throws (`FORBIDDEN`, decision 046); `INVALID_TRANSITION` when the guarded update found the order already
    *   changed, or when `asked` names a supplier or reference the order no longer has; `INSUFFICIENT_FUNDS` from the ledger
    */
   async apply(tx: DbExecutor, request: TransitionRequest): Promise<TransitionOutcome> {
@@ -167,7 +195,12 @@ export class OrderTransitions {
     const completedBefore = order.clientId === null && (await countEventsOfType(tx, order.id, 'completed')) > 0;
     // Only the merchant's cancel asks whether the order was ever claimed for a supplier call (decision 044): no extra read otherwise.
     const everDispatched = request.action.kind === 'cancel' && (await countEventsOfType(tx, order.id, 'dispatch')) > 0;
-    const decision = decideOrderAction(orderStateOf(order, completedBefore, everDispatched), request.action);
+    // Only a release or a send asks for the payment of a storefront order.
+    const paymentStop = paymentCanStop(request.action) ? await paymentStopOfOrder(tx, order) : undefined;
+    const decision = decideOrderAction(
+      orderStateOf(order, completedBefore, everDispatched, paymentStop),
+      request.action,
+    );
     if (!decision.ok) throw refusalError(decision);
     if (decision.noop) return { order, applied: false, decision };
     if (request.authorize) await request.authorize(tx, decision, order);

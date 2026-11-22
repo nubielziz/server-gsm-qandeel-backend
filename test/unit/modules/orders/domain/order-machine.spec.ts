@@ -2,16 +2,20 @@
 // (resolution orders-suppliers-11: "every action has a test of its resulting queue") and every refusal.
 import { describe, expect, it } from 'bun:test';
 import { ORDER_DISPATCH_STATES } from '@src/modules/orders/db/schema';
+import { ORDER_PAYMENT_STATUSES } from '@src/modules/money/db/schema';
 import {
   type OrderAction,
   type OrderDecision,
   type OrderState,
   type OrderTransition,
+  type PaymentStop,
   WIRE_DISPATCH_STATES,
   decideOrderAction,
   deriveQueue,
   isOpen,
   orderStateOf,
+  paymentCanStop,
+  paymentStopOf,
   placementDispatchState,
   wireDispatchState,
 } from '@src/modules/orders/domain/order-machine';
@@ -627,5 +631,95 @@ describe('the wire view of the dispatch state (decision 044)', () => {
       channel: 'b2c',
       completedBefore: true,
     });
+  });
+});
+
+describe('the payment of a storefront order', () => {
+  const stops = ['disputed', 'returned'] as const;
+
+  it('paymentStopOf: a disputed payment waits, a charged back or fully refunded one is returned, any other stands', () => {
+    const expected: Record<string, PaymentStop | undefined> = {
+      disputed: 'disputed',
+      chargeback: 'returned',
+      refunded: 'returned',
+    };
+    for (const status of ORDER_PAYMENT_STATUSES) expect(paymentStopOf(status)).toBe(expected[status]);
+    expect(paymentStopOf(undefined)).toBeUndefined();
+  });
+
+  it('paymentCanStop: only the release from a hold, a staff send and a change of supplier that sends', () => {
+    expect(paymentCanStop({ kind: 'riskApprove', manual: false })).toBe(true);
+    expect(paymentCanStop({ kind: 'staffDispatch', requestLive: false })).toBe(true);
+    const change = { kind: 'changeSupplier', resetReference: true, supplierChanges: false } as const;
+    expect(paymentCanStop({ ...change, dispatch: true })).toBe(true);
+    expect(paymentCanStop({ ...change, dispatch: false })).toBe(false);
+    for (const action of [
+      { kind: 'accept' },
+      { kind: 'reply' },
+      { kind: 'reject' },
+      { kind: 'riskRefund' },
+      { kind: 'refundApproved' },
+      { kind: 'requeueDispatch' },
+      { kind: 'dispatchBlocked' },
+    ] as const) {
+      expect(paymentCanStop(action)).toBe(false);
+    }
+  });
+
+  it('refuses to release a held order (to the job or the manual queue) and keeps the refund open', () => {
+    for (const paymentStop of stops) {
+      const held = b2c({ dispatchState: 'held', paymentStop });
+      for (const manual of [false, true]) {
+        expect(decideOrderAction(held, { kind: 'riskApprove', manual })).toEqual({
+          ok: false,
+          refusal: 'INVALID_TRANSITION',
+          payment: paymentStop,
+        });
+      }
+      expect(allowed(decideOrderAction(held, { kind: 'riskRefund' }))).toMatchObject({ money: 'b2c_refund' });
+    }
+  });
+
+  it('refuses a staff send, also of a pending order whose request is on its way, and a change of supplier that sends', () => {
+    for (const paymentStop of stops) {
+      const refused = { ok: false, refusal: 'INVALID_TRANSITION', payment: paymentStop } as const;
+      const waiting = b2c({ dispatchState: 'needs_attention', paymentStop });
+      expect(decideOrderAction(waiting, { kind: 'staffDispatch', requestLive: false })).toEqual(refused);
+      expect(
+        decideOrderAction(b2c({ dispatchState: 'pending', paymentStop }), { kind: 'staffDispatch', requestLive: true }),
+      ).toEqual(refused);
+      const change = { kind: 'changeSupplier', resetReference: true, supplierChanges: false } as const;
+      expect(decideOrderAction(waiting, { ...change, dispatch: true })).toEqual(refused);
+      // A change that sends nothing, and the way out (a reject), stay allowed.
+      expect(allowed(decideOrderAction(waiting, { ...change, dispatch: false })).enqueueDispatch).toBe(false);
+      expect(allowed(decideOrderAction(waiting, { kind: 'reject' }))).toMatchObject({ money: 'b2c_refund' });
+    }
+  });
+
+  it('keeps the earlier refusals first: a held order is ORDER_HELD and a closed one ORDER_NOT_OPEN', () => {
+    expect(
+      decideOrderAction(b2c({ dispatchState: 'held', paymentStop: 'disputed' }), {
+        kind: 'staffDispatch',
+        requestLive: false,
+      }),
+    ).toEqual({ ok: false, refusal: 'ORDER_HELD' });
+    expect(
+      decideOrderAction(b2c({ status: 'rejected', dispatchState: 'done', paymentStop: 'returned' }), {
+        kind: 'riskApprove',
+        manual: false,
+      }),
+    ).toEqual({ ok: false, refusal: 'INVALID_TRANSITION' });
+  });
+
+  it('orderStateOf carries the stop only when one is given', () => {
+    const base = {
+      status: 'pending',
+      dispatchState: 'held',
+      verificationStatus: null,
+      clientId: null,
+      sentAt: null,
+    } as const;
+    expect(orderStateOf(base, false, false, 'disputed').paymentStop).toBe('disputed');
+    expect('paymentStop' in orderStateOf(base)).toBe(false);
   });
 });

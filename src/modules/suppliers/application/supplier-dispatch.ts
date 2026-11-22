@@ -7,7 +7,7 @@ import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
 import { ErrorReporter } from '../../../infra/observability';
-import { ORDER_OUTBOX_EVENTS, OrderSupplierMoves, isOpen } from '../../orders';
+import { ORDER_OUTBOX_EVENTS, OrderSupplierMoves, PAYMENT_STOP_REASONS, isOpen } from '../../orders';
 import type { LateAcceptanceCause, Order, SupplierMoveAction } from '../../orders';
 import type { Supplier } from '../db/schema';
 import { linkUnitCost, pickLink } from '../domain/link-selection';
@@ -74,8 +74,9 @@ export class SupplierBusyError extends Error {
  * original error then ends the job, so no retry sends again. No eligible link, or a supplier too busy on the last attempt, stops a waiting order in
  * `needs_attention`; a cache Redis error in the call limits counts as busy (the queue retries, the last attempt stops the order). A
  * run that finds a claim of an earlier release (`pending` with `sent_at` set) does not send again: it moves the order to
- * `needs_attention`. The supplier's main box travels as `IMEI`: the IMEI of an IMEI order, else the value of the field whose supplier
- * key is `IMEI` (decision 042).
+ * `needs_attention`. A storefront order whose payment is disputed, charged back or refunded in full is not sent either: it is stopped in
+ * `needs_attention` with the reason before any claim. The supplier's main box travels as `IMEI`: the IMEI of an IMEI order, else the value
+ * of the field whose supplier key is `IMEI` (decision 042).
  *
  * Side effects: one `supplier_api_logs` row per call (an error log line and an error report when it cannot be written), the claim
  * (`orders.sent_at`, `dispatching`, supplier columns, a `dispatch` event), the result (`sent` or `needs_attention` with its event,
@@ -115,6 +116,9 @@ export class SupplierDispatch {
       // A claim of an earlier release kept `pending` and set `sent_at`: it may have reached the supplier, so it is never sent again.
       return this.failClaim(order.id, order.sentAt);
     }
+    // A storefront order whose payment is disputed, charged back or refunded in full is never sent: staff decide it.
+    const paymentStop = await this.orders.paymentStop(this.db.db, order);
+    if (paymentStop !== undefined) return this.stop(order.id, PAYMENT_STOP_REASONS[paymentStop]);
 
     const target = await this.targetOf(order);
     if (!target.ok) return this.stop(order.id, target.reason);

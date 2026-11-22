@@ -61,7 +61,8 @@ export class RiskDecisionsService {
    * @param staffId the signed-in staff member
    * @param orderId the order id (not the assessment id)
    * @throws {AppError} `NOT_FOUND` (404: no such storefront order or no assessment), `NOT_HELD` (409: already decided, refunded
-   *   elsewhere, or never held)
+   *   elsewhere, or never held), `INVALID_TRANSITION` (409: the order's payment is disputed, charged back or refunded in full; the order
+   *   stays held and undecided)
    */
   async approve(staffId: number, orderId: number): Promise<void> {
     const now = this.clock.now();

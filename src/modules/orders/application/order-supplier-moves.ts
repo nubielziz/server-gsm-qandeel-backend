@@ -12,9 +12,11 @@ import { type Order, type OrderEventType, orders } from '../db/schema';
 import {
   type OrderAction,
   type OrderTransition,
+  type PaymentStop,
   decideOrderAction,
   isOpen,
   orderStateOf,
+  paymentCanStop,
 } from '../domain/order-machine';
 import type { TimelineActor } from '../domain/order-timeline';
 import { merchantOf } from '../infra/foreign-reads.repository';
@@ -42,7 +44,13 @@ import {
   unclaimedPending,
 } from '../infra/order-supplier.repository';
 import { OrderOutbox } from './order-outbox';
-import { CHANGED_FIRST_DETAIL, type TransitionOutcome, OrderTransitions, refusalError } from './order-transitions';
+import {
+  CHANGED_FIRST_DETAIL,
+  type TransitionOutcome,
+  OrderTransitions,
+  paymentStopOfOrder,
+  refusalError,
+} from './order-transitions';
 
 /** The supplier actions a no-money move applies. */
 export type SupplierMoveAction = Extract<
@@ -137,6 +145,21 @@ export class OrderSupplierMoves {
   }
 
   /**
+   * Reads what the payment of a storefront order says about sending it.
+   *
+   * Why: a storefront order whose payment is disputed, charged back or refunded in full is never sent: the dispatch job stops it in
+   * `needs_attention` before it claims it (the reason is `PAYMENT_STOP_REASONS`), and a staff send is refused, so staff decide (a
+   * won dispute lets them send it again).
+   *
+   * @param db the database or a transaction
+   * @param order the order (a merchant's order is never stopped and its payment is not read)
+   * @returns the stop, or `undefined` when nothing stops the send
+   */
+  paymentStop(db: DbExecutor, order: Pick<Order, 'id' | 'clientId'>): Promise<PaymentStop | undefined> {
+    return paymentStopOfOrder(db, order);
+  }
+
+  /**
    * Claims an order for one dispatch attempt and writes its `dispatch` event.
    *
    * @param tx the claim's transaction
@@ -165,8 +188,9 @@ export class OrderSupplierMoves {
    * @param tx the caller's transaction
    * @param move the order, the action and what to write with it
    * @returns the order after the move, whether anything was written and the machine's decision
-   * @throws {AppError} `NOT_FOUND`; the machine's `409` refusals (`ALREADY_SENT` while the order is being sent);
-   *   `INVALID_TRANSITION` when the guarded update found the order already changed, when `claimedAt` is no longer the order's
+   * @throws {AppError} `NOT_FOUND`; the machine's `409` refusals (`ALREADY_SENT` while the order is being sent; `INVALID_TRANSITION` for
+   *   a staff send, or a change of supplier that sends, of a storefront order whose payment is disputed, charged back or refunded in
+   *   full); `INVALID_TRANSITION` when the guarded update found the order already changed, when `claimedAt` is no longer the order's
    *   `sent_at`, or when `asked` names a supplier or reference the order no longer has
    * @throws {Error} when the action would post money (a programming error: use {@link OrderSupplierMoves.settle})
    */
@@ -180,7 +204,9 @@ export class OrderSupplierMoves {
     ) {
       throw new AppError('INVALID_TRANSITION', { detail: CHANGED_FIRST_DETAIL });
     }
-    const decision = decideOrderAction(orderStateOf(order), move.action);
+    // Only a staff send or a change of supplier that sends asks for the payment of a storefront order.
+    const paymentStop = paymentCanStop(move.action) ? await paymentStopOfOrder(tx, order) : undefined;
+    const decision = decideOrderAction(orderStateOf(order, false, false, paymentStop), move.action);
     if (!decision.ok) throw refusalError(decision);
     if (decision.money !== null) throw new Error(`The action ${move.action.kind} posts money: use settle().`);
     if (decision.noop) {

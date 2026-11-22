@@ -17,6 +17,58 @@ export interface OrderState {
    * again after a failed or lost send: the supplier may hold the first attempt, so only staff can end the order (decision 044).
    */
   readonly everDispatched: boolean;
+  /**
+   * Set when the payment of a storefront order stops its release or its send ({@link paymentStopOf}); left out, nothing stops it. The use
+   * cases read it only for the actions it can refuse ({@link paymentCanStop}) and never for a merchant's order.
+   */
+  readonly paymentStop?: PaymentStop;
+}
+
+/**
+ * What the payment of a storefront order says about releasing it from a risk hold or sending it to a supplier: `disputed` while a dispute
+ * of the payment is open (the send waits until it is decided), `returned` once the money went back (charged back, or refunded in full: the
+ * order is never sent).
+ */
+export type PaymentStop = 'disputed' | 'returned';
+
+/**
+ * The stop a payment status means.
+ *
+ * Why: the customer's bank or the shop took the money back, or may still do so: the supplier cost of a send would be spent on a sale that
+ * is not paid. A partial refund or a won dispute does not stop the order.
+ *
+ * @param status the status of the payment that paid the order (`payments.status`), or `undefined` when it has none
+ * @returns `disputed`, `returned`, or `undefined` when the payment stands
+ */
+export function paymentStopOf(status: string | undefined): PaymentStop | undefined {
+  if (status === 'disputed') return 'disputed';
+  if (status === 'chargeback' || status === 'refunded') return 'returned';
+  return undefined;
+}
+
+/**
+ * The sentence staff read when the payment stops an action, as the refusal's `detail` and as the reason of the `review` line the
+ * dispatch job writes.
+ */
+export const PAYMENT_STOP_REASONS: Readonly<Record<PaymentStop, string>> = {
+  disputed:
+    'The payment of this order is disputed: it is not released or sent to a supplier until the dispute is decided.',
+  returned: 'The payment of this order was charged back or refunded in full: it is not released or sent to a supplier.',
+};
+
+/**
+ * True for the actions the payment of a storefront order can refuse: the release from a risk hold, a staff send and a change of supplier
+ * that sends. The dispatch job checks the payment itself before it claims the order.
+ *
+ * @param action the action asked
+ * @returns whether the use case must read the payment before it decides
+ */
+export function paymentCanStop(action: OrderAction): boolean {
+  return (
+    action.kind === 'riskApprove' ||
+    action.kind === 'staffDispatch' ||
+    (action.kind === 'changeSupplier' && action.dispatch)
+  );
 }
 
 /** The queue the console shows (`Order.queue`), derived from the state; `null` outside every queue. */
@@ -118,6 +170,8 @@ export interface OrderRefused {
   readonly refusal: OrderRefusal;
   /** Set when the order is being sent to its supplier and the action must wait for the answer (decision 044). */
   readonly sending?: true;
+  /** Set when the payment of the storefront order stops the action ({@link PaymentStop}). */
+  readonly payment?: PaymentStop;
 }
 
 /** The answer of {@link decideOrderAction}. */
@@ -196,12 +250,15 @@ export function wireDispatchState(state: OrderDispatchState): WireDispatchState 
  * @param order the stored order
  * @param completedBefore true once the order was completed at least once (only a storefront order needs it)
  * @param everDispatched true once the order has a `dispatch` event (only the merchant's cancel asks for it)
+ * @param paymentStop what the payment of a storefront order says about releasing or sending it (only the actions of
+ *   {@link paymentCanStop} ask for it)
  * @returns the machine's view of the order
  */
 export function orderStateOf(
   order: Pick<Order, 'status' | 'dispatchState' | 'verificationStatus' | 'clientId' | 'sentAt'>,
   completedBefore = false,
   everDispatched = false,
+  paymentStop?: PaymentStop,
 ): OrderState {
   return {
     status: order.status,
@@ -212,6 +269,7 @@ export function orderStateOf(
     channel: order.clientId === null ? 'b2c' : 'b2b',
     completedBefore,
     everDispatched,
+    ...(paymentStop === undefined ? {} : { paymentStop }),
   };
 }
 
@@ -245,6 +303,11 @@ function refuse(refusal: OrderRefusal): OrderRefused {
 /** The order is being sent: the action waits for the supplier's answer (decision 044). */
 function sending(): OrderRefused {
   return { ok: false, refusal: 'ALREADY_SENT', sending: true };
+}
+
+/** The payment of the storefront order stops a release or a send. */
+function paymentStopped(stop: PaymentStop): OrderRefused {
+  return { ok: false, refusal: 'INVALID_TRANSITION', payment: stop };
 }
 
 function to(
@@ -289,7 +352,9 @@ function openAndNotHeld(order: OrderState): OrderRefused | undefined {
  * $from.dispatchState AND sent_at IS NOT DISTINCT FROM $from.sentAt` (zero rows: another request won, answer `409
  * INVALID_TRANSITION`). Decision 044: while the order is `dispatching` the actions that would change it wait for the
  * supplier's answer (`ALREADY_SENT` with the `sending` flag), and the merchant's cancel is refused (`ALREADY_SENT`) once the order
- * was ever claimed for a supplier call (`everDispatched`), whatever state it reads now.
+ * was ever claimed for a supplier call (`everDispatched`), whatever state it reads now. A storefront order whose payment is disputed,
+ * charged back or refunded in full (`paymentStop`) is not released from its risk hold, sent by staff or sent with a change of supplier
+ * (`INVALID_TRANSITION` with the `payment` flag): staff can still refund or reject it.
  *
  * @param order the order as read at the start of the use case
  * @param action what is asked
@@ -367,6 +432,7 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
       if (order.dispatchState === 'held') return refuse('ORDER_HELD');
       if (order.dispatchState === 'sent') return refuse('ALREADY_SENT');
       if (order.dispatchState === 'dispatching') return sending();
+      if (order.paymentStop !== undefined) return paymentStopped(order.paymentStop);
       // A request still on its way is left alone: a 204 that changes nothing. A lost one is asked for again.
       if (order.dispatchState === 'pending' && action.requestLive) return noop(order, 'retry');
       return to(order, { dispatchState: 'pending' }, 'retry', null, true);
@@ -410,6 +476,7 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
       if (order.dispatchState === 'dispatching') return sending();
       if (action.dispatch) {
         if (order.dispatchState === 'held') return refuse('ORDER_HELD');
+        if (order.paymentStop !== undefined) return paymentStopped(order.paymentStop);
         return to(order, { dispatchState: 'pending' }, 'supplier_changed', null, true);
       }
       // The reference is forgotten (reset, or another supplier): a sent order has nothing to poll and needs a person.
@@ -420,6 +487,7 @@ export function decideOrderAction(order: OrderState, action: OrderAction): Order
     }
     case 'riskApprove': {
       if (order.dispatchState !== 'held' || !isOpen(order.status)) return refuse('INVALID_TRANSITION');
+      if (order.paymentStop !== undefined) return paymentStopped(order.paymentStop);
       return action.manual
         ? to(order, { dispatchState: 'manual' }, 'risk', null)
         : to(order, { dispatchState: 'pending' }, 'risk', null, true);

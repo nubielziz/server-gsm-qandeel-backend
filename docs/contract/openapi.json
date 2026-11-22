@@ -98661,7 +98661,7 @@
     },
     "/admin/orders/{id}/change-supplier": {
       "post": {
-        "description": "Points the order at another supplier (`supplierId`: the supplier's id; its active link of the order's service with the lowest priority gives the supplier service) and/or forgets the old reference (`resetReference`). Nothing is sent to the supplier. `unit_cost` and `total_cost` are refreshed from the chosen link (`credit x credit_rate`; the price stays); a costlier link is allowed for staff and the `supplier_changed` event records `costAbovePrice`. Choosing another supplier always forgets the old reference. The dispatch state stays, except a `sent` order whose reference is forgotten, which becomes `needs_attention`; with `dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` is `422` on `supplierId`; the same supplier without a reset is a `204` with no event. An order being sent to its supplier right now is `409 ALREADY_SENT`.",
+        "description": "Points the order at another supplier (`supplierId`: the supplier's id; its active link of the order's service with the lowest priority gives the supplier service) and/or forgets the old reference (`resetReference`). Nothing is sent to the supplier. `unit_cost` and `total_cost` are refreshed from the chosen link (`credit x credit_rate`; the price stays); a costlier link is allowed for staff and the `supplier_changed` event records `costAbovePrice`. Choosing another supplier always forgets the old reference. The dispatch state stays, except a `sent` order whose reference is forgotten, which becomes `needs_attention`; with `dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` is `422` on `supplierId`; the same supplier without a reset is a `204` with no event. An order being sent to its supplier right now is `409 ALREADY_SENT`; `dispatch: true` for a storefront order whose payment is disputed, charged back or refunded in full is `409 INVALID_TRANSITION`.",
         "operationId": "postAdminOrdersByIdChangeSupplier",
         "parameters": [
           {
@@ -99258,7 +99258,7 @@
     },
     "/admin/orders/{id}/dispatch": {
       "post": {
-        "description": "Staff retry: an order in `needs_attention`, `manual` or `operator` goes to `pending` and the dispatch job is queued (an `order.dispatch_requested` outbox row; the answer does not wait for the supplier). The order goes to the supplier service it already has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. No money moves: the hold stays. An order already `pending` whose dispatch request is still waiting for the job is a `204` that changes nothing; one whose request was lost gets a new one (a `retry` event, the job queued) and keeps its supplier columns: the job chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. Writes a `retry` event and an audit row.",
+        "description": "Staff retry: an order in `needs_attention`, `manual` or `operator` goes to `pending` and the dispatch job is queued (an `order.dispatch_requested` outbox row; the answer does not wait for the supplier). The order goes to the supplier service it already has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. No money moves: the hold stays. An order already `pending` whose dispatch request is still waiting for the job is a `204` that changes nothing; one whose request was lost gets a new one (a `retry` event, the job queued) and keeps its supplier columns: the job chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. A storefront order whose payment is disputed, charged back or refunded in full is `409 INVALID_TRANSITION` (the order stays where it is). Writes a `retry` event and an audit row.",
         "operationId": "postAdminOrdersByIdDispatch",
         "parameters": [
           {
@@ -140978,7 +140978,7 @@
     },
     "/admin/risk/orders/{id}/approve": {
       "post": {
-        "description": "`:id` is the order id. Releases the order by the placement rule: to the dispatch job (the supplier gets it), or to the manual queue for a manual service or a service without an active supplier link. The assessment records who approved and when, the order timeline gets a risk line, and the action is audited as `approved after risk review`. `409 NOT_HELD` when the order is not waiting for a decision any more.",
+        "description": "`:id` is the order id. Releases the order by the placement rule: to the dispatch job (the supplier gets it), or to the manual queue for a manual service or a service without an active supplier link. The assessment records who approved and when, the order timeline gets a risk line, and the action is audited as `approved after risk review`. `409 NOT_HELD` when the order is not waiting for a decision any more; `409 INVALID_TRANSITION` while its payment is disputed (the order stays held until the dispute is decided) or once it was charged back or refunded in full.",
         "operationId": "postAdminRiskOrdersByIdApprove",
         "parameters": [
           {
@@ -141289,7 +141289,7 @@
             }
           },
           "409": {
-            "description": "NOT_HELD: This order is not on hold.",
+            "description": "NOT_HELD: This order is not on hold.\nINVALID_TRANSITION: This status change is not allowed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -141319,7 +141319,8 @@
                     "code": {
                       "type": "string",
                       "enum": [
-                        "NOT_HELD"
+                        "NOT_HELD",
+                        "INVALID_TRANSITION"
                       ]
                     },
                     "detail": {
@@ -141363,6 +141364,17 @@
                       "status": 409,
                       "code": "NOT_HELD",
                       "detail": "This order is not on hold.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "INVALID_TRANSITION": {
+                    "summary": "This status change is not allowed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/invalid-transition",
+                      "title": "This status change is not allowed.",
+                      "status": 409,
+                      "code": "INVALID_TRANSITION",
+                      "detail": "This status change is not allowed.",
                       "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
                     }
                   }

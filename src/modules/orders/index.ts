@@ -10,6 +10,7 @@ export {
   orderStateOf,
   placementDispatchState,
   wireDispatchState,
+  PAYMENT_STOP_REASONS,
 } from './domain/order-machine';
 export type {
   OrderAction,
@@ -19,6 +20,7 @@ export type {
   OrderRefusal,
   OrderState,
   OrderTransition,
+  PaymentStop,
   WireDispatchState,
 } from './domain/order-machine';
 export { mainInputOf } from './domain/main-input';

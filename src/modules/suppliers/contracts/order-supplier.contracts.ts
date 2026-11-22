@@ -16,7 +16,9 @@ export const dispatchOrder = defineRoute({
     'has, else the first active link whose supplier is active; the price-protection limit of the automatic dispatch does not apply. ' +
     'No money moves: the hold stays. An order already `pending` whose dispatch request is still waiting for the job is a `204` that ' +
     'changes nothing; one whose request was lost gets a new one (a `retry` event, the job queued) and keeps its supplier columns: the job ' +
-    'chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. Writes a `retry` event and an audit row.',
+    'chooses the target by the automatic rule. An order being sent to its supplier right now is `409 ALREADY_SENT`. A storefront order whose ' +
+    'payment is disputed, charged back or refunded in full is `409 INVALID_TRANSITION` (the order stays where it is). Writes a `retry` ' +
+    'event and an audit row.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
@@ -82,7 +84,8 @@ export const changeOrderSupplier = defineRoute({
     'reference. The dispatch state stays, except a `sent` order whose reference is forgotten, which becomes `needs_attention`; with ' +
     '`dispatch: true` it becomes `pending` and the job is queued in the same transaction. Neither `supplierId` nor `resetReference: true` ' +
     'is `422` on `supplierId`; the same supplier without a reset is a `204` with no event. An order being sent to its supplier right now is ' +
-    '`409 ALREADY_SENT`.',
+    '`409 ALREADY_SENT`; `dispatch: true` for a storefront order whose payment is disputed, charged back or refunded in full is ' +
+    '`409 INVALID_TRANSITION`.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

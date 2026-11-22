@@ -136,14 +136,15 @@ export const approveHeldOrder = defineRoute({
     '`:id` is the order id. Releases the order by the placement rule: to the dispatch job (the supplier gets it), or to the manual ' +
     'queue for a manual service or a service without an active supplier link. The assessment records who approved and when, the ' +
     'order timeline gets a risk line, and the action is audited as `approved after risk review`. `409 NOT_HELD` when the order is ' +
-    'not waiting for a decision any more.',
+    'not waiting for a decision any more; `409 INVALID_TRANSITION` while its payment is disputed (the order stays held until the ' +
+    'dispute is decided) or once it was charged back or refunded in full.',
   tags: ['risk'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'risk:decide',
   params: z.object({ id: zIdParam }),
   success: { status: 204 },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'NOT_HELD'],
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'NOT_HELD', 'INVALID_TRANSITION'],
 });
 
 /** The body of `POST /admin/risk/orders/:id/refund`. */

@@ -1,7 +1,8 @@
-// Unit tests of the refusal sentences of OrderTransitions (decision 025, decision 044): the wait sentence of a send in flight.
+// Unit tests of the refusal sentences of OrderTransitions (decision 025, decision 044): the wait sentence of a send in flight and the sentence
+// of a storefront payment that stops a release or a send.
 import { describe, expect, it } from 'bun:test';
 import { AppError } from '@src/common/errors';
-import type { OrderRefusal } from '@src/modules/orders/domain/order-machine';
+import { PAYMENT_STOP_REASONS, type OrderRefusal } from '@src/modules/orders/domain/order-machine';
 import { SEND_IN_PROGRESS_DETAIL, refusalError } from '@src/modules/orders/application/order-transitions';
 
 describe('refusalError', () => {
@@ -21,5 +22,15 @@ describe('refusalError', () => {
     const closed: OrderRefusal = 'ORDER_NOT_OPEN';
     expect(refusalError(closed).detail).toBe('Only an open order can be changed.');
     expect(refusalError({ ok: false, refusal: closed }).detail).toBe('Only an open order can be changed.');
+  });
+
+  it('gives the payment sentence when the payment of a storefront order stops the action, with the code unchanged', () => {
+    for (const payment of ['disputed', 'returned'] as const) {
+      const stopped = refusalError({ ok: false, refusal: 'INVALID_TRANSITION', payment });
+      expect(stopped.code).toBe('INVALID_TRANSITION');
+      expect(stopped.detail).toBe(PAYMENT_STOP_REASONS[payment]);
+    }
+    expect(PAYMENT_STOP_REASONS.disputed).toContain('disputed');
+    expect(PAYMENT_STOP_REASONS.returned).toContain('charged back');
   });
 });

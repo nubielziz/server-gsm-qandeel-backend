@@ -78,8 +78,9 @@ export class OrderSupplierActions {
    * @param staffId the staff member
    * @param orderId the order
    * @throws {AppError} `NOT_FOUND`; the machine's `ORDER_NOT_OPEN`, `ORDER_HELD`, `ALREADY_SENT` (also while the order is being sent to
-   *   its supplier); `NO_SUPPLIER` (no active link and no supplier service); `SUPPLIER_DISABLED` (the order's supplier, or every linked
-   *   supplier, is paused or disabled)
+   *   its supplier), `INVALID_TRANSITION` (a storefront order whose payment is disputed, charged back or refunded in full); `NO_SUPPLIER`
+   *   (no active link and no supplier service); `SUPPLIER_DISABLED` (the order's supplier, or every linked supplier, is paused or
+   *   disabled)
    */
   async dispatch(staffId: number, orderId: number): Promise<void> {
     await this.db.runInTransaction(async ({ tx }) => {
@@ -91,7 +92,12 @@ export class OrderSupplierActions {
         order.dispatchState === 'pending' && order.sentAt === null
           ? (await this.requests.inspect(tx, orderId)).state === 'live'
           : false;
-      const decision = decideOrderAction(orderStateOf(order), { kind: 'staffDispatch', requestLive });
+      // A storefront order whose payment is disputed, charged back or refunded in full is refused, even while its request is on its way.
+      const paymentStop = await this.orders.paymentStop(tx, order);
+      const decision = decideOrderAction(orderStateOf(order, false, false, paymentStop), {
+        kind: 'staffDispatch',
+        requestLive,
+      });
       if (!decision.ok) throw refusalError(decision);
       // A request still on its way: nothing to change and nothing to check, but the press of the button is audited.
       if (decision.noop) {
@@ -195,7 +201,8 @@ export class OrderSupplierActions {
    * @param orderId the order
    * @param input the target supplier, whether to reset the reference and whether to queue the dispatch at once
    * @throws {AppError} `NOT_FOUND`; `ORDER_NOT_OPEN`, `ORDER_HELD` (with `dispatch`), `ALREADY_SENT` (while the order is being sent to its
-   *   supplier); `SUPPLIER_DISABLED` (the target is paused or disabled); `INVALID_TRANSITION` (the order changed while the request ran);
+   *   supplier); `SUPPLIER_DISABLED` (the target is paused or disabled); `INVALID_TRANSITION` (the order changed while the request ran, or
+   *   `dispatch` for a storefront order whose payment is disputed, charged back or refunded in full);
    *   `VALIDATION_FAILED` (422 on `supplierId`: nothing to do, an unknown supplier, or no active link of the order's service to it)
    */
   async changeSupplier(staffId: number, orderId: number, input: ChangeSupplierInput): Promise<void> {
