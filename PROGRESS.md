@@ -4,15 +4,29 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Waiting for the owner's review (2026-11-23): the branch `security/deep-financial-auth-fixes`.** A second pass over the money paths and
-over sign-in and permissions: 35 commits on top of `ef7f13d7` in the worktree `../backend-deep`, not merged into `main` and never pushed.
-The rules are in `docs/decisions/056-second-pass-money-and-access.md`; what waits for the owner's confirmation is B234 to B239 of
-`docs/contract/MISMATCHES.md`. Every change was built with a test that fails without it and was reviewed before its commit; the whole check
-passed on the branch at `b9f70334` (typecheck, lint, format and the generator checks; 725 test files, 9653 tests pass, 1 skip, 0 fail).
-Migrations `0056` to `0062` are on the dev database `gsm` (a dump was taken first, and they were rehearsed on a copy); the code on `main`
-runs against them. The console and the storefront were not changed. The full report, with what each frontend needs and the points left for
-the owner to decide, is outside the repositories: `/home/saifi/gsm-project/.security-audit/deep-financial-auth-fixes.md`. Next step: the
-owner reads the report, decides the open points and merges or drops the branch.
+**Second pass over money and access (2026-11-23): DONE, merged.** The branch `security/deep-financial-auth-fixes` (35 commits: 33 changes, the
+list of tooling tests and the documents) was fast-forwarded into `main` on the owner's instruction after the final checks. The rules are in
+`docs/decisions/056-second-pass-money-and-access.md`; B234 to B239 of `docs/contract/MISMATCHES.md` still wait for the owner's confirmation.
+Every change was built with a test that fails without it and was reviewed before its commit. **Final checks (2026-11-23).** Backend, the whole
+check on the merged commit `dd759053`: typecheck, lint, format and the generator checks; 725 test files, 9653 tests pass, 1 skip, 0 fail.
+Console `main` (`f1bb3dc`): typecheck, lint, 5825 of 5825 tests and the build (`VITE_API_MOCKS=false`) pass; a walk of 19 pages and their tabs
+on this code made 304 real calls, and the only answers that were not a success were the monitoring charts (the walk's API had no
+`PROMETHEUS_URL`). Website `main` (`94a6d59`): typecheck, lint, 986 unit tests and the build pass. Its browser tests ran on this code from a
+copy of its test folder outside the repositories, with the page's `Origin` added to the two `/store/v1` sign-in calls (the change its helpers
+need since decision 045): 625 passed, 47 skipped, 37 failed. 32 of the 37 fail the same way on the code before this branch: they assume what
+decisions 049, 052 and 053 changed (a ticket opened with a typed address, two-step sign-in before the address is confirmed, one receipt file
+for two top-ups) or meet two manual methods in the demo data. Five come from this branch, where a rule meets what a test assumes:
+`e2e/harness.spec.ts:127` (a merchant who confirms an address without a session chooses a new password), `e2e/merchant-account.spec.ts:54` on
+both screen sizes (the confirmation of a signed-in merchant needs the `X-CSRF-Token` header; the page sends it, the test's direct call does
+not), `e2e/support-live.spec.ts:218` and `:246` (the demo order was opened as a guest with the address of an account, so its ticket is
+unconfirmed and the answer has no token). Three extra browser checks of the merchant pages on this code pass: confirming the address while
+signed in keeps the password; confirming without a session mails a password link and the new password signs in; after staff set a temporary
+password a new API key waits for a password from a mailed link. The website's generated API types are stale (`npm run gen:api`), as they were
+before this branch. Migrations `0056` to `0062` are on the dev database `gsm` (a dump was taken first, and they were rehearsed on a copy).
+**Not touched:** the demo database of the website's isolated API (`gsm_storefront`) is at migration 0046; run `scripts/dev-backend.sh reset`
+in the website before its tests run from the repository again, then set the two demo merchants' passwords as the website's PROGRESS says. The
+console and the website were not changed; what each needs, and the points left for the owner to decide, are in the report outside the
+repositories: `/home/saifi/gsm-project/.security-audit/deep-financial-auth-fixes.md`.
 
 **In progress (2026-11-22): the security fixes after the audit of 2026-11-20.** Status and next step: the section "Security fixes after the
 audit" below; the live state, briefs and reviews are outside the repositories (`/home/saifi/gsm-project/.security-audit/fix/`, read `STATE.md` first).

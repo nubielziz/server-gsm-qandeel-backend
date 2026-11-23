@@ -1,6 +1,6 @@
 # 056: A second pass over money and access
 
-Status: proposed (2026-11-23) on the branch `security/deep-financial-auth-fixes`; it is accepted when the owner merges that branch.
+Status: accepted, 2026-11-23 (the branch `security/deep-financial-auth-fixes`, merged into `main` on the owner's instruction).
 Builds on decisions 018, 037 and 044 to 055.
 
 **Context.** After decisions 044 to 055 the money paths (orders, the ledger, payments, refunds, disputes, tax, exchange rates, supplier
