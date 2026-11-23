@@ -1,0 +1,12 @@
+# Copy to /etc/systemd/system/ with the timer and enable the timer (docs/OPERATIONS.md section 4). It reads the offsite bucket, not a
+# note of this server, and sends an alert when last night's dump is not there.
+[Unit]
+Description=GSM: check that the offsite bucket holds last night's backup
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gsm-backup check
+TimeoutStartSec=30min

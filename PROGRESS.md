@@ -26,6 +26,16 @@ is a required check there since), and the backend (build, no migration, containe
 from that first day: a commit whose checks failed is asked about again after ten minutes, not thirty, so runs started again on GitHub are
 noticed.
 
+**Backups on Cloudflare R2, driven by the server (2026-11-23, decision 059): built, reviewed twice, first night proven by hand.** The
+container scripts of decisions 036 and 055 stay as they were; new are the host side (`deploy/backup/gsm-backup.sh` with `run`, `check`,
+`status` and `drill`, two systemd timers, alerts by mail through the application's SMTP account, an optional heartbeat), the encrypted copy of
+the server's own configuration (`config-copy.sh`), `offsite-status.sh`, and `deploy/backup/r2-bucket-rules.sh` (lifecycle and lock rules: on
+R2 the lock rules stand in for versioning and a key that cannot delete). Found on the first real run and fixed: R2 hands out a version id and
+refuses requests that name it, so rclone's read-back after an upload is left out for `BACKUP_S3_PROVIDER=Cloudflare`. On the production server
+the first dump went to the bucket and the restore drill passed with it (ledger sums to zero, 63 migrations). **Still to do on the server after
+this release is deployed:** install the script and the timers, the first `gsm-backup run` (it adds the configuration copy), and the bucket's
+rules once the owner's API token may edit R2.
+
 **Second pass over money and access (2026-11-23): DONE, merged.** The branch `security/deep-financial-auth-fixes` (35 commits: 33 changes, the
 list of tooling tests and the documents) was fast-forwarded into `main` on the owner's instruction after the final checks. The rules are in
 `docs/decisions/056-second-pass-money-and-access.md`; B234 to B239 of `docs/contract/MISMATCHES.md` still wait for the owner's confirmation.

@@ -1,0 +1,14 @@
+# Copy to /etc/systemd/system/ with the timer and enable the timer (docs/OPERATIONS.md section 4).
+[Unit]
+Description=GSM: nightly offsite backup (database, files, configuration)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gsm-backup run
+# A large dump or the first copy of the files bucket takes long; the next night waits for this one.
+TimeoutStartSec=3h
+# 75: another run was still going on (started by hand); that run reports for itself.
+SuccessExitStatus=75

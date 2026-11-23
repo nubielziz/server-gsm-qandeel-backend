@@ -268,11 +268,15 @@ edge_apply() {
   compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || say "Caddy did not take its new Caddyfile: gsmc restart caddy"
 }
 
-# The deployer and the firewall script follow the repository, and the firewall reads its list again.
+# The deployer, the firewall script and the backup script (decision 059) follow the repository, and the firewall reads its list again.
+# The backup script is refreshed only where it was installed; its systemd units are not touched.
 install_self() {
-  local source=$ROOT/backend/deploy/cd
+  local source=$ROOT/backend/deploy/cd backup=$ROOT/backend/deploy/backup/gsm-backup.sh
   [ -f "$source/auto-deploy.sh" ] || return 0
   cmp -s "$source/auto-deploy.sh" /usr/local/sbin/gsm-auto-deploy || install -m 0750 "$source/auto-deploy.sh" /usr/local/sbin/gsm-auto-deploy || true
+  if [ -e /usr/local/sbin/gsm-backup ] && [ -f "$backup" ]; then
+    cmp -s "$backup" /usr/local/sbin/gsm-backup || install -m 0750 "$backup" /usr/local/sbin/gsm-backup || true
+  fi
   if [ -e /usr/local/sbin/gsm-origin-firewall ]; then
     cmp -s "$source/origin-firewall.sh" /usr/local/sbin/gsm-origin-firewall || install -m 0750 "$source/origin-firewall.sh" /usr/local/sbin/gsm-origin-firewall || true
     if systemctl is-enabled --quiet gsm-origin-firewall.service 2>/dev/null; then

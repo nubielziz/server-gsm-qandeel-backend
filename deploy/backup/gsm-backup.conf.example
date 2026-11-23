@@ -1,0 +1,26 @@
+# Settings of deploy/backup/gsm-backup.sh. Copy to /etc/gsm-backup.conf (root, mode 600) and fill it. Shell syntax. No secret of the
+# backups belongs here: the bucket's key and the age public key are in deploy/.env, the mail account in .env.production.
+
+# The folder that holds the backend checkout (the same ROOT as /etc/gsm-deploy.conf).
+ROOT=/opt/gsm
+
+# The extra compose file of a server behind a CDN, as in /etc/gsm-deploy.conf; empty on a server with no CDN.
+COMPOSE_OVERRIDE=
+
+# Where the alerts go: one plain-text mail per alert, sent through the application's own SMTP account (MAIL_SMTP_URL and MAIL_FROM of
+# .env.production). Empty: the alerts are lines in the journal only.
+ALERT_EMAIL=ops@example.com
+
+# Optional: an https address of a monitor outside this server, called (GET) after every night that succeeded. The monitor warns when a
+# night passes without a call, which a server that is down cannot do by mail.
+HEARTBEAT_URL=
+
+# Optional: where the state and the logs are kept; how old the newest daily dump may be before the morning check alerts; how often
+# the restore drill is due.
+# STATE=/var/lib/gsm-backup
+# MAX_AGE_HOURS=26
+# DRILL_EVERY_DAYS=35
+
+# Optional: what the configuration copy holds, absolute paths separated by spaces (a path that does not exist is skipped). The default:
+# <ROOT>/backend/deploy/.env, <ROOT>/backend/.env.production, this file, /etc/gsm-deploy.conf and the folder <ROOT>/server.
+# CONFIG_PATHS="/opt/gsm/backend/deploy/.env /opt/gsm/backend/.env.production /etc/gsm-backup.conf /etc/gsm-deploy.conf /opt/gsm/server"

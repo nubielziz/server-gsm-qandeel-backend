@@ -214,6 +214,18 @@ describe('deploy/cd shell scripts', () => {
     expect(script).not.toMatch(/--dport 22|ctorigdstport 22/);
   });
 
+  it('refreshes the backup script from the repository only where it was installed, and leaves its units alone (decision 059)', () => {
+    const script = read('deploy/cd/auto-deploy.sh');
+    const start = script.indexOf('install_self() {');
+    const body = script.slice(start, script.indexOf('\n}\n', start));
+    expect(body).toContain('backup=$ROOT/backend/deploy/backup/gsm-backup.sh');
+    expect(body).toContain('if [ -e /usr/local/sbin/gsm-backup ] && [ -f "$backup" ]; then');
+    expect(body).toContain(
+      'cmp -s "$backup" /usr/local/sbin/gsm-backup || install -m 0750 "$backup" /usr/local/sbin/gsm-backup || true',
+    );
+    expect(body).not.toMatch(/gsm-backup[\w-]*\.(service|timer)/);
+  });
+
   it('the origin firewall never empties a chain that is in use, replaces its list in one step and closes the web ports over IPv6', () => {
     const script = read('deploy/cd/origin-firewall.sh');
     expect(script).not.toMatch(/iptables -F|iptables --flush/);

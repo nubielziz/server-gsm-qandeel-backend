@@ -80,6 +80,12 @@ setup_backup_remote() {
   export RCLONE_CONFIG_BACKUP_REGION="${BACKUP_S3_REGION:-}"
   # The bucket is created by the owner; rclone must not try to create it (the key may lack the permission).
   export RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET=true
+  # Cloudflare R2 answers an upload with a version id but refuses every request that names one (it keeps no versions), so the read-back
+  # rclone makes after an upload fails there and only its retry passes. Without the read-back the upload is still checked: the provider
+  # compares the body with the Content-MD5 rclone sends, and the scripts look at the stored object themselves (decision 059).
+  if [ "${BACKUP_S3_PROVIDER:-Other}" = Cloudflare ]; then
+    export RCLONE_CONFIG_BACKUP_NO_HEAD=true
+  fi
   BACKUP_BUCKET="$BACKUP_S3_BUCKET"
 }
 

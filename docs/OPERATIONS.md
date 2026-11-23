@@ -444,7 +444,8 @@ What is saved, every night: a full dump of the database (`pg_dump`, custom forma
 is not a backup). The dump is made into a file in the backup container first (it needs free disk space of about its own size), copied to
 `db/incoming/`, checked there, and only then copied to `db/daily/` (and, on the first day of each month, to `db/monthly/`), so the daily folder holds
 complete dumps only. The files bucket is copied encrypted with the same key, object by object, to `files-age/` (never synced: a file deleted by
-mistake stays in the backup until the purge below). **How long copies are kept is a rule of the bucket, not of the script** (below). **Not
+mistake stays in the backup until the purge below). The server's own configuration files are packed,
+encrypted on the host for the same key and stored in `config/` ("The configuration copy" below). **How long copies are kept is a rule of the bucket, not of the script** (below). **Not
 saved:** the queue Redis (its append-only file survives restarts; a job lost with its data is not re-created from `outbox_events`: see "If the
 queue Redis loses its data" in section 6), the cache Redis and the Prometheus history.
 
@@ -454,7 +455,8 @@ queue Redis loses its data" in section 6), the cache Redis and the Prometheus hi
 age-keygen -o gsm-backup.agekey      # prints the public key "age1..."; put it in BACKUP_AGE_RECIPIENT of deploy/.env
 ```
 
-The private key (`gsm-backup.agekey`) is kept offline by two people (section 5). Without it a backup cannot be read.
+The private key (`gsm-backup.agekey`) is kept offline by two people (section 5). Without it a backup cannot be read. It also opens
+the configuration copy, which holds every secret of the server: keep it like `ENCRYPTION_KEYS`.
 
 **The offsite bucket's rules** (set them at the provider; the nightly key cannot change them): versioning on; an object lock with a default
 retention of 30 days where the provider offers it; lifecycle rules: `db/incoming/` expires after 2 days, `db/daily/` after
@@ -462,20 +464,123 @@ retention of 30 days where the provider offers it; lifecycle rules: `db/incoming
 2 days. **The nightly key** (`BACKUP_S3_ACCESS_KEY_ID`) may list, read and write objects, nothing else: no delete, no version delete, no lock or
 lifecycle change, so a stolen server cannot destroy the past copies. **The purge key** may also delete; it never stays on the server. A provider
 without lifecycle rules: set `BACKUP_PRUNE=1` (the script then deletes the daily dumps older than `BACKUP_RETENTION_DAYS` and the monthly copies
-beyond `BACKUP_MONTHLY_KEEP`) and give the nightly key delete rights; that is weaker, because the key can then delete the backups.
+beyond `BACKUP_MONTHLY_KEEP`) and give the nightly key delete rights; that is weaker, because the key can then delete the backups. **On Cloudflare R2** neither versioning
+nor a key that cannot delete exists: its lock rules take their place ("With Cloudflare R2" below).
 
 The backup service reads the files bucket with the read-only user `MINIO_BACKUP_USER`. With an external S3 for the files (the `S3_*` lines of
 `.env.production`), change the `S3_*` lines of the `backup` service in `deploy/compose.prod.yaml` to that store and a read-only key.
 
-**Schedule** (the host's cron; `-T` is needed because cron has no terminal):
+### With Cloudflare R2
 
-```cron
-15 1 * * * cd /opt/gsm && docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm -T backup pg-backup.sh >> /var/log/gsm-backup.log 2>&1 && docker compose -f deploy/compose.prod.yaml --env-file deploy/.env run --rm -T backup files-mirror.sh >> /var/log/gsm-backup.log 2>&1
+R2 (decision 059) speaks S3, but it has no versioning, and its object key ("Object Read & Write") can also delete: R2 has no key that
+may only write. Its **bucket lock rules** take their place: until its lock ends, an object can be neither deleted nor overwritten, by
+any key, so a stolen server key cannot destroy the past copies.
+
+1. Create the bucket in the Cloudflare dashboard (R2), private, without a public address or a custom domain.
+2. Create an R2 API token with the permission "Object Read & Write" for **this bucket only**. Its access key id and secret go into
+   `deploy/.env`, with the endpoint of your account:
+   ```bash
+   BACKUP_S3_ENDPOINT=https://<account id>.r2.cloudflarestorage.com
+   BACKUP_S3_BUCKET=<bucket>
+   BACKUP_S3_PROVIDER=Cloudflare
+   BACKUP_S3_REGION=auto
+   BACKUP_S3_ACCESS_KEY_ID=<access key id of that token>
+   BACKUP_S3_SECRET_ACCESS_KEY=<its secret access key>
+   ```
+   `BACKUP_S3_PROVIDER=Cloudflare` is more than a label: R2 answers an upload with a version id but refuses every request that names
+   one, so with this value the scripts leave out rclone's read-back after an upload. The upload is still checked (R2 compares the body
+   with the Content-MD5 rclone sends, and the scripts look at the stored object themselves). Without it every upload logs a
+   `NotImplemented` error and passes only on rclone's retry.
+3. Set the bucket's rules with `deploy/backup/r2-bucket-rules.sh` and a Cloudflare API token that may edit R2, made for the moment and
+   deleted afterwards (it never stays on the server). It needs `curl` and `python3`:
+   ```bash
+   read -rs CLOUDFLARE_API_TOKEN; export CLOUDFLARE_API_TOKEN
+   deploy/backup/r2-bucket-rules.sh <account id> <bucket> apply     # sets both rule sets and prints them
+   deploy/backup/r2-bucket-rules.sh <account id> <bucket> show      # prints them again, any time
+   ```
+
+   A bucket created in a jurisdiction (for example the EU): `R2_JURISDICTION=eu` before the command, and the endpoint
+   `https://<account id>.eu.r2.cloudflarestorage.com` in `deploy/.env`.
+
+   | Prefix | Lifecycle: removed after | Lock: no delete, no overwrite for |
+   | --- | --- | --- |
+   | `db/incoming/` | 2 days | (none) |
+   | `db/daily/` | 35 days | 30 days |
+   | `db/monthly/` | 400 days | 395 days |
+   | `config/` | 35 days | 30 days |
+   | `files-age/` | never | for good |
+   | unfinished multipart uploads | aborted after 2 days | |
+
+   `DAILY_DAYS=<days>` before the command changes the 30 (keep `BACKUP_RETENTION_DAYS` of `deploy/.env` the same). Each lock ends five
+   days before the lifecycle rule removes the object: a locked object is not removed by a lifecycle rule, so the two must never meet.
+   `BACKUP_PRUNE` stays 0.
+4. After the first night: `gsm-backup status` shows a daily dump, and deleting it with the server's key
+   (`gsmc run --rm backup bash -c '. /opt/backup/lib.sh; setup_backup_remote; rclone deletefile "backup:$BACKUP_BUCKET/db/daily/<name>"'`)
+   is refused.
+
+**The purge on R2.** `files-age/` is locked for good, so the purge below is an act of the owner, in one sitting: switch the rule
+`lock-files` off (dashboard: R2, the bucket, Settings, Bucket lock rules), run the purge with an R2 token "Object Read & Write" for this
+bucket made for the purge (the purge key), then put every rule back with `r2-bucket-rules.sh <account id> <bucket> apply` and check
+with `show` that `lock-files` is on. Delete the purge token afterwards.
+
+**Schedule and alerts** (decision 059). `gsm-backup` runs the backups from the host: every night at 01:15 UTC (within 15 minutes) the
+database dump, the encrypted files copy and the configuration copy; every morning at 07:30 UTC a check that reads the bucket. Install it
+once, as root, from the backend checkout; it needs `docker`, `curl` and `age` on the host (`apt-get install age`):
+
+```bash
+install -m 0750 deploy/backup/gsm-backup.sh /usr/local/sbin/gsm-backup
+install -m 0600 deploy/backup/gsm-backup.conf.example /etc/gsm-backup.conf      # then fill it: ROOT, ALERT_EMAIL, HEARTBEAT_URL
+cp deploy/backup/gsm-backup.service deploy/backup/gsm-backup.timer deploy/backup/gsm-backup-check.service deploy/backup/gsm-backup-check.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now gsm-backup.timer gsm-backup-check.timer
+systemctl start gsm-backup.service && gsm-backup status      # the first run now, instead of waiting for the night
 ```
 
-Each script prints one JSON line per step and exits non-zero on any failure (an empty or missing upload fails the run, and so does a listing of the offsite copy that fails: the files mirror never takes an unreadable target for an empty one and copies everything again; only a missing `files-age/` folder on the very first run counts as empty). Make the host
-tell you when the exit code is not zero (cron mails, or a monitor that reads the log). Try a script without doing anything:
-`gsmc run --rm -e BACKUP_DRY_RUN=1 backup pg-backup.sh` prints the commands.
+The automatic deploys keep `/usr/local/sbin/gsm-backup` current (section 8); they do not touch the units. On a host without systemd,
+two cron lines do the same: `15 1 * * * /usr/local/sbin/gsm-backup run` and `30 7 * * * /usr/local/sbin/gsm-backup check`.
+
+```bash
+gsm-backup status                  # last run, last success, last drill, what the bucket holds, the timers' next times
+gsm-backup check                   # what the morning timer runs: reads the bucket now
+gsm-backup drill <key file>        # the monthly restore drill (below)
+journalctl -u gsm-backup -n 50     # what the nightly runs said
+ls /var/lib/gsm-backup/log/        # one log per run (the 60 newest stay)
+```
+
+`run` builds the backup image of the checkout, then runs `pg-backup.sh`, `files-mirror.sh` and the configuration copy; a step that fails
+does not stop the next ones, and a second run while one is going on stops at once (exit code 75; a lock that cannot be taken for any
+other reason is an error). A run that is stopped (a shutdown, `systemctl stop gsm-backup`, Ctrl-C) sends one alert naming the step it
+was in; from its start until its end, `/var/lib/gsm-backup/last-run` says `failed_steps=interrupted`, so even a run killed without a
+chance to speak is reported by the next check. Each script prints one JSON line per step
+and exits non-zero on any failure (an empty or missing upload fails the run, and so does a listing of the offsite copy that fails: the
+files mirror never takes an unreadable target for an empty one and copies everything again; only a missing `files-age/` folder on the very
+first run counts as empty). `check` fails when the bucket cannot be listed, holds no daily dump, or its newest dump is older than
+`MAX_AGE_HOURS` (26, by the UTC stamp in the dump's name), dated more than an hour in the future (check the server's clock) or empty, or
+when the last run failed or was interrupted (a run that is still going on is left alone): it reads the bucket, not a note of the server.
+It also removes a copy of the private key left at `/var/lib/gsm-backup/age.key.restore` outside a drill, and reports it.
+
+**Alerts.** Each failed night and each failed check sends one plain-text mail to `ALERT_EMAIL` (in `/etc/gsm-backup.conf`) through the
+application's own SMTP account (`MAIL_SMTP_URL` and `MAIL_FROM` of `.env.production`), with the subject `[backup] <host name>: ...`,
+and writes one line in the journal. The check also reminds, without failing, when no restore drill was recorded for `DRILL_EVERY_DAYS`
+(35). A mail that cannot be sent is a line in the log. A server that is down sends no mail: set `HEARTBEAT_URL` to a monitor outside the
+server (any service that expects a call every night and warns when one is missing); it is called after every night that succeeded.
+Try a script without doing anything: `gsmc run --rm -e BACKUP_DRY_RUN=1 backup pg-backup.sh` prints the commands.
+
+**The configuration copy.** Every night `run` packs `deploy/.env`, `.env.production`, `/etc/gsm-backup.conf`, `/etc/gsm-deploy.conf`
+and the folder `server/` next to the checkouts (each when it exists, a symbolic link with its content; `CONFIG_PATHS` of the settings
+file replaces the list), encrypts
+the archive **on the host** with `age` for `BACKUP_AGE_RECIPIENT`, and stores it as `config/gsm-config-<UTC stamp>.tar.gz.age`. The
+backup container receives only the encrypted file and refuses anything that is not an age file. A restored database needs the
+`ENCRYPTION_KEYS`, `LOOKUP_HASH_KEY` and `TOKEN_PEPPER` of the same installation: this copy holds them. To open one, on your own
+computer, into a new folder (any rclone remote with a key that may read the bucket):
+
+```bash
+rclone lsf <remote>:<bucket>/config/          # the copies; the newest is last
+mkdir restored-config
+rclone cat <remote>:<bucket>/config/gsm-config-<UTC stamp>.tar.gz.age | age -d -i gsm-backup.agekey | tar -xz -C restored-config
+```
+
+The files keep their paths under the new folder (for example `restored-config/opt/gsm/backend/.env.production`). Remove the folder when
+you are done: it holds every secret of the server in plain text.
 
 **Purge after an erasure or a retention run** (monthly, and within the deadline of an erasure request). The nightly copy never deletes, so the
 encrypted copy of a file that no longer exists at the source stays until this runs. Run it by hand with the purge key, which never stays on the
@@ -490,7 +595,8 @@ gsmc run --rm -e BACKUP_PURGE_S3_ACCESS_KEY_ID -e BACKUP_PURGE_S3_SECRET_ACCESS_
 
 It deletes only the copies whose object is gone from the application's bucket, and refuses to run when the listing of that bucket is empty. With
 versioning on, the old versions of a deleted copy disappear when the noncurrent-version rule expires them (30 days): say this limit in the
-privacy notice. If an older release left a plaintext `files/` prefix offsite, remove it once with the purge key (`rclone purge`).
+privacy notice. On R2 there are no old versions, so a purged copy is gone at once; switch the lock rule `lock-files` off first and put it
+back afterwards ("The purge on R2" above). If an older release left a plaintext `files/` prefix offsite, remove it once with the purge key (`rclone purge`).
 
 **Restore a file** from the encrypted copy (the age key as in the restore below; the application's own MinIO user writes it back):
 
@@ -504,7 +610,7 @@ gsmc run --rm -e S3_ACCESS_KEY_ID="$MINIO_APP_USER" -e S3_SECRET_ACCESS_KEY="$MI
 pass `--force`, it has no default target, and it refuses a target that connects as a superuser unless you pass `--as-superuser`). Restore as
 the owner of a database made for the purpose: a dump's statements run with the rights of the restoring role, so a dump that was tampered
 with can do no more than that role can. Use `--as-superuser` only for a dump you made yourself and checked by name and size against
-`/var/log/gsm-backup.log`.
+`gsm-backup status` and the run logs in `/var/lib/gsm-backup/log/`.
 
 The backup image runs as uid 10001, and `age-keygen` writes the key file readable by its owner only (mode 0600), so the container
 cannot read your copy. Give it its own copy for the restore and remove it afterwards:
@@ -529,6 +635,16 @@ creates the role). The role's password is made for the run and never printed. A 
 (`pg_restore --exit-on-error`): the first real drill shows whether the dump has any.
 
 ```bash
+sudo gsm-backup drill /path/to/gsm-backup.agekey      # the key from your offline copy, for example a USB stick
+```
+
+It copies the key to `/var/lib/gsm-backup/age.key.restore` (mode 0400, owned by uid 10001, the container's user, which cannot read your
+own copy), runs `restore-drill.sh` with it and removes the copy afterwards (`shred -u`), on a pass, on a failure and on Ctrl-C. One drill
+runs at a time, and the morning check leaves the copy alone while a drill runs (any other copy it finds, it removes). A pass is
+written to `/var/lib/gsm-backup/last-drill`, which the morning check reads; the exit code is the drill's, and its output is kept in
+`/var/lib/gsm-backup/log/`. Without the host script, the same by hand:
+
+```bash
 sudo install -m 0400 -o 10001 -g 10001 gsm-backup.agekey ./age.key.restore
 gsmc run --rm -v "$PWD/age.key.restore:/age.key:ro" backup restore-drill.sh --identity /age.key
 sudo shred -u ./age.key.restore
@@ -545,6 +661,7 @@ The private key only has to be on the machine for the minute the drill runs.
 | --- | --- | --- |
 | `ENCRYPTION_KEYS` | values sealed by a key that is gone cannot be read: TOTP secrets (staff and merchants enrol 2FA again), supplier and gateway credentials and webhook secrets (they stop until typed in again), stored IMEIs and inventory codes, and the copies of the shop's links (mails and account pages can no longer show those links; the links themselves keep working) | two offline copies, two people, with the backup key; never lose it, never change an existing key; add keys as below |
 | `age` private key | no backup can be read | two offline copies, two people; never on the server except during a drill |
+| the configuration copy (`config/` of the offsite bucket, decision 059) | it holds every secret of the server (`ENCRYPTION_KEYS`, `TOKEN_PEPPER`, `LOOKUP_HASH_KEY`, the passwords, the bucket key, the mail account), sealed for the backups' age key: whoever holds that private key and the bucket holds them all, and without the key the copy cannot be read | the age private key is kept like `ENCRYPTION_KEYS`; the offline copy of `ENCRYPTION_KEYS` stays too, so losing one key does not take the other with it. After a leak, the copies of the past 35 days still hold the old secrets: change the secrets themselves |
 | `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset, invitation and Telegram link stops working; the cache is emptied too (every entry becomes a miss, decision 055) | change only as a planned operation; every API and worker process must have the same value |
 | `LOOKUP_HASH_KEY` | every stored lookup stops matching: blocked e-mails, cards and IMEIs pass the blocklist again, the IMEI history and the duplicate checks of inventory codes and open orders forget what they knew, unsubscribe links in sent mails stop working, Idempotency-Key replays of the last 7 days and the event ids of pending merchant webhook deliveries change, and every checkout, tracking and ticket link stops working | never change it (production refuses to start with a different key); on an installation that has data it equals the `TOKEN_PEPPER` the data was made with (section 3) |
 | `CSRF_SECRET` | forms that are open fail once and are sent again | any time |
@@ -893,7 +1010,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
   rates entered by hand at least every 48 hours (decision 049).
 - [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`, then run `scripts/telegram-webhook.ts` (section 6).
 - [ ] Object storage for backups on another provider, with versioning, an object lock and the lifecycle rules of section 4; two keys: the nightly one (list, read and
-      write, never delete; in `deploy/.env`) and a purge key (may delete; kept offline); and the two key holders named.
+      write, never delete; in `deploy/.env`) and a purge key (may delete; kept offline); and the two key holders named. On Cloudflare R2: the rules of
+      `r2-bucket-rules.sh` instead of versioning and a key that cannot delete (section 4, "With Cloudflare R2").
 - [ ] A Sentry project (optional) and its DSN.
 - [ ] The payment provider chosen by the owner (decision D-6) and its keys entered in the console, never in a file.
 - [ ] The provider sends every checkout, refund and dispute event to `/webhooks/payments/<code>`, and refunds are switched on for the method
@@ -915,7 +1033,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Every country the shop sells to has a tax window in force (0 % "no tax" included): once any window exists, any other country is
       refused at checkout (decision 050).
 - [ ] Every supplier address starts with https://, and suppliers.allowPlainHttp is not true (only an Owner can change it).
-- [ ] A timer or cron entry runs the nightly backup and something tells you when it fails.
+- [ ] `gsm-backup` and its two timers are installed (section 4); `gsm-backup check` sent its reminder to `ALERT_EMAIL` (no drill is recorded
+      yet, so the mail arrives), passed the morning after the first night, and the monitor of `HEARTBEAT_URL` saw the nightly call.
 - [ ] The host has disk space for the volumes (database, files, Prometheus) and for one dump at a time in the backup container (the compose file already limits the logs to 5 × 20 MB per container).
 
 **Staff roles** (decision 046)
@@ -966,7 +1085,7 @@ What a deploy does:
 
 | Part | Steps |
 | --- | --- |
-| backend | checks the commit out; writes `GIT_SHA` and `APP_VERSION` into `deploy/.env`; keeps the image the API runs as `:previous`; builds; with a CDN, writes the server's new Caddyfile beside the old one and checks it (section 1); when the commit adds a migration file, dumps the database to `/var/backups/gsm/` first (the ten newest stay) and runs the offsite backup of section 4 when it is set up; runs `migrate`; `up -d`; puts the new Caddyfile in place and tells Caddy (with no CDN: starts Caddy again when `deploy/Caddyfile` changed); waits for the API and the worker to be healthy; installs its own newer copy and reads the origin firewall's list again |
+| backend | checks the commit out; writes `GIT_SHA` and `APP_VERSION` into `deploy/.env`; keeps the image the API runs as `:previous`; builds; with a CDN, writes the server's new Caddyfile beside the old one and checks it (section 1); when the commit adds a migration file, dumps the database to `/var/backups/gsm/` first (the ten newest stay) and runs the offsite backup of section 4 when it is set up; runs `migrate`; `up -d`; puts the new Caddyfile in place and tells Caddy (with no CDN: starts Caddy again when `deploy/Caddyfile` changed); waits for the API and the worker to be healthy; installs its own newer copy (and the backup script's, when `/usr/local/sbin/gsm-backup` exists) and reads the origin firewall's list again |
 | console | checks out, keeps `:previous`, builds, replaces the container, asks it for its page |
 | shop | checks out, keeps `:previous`, builds with the values of the settings file (the build reads the public catalog, so the API must be up), replaces the container, waits for it to be healthy |
 
@@ -987,7 +1106,7 @@ ls /var/lib/gsm-deploy/log/                  # one log per deploy
 
 **Install** (once, as root, from the backend checkout). The three checkouts are clones of their repositories with the remote `origin`,
 side by side under one folder, for example `/opt/gsm/backend`, `/opt/gsm/frontend-admin` and `/opt/gsm/storefront`; the commands of the
-other sections then run from `/opt/gsm/backend`, the cron line of section 4 included.
+other sections then run from `/opt/gsm/backend`; the backup timers of section 4 use the same folder (`ROOT` of `/etc/gsm-backup.conf`).
 
 ```bash
 install -m 0750 deploy/cd/auto-deploy.sh /usr/local/sbin/gsm-auto-deploy

@@ -86,8 +86,16 @@ interface Result {
   calls: string[];
 }
 
-/** Runs a backup script with the stubs first on PATH; `env` overrides BASE_ENV (an `undefined` value removes a variable). */
-function runScript(script: string, args: string[], env: Record<string, string | undefined> = {}): Result {
+/**
+ * Runs a backup script with the stubs first on PATH; `env` overrides BASE_ENV (an `undefined` value removes a variable), and `stdin`
+ * is its standard input.
+ */
+function runScript(
+  script: string,
+  args: string[],
+  env: Record<string, string | undefined> = {},
+  stdin?: string,
+): Result {
   writeFileSync(log, '');
   writeFileSync(join(work, 'keys.log'), '');
   const merged: Record<string, string> = {
@@ -99,7 +107,11 @@ function runScript(script: string, args: string[], env: Record<string, string | 
   for (const [key, value] of Object.entries({ ...BASE_ENV, ...env })) {
     if (value !== undefined) merged[key] = value;
   }
-  const proc = Bun.spawnSync(['bash', join(SCRIPTS, script), ...args], { env: merged, cwd: work, stdin: 'ignore' });
+  const proc = Bun.spawnSync(['bash', join(SCRIPTS, script), ...args], {
+    env: merged,
+    cwd: work,
+    stdin: stdin === undefined ? 'ignore' : Buffer.from(stdin),
+  });
   return {
     code: proc.exitCode,
     out: proc.stdout.toString(),
@@ -120,9 +132,11 @@ describe('every script', () => {
   it('passes bash -n', () => {
     const scripts = readdirSync(SCRIPTS).filter((name) => name.endsWith('.sh'));
     expect(scripts.sort()).toEqual([
+      'config-copy.sh',
       'files-mirror.sh',
       'files-purge.sh',
       'lib.sh',
+      'offsite-status.sh',
       'pg-backup.sh',
       'pg-restore.sh',
       'restore-drill.sh',
@@ -606,5 +620,193 @@ describe('restore-drill.sh', () => {
     const result = runScript('restore-drill.sh', ['--identity', identity()], { MIGRATIONS_DIR: migrationsDir(3) });
     expect(result.code).toBe(1);
     expect(result.err).toContain('no daily backup found');
+  });
+});
+
+describe('config-copy.sh', () => {
+  const NAME = 'gsm-config-20261110T011500Z.tar.gz.age';
+  const CONFIG = 'backup:gsm-backups/config';
+  const AGE_FILE = 'age-encryption.org/v1\n-> X25519 stub\nencrypted bytes\n';
+
+  it('copies an age file from its standard input to config/ and checks the object there', () => {
+    listing(`${CONFIG}/`, [`12;gsm-config-20261109T011500Z.tar.gz.age`, `1234;${NAME}`]);
+    const result = runScript('config-copy.sh', [NAME], {}, AGE_FILE);
+    expect(result.code).toBe(0);
+    const copies = result.calls.filter((call) => call.startsWith('rclone copyto'));
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toMatch(new RegExp(`^rclone copyto \\S+/${NAME} ${CONFIG}/${NAME}$`));
+    expect(result.calls).toContain(`rclone lsf --files-only --format sp --separator ; ${CONFIG}/`);
+    expect(result.calls.some((call) => /rclone (delete|deletefile|purge|sync)/.test(call))).toBe(false);
+    expect(result.out).toContain('1234 bytes');
+  });
+
+  it('refuses an input that is not an age file, so a plaintext configuration never reaches the bucket, and uploads nothing', () => {
+    for (const input of [
+      'ROOT=/opt/gsm\nENCRYPTION_KEYS=k1:secret\n',
+      '',
+      'age-encryption.org/v1',
+      '-----BEGIN AGE ENCRYPTED FILE-----\n',
+    ]) {
+      for (const dry of [undefined, '1']) {
+        const result = runScript('config-copy.sh', [NAME], { BACKUP_DRY_RUN: dry, BACKUP_ALLOW_PLAINTEXT: '1' }, input);
+        expect(result.code, JSON.stringify(input)).toBe(1);
+        expect(result.err, JSON.stringify(input)).toContain('is not an age-encrypted file');
+        expect(result.err, JSON.stringify(input)).toContain('nothing was uploaded');
+        expect(result.calls, JSON.stringify(input)).toEqual([]);
+        expect(result.err, JSON.stringify(input)).not.toContain('rclone copyto');
+      }
+    }
+  });
+
+  it('accepts only the name gsm-config-<UTC stamp>.tar.gz.age, before reading anything', () => {
+    for (const name of [
+      'gsm-config-20261110T011500.tar.gz.age',
+      'gsm-config-20261110T011500Z.tar.gz',
+      'gsm-config-2026111T011500Z.tar.gz.age',
+      '../gsm-config-20261110T011500Z.tar.gz.age',
+      'db/daily/gsm-20261110T011500Z.dump.age',
+    ]) {
+      const result = runScript('config-copy.sh', [name], {}, AGE_FILE);
+      expect(result.code, name).toBe(1);
+      expect(result.err, name).toContain('the object name must be gsm-config-<YYYYMMDDTHHMMSSZ>.tar.gz.age');
+      expect(result.calls, name).toEqual([]);
+    }
+    expect(runScript('config-copy.sh', [], {}, AGE_FILE).code).toBe(1);
+    expect(runScript('config-copy.sh', [NAME, NAME], {}, AGE_FILE).code).toBe(1);
+  });
+
+  it('fails when the uploaded object is missing or empty', () => {
+    listing(`${CONFIG}/`, [`0;${NAME}`]);
+    const empty = runScript('config-copy.sh', [NAME], {}, AGE_FILE);
+    expect(empty.code).toBe(1);
+    expect(empty.err).toContain(`uploaded object ${NAME} is missing or empty`);
+    listing(`${CONFIG}/`, ['99;gsm-config-20261109T011500Z.tar.gz.age']);
+    const missing = runScript('config-copy.sh', [NAME], {}, AGE_FILE);
+    expect(missing.code).toBe(1);
+    expect(missing.err).toContain('missing or empty');
+  });
+
+  it('prints the copy in a dry run and runs nothing', () => {
+    const result = runScript('config-copy.sh', [NAME], { BACKUP_DRY_RUN: '1' }, AGE_FILE);
+    expect(result.code).toBe(0);
+    expect(result.err).toMatch(new RegExp(`\\+ rclone copyto \\S+/${NAME} ${CONFIG}/${NAME}\n`));
+    expect(result.calls).toEqual([]);
+  });
+});
+
+describe('offsite-status.sh', () => {
+  const DAILY = 'backup:gsm-backups/db/daily/';
+  const MONTHLY = 'backup:gsm-backups/db/monthly/';
+  const CONFIG = 'backup:gsm-backups/config/';
+  const FILES = 'backup:gsm-backups/files-age/';
+
+  /** The key=value lines of standard output, as an object; fails the test on any other line there. */
+  const parse = (out: string): Record<string, string> => {
+    const lines = out.split('\n').filter(Boolean);
+    for (const line of lines) expect(line).toMatch(/^[a-z_]+=/);
+    return Object.fromEntries(
+      lines.map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+    );
+  };
+
+  it('prints the counts and the newest object by name, with its size, of each prefix, and only key=value lines on standard output', () => {
+    listing(DAILY, [
+      '12;gsm-20261108T011500Z.dump.age',
+      '1234;gsm-20261110T011500Z.dump.age',
+      '99;gsm-20261109T011500Z.dump.age',
+    ]);
+    listing(MONTHLY, ['5000;gsm-20261101T011500Z.dump.age', '4000;gsm-20261001T011500Z.dump.age']);
+    listing(CONFIG, ['900;gsm-config-20261110T011500Z.tar.gz.age']);
+    listing(FILES, ['a/1.pdf.age', 'b/c/2.png.age', 'b/3.pdf.age']);
+    const result = runScript('offsite-status.sh', []);
+    expect(result.code).toBe(0);
+    expect(parse(result.out)).toEqual({
+      daily_count: '3',
+      daily_newest: 'gsm-20261110T011500Z.dump.age',
+      daily_newest_bytes: '1234',
+      monthly_count: '2',
+      monthly_newest: 'gsm-20261101T011500Z.dump.age',
+      monthly_newest_bytes: '5000',
+      config_count: '1',
+      config_newest: 'gsm-config-20261110T011500Z.tar.gz.age',
+      config_newest_bytes: '900',
+      files_count: '3',
+    });
+    expect(result.calls).toContain(`rclone lsf --files-only -R ${FILES}`);
+    // Read-only: nothing but listings.
+    expect(result.calls.every((call) => call.startsWith('rclone lsf'))).toBe(true);
+  });
+
+  it('counts a prefix that does not exist yet (rclone exit code 3) as empty', () => {
+    listing(DAILY, ['1234;gsm-20261110T011500Z.dump.age']);
+    const result = runScript('offsite-status.sh', [], { STUB_LSF_FAIL: 'db/monthly', STUB_LSF_FAIL_CODE: '3' });
+    expect(result.code).toBe(0);
+    const status = parse(result.out);
+    expect(status.daily_count).toBe('1');
+    expect(status.monthly_count).toBe('0');
+    expect(status.monthly_newest).toBe('');
+    expect(status.monthly_newest_bytes).toBe('');
+    expect(status.config_count).toBe('0');
+    expect(status.files_count).toBe('0');
+  });
+
+  it('fails on any other listing failure: an unreadable bucket is never taken for an empty one', () => {
+    listing(DAILY, ['1234;gsm-20261110T011500Z.dump.age']);
+    for (const [prefix, code] of [
+      ['db/daily', '1'],
+      ['db/monthly', '2'],
+      ['config', '5'],
+      ['files-age', '7'],
+    ] as const) {
+      const result = runScript('offsite-status.sh', [], { STUB_LSF_FAIL: prefix, STUB_LSF_FAIL_CODE: code });
+      expect(result.code, prefix).toBe(1);
+      expect(result.err, prefix).toContain(`listing backup:gsm-backups/${prefix} failed (rclone exit code ${code})`);
+      expect(result.out, prefix).not.toContain('files_count=');
+    }
+  });
+
+  it('fails without the bucket settings', () => {
+    const result = runScript('offsite-status.sh', [], { BACKUP_S3_BUCKET: undefined });
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('BACKUP_S3_BUCKET');
+    expect(result.out).toBe('');
+  });
+});
+
+describe('lib.sh: the offsite remote', () => {
+  /** The value of one rclone setting after `setup_backup_remote`, or `unset`. */
+  function setting(name: string, provider?: string): string {
+    const env: Record<string, string> = {
+      PATH: process.env.PATH ?? '',
+      BACKUP_S3_ENDPOINT: 'https://s3.example.com',
+      BACKUP_S3_BUCKET: 'gsm-backups',
+      BACKUP_S3_ACCESS_KEY_ID: 'key-id',
+      BACKUP_S3_SECRET_ACCESS_KEY: 'key-secret',
+    };
+    if (provider !== undefined) env.BACKUP_S3_PROVIDER = provider;
+    const proc = Bun.spawnSync(
+      [
+        'bash',
+        '-c',
+        `. "$1"; setup_backup_remote; printf '%s' "\${!2:-unset}"`,
+        'probe',
+        join(SCRIPTS, 'lib.sh'),
+        name,
+      ],
+      { env },
+    );
+    expect(proc.exitCode).toBe(0);
+    return proc.stdout.toString();
+  }
+
+  it('leaves out the read-back after an upload on Cloudflare R2, which refuses the version id it hands out, and nowhere else', () => {
+    expect(setting('RCLONE_CONFIG_BACKUP_NO_HEAD', 'Cloudflare')).toBe('true');
+    expect(setting('RCLONE_CONFIG_BACKUP_NO_HEAD', 'AWS')).toBe('unset');
+    expect(setting('RCLONE_CONFIG_BACKUP_NO_HEAD')).toBe('unset');
+  });
+
+  it('never lets rclone create the bucket, whatever the provider', () => {
+    expect(setting('RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET', 'Cloudflare')).toBe('true');
+    expect(setting('RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET')).toBe('true');
   });
 });
