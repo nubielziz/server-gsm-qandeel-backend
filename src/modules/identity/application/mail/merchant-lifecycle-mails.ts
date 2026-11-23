@@ -14,7 +14,7 @@ import {
   MERCHANT_SUSPENDED_EVENT,
 } from './identity-mail-events';
 
-/** The staff actions a security notice names. */
+/** The changes a security notice names: staff actions, a new API key (made by staff or by the merchant in the portal) and a staff change of a key. */
 export type SecurityNoticeKind =
   'temporary_password' | 'twofa_reset' | 'api_key_created' | 'api_key_changed' | 'email_changed';
 
@@ -40,7 +40,8 @@ type Recipient = Pick<Client, 'id' | 'name'>;
  * Writes the lifecycle emails of a merchant.
  *
  * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
- * change something security-relevant (a temporary password, a 2FA reset, a staff-made API key or a change of its addresses or limit, a new email address). All are transactional: always sent, whatever the
+ * change something security-relevant (a temporary password, a 2FA reset, a staff change of an API key's addresses or limit, a new email
+ * address), and when an API key is created (by staff or by the merchant in the portal). All are transactional: always sent, whatever the
  * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
  * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
  *
@@ -114,11 +115,11 @@ export class MerchantLifecycleMails {
   }
 
   /**
-   * `merchant.security_notice`: staff changed something security-relevant.
+   * `merchant.security_notice`: staff changed something security-relevant, or an API key was created.
    *
    * @param work the caller's transaction
    * @param client the merchant
-   * @param kind what staff did; it decides the sentence
+   * @param kind what changed; it decides the sentence
    * @param options `to`: the address to write to instead of the merchant's current one (decision 047: the notice of an email change goes
    *   to the address before the change)
    * @returns once the notification and its outbox event are written

@@ -21,6 +21,8 @@ import {
 import type { MerchantPrincipal } from '../security/principal';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
 import { ApiKeyIssuer } from './api-key-issuer';
+import { MachineCredentialHold } from './machine-credential-hold';
+import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 
 /** The range and sort of a list request, already parsed and checked by the contract. */
 export interface ApiKeyListRequest {
@@ -49,10 +51,12 @@ export interface CreatedApiKey {
  * Why: B155 and decision 019. A key authenticates REST v1 and Dhru calls (P2.5c); the merchant creates, limits and revokes its
  * own. Only the keyed hash of a key and its first 8 characters are stored, so the full key exists only in the answer of the
  * creation. A key that belongs to another merchant is `404`, like an unknown one, so a merchant cannot probe other ids. Merchant
- * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`.
+ * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`. A new key sends the merchant the same
+ * security notice as a key staff make, and no key is made while the account's password or email address is one staff set (`MachineCredentialHold`).
  *
- * Side effects: writes `api_keys`; a change or a revocation drops the cached view of the key after the commit
- * (`ApiKeyDirectory.invalidate`), so it applies on the next call and not up to a minute later.
+ * Side effects: writes `api_keys`; a creation also writes a `merchant.security_notice` notification and its outbox event; a change or a
+ * revocation drops the cached view of the key after the commit (`ApiKeyDirectory.invalidate`), so it applies on the next call and not up
+ * to a minute later.
  *
  * @see docs/contract/MISMATCHES.md (B155)
  */
@@ -62,6 +66,8 @@ export class MerchantApiKeyService {
     private readonly db: DbService,
     private readonly issuer: ApiKeyIssuer,
     private readonly directory: ApiKeyDirectory,
+    private readonly hold: MachineCredentialHold,
+    private readonly lifecycleMails: MerchantLifecycleMails,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -84,11 +90,14 @@ export class MerchantApiKeyService {
    * @param input the name, the scopes, the allowed addresses and an optional expiry
    * @returns the stored key and the full key text
    * @throws {AppError} `VALIDATION_FAILED` (422) on `scopes.N` (an unknown scope), `allowedIps.N` (not an address or range),
-   *   `expiresAt` (not in the future) or `name` (the merchant already holds 10 live keys)
+   *   `expiresAt` (not in the future) or `name` (the merchant already holds 10 live keys); `FORBIDDEN` (403: the account's password or
+   *   email address is one staff set); `UNAUTHORIZED` (401: the session ended meanwhile)
    */
   async create(principal: MerchantPrincipal, input: CreateApiKeyInput): Promise<CreatedApiKey> {
-    const issued = await this.db.runInTransaction(({ tx }) =>
-      this.issuer.issue(tx, {
+    const issued = await this.db.runInTransaction(async (work) => {
+      // A plain read, before the issuer's advisory lock: the lock order of staff-made keys (advisory lock, then the merchant row) stays.
+      const client = await this.hold.assertMayIssue(principal, work.tx);
+      const key = await this.issuer.issue(work.tx, {
         clientId: principal.clientId,
         name: input.name,
         scopes: input.scopes,
@@ -97,8 +106,10 @@ export class MerchantApiKeyService {
         rateLimitPerMin: DEFAULT_RATE_LIMIT_PER_MIN,
         createdBy: null,
         limitMessage: `You already have ${MAX_LIVE_KEYS} active keys; revoke one first.`,
-      }),
-    );
+      });
+      await this.lifecycleMails.securityNotice(work, client, 'api_key_created');
+      return key;
+    });
     return { key: apiKeyToWire(issued.row), secret: issued.secret };
   }
 

@@ -54,6 +54,24 @@ export async function lockClientById(db: DbExecutor, id: number): Promise<Client
 }
 
 /**
+ * Reads a merchant for the opening of a sign-in session and holds its row until the transaction ends.
+ *
+ * Why: a sign-in opens its session only if the account is still as it was when the password was checked. A reset by link, a password
+ * change, a switch-on of two-step sign-in, a temporary password and a suspension change this row, in the commit that ends the merchant's
+ * sessions where they end them, so with the row held either that change waits and then ends the new session too, or the sign-in reads the
+ * changed row.
+ * `FOR NO KEY UPDATE`: the sign-in writes non-key columns only, so inserts that reference the merchant do not wait for it.
+ *
+ * @param db the transaction
+ * @param id the merchant id
+ * @returns the merchant as it is now, or `undefined` when it does not exist
+ */
+export async function lockClientForSignIn(db: DbExecutor, id: number): Promise<Client | undefined> {
+  const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1).for('no key update');
+  return row;
+}
+
+/**
  * Finds the merchant that owns a referral code.
  *
  * Why: B122 stores `referred_by_id` from the code a new merchant typed; an unknown code is a validation error.
@@ -85,17 +103,30 @@ export async function insertClient(db: DbExecutor, row: NewClient): Promise<Clie
 }
 
 /**
- * Replaces a stored password hash with one made at the current cost.
+ * Replaces a stored password hash with one made at the current cost, while the stored hash is still the one that was verified.
  *
  * Why: decision 007 re-hashes a correct password when the configured cost went up; `password_changed_at` stays, since the
- * merchant did not change their password.
+ * merchant did not change their password. The write is guarded by the verified hash, so a password chosen meanwhile is never replaced
+ * by a hash of the one it replaced.
  *
  * @param db the database or a transaction
  * @param id the merchant id
  * @param passwordHash the new argon2id hash
+ * @param verifiedHash the stored hash the password was verified against
+ * @returns false when the stored hash is another one (nothing was written)
  */
-export async function replaceClientPasswordHash(db: DbExecutor, id: number, passwordHash: string): Promise<void> {
-  await db.update(clients).set({ passwordHash }).where(eq(clients.id, id));
+export async function replaceClientPasswordHash(
+  db: DbExecutor,
+  id: number,
+  passwordHash: string,
+  verifiedHash: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(clients)
+    .set({ passwordHash })
+    .where(and(eq(clients.id, id), eq(clients.passwordHash, verifiedHash)))
+    .returning({ id: clients.id });
+  return rows.length > 0;
 }
 
 /** What choosing a password writes besides the hash. */
@@ -110,6 +141,12 @@ export interface SaveClientPassword {
    * mailbox, so what an unverified registrant enrolled before it (a second factor nobody with the mailbox holds) must not outlive it.
    */
   readonly clearTwoFactor?: boolean;
+  /**
+   * The password comes from a link mailed to the merchant's address (reset or invitation): it ends the hold that a password set by staff
+   * puts on machine credentials (`password_set_by_staff`, decision 046). A change on the security page does not. The hold of an email
+   * address staff set (`email_set_by_staff`) stays: the link went to that address.
+   */
+  readonly fromMailedLink?: boolean;
 }
 
 /**
@@ -117,7 +154,8 @@ export interface SaveClientPassword {
  *
  * Why: the reset, invite and change routes all end here. The write refuses a suspended merchant, so a suspension that lands
  * between the check and the write wins; an invite also fills `email_verified_at` when it is still empty; a link on a merchant whose
- * email is not verified also turns its two-factor sign-in off (`clearTwoFactor`, decision 052).
+ * email is not verified also turns its two-factor sign-in off (`clearTwoFactor`, decision 052); a link also clears
+ * `password_set_by_staff` (`fromMailedLink`).
  *
  * @param db the database or a transaction
  * @param input the merchant, the hash and the time
@@ -131,6 +169,7 @@ export async function saveClientPassword(db: DbExecutor, input: SaveClientPasswo
       passwordChangedAt: input.now,
       // Any chosen password (reset link, invitation, change) ends a forced change (feature 20).
       mustChangePassword: false,
+      ...(input.fromMailedLink ? { passwordSetByStaff: false } : {}),
       ...(input.verifyEmail ? { emailVerifiedAt: sql`coalesce(${clients.emailVerifiedAt}, ${input.now})` } : {}),
       // The right side of every SET reads the row as it was, so this sees the email before an invite verifies it.
       ...(input.clearTwoFactor

@@ -12,6 +12,7 @@ import {
   portalTestWebhook,
   portalUpdateWebhook,
 } from '../../platform';
+import { MachineCredentialHold } from '../application/machine-credential-hold';
 import { CurrentMerchant } from '../security/access-state';
 import type { MerchantPrincipal } from '../security/principal';
 
@@ -19,7 +20,8 @@ import type { MerchantPrincipal } from '../security/principal';
  * The merchant portal's webhook routes.
  *
  * Why: B156. A merchant registers where its events go and checks that the receiver works. The answer that carries the signing
- * secret says `Cache-Control: no-store`.
+ * secret says `Cache-Control: no-store`. Creating or changing an endpoint is refused while the account's password or email address is one staff set
+ * (`MachineCredentialHold`, decision 046).
  *
  * @route GET /client/webhooks
  * @route POST /client/webhooks
@@ -30,7 +32,10 @@ import type { MerchantPrincipal } from '../security/principal';
  */
 @Controller()
 export class MerchantWebhooksController {
-  constructor(private readonly webhooks: MerchantWebhookService) {}
+  constructor(
+    private readonly webhooks: MerchantWebhookService,
+    private readonly hold: MachineCredentialHold,
+  ) {}
 
   /**
    * Lists the merchant's endpoints.
@@ -54,14 +59,16 @@ export class MerchantWebhooksController {
    * @param merchant the signed-in merchant
    * @param body the address, the events and the switch
    * @returns the endpoint and its secret
+   * @throws {AppError} `FORBIDDEN` (403: the account's password or email address is one staff set)
    * @route POST /client/webhooks
    */
   @Route(portalCreateWebhook)
   @Header('Cache-Control', 'no-store')
-  create(
+  async create(
     @CurrentMerchant() merchant: MerchantPrincipal,
     @Body() body: BodyOf<typeof portalCreateWebhook>,
   ): Promise<ResultOf<typeof portalCreateWebhook>> {
+    await this.hold.assertMayIssue(merchant);
     return this.webhooks.create(merchant, body);
   }
 
@@ -72,14 +79,16 @@ export class MerchantWebhooksController {
    * @param params the endpoint id
    * @param body the fields to change
    * @returns the endpoint after the change
+   * @throws {AppError} `FORBIDDEN` (403: the account's password or email address is one staff set)
    * @route PATCH /client/webhooks/:id
    */
   @Route(portalUpdateWebhook)
-  update(
+  async update(
     @CurrentMerchant() merchant: MerchantPrincipal,
     @Param() params: ParamsOf<typeof portalUpdateWebhook>,
     @Body() body: BodyOf<typeof portalUpdateWebhook>,
   ): Promise<ResultOf<typeof portalUpdateWebhook>> {
+    await this.hold.assertMayIssue(merchant);
     return this.webhooks.update(merchant, params.id, body);
   }
 

@@ -78,13 +78,15 @@ export const portalCreateWebhook = defineRoute({
     `${WEBHOOK_EVENT_NAMES.map((event) => `\`${event}\``).join(', ')} (\`422\` on \`events.N\`). A merchant may register ` +
     `${MAX_ENDPOINTS_PER_MERCHANT} endpoints: the next is \`422\` on \`url\`. The answer carries the signing secret once as ` +
     '`secret` (`Cache-Control: no-store`); it is stored encrypted and never read back. Deliveries are signed with it: see the ' +
-    'webhook events in the public API reference.',
+    "webhook events in the public API reference. While the account's password is one staff set (a temporary password, until the " +
+    "merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route " +
+    'is `403 FORBIDDEN`.',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
   body: z.object({ url: EndpointUrl, events: EndpointEvents, isActive: z.boolean().optional() }),
   success: { status: 201, schema: z.object({ endpoint: EndpointRow, secret: z.string() }) },
-  errors: ['VALIDATION_FAILED', ...PORTAL_ERRORS, 'CSRF_FAILED'],
+  errors: ['VALIDATION_FAILED', 'FORBIDDEN', ...PORTAL_ERRORS, 'CSRF_FAILED'],
   examples: {
     request: { url: 'https://hooks.example.com/gsm', events: ['order.status_changed', 'wallet.low_balance'] },
     response: { endpoint: ENDPOINT_EXAMPLE, secret: 'whsec_Qx4fD0nQ2hX8mV3vT9cKzY6bJ1aW5eRuLs7NpG4HtM0' },
@@ -97,14 +99,16 @@ export const portalUpdateWebhook = defineRoute({
   summary: 'Edit or pause an endpoint',
   description:
     'A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it ' +
-    'on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.',
+    'on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`. ' +
+    "While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to " +
+    "its address), and after staff changed the account's email address, the route is `403 FORBIDDEN`.",
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
   body: z.object({ url: EndpointUrl.optional(), events: EndpointEvents.optional(), isActive: z.boolean().optional() }),
   success: { status: 200, schema: EndpointRow },
-  errors: ['VALIDATION_FAILED', 'NOT_FOUND', ...PORTAL_ERRORS, 'CSRF_FAILED'],
+  errors: ['VALIDATION_FAILED', 'NOT_FOUND', 'FORBIDDEN', ...PORTAL_ERRORS, 'CSRF_FAILED'],
   examples: { request: { isActive: false }, response: { ...ENDPOINT_EXAMPLE, isActive: false } },
 });
 

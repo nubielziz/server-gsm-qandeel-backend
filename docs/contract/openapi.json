@@ -211495,7 +211495,7 @@
         "x-gsm-surface": "client"
       },
       "post": {
-        "description": "`scopes` is a non-empty subset of `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` (an area wildcard such as `orders:*` is allowed; `dhru` is matched exactly). `allowedIps` takes up to 20 addresses or CIDR ranges (a bare address is stored as /32 or /128; bits after the prefix are refused); an empty list means any address. `expiresAt` must be in the future. The answer carries the full key once as `secret` (`Cache-Control: no-store`): only a keyed hash is stored, so a lost key cannot be shown again. The per-minute limit is the server default; only staff change it. A merchant may hold 10 live keys: the next one is `422` on `name`.",
+        "description": "`scopes` is a non-empty subset of `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` (an area wildcard such as `orders:*` is allowed; `dhru` is matched exactly). `allowedIps` takes up to 20 addresses or CIDR ranges (a bare address is stored as /32 or /128; bits after the prefix are refused); an empty list means any address. `expiresAt` must be in the future. The answer carries the full key once as `secret` (`Cache-Control: no-store`): only a keyed hash is stored, so a lost key cannot be shown again. The per-minute limit is the server default; only staff change it. A merchant may hold 10 live keys: the next one is `422` on `name`. Every new key sends the merchant a security notice by email. While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is `403 FORBIDDEN`.",
         "operationId": "postClientApiKeys",
         "parameters": [],
         "requestBody": {
@@ -211832,7 +211832,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -211862,6 +211862,7 @@
                     "code": {
                       "type": "string",
                       "enum": [
+                        "FORBIDDEN",
                         "ACCOUNT_SUSPENDED",
                         "ACCOUNT_PENDING_APPROVAL",
                         "IP_NOT_ALLOWED",
@@ -211901,6 +211902,17 @@
                   }
                 },
                 "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "ACCOUNT_SUSPENDED": {
                     "summary": "This account is suspended.",
                     "value": {
@@ -242359,7 +242371,7 @@
         "x-gsm-surface": "client"
       },
       "post": {
-        "description": "The address must be `https` with a public host: addresses that resolve to private, loopback or link-local networks are refused (`422` on `url`), now and again at every send. `events` is a non-empty subset of `order.status_changed`, `wallet.low_balance`, `invoice.paid`, `service.price_changed` (`422` on `events.N`). A merchant may register 5 endpoints: the next is `422` on `url`. The answer carries the signing secret once as `secret` (`Cache-Control: no-store`); it is stored encrypted and never read back. Deliveries are signed with it: see the webhook events in the public API reference.",
+        "description": "The address must be `https` with a public host: addresses that resolve to private, loopback or link-local networks are refused (`422` on `url`), now and again at every send. `events` is a non-empty subset of `order.status_changed`, `wallet.low_balance`, `invoice.paid`, `service.price_changed` (`422` on `events.N`). A merchant may register 5 endpoints: the next is `422` on `url`. The answer carries the signing secret once as `secret` (`Cache-Control: no-store`); it is stored encrypted and never read back. Deliveries are signed with it: see the webhook events in the public API reference. While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is `403 FORBIDDEN`.",
         "operationId": "postClientWebhooks",
         "parameters": [],
         "requestBody": {
@@ -242612,7 +242624,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -242642,6 +242654,7 @@
                     "code": {
                       "type": "string",
                       "enum": [
+                        "FORBIDDEN",
                         "ACCOUNT_SUSPENDED",
                         "ACCOUNT_PENDING_APPROVAL",
                         "IP_NOT_ALLOWED",
@@ -242681,6 +242694,17 @@
                   }
                 },
                 "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "ACCOUNT_SUSPENDED": {
                     "summary": "This account is suspended.",
                     "value": {
@@ -242848,7 +242872,7 @@
     },
     "/client/webhooks/{id}": {
       "patch": {
-        "description": "A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`.",
+        "description": "A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`. While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is `403 FORBIDDEN`.",
         "operationId": "patchClientWebhooksById",
         "parameters": [
           {
@@ -243090,7 +243114,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -243120,6 +243144,7 @@
                     "code": {
                       "type": "string",
                       "enum": [
+                        "FORBIDDEN",
                         "ACCOUNT_SUSPENDED",
                         "ACCOUNT_PENDING_APPROVAL",
                         "IP_NOT_ALLOWED",
@@ -243159,6 +243184,17 @@
                   }
                 },
                 "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "ACCOUNT_SUSPENDED": {
                     "summary": "This account is suspended.",
                     "value": {

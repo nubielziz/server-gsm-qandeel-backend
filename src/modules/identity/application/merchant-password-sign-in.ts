@@ -1,13 +1,12 @@
 // MerchantPasswordSignIn: the narrow piece of the merchant sign-in that the smart sign-in of feature 24A (POST /client/auth/sign-in,
 // customers module) uses. The password hash never leaves identity: callers get closures that verify and open, never the hash.
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { PasswordHasher } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import { merchantShadowsCustomer } from '../domain/merchant-sign-in-step';
 import { temporaryPasswordExpired } from '../domain/temporary-password';
 import { findClientByEmail } from '../infra/merchant-auth.repository';
-import { upgradeClientPasswordHash } from './merchant-password-hash';
 import { type MerchantLoginResult, MerchantSignInService } from './merchant-sign-in.service';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
 import type { RequestMeta } from './request-meta';
@@ -38,12 +37,13 @@ export interface MerchantCandidate {
   verify(password: string): Promise<boolean>;
   /**
    * Opens the session of the merchant after `verify` returned true: the suspension refusal, the stale merchant session ended, the session
-   * of the next step (`MerchantSignInService.startSession`), then the hash upgraded to the configured cost with the proven password.
+   * of the next step and the hash upgraded to the configured cost with the proven password (`MerchantSignInService.startSession`, which
+   * opens the session only if the account is still as it was when the password was checked).
    *
    * @param meta the caller's address and user agent
    * @param staleToken the merchant session cookie the request carried, ended so it cannot be fixated
    * @returns the next step (`password`, `totp` or `done`) and the session
-   * @throws {AppError} `ACCOUNT_SUSPENDED` (403)
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account changed after the password was checked)
    * @throws {Error} when no password was proven with `verify` first
    */
   open(meta: RequestMeta, staleToken?: string): Promise<MerchantLoginResult>;
@@ -63,8 +63,6 @@ export interface MerchantCandidate {
  */
 @Injectable()
 export class MerchantPasswordSignIn {
-  private readonly logger = new Logger(MerchantPasswordSignIn.name);
-
   constructor(
     private readonly db: DbService,
     private readonly hasher: PasswordHasher,
@@ -120,9 +118,7 @@ export class MerchantPasswordSignIn {
       },
       open: async (meta, staleToken) => {
         if (proven === undefined) throw new Error(`Merchant ${client.id}: open() needs a password proven by verify()`);
-        const result = await this.signIn.startSession(client, meta, staleToken);
-        await upgradeClientPasswordHash(this.db.db, this.hasher, this.logger, client, proven);
-        return result;
+        return this.signIn.startSession(client, meta, staleToken, proven);
       },
     };
   }

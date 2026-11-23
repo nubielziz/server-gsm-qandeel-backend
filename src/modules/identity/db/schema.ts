@@ -275,6 +275,16 @@ export const clients = pgTable(
     suspendedBy: fk((): AnyPgColumn => staffUsers.id),
     /** true after staff set a temporary password; false once the merchant chooses a password by any route (feature 20) */
     mustChangePassword: boolean().notNull().default(false),
+    /**
+     * true from the moment staff set a temporary password until the merchant chooses a password from a link mailed to its address
+     * (reset or invitation); while true, a portal session creates no API key and creates or changes no webhook endpoint (decision 046)
+     */
+    passwordSetByStaff: boolean().notNull().default(false),
+    /**
+     * true from the moment staff change the merchant's email address; a password from a link does not clear it (the link goes to the
+     * address staff chose); while true, a portal session creates no API key and creates or changes no webhook endpoint (decision 046)
+     */
+    emailSetByStaff: boolean().notNull().default(false),
     /** written when a session of the merchant becomes fully signed in (feature 20) */
     lastLoginAt: timestampTz(),
     /** the address of that sign-in (feature 20) */

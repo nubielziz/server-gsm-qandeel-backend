@@ -6,13 +6,20 @@ import { AppError } from '../../../common/errors';
 import { PasswordHasher, TokenService } from '../../../infra/crypto';
 import { DbService } from '../../../infra/db';
 import type { Client } from '../db/schema';
-import { type MerchantSignInStep, merchantStageOfStep, nextMerchantStep } from '../domain/merchant-sign-in-step';
+import {
+  type MerchantSignInStep,
+  merchantStageOfStep,
+  nextMerchantStep,
+  signInStillHolds,
+} from '../domain/merchant-sign-in-step';
 import { temporaryPasswordExpired } from '../domain/temporary-password';
 import {
   acceptClientSignInStep,
   findClientByEmail,
   findClientById,
+  lockClientForSignIn,
   recordClientSignIn,
+  replaceClientPasswordHash,
 } from '../infra/merchant-auth.repository';
 import type { MerchantPrincipal } from '../security/principal';
 import { SessionService } from '../security/session.service';
@@ -20,7 +27,7 @@ import type { IssuedSession } from '../security/session.types';
 import { CodeStepLock } from './code-step-lock';
 import { MerchantAccountReader } from './merchant-account-reader';
 import { invalidCode } from './merchant-errors';
-import { upgradeClientPasswordHash } from './merchant-password-hash';
+import { upgradedClientPasswordHash } from './merchant-password-hash';
 import { MerchantSignInLimiter } from './merchant-sign-in-limiter';
 import type { RequestMeta } from './request-meta';
 import { SignInLock } from './sign-in-lock';
@@ -43,10 +50,12 @@ const WRONG_CREDENTIALS = 'The email or password is not correct.';
  * email, a wrong password, a temporary password older than 72 hours and a merchant with no password yet, with the same work done in each
  * case, each staying counted; a correct password takes back only its own count), then suspension, then a session: pending when a
  * new password or a code is still needed, active otherwise (the step logic
- * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). A
+ * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). The
+ * session opens only if the account is still as it was when the password was checked (`signInStillHolds`), otherwise the answer is the
+ * same `401` as a wrong password. A
  * merchant waiting for approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
  *
- * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full, the count of wrong
+ * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full, an upgraded password hash, the count of wrong
  * authenticator codes) and `sessions`; counts rate-limit attempts; a failed attempt is logged without the email. Merchant sign-ins write
  * no audit rows (the audit log records staff writes), except one: the wrong code that closes the code step (`CodeStepLock`: twenty
  * wrong codes within 24 hours close it until those 24 hours end, a new password is set by a reset link or by staff, or staff reset
@@ -86,7 +95,8 @@ export class MerchantSignInService implements OnModuleInit {
    * @returns the next step (`password`, `totp` or `done`) and the session
    * @throws {AppError} `RATE_LIMITED` (429: too many tries from this network, or the email is locked after ten failures and the
    *   merchant has not signed in from this network), `UNAUTHORIZED` (401: unknown email, wrong password, expired temporary password
-   *   or no password yet; each stays counted towards the lock), `ACCOUNT_SUSPENDED` (403: correct password, suspended merchant)
+   *   or no password yet, each staying counted towards the lock; or the account changed after the password was checked),
+   *   `ACCOUNT_SUSPENDED` (403: correct password, suspended merchant)
    */
   async login(
     input: { readonly email: string; readonly password: string },
@@ -125,8 +135,7 @@ export class MerchantSignInService implements OnModuleInit {
     this.assertNotSuspended(client, meta);
 
     await this.limiter.resetLogin(input.email, meta);
-    await upgradeClientPasswordHash(this.db.db, this.hasher, this.logger, client, input.password);
-    return this.startSession(client, meta, staleToken);
+    return this.startSession(client, meta, staleToken, input.password);
   }
 
   /**
@@ -134,32 +143,59 @@ export class MerchantSignInService implements OnModuleInit {
    *
    * Why: every password-verified sign-in ends here, the portal's login and the smart sign-in of feature 24A (`MerchantPasswordSignIn`,
    * which verifies the password itself, once, and calls this): the suspension refusal, ending the stale session, the step (`nextMerchantStep`), the session of
-   * that step's stage, and the last-sign-in record when the session is already full.
+   * that step's stage, the hash upgrade of decision 007, and the last-sign-in record when the session is already full. The session is
+   * opened in a transaction that reads the merchant again under its row lock and requires the account as it was when the password was
+   * checked (`signInStillHolds`): a reset, a password change, a switch-on of two-step sign-in or a suspension that committed in between
+   * ends the sign-in like a wrong password, and one that commits after it ends the new session with the others.
    *
-   * Side effects: ends the session of `staleToken`; inserts a `sessions` row; writes `clients.last_login_at` and `last_login_ip` when `next` is `done`.
+   * Side effects: ends the session of `staleToken`; inserts a `sessions` row; writes `clients.last_login_at` and `last_login_ip` when `next` is `done`,
+   * and `clients.password_hash` when an upgrade is due (only over the hash that was verified).
    *
-   * @param client the merchant whose password was just proven
+   * @param client the merchant as it was read for the password check
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
+   * @param password the proven password, for the hash upgrade (none: no upgrade)
    * @returns the next step and the session
-   * @throws {AppError} `ACCOUNT_SUSPENDED` (403)
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account changed after the password was checked)
    */
-  async startSession(client: Client, meta: RequestMeta, staleToken?: string): Promise<MerchantLoginResult> {
+  async startSession(
+    client: Client,
+    meta: RequestMeta,
+    staleToken?: string,
+    password?: string,
+  ): Promise<MerchantLoginResult> {
     this.assertNotSuspended(client, meta);
+    // Argon2 takes tens of milliseconds: a due upgrade is hashed before the transaction, not while the merchant row is held.
+    const upgraded =
+      password === undefined ? undefined : await upgradedClientPasswordHash(this.hasher, this.logger, client, password);
     await this.endStaleSession(staleToken);
     const next = nextMerchantStep({
       mustChangePassword: client.mustChangePassword,
       twofaEnabled: client.twofaEnabled,
     });
-    const session = await this.sessions.create({
-      subjectType: 'client',
-      subjectId: client.id,
-      stage: merchantStageOfStep(next),
-      ip: meta.ip,
-      userAgent: meta.userAgent,
+    return this.db.runInTransaction(async (work) => {
+      // Lock order: the merchant row, then the new session (the writers that end sessions take the row first too).
+      const current = await lockClientForSignIn(work.tx, client.id);
+      if (!current || !signInStillHolds(client, current)) {
+        this.logger.warn(`Merchant sign-in refused (the account changed during the sign-in) from ${meta.ip}`);
+        throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
+      }
+      const session = await this.sessions.create(
+        {
+          subjectType: 'client',
+          subjectId: client.id,
+          stage: merchantStageOfStep(next),
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        },
+        work,
+      );
+      if (upgraded !== undefined && client.passwordHash !== null) {
+        await replaceClientPasswordHash(work.tx, client.id, upgraded, client.passwordHash);
+      }
+      if (next === 'done') await recordClientSignIn(work.tx, client.id, this.clock.now(), meta.ip);
+      return { next, session };
     });
-    if (next === 'done') await recordClientSignIn(this.db.db, client.id, this.clock.now(), meta.ip);
-    return { next, session };
   }
 
   private assertNotSuspended(client: Client, meta: RequestMeta): void {

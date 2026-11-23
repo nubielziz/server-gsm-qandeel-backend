@@ -96,6 +96,10 @@ const ADDITIONS: Record<string, string[]> = {
     'totp_failures',
     'totp_failures_since',
     'totp_locked_at',
+    // Set with a temporary password by staff, cleared by a password from a mailed link.
+    'password_set_by_staff',
+    // Set by a staff change of the email address.
+    'email_set_by_staff',
   ],
   api_keys: ['created_by'],
   // The keyed hash of the cookie of the browser that asked for a storefront sign-in link.

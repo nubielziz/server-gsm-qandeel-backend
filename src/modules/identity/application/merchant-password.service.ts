@@ -47,7 +47,8 @@ import { SignInLock } from './sign-in-lock';
  * oldest goes first); choosing a password ends the merchant's sessions (reset, invite) or the others (change). A password from a link
  * ends the email's shop sign-in lock and the count of wrong authenticator codes (a closed code step opens, `CodeStepLock`) and, when
  * the email was never verified, turns two-factor sign-in off (the link proves the mailbox); an own or forced change leaves both running, because a registration proves no mailbox and the customer of the same
- * email may be someone else. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
+ * email may be someone else. Only a password from a link ends the hold that a password set by staff puts on API keys and webhook
+ * endpoints (`password_set_by_staff`, `MachineCredentialHold`), and not the hold of an email address staff set. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
  *
  * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event `merchant.password_reset` (rolled back for an email
  * that gets no mail); marks links used; revokes sessions (their cached views are dropped after the commit); counts one point of
@@ -140,6 +141,9 @@ export class MerchantPasswordService {
         now,
         verifyEmail: link.purpose === 'invite',
         clearTwoFactor: client.emailVerifiedAt === null,
+        // The link reached the account's mailbox: a hold from a password staff set ends (decision 046). The hold of an email address
+        // staff set stays: the link went to that address.
+        fromMailedLink: true,
       });
       // The merchant was suspended since it was read: the change must not land.
       if (!saved) throw new AppError('TOKEN_INVALID');

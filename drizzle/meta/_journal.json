@@ -435,6 +435,13 @@
       "when": 1795395028799,
       "tag": "0061_totp_failure_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1795395194944,
+      "tag": "0062_client_set_by_staff",
+      "breakpoints": true
     }
   ]
 }

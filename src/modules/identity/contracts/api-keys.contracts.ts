@@ -79,7 +79,10 @@ export const portalCreateApiKey = defineRoute({
     `${MAX_ALLOWED_IPS} addresses or CIDR ranges (a bare address is stored as /32 or /128; bits after the prefix are refused); an ` +
     'empty list means any address. `expiresAt` must be in the future. The answer carries the full key once as `secret` ' +
     '(`Cache-Control: no-store`): only a keyed hash is stored, so a lost key cannot be shown again. The per-minute limit is the ' +
-    `server default; only staff change it. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`.`,
+    `server default; only staff change it. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`. Every new ` +
+    "key sends the merchant a security notice by email. While the account's password is one staff set (a temporary password, until the " +
+    "merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is " +
+    '`403 FORBIDDEN`.',
   tags: ['api-keys'],
   surface: 'client',
   access: 'merchant-session',
@@ -93,6 +96,7 @@ export const portalCreateApiKey = defineRoute({
   errors: [
     'VALIDATION_FAILED',
     'UNAUTHORIZED',
+    'FORBIDDEN',
     'ACCOUNT_SUSPENDED',
     'ACCOUNT_PENDING_APPROVAL',
     'IP_NOT_ALLOWED',

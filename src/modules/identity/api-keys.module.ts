@@ -3,6 +3,7 @@
 import { Module } from '@nestjs/common';
 import { ApiKeyAdminService } from './application/api-key-admin.service';
 import { ApiKeyIssuer } from './application/api-key-issuer';
+import { MachineCredentialHold } from './application/machine-credential-hold';
 import { MerchantApiKeyService } from './application/merchant-api-key.service';
 import { ApiKeysAdminController, MerchantApiKeysController } from './controllers/api-keys.controller';
 import { MerchantMailModule } from './merchant-mail.module';
@@ -11,11 +12,11 @@ import { MerchantMailModule } from './merchant-mail.module';
  * Provides `/client/api-keys`, `GET` and `POST /admin/clients/:id/api-keys`, and `PATCH` and `DELETE /admin/api-keys/:id`.
  *
  * Why: the routes need the global database, crypto, audit and clock providers and the API key directory of the security stack
- * (they drop a key's cached view after a change) and the merchant mails of `MerchantMailModule` (the notice of a key staff made); the module is exported to the rest of the app only through `index.ts`.
+ * (they drop a key's cached view after a change) and the merchant mails of `MerchantMailModule` (the notice of a new key); the module is exported to the rest of the app only through `index.ts`.
  */
 @Module({
   imports: [MerchantMailModule],
   controllers: [MerchantApiKeysController, ApiKeysAdminController],
-  providers: [ApiKeyIssuer, MerchantApiKeyService, ApiKeyAdminService],
+  providers: [ApiKeyIssuer, MachineCredentialHold, MerchantApiKeyService, ApiKeyAdminService],
 })
 export class ApiKeysModule {}

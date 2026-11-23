@@ -144,8 +144,8 @@ describe('isSecretKey (decision 054)', () => {
         // The schema is written in camelCase; the database names are its snake_case form (decision 027).
         const tsKey = column.name;
         const name = tsKey.replace(/([A-Z])/g, '_$1').toLowerCase();
-        // A password column holds a secret; a password time (`password_changed_at`) does not.
-        const password = name.startsWith('password') && !name.endsWith('_at');
+        // A password column holds a secret; a password time (`password_changed_at`) or flag (`password_set_by_staff`) does not.
+        const password = name.startsWith('password') && !name.endsWith('_at') && column.dataType !== 'boolean';
         const secretColumn = /_(hash|enc|secret|token)$/.test(name) || name === 'token' || password;
         if (secretColumn && !isSecretKey(tsKey)) missed.push(`${table.name}.${name}`);
       }

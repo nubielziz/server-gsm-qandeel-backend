@@ -26,6 +26,8 @@ import { MerchantAuthTokens } from './merchant-auth-tokens';
  * an old one would prove the new address), clears the verification and sends a new verification (or the invitation while there is no password)
  * to the new address. Decision 047: an email change needs `clients:security`, ends every session of the merchant and sends a security notice to
  * the address before the change (the address is where the account's sign-in and password links go); a name change keeps the sessions.
+ * An email change also sets `email_set_by_staff`: the account's links now go to an address staff chose, so its portal sessions create no API
+ * key and create or change no webhook endpoint (`MachineCredentialHold`, decision 046).
  *
  * Side effects: writes `clients`, `auth_tokens`, `outbox_events` (`merchant.email_verification` or `merchant.invited`, ids only),
  * `sessions`, a `notifications` row with its outbox event (`merchant.security_notice`, to the previous address) and `audit_logs`; drops
@@ -83,7 +85,8 @@ export class ClientDetailsEditor {
       try {
         await updateClientRow(work.tx, client.id, {
           ...changes.columns,
-          ...(changes.emailChanged ? { emailVerifiedAt: null } : {}),
+          // The account's links now go to an address staff chose: its sessions hand out no API key or webhook endpoint (decision 046).
+          ...(changes.emailChanged ? { emailVerifiedAt: null, emailSetByStaff: true } : {}),
         });
       } catch (error) {
         if (isUniqueViolation(error, 'clients_email_uq')) {

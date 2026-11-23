@@ -377,11 +377,11 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 |---|---|---|
 | `POST /client/auth/register` | public (Origin check; Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
 | `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; the status stays `pending`; signs nobody in |
-| `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in |
+| `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in; the session opens in a transaction that reads the merchant again under its row lock (`lockClientForSignIn`) and requires the account as it was when the password was checked (the same password, by its `password_changed_at`, which a hash upgrade keeps; the same 2FA and forced-change state; not suspended; `signInStillHolds`), else the same `401` as a wrong password |
 | `POST /client/auth/2fa` | session, `pending_totp` | six digits → `204`; rotates the session to `active` |
 | `POST /client/auth/logout` | session, `pending_totp` or `active` | revokes the session, clears both cookies, `204` |
 | `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset`, at most five an hour; the earlier links keep working (at most three) |
-| `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link; on a merchant whose email was not verified before, it also turns two-factor sign-in off (decision 052) |
+| `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link; on a merchant whose email was not verified before, it also turns two-factor sign-in off (decision 052); clears `password_set_by_staff` (not `email_set_by_staff`) |
 | `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, kycStatus, emailVerifiedAt, twofaEnabled, referralCode, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
 | `PATCH /client/profile` | session | name, company, phone, country (partial) → `Me` |
 | `POST /client/security/password` | session | `{ currentPassword, newPassword }` → `204`; ends the other sessions |
@@ -445,8 +445,8 @@ whose `shadowsCustomer` says whether it takes precedence over a customer with th
 decision 052), whose `verify(password)` runs one argon2 verify against the stored hash (a temporary password older than 72 hours
 answers false) and whose `open(meta, staleToken?)` (only after a verified
 password) calls `MerchantSignInService.startSession` (suspension, stale merchant session, feature 20's step `password | totp | done`)
-and then upgrades the hash with the proven password (`upgradeClientPasswordHash`, `application/merchant-password-hash.ts`, shared
-with `login`). The hash never leaves identity. `POST /client/auth/login` shares the shop lock of the email with this route and the
+with the hash upgrade of the proven password (`upgradedClientPasswordHash`, `application/merchant-password-hash.ts`, shared
+with `login`: hashed before the session's transaction, written in it only over the hash that was verified). The hash never leaves identity. `POST /client/auth/login` shares the shop lock of the email with this route and the
 store login (`SignInLock`, scope `shop`).
 
 ### Sign-in lock (decision 052)
@@ -519,9 +519,10 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   `ClientDetailsEditor`). An email change also needs `clients:security` (decision 047; checked before the limiter and again on the locked row), clears
   `email_verified_at`, uses every open link up, ends every session of the merchant, sends a security notice (`merchant.security_notice`, kind `email_changed`)
   to the address before the change, sends a verification (or the invitation while there is no password) to the new address, drops the session and API key cache
-  keys, and counts on the `account-mail` limiter. A name change keeps the sessions.
+  keys, sets `email_set_by_staff` (the hold of machine credentials below), and counts on the `account-mail` limiter. A name change keeps the sessions.
 - **Security tools** (`ClientSecurityAdminService`, permission `clients:security`): `POST /admin/clients/:id/password` (`reset_link` mails
-  an invitation or reset link, `temporary_password` shows a 14-character password once and sets `must_change_password`),
+  an invitation or reset link, `temporary_password` shows a 14-character password once and sets `must_change_password` and
+  `password_set_by_staff`),
   `POST /admin/clients/:id/reset-2fa`, `POST /admin/clients/:id/sessions/revoke`, `POST /admin/clients/:id/verify-email/resend`. Each locks the
   `clients` row first, writes one audit row under the merchant (`credential`, never `password`) and returns no link: the outbox carries ids, the mail job rotates the token.
 - **Forced password change.** `nextMerchantStep` (`domain/merchant-sign-in-step.ts`) decides password, then code, then done;
@@ -529,6 +530,13 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   of feature 24A later). A merchant with `must_change_password` gets `next: 'password'` and a `pending_password` session that only
   `POST /client/auth/password/change` and logout accept; the change rotates the session (no fixation), ends the other sessions and voids password links.
   Every chosen password (reset link, invitation, security page) clears the flag.
+- **Machine credentials after a staff-set password** (`MachineCredentialHold`, decision 046). `password_set_by_staff` is set with a temporary
+  password and cleared only by a password from a link mailed to the merchant's address (reset or invitation; the forced change and the
+  security page do not clear it). While it is set, `POST /client/api-keys`, `POST /client/webhooks` and `PATCH /client/webhooks/:id` answer
+  `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest of the portal work. The check reads
+  the account and then the caller's session row (the link that clears the flag ends every session in the same commit). A staff change
+  of the email address sets `email_set_by_staff`, with the same hold and its own sentence (contact support); a password from a link does
+  not clear it, because the link goes to the address staff chose.
 - **Verification resend.** `POST /client/auth/verify-email/resend` (merchant session) and the staff action share the `account-mail` counter
   (5 an hour per merchant and kind); there is no public route. `verify-email` answers `410` for a suspended merchant.
 - **Suspension.** Voids every open link, accepts `pending -> suspended` (this is how an application is declined), and mails the merchant
@@ -570,6 +578,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 | Approval | none | none | none | `merchant.approved` |
 | KYC decision | none | none | none | `merchant.kyc_approved` / `merchant.kyc_rejected` |
 | Staff create a key | none | none | none | `merchant.security_notice` |
+| The merchant creates a key in the portal | none | none | none | `merchant.security_notice` (the same notice) |
 | Staff edit a key's limits or revoke it | none | none | that key's view dropped | none |
 | The merchant chooses a password (change, reset, invitation) | the others ended, this one rotated | password links voided | session views dropped | none |
 
@@ -883,7 +892,7 @@ Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controll
 | Route | Access | What it does |
 |---|---|---|
 | `GET /client/api-keys` | merchant | the merchant's keys, live first then revoked, newest first, `x-total-count`; the console's `ApiKey` (never the hash) |
-| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races) |
+| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races); a `merchant.security_notice` mail (`api_key_created`); `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set |
 | `PATCH /client/api-keys/:id` | merchant | `{ name?, allowedIps? }`; a revoked key is `409 INVALID_TRANSITION`; drops the cached view after the commit |
 | `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
 | `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |
