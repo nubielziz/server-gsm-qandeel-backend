@@ -10,6 +10,7 @@ import type { Client } from '../db/schema';
 import { NO_ACCOUNT_ID } from '../domain/public-links';
 import { checkPasswordPolicy } from '../domain/password-policy';
 import { consumeAuthToken } from '../infra/auth-token.repository';
+import { clearCodeFailures } from '../infra/code-failures.repository';
 import { nextMerchantStep, merchantStageOfStep } from '../domain/merchant-sign-in-step';
 import {
   findClientByEmail,
@@ -44,8 +45,8 @@ import { SignInLock } from './sign-in-lock';
  * no mail are rolled back); it spends one point of the merchant's mail budget (five an hour), and a request beyond it answers `204`
  * and sends nothing. A link works once, for an hour; links a visitor asked for do not void each other (up to three work at once, the
  * oldest goes first); choosing a password ends the merchant's sessions (reset, invite) or the others (change). A password from a link
- * ends the email's shop sign-in lock and, when the email was never verified, turns two-factor sign-in off (the link proves the
- * mailbox); an own or forced change leaves the lock running, because a registration proves no mailbox and the customer of the same
+ * ends the email's shop sign-in lock and the count of wrong authenticator codes (a closed code step opens, `CodeStepLock`) and, when
+ * the email was never verified, turns two-factor sign-in off (the link proves the mailbox); an own or forced change leaves both running, because a registration proves no mailbox and the customer of the same
  * email may be someone else. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
  *
  * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event `merchant.password_reset` (rolled back for an email
@@ -142,6 +143,8 @@ export class MerchantPasswordService {
       });
       // The merchant was suspended since it was read: the change must not land.
       if (!saved) throw new AppError('TOKEN_INVALID');
+      // The link proves the mailbox: the wrong codes before the new password no longer count.
+      await clearCodeFailures(work.tx, { type: 'client', id: client.id });
       // An invitation proves the email address, so a pending verification link is moot too; a plain reset does not, so
       // it keeps that link (a new one can be asked for through the resend route).
       const spent = link.purpose === 'invite' ? CLIENT_TOKEN_PURPOSES : PASSWORD_LINK_PURPOSES;

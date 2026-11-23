@@ -17,6 +17,7 @@ import {
 import type { MerchantPrincipal } from '../security/principal';
 import { SessionService } from '../security/session.service';
 import type { IssuedSession } from '../security/session.types';
+import { CodeStepLock } from './code-step-lock';
 import { MerchantAccountReader } from './merchant-account-reader';
 import { invalidCode } from './merchant-errors';
 import { upgradeClientPasswordHash } from './merchant-password-hash';
@@ -45,8 +46,11 @@ const WRONG_CREDENTIALS = 'The email or password is not correct.';
  * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). A
  * merchant waiting for approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
  *
- * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full) and `sessions`; counts rate-limit attempts; a failed attempt is logged without the
- * email. Merchant sign-ins write no audit rows (the audit log records staff writes).
+ * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full, the count of wrong
+ * authenticator codes) and `sessions`; counts rate-limit attempts; a failed attempt is logged without the email. Merchant sign-ins write
+ * no audit rows (the audit log records staff writes), except one: the wrong code that closes the code step (`CodeStepLock`: twenty
+ * wrong codes within 24 hours close it until those 24 hours end, a new password is set by a reset link or by staff, or staff reset
+ * two-factor sign-in).
  *
  * @see docs/contract/MISMATCHES.md (B124, B125, B126)
  */
@@ -64,6 +68,7 @@ export class MerchantSignInService implements OnModuleInit {
     private readonly lock: SignInLock,
     private readonly totp: TotpService,
     private readonly reader: MerchantAccountReader,
+    private readonly codeLock: CodeStepLock,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -170,8 +175,9 @@ export class MerchantSignInService implements OnModuleInit {
    * @param code the six digits
    * @param meta the caller's address and user agent
    * @returns the full session (a new token; the pending one is revoked)
-   * @throws {AppError} `RATE_LIMITED` (429), `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the merchant is gone or 2FA is no
-   *   longer on), `VALIDATION_FAILED` (422 on `code`: wrong, expired or already used)
+   * @throws {AppError} `RATE_LIMITED` (429: five codes per 15 minutes, or the code step is closed after twenty wrong codes within 24
+   *   hours until they end, a new password is set or staff reset 2FA), `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the merchant is gone or 2FA is no longer
+   *   on), `VALIDATION_FAILED` (422 on `code`: wrong, expired or already used)
    */
   async verifyTwoFactor(principal: MerchantPrincipal, code: string, meta: RequestMeta): Promise<IssuedSession> {
     await this.limiter.enforceCode(principal.clientId);
@@ -181,13 +187,20 @@ export class MerchantSignInService implements OnModuleInit {
       throw new AppError('UNAUTHORIZED');
     }
     const secretEnc = client.totpSecretEnc;
+    // Counted before the code is checked; a correct code takes back only its own count, so a success never resets the others.
+    const account = { type: 'client', id: client.id } as const;
+    const attempts = await this.codeLock.charge(account, meta);
     const step = await this.totp.check(
       this.totp.open(secretEnc, CLIENT_TOTP_AAD),
       code,
       client.totpLastStep,
       this.clock.nowMs(),
     );
-    if (step === undefined) throw invalidCode('That code is not correct or has expired. Enter the current code.');
+    if (step === undefined) {
+      await this.codeLock.failed(account, attempts, client.name, meta);
+      throw invalidCode('That code is not correct or has expired. Enter the current code.');
+    }
+    await this.codeLock.giveBack(account);
 
     const issued = await this.db.runInTransaction(async (work) => {
       // False: a parallel request used this code first, the merchant was suspended, or the secret was replaced.

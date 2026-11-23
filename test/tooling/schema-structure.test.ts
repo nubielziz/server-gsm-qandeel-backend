@@ -92,11 +92,15 @@ const ADDITIONS: Record<string, string[]> = {
     'address',
     'tax_id',
     'internal_notes',
+    // The count of wrong authenticator codes of the code step (its 24 hours, the cap and the recorded closing).
+    'totp_failures',
+    'totp_failures_since',
+    'totp_locked_at',
   ],
   api_keys: ['created_by'],
   // The keyed hash of the cookie of the browser that asked for a storefront sign-in link.
   auth_tokens: ['browser_hash'],
-  staff_users: ['totp_last_step'],
+  staff_users: ['totp_last_step', 'totp_failures', 'totp_failures_since', 'totp_locked_at'],
   payments: [
     'reviewed_at',
     'review_note',

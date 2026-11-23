@@ -14,6 +14,7 @@ import type { StaffUser } from '../db/schema';
 import { accountMailKey } from '../domain/account-mail';
 import { temporaryPasswordFor } from '../domain/temporary-password';
 import { voidOpenStaffTokens } from '../infra/auth-token.repository';
+import { clearCodeFailures } from '../infra/code-failures.repository';
 import { countActiveOwners, lockOwnerChanges } from '../infra/owner.repository';
 import { lockRole } from '../infra/role.repository';
 import {
@@ -110,7 +111,7 @@ const OWNER_GIVES_ROLE_DETAIL =
  * `PER_PERSON_MONEY_PERMISSIONS` is staffed by an Owner: only an Owner adds a member with such a role, gives such a role to another
  * member, sets a temporary password for another member who holds one, or changes that member's email. A new email voids the member's open links in the same transaction (the
  * links went to the old address). A temporary password works for 72 hours and lifts the failed-sign-in lock of the member's email
- * (decision 052).
+ * (decision 052); it and a 2FA reset open a code step closed after repeated wrong authenticator codes (`CodeStepLock`).
  *
  * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views and
  * (a temporary password) the sign-in lock key of the email after the commit; never writes a password, token or secret to the audit log.
@@ -347,6 +348,8 @@ export class StaffAdminService {
       if (passwordHash !== undefined) {
         this.assertOwnerForPerPersonMoney(caller, id, target.permissions, OWNER_SETS_PASSWORD_DETAIL);
         await updateStaffRow(work.tx, id, { passwordHash, mustChangePassword: true, passwordChangedAt: now });
+        // A password staff set opens a code step closed after repeated wrong codes (CodeStepLock).
+        await clearCodeFailures(work.tx, { type: 'staff', id });
         // An older link must not undo the temporary password.
         await voidOpenStaffTokens(work.tx, id, now);
         // A new password lifts the failed-sign-in lock of the account's email (decision 052).
@@ -480,7 +483,8 @@ export class StaffAdminService {
   }
 
   /**
-   * Clears a member's authenticator.
+   * Clears a member's authenticator, and with it the count of wrong authenticator codes, which opens a code step closed after repeated
+   * wrong codes (`CodeStepLock`): the next sign-in sets up a new authenticator, and its codes start a new count.
    *
    * @param caller the signed-in staff member
    * @param id the member
@@ -494,6 +498,8 @@ export class StaffAdminService {
       this.assertMayActOn(caller, target.staff.id, target.permissions);
       if (!target.staff.twofaEnabled) throw new AppError('TWOFA_NOT_ENABLED');
       await updateStaffRow(work.tx, id, { twofaEnabled: false, totpSecretEnc: null, totpLastStep: null });
+      // The wrong codes were guessed for the authenticator that is gone: a closed code step opens (CodeStepLock).
+      await clearCodeFailures(work.tx, { type: 'staff', id });
       // The caller keeps their own session (they set 2FA up again at the next sign-in); everyone else is signed out.
       if (id !== caller.staffId) await this.sessions.revokeAllOf('staff', id, {}, work);
       await this.audit.record(work.tx, {

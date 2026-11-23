@@ -12,6 +12,7 @@ import type { Client } from '../db/schema';
 import { accountMailKey } from '../domain/account-mail';
 import { temporaryPasswordFor } from '../domain/temporary-password';
 import { lockClient, updateClientRow } from '../infra/client-admin.repository';
+import { clearCodeFailures } from '../infra/code-failures.repository';
 import { findClientById } from '../infra/merchant-auth.repository';
 import { PASSWORD_LINK_PURPOSES, voidOpenClientTokens } from '../infra/merchant-token.repository';
 import type { StaffPrincipal } from '../security/principal';
@@ -43,7 +44,8 @@ function suspended(): AppError {
  * (lock order), writes one audit row under the merchant, and never returns or stores a link: the request makes a placeholder token whose clear
  * value is dropped, the outbox carries ids, and the mail job rotates the token and sends the real link (feature 12a).
  *
- * A temporary password works for 72 hours and lifts the failed-sign-in lock of the merchant's email (decision 052).
+ * A temporary password works for 72 hours and lifts the failed-sign-in lock of the merchant's email (decision 052); it and a 2FA reset open a
+ * code step closed after repeated wrong authenticator codes (`CodeStepLock`).
  *
  * Side effects: writes `clients`, `auth_tokens`, `sessions`, `outbox_events`, `notifications` and `audit_logs`; ending sessions drops their cached
  * views after the commit; a temporary password deletes the sign-in lock key of the email after the commit; the link and verification mails
@@ -115,6 +117,7 @@ export class ClientSecurityAdminService {
         });
       } else {
         await updateClientRow(work.tx, id, { passwordHash, mustChangePassword: true, passwordChangedAt: now });
+        await clearCodeFailures(work.tx, { type: 'client', id });
         // An older link must not undo the temporary password.
         await voidOpenClientTokens(work.tx, id, PASSWORD_LINK_PURPOSES, now);
         await this.lifecycleMails.securityNotice(work, client, 'temporary_password');
@@ -150,7 +153,8 @@ export class ClientSecurityAdminService {
   }
 
   /**
-   * Turns off a merchant's two-factor sign-in and ends their sessions.
+   * Turns off a merchant's two-factor sign-in and ends their sessions; it also forgets the count of wrong authenticator codes, which
+   * opens a code step closed after repeated wrong codes (`CodeStepLock`).
    *
    * @param id the merchant id
    * @throws {AppError} `NOT_FOUND` (404), `TWOFA_NOT_ENABLED` (409)
@@ -162,6 +166,8 @@ export class ClientSecurityAdminService {
       if (!client.twofaEnabled) throw new AppError('TWOFA_NOT_ENABLED');
       // The same three columns the merchant's own "turn off" clears (disableClientTwoFactor).
       await updateClientRow(work.tx, id, { twofaEnabled: false, totpSecretEnc: null, totpLastStep: null });
+      // The wrong codes were guessed for the authenticator that is gone: a closed code step opens (CodeStepLock).
+      await clearCodeFailures(work.tx, { type: 'client', id });
       const sessionsEnded = await this.sessions.revokeAllOf('client', id, {}, work);
       await this.lifecycleMails.securityNotice(work, client, 'twofa_reset');
       await this.audit.record(work.tx, {

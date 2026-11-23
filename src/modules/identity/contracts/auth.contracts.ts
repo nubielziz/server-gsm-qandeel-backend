@@ -79,7 +79,10 @@ export const staffVerifyTwoFactor = defineRoute({
   summary: 'Complete the sign-in with a TOTP code',
   description:
     'The last sign-in step: it turns the pending session into a full one (a new session token). The sign-in is recorded in the ' +
-    'audit log by this step.',
+    'audit log by this step. Twenty wrong codes of one account within 24 hours close the step: every code, the right one included, ' +
+    'is then refused with `429 RATE_LIMITED`, whose `Retry-After` is the seconds until it opens. The step opens again after 24 hours ' +
+    '(counted from the first wrong code), or sooner with a password link or a 2FA reset (also a temporary password), from a member ' +
+    'allowed to manage the account; the closing is audited, and a correct code never resets the count.',
   tags: ['auth'],
   surface: 'admin',
   access: 'staff-session',

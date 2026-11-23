@@ -20,6 +20,7 @@ import {
 import type { StaffPrincipal } from '../security/principal';
 import { SessionService } from '../security/session.service';
 import type { IssuedSession } from '../security/session.types';
+import { CodeStepLock } from './code-step-lock';
 import type { RequestMeta } from './request-meta';
 import { SignInLimiter } from './sign-in-limiter';
 import { SignInLock } from './sign-in-lock';
@@ -70,10 +71,12 @@ function invalidCode(detail: string): AppError {
  * indistinguishable `401` for an unknown email, a wrong password, a temporary password older than 72 hours and an account with no
  * password yet, with the same work done in each case, each one staying counted; a correct password takes its own count back), then
  * suspension, then a pending session. Reaching `active` rotates the session token. The code step is limited per account on a budget
- * that is never counted in process memory.
+ * that is never counted in process memory, and closes after twenty wrong codes within 24 hours until those 24 hours end, a new
+ * password is set or staff reset 2FA (`CodeStepLock`).
  *
  * Side effects: reads and writes `staff_users` and `sessions`; counts rate-limit attempts and sign-in attempts (cache Redis); the code
- * step writes audit rows (`logged in`, and `enabled two-factor sign-in` the first time); a failed attempt is logged without the email.
+ * step writes audit rows (`logged in`, and `enabled two-factor sign-in` the first time) and counts its codes on `staff_users`
+ * (`locked the authenticator step of` when they close it); a failed attempt is logged without the email.
  *
  * @see docs/contract/endpoints/identity.md (the six auth sections)
  */
@@ -91,6 +94,7 @@ export class StaffSignInService implements OnModuleInit {
     private readonly lock: SignInLock,
     private readonly totp: TotpService,
     private readonly audit: AuditService,
+    private readonly codeLock: CodeStepLock,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -197,8 +201,9 @@ export class StaffSignInService implements OnModuleInit {
    * @param code the six digits
    * @param meta the caller's address and user agent
    * @returns the full session (a new token; the pending one is revoked)
-   * @throws {AppError} `RATE_LIMITED` (429), `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account is gone or the
-   *   session's step no longer matches the account), `VALIDATION_FAILED` (422 on `code`: wrong, expired or already used)
+   * @throws {AppError} `RATE_LIMITED` (429: five codes per 15 minutes, or the code step is closed after twenty wrong codes within 24
+   *   hours until they end, a new password is set or staff reset 2FA), `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account is gone or the session's step
+   *   no longer matches the account), `VALIDATION_FAILED` (422 on `code`: wrong, expired or already used)
    */
   async verifyTwoFactor(principal: StaffPrincipal, code: string, meta: RequestMeta): Promise<IssuedSession> {
     await this.limiter.enforceCode(principal.staffId);
@@ -212,8 +217,15 @@ export class StaffSignInService implements OnModuleInit {
       throw invalidCode('Set up the authenticator first, then enter its code.');
     }
 
+    // Counted before the code is checked; a correct code takes back only its own count, so a success never resets the others.
+    const account = { type: 'staff', id: staff.id } as const;
+    const attempts = await this.codeLock.charge(account, meta);
     const timeStep = await this.totp.check(this.totp.open(secretEnc), code, staff.totpLastStep, this.clock.nowMs());
-    if (timeStep === undefined) throw invalidCode('That code is not correct or has expired. Enter the current code.');
+    if (timeStep === undefined) {
+      await this.codeLock.failed(account, attempts, staff.name, meta);
+      throw invalidCode('That code is not correct or has expired. Enter the current code.');
+    }
+    await this.codeLock.giveBack(account);
 
     const issued = await this.db.runInTransaction(async (work) => {
       const done = await completeSignIn(work.tx, {

@@ -244,6 +244,15 @@ pure rules in `domain/`), wired by `StaffAuthModule`. Contract: `docs/contract/A
   (`SignInLock`, scope `staff`); a correct password takes back only its own count and keeps a running lock; a new password (link, forced
   change, a temporary password set by another member) ends it. The attempts a familiar network is still allowed while the lock runs share
   one budget per email and network (limiter `sign-in-familiar`, 5 in 15 minutes).
+- **The code step closes after twenty wrong codes within 24 hours** (`CodeStepLock`, columns `staff_users.totp_failures`,
+  `totp_failures_since` and `totp_locked_at`): every code attempt is counted on the account's row before the code is checked, in one
+  `UPDATE`, and a correct code takes back only its own count, so neither parallel attempts nor the member's own sign-in reset it. The
+  count runs 24 hours from the first counted wrong code, and every wrong code writes a warning naming the account and the address. The
+  twentieth closes the step: the closing is recorded once (`totp_locked_at`, a guarded `UPDATE`, so requests at the cap write one audit
+  row `locked the authenticator step of`, entity `staff`), and from then on every code, the right one included, is `429 RATE_LIMITED`
+  with a `Retry-After` of the seconds until the 24 hours end. Then the step opens by itself with a count of zero; sooner, a new password
+  (from a link, or a temporary password set by another member) or a 2FA reset by another member opens it. The count is in
+  Postgres, not in the cache Redis, so no eviction, restart or in-process fallback can end it early.
 - **Temporary passwords work 72 hours** from when they were set (`password_changed_at`); after that `login` refuses them like a wrong
   password (and counts the failure). An open `pending_password` step may finish.
 - **TOTP.** otplib, SHA-1, 6 digits, 30 s, ±1 step. `staff_users.totp_last_step` (schema addition of P2.6, migration `0002`) holds the last accepted
@@ -396,6 +405,12 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
   counters do not mix with the staff ones): login per email + network; registration per network; forgot per email + network;
   codes (sign-in, enable, disable; limiter `sign-in-code`, never counted in process memory), 2FA setups and password changes **per account**; emailed links (`verify-email`, `password/reset`)
   by the `token` limiter per address. The per-IP limit of the pipeline covers the public routes first.
+- **The sign-in code step closes after twenty wrong codes within 24 hours**, the staff rule (`CodeStepLock`, columns
+  `clients.totp_failures`, `totp_failures_since` and `totp_locked_at`, audit row `locked the authenticator step of` with entity
+  `merchant`): from then on `POST /client/auth/2fa` answers `429 RATE_LIMITED` to every code until the 24 hours from the first counted
+  wrong code end (`Retry-After`), or sooner until a new password is set by a reset or invitation link or by a temporary password from
+  staff, or staff reset two-factor sign-in (`POST /admin/clients/:id/reset-2fa`); the merchant's own or forced change leaves it closed. The enable and disable codes of a signed-in
+  merchant are not counted.
 - **Links** (`auth_tokens`, purposes `verify_email`, `reset`, `invite`; `MerchantAuthTokens`): 256 random bits, only the keyed hash
   stored, one hour, one use. A newer `reset` or `invite` voids the older ones, except a `reset` the visitor asked for on `forgot`, which
   keeps the two newest unused ones (at most three work at once, decision 052); a newer `verify_email` voids the older one. Unknown,

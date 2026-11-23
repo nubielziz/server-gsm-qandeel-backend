@@ -16,6 +16,7 @@ import {
   findStaffTokenByHash,
   voidOpenStaffTokens,
 } from '../infra/auth-token.repository';
+import { clearCodeFailures } from '../infra/code-failures.repository';
 import { findStaffById, savePassword } from '../infra/staff-auth.repository';
 import { CSRF_HEADER, CsrfService } from '../security/csrf';
 import { SessionAuthenticator } from '../security/session-authenticator';
@@ -38,9 +39,10 @@ export interface SetPasswordInput {
  * must change a temporary password (session cookie + CSRF token). Either way the password must pass the policy and differ
  * from the current one, the hash is argon2id, every session of the account ends (so the person signs in again with the new
  * password and then sets up 2FA if needed), and the status stays `invited` until the first full sign-in. A new password ends the
- * failed-sign-in count and lock of the email (decision 052).
+ * failed-sign-in count and lock of the email (decision 052) and the count of wrong authenticator codes, which opens a closed code step
+ * (`CodeStepLock`).
  *
- * Side effects: updates `staff_users`; marks the link used and voids the account's other unused links; revokes every session
+ * Side effects: updates `staff_users` (the password, and the count of wrong codes set to 0); marks the link used and voids the account's other unused links; revokes every session
  * of the account; writes an audit row `set a new password`; deletes the sign-in lock key of the email after the commit.
  *
  * @see docs/contract/endpoints/identity.md (POST /admin/auth/password/set)
@@ -139,6 +141,8 @@ export class StaffPasswordService {
   ): Promise<void> {
     // The account was suspended or deleted since it was read: the change must not land.
     if (!(await savePassword(work.tx, staff.id, passwordHash, now))) throw new AppError(refusal);
+    // The person chose a password from a link, or after one staff set: the wrong codes before it no longer count.
+    await clearCodeFailures(work.tx, { type: 'staff', id: staff.id });
     await voidOpenStaffTokens(work.tx, staff.id, now);
     // Every session of the account ends, the pending one that made this request included.
     await this.sessions.revokeAllOf('staff', staff.id, {}, work);

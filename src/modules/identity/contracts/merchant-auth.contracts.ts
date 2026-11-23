@@ -168,7 +168,10 @@ export const merchantVerifyTwoFactor = defineRoute({
   summary: 'Complete the sign-in with a TOTP code',
   description:
     'The last sign-in step of a merchant with two-factor sign-in on: it turns the pending session into a full one (a new session ' +
-    'token). Needs the `X-CSRF-Token` of the pending session.',
+    'token). Needs the `X-CSRF-Token` of the pending session. Twenty wrong codes of one merchant within 24 hours close the step: ' +
+    'every code, the right one included, is then refused with `429 RATE_LIMITED`, whose `Retry-After` is the seconds until it ' +
+    'opens. The step opens again after 24 hours (counted from the first wrong code), or sooner with a password link (reset or ' +
+    'invitation) or a 2FA reset by staff (also a temporary password from staff); a correct code never resets the count.',
   tags: ['auth'],
   surface: 'client',
   access: 'merchant-session',

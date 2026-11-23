@@ -154,6 +154,16 @@ export const staffUsers = pgTable(
      * the first accepted code and after a new secret. Schema addition for P2.6 (MISMATCHES B116 style).
      */
     totpLastStep: bigId(),
+    /**
+     * wrong authenticator codes counted since `totp_failures_since`: from the twentieth within 24 hours the code step stays closed until
+     * those 24 hours end, a new password is set by an emailed link or by staff, or staff reset two-factor sign-in (`CodeStepLock`); a
+     * correct code takes back only its own count. Schema addition.
+     */
+    totpFailures: integer().notNull().default(0),
+    /** when the 24 hours of `totp_failures` began (the first counted wrong code); null when nothing is counted. Schema addition */
+    totpFailuresSince: timestampTz(),
+    /** when the code step closed within the 24 hours of `totp_failures_since` (written once, audited); null while it is open. Schema addition */
+    totpLockedAt: timestampTz(),
     twofaEnabled: boolean().notNull().default(false),
     mustChangePassword: boolean().notNull().default(false),
     passwordChangedAt: timestampTz(),
@@ -242,6 +252,15 @@ export const clients = pgTable(
      * `staff_users.totp_last_step`.
      */
     totpLastStep: bigId(),
+    /**
+     * wrong authenticator codes counted since `totp_failures_since`, the same rule as `staff_users.totp_failures` (`CodeStepLock`).
+     * Schema addition.
+     */
+    totpFailures: integer().notNull().default(0),
+    /** when the 24 hours of `totp_failures` began (the first counted wrong code); null when nothing is counted. Schema addition */
+    totpFailuresSince: timestampTz(),
+    /** when the code step closed within the 24 hours of `totp_failures_since`, as `staff_users.totp_locked_at`. Schema addition */
+    totpLockedAt: timestampTz(),
     /** when the merchant last chose or changed the password; null until the first one; schema addition B116 (feature 2b) */
     passwordChangedAt: timestampTz(),
     emailVerifiedAt: timestampTz(),
