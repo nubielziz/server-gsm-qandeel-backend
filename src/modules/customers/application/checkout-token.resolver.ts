@@ -5,6 +5,7 @@ import { DbService } from '../../../infra/db';
 import { CapabilityTokenVault, TokenService } from '../../../infra/crypto';
 import { CapabilityTokenResolvers, type CapabilityGrant, type CapabilityTokenResolver } from '../../identity';
 import { findSessionByToken } from '../infra/checkout.repository';
+import { findCustomerById } from '../infra/customer.repository';
 
 /**
  * Opens a checkout session with its token.
@@ -14,7 +15,8 @@ import { findSessionByToken } from '../infra/checkout.repository';
  * this resolver finds the row by its keyed hash (decision 054; a row written before is found by its plain token until the seal pass
  * ran) and then compares the stored form with the presented one in constant time, so the answer for a wrong token does not depend on
  * how much of it matched.
- * It does not judge expiry or payment: an expired or paid session can still be read; the use cases decide what may still change.
+ * It does not judge expiry or payment: an expired or paid session can still be read; the use cases decide what may still change. The
+ * session of an anonymized customer opens nothing: after the erasure its link is an unknown link.
  *
  * Side effects: none (reads only).
  */
@@ -38,7 +40,7 @@ export class CheckoutTokenResolver implements CapabilityTokenResolver, OnModuleI
    * Looks the token up.
    *
    * @param token a token of the right shape
-   * @returns the session it opens, or `null` for a token that names none
+   * @returns the session it opens, or `null` for a token that names none or a session whose customer was anonymized
    */
   async resolve(token: string): Promise<CapabilityGrant | null> {
     const hash = this.vault.hashOf('checkout', token);
@@ -48,6 +50,11 @@ export class CheckoutTokenResolver implements CapabilityTokenResolver, OnModuleI
       row.tokenHash !== null
         ? this.tokens.equals(row.tokenHash, hash)
         : row.token !== null && this.tokens.equals(row.token, token);
-    return granted ? { id: row.id } : null;
+    if (!granted) return null;
+    if (row.customerId !== null) {
+      const customer = await findCustomerById(this.db.db, row.customerId);
+      if (!customer || customer.status === 'anonymized') return null;
+    }
+    return { id: row.id };
   }
 }

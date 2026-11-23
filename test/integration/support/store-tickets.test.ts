@@ -414,16 +414,18 @@ describe('POST /store/v1/tickets', () => {
     expect(other.customer.email).toBe('other@mail.example');
   });
 
-  it('counts an order of an anonymized customer under the order, not under an address', async () => {
+  it('refuses the order link of an anonymized customer like an unknown one, before anything is counted or written', async () => {
     const { db, customer } = await trackedOrder(TRACKING_TOKEN, 'gone@mail.example');
     await db
       .update(s.customers)
       .set({ status: 'anonymized', name: 'Deleted customer', email: 'deleted-9@redacted.invalid' })
       .where(eq(s.customers.id, customer.id));
-    for (let n = 0; n < 3; n += 1) {
-      expect((await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN })).statusCode).toBe(201);
+    for (let n = 0; n < 4; n += 1) {
+      const res = await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN });
+      expect(res.statusCode).toBe(422);
+      expect(body(res).errors).toEqual([expect.objectContaining({ field: 'orderToken', code: 'unknown_order' })]);
     }
-    expect((await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN })).statusCode).toBe(429);
+    expect(await db.select().from(s.supportTickets)).toHaveLength(0);
   });
 
   it('the receipt holds the ticket number and the link and nothing that was typed', async () => {
@@ -450,7 +452,7 @@ describe('POST /store/v1/tickets', () => {
     });
   });
 
-  it('sends no receipt when the template is off or the customer was anonymized, and still opens the ticket', async () => {
+  it('sends no receipt when the template is off or the customer was anonymized since, and still opens the ticket', async () => {
     const { db } = await testDb();
     await db
       .update(s.notificationTemplates)
@@ -462,13 +464,13 @@ describe('POST /store/v1/tickets', () => {
     await db.update(s.notificationTemplates).set({ isActive: true });
     await db.delete(s.outboxEvents);
     const { order, customer } = await trackedOrder(TRACKING_TOKEN, 'gone@mail.example');
+    const res = await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN });
+    expect(res.statusCode).toBe(201);
+    expect(body(res).orderId).toBe(order.id);
     await db
       .update(s.customers)
       .set({ status: 'anonymized', name: 'Deleted customer', email: 'deleted-1@redacted.invalid' })
       .where(eq(s.customers.id, customer.id));
-    const res = await open({ subject: 'Hi', message: 'Hello', orderToken: TRACKING_TOKEN });
-    expect(res.statusCode).toBe(201);
-    expect(body(res).orderId).toBe(order.id);
     // The job re-reads the customer: an anonymized one has no address, so nothing is sent.
     expect(await ticketMailEvents(db)).toHaveLength(1);
     expect(await sendTicketMails(t)).toEqual([{ sent: false, skipped: 'recipient_gone' }]);

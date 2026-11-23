@@ -5,10 +5,10 @@ import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
 import { PdfRenderer, StoredFiles } from '../../platform';
 import { loadOrderFacts } from '../infra/b2c-reads.repository';
-import { loadBillingCustomers } from '../infra/foreign-directory.repository';
 import type { Invoice } from '../db/schema';
 import { findInvoice, findReceiptOfOrder, updateInvoice } from '../infra/invoice.repository';
 import { findPaymentOfOrder } from '../infra/order-payment.repository';
+import { ReceiptBuyerPorts } from './storefront-ports';
 
 const day = (date: Date | null): string => (date ? date.toISOString().slice(0, 10) : '-');
 
@@ -24,7 +24,9 @@ export type ReceiptRenderResult = 'stored' | 'exists' | 'skipped';
  * their name. The capture only queues the render (the `receipt.render` job calls {@link render}), so the gateway's webhook is not held up by the
  * PDF or the upload. The numbers are the receipt invoice's (what the session locked, in the buyer's currency); the document is English text
  * with the Latin font. If the job could not make the copy (storage was down for every attempt, or the worker stopped), the first download
- * makes it, under the invoice's row lock so two downloads make one.
+ * makes it, under the invoice's row lock so two downloads make one. The receipt reaches whoever holds the order's tracking link, so whom it
+ * names is the customers module's answer (`ReceiptBuyerPorts`): the account's stored name only when the account itself opened the checkout
+ * signed in, otherwise the address the checkout was opened with and no stored name. A copy already stored keeps what it has.
  *
  * Side effects: `render` and the fallback in `read` store one object and one `files` row and set `invoices.pdf_file_id`, once per invoice.
  */
@@ -34,6 +36,7 @@ export class OrderReceipts {
     private readonly db: DbService,
     private readonly pdf: PdfRenderer,
     private readonly files: StoredFiles,
+    private readonly buyers: ReceiptBuyerPorts,
   ) {}
 
   /**
@@ -96,14 +99,11 @@ export class OrderReceipts {
     });
   }
 
-  /** Draws the receipt of an invoice from the invoice's own numbers. */
+  /** Draws the receipt of an invoice from the invoice's own numbers and the buyer the customers module names. */
   private async draw(db: DbExecutor, invoice: Invoice): Promise<Uint8Array> {
     const orderId = invoice.orderId ?? 0;
     const order = (await loadOrderFacts(db, [orderId])).get(orderId);
-    const customer =
-      invoice.customerId === null
-        ? undefined
-        : (await loadBillingCustomers(db, [invoice.customerId])).get(invoice.customerId);
+    const customer = invoice.customerId === null ? undefined : await this.buyers.get().buyerOf(db, orderId);
     const payment = await findPaymentOfOrder(db, orderId);
     return this.pdf.render({
       title: 'Tax receipt',

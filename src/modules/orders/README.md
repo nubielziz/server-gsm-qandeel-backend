@@ -123,7 +123,8 @@ presented token's in constant time; an order placed before decision 054 is found
 token is stored only as that hash and an AES-GCM copy (`public_token_enc`, AAD `orders.public_token_enc`), which the paid checkout view,
 the balance-payment answer and the customer's order list reveal (`OrderReadService.trackingTokenOf`, `CapabilityTokenVault`). The one-off
 pass `TrackingTokenSeal` (job `tracking_tokens_seal` on `maintenance`, `TrackingTokenSealModule`, worker only; asked for once by migration
-`capability_tokens_seal`) seals the orders placed before. A merchant order has no token and can never be opened this way. One
+`capability_tokens_seal`) seals the orders placed before. A merchant order has no token and can never be opened this way, and the order of
+an anonymized customer opens nothing (the customers module answers through `TrackingCustomerPorts`, `application/tracking-customer-port.ts`). One
 answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
 minute per address by the pipeline. The view (`application/order-tracking.service.ts`, `domain/tracking.ts`): `status` (a risk hold
 reads `pending`), the service name, type and delivery time, the main input with all but its last four characters hidden, the

@@ -30,6 +30,9 @@ export type { MainInputField, MainInputSource } from './domain/main-input';
 export { channelSql, pastSlaPredicate, queueSql } from './infra/order-sql';
 export { rewriteCustomerOrderInputs } from './infra/order.repository';
 export type { CustomerOrderInputs } from './infra/order.repository';
+// The slot the customers module fills at boot (whether an order's customer was anonymized); a leaf with no module imports.
+export { TrackingCustomerPorts } from './application/tracking-customer-port';
+export type { TrackingCustomerPort } from './application/tracking-customer-port';
 export {
   ORDER_DISPATCH_STATES,
   ORDER_EVENT_ACTOR_TYPES,

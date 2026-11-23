@@ -27,6 +27,7 @@ import { DisputeViews } from './application/dispute-views';
 import { DisputeWebhookService } from './application/dispute-webhook.service';
 import { HeldPaymentsService } from './application/held-payments.service';
 import { OrderReceipts } from './application/order-receipts';
+import { ReceiptBuyerPorts } from './application/storefront-ports';
 import { RefundService } from './application/refund.service';
 import { RefundSettlement } from './application/refund-settlement';
 import { RefundViews } from './application/refund-views';
@@ -125,6 +126,8 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     ClientStatementService,
     StorefrontPayments,
     OrderReceipts,
+    // The customers module fills it (decision 032): whom a receipt names.
+    ReceiptBuyerPorts,
     RefundViews,
     RefundService,
     RefundSettlement,

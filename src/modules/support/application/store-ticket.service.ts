@@ -51,8 +51,11 @@ const refuse = (field: string, code: string, message: string) =>
  * (the order's tracking token links it to the order and to the order's customer) or the contact page (an email, which makes a guest
  * customer the first time); it starts `new` with the priority of its category and a reply target, and the customer gets a receipt. The
  * ticket token (128 random bits, decision 010) is the only credential of the ticket page: it reaches the visitor in the receipt email, and in
- * the answer to the open call only when the visitor proved who they are with the order's tracking token (an email anyone can type is not
- * a proof, so that path answers without it). A message on a ticket that waited on the customer makes it `open` again and restarts the
+ * the answer to the open call only when the order's tracking token speaks for the order's customer (an email anyone can type is not a
+ * proof, so that path answers without it). A guest checkout can be opened with any address, an account's included, so the tracking token
+ * speaks for the customer only when the account itself opened the checkout signed in, or the customer has no account
+ * (`CustomerDirectory.orderLinkStanding`); any other order link files the ticket unproven, exactly like a typed address. The order link
+ * of an anonymized customer is refused like an unknown one. A message on a ticket that waited on the customer makes it `open` again and restarts the
  * reply target from that message. A resolved ticket is closed for the customer (B220, owner decision 2026-11-15, replacing ANSWERS support
  * Q8): a message is `409 TICKET_RESOLVED`, and staff reopen the ticket to continue. The rating is one answer, 1 to 5, only once the
  * ticket is resolved, and the ticket stays resolved (no `closed` status).
@@ -62,7 +65,8 @@ const refuse = (field: string, code: string, message: string) =>
  * decision 021). The count is made for the typed address, and with an order link for the address of the order's customer (the receipt goes
  * there), so the cap holds on both paths (decision 053). The receipt holds the ticket number and the link and nothing a visitor typed.
  *
- * Decision 053: a ticket opened with a typed email (no order link) is unproven: `requester_proven_at` is null until the link that was
+ * Decision 053: a ticket opened with a typed email (no order link), or with the link of a guest order filed under an account, is unproven:
+ * `requester_proven_at` is null until the link that was
  * mailed to that address is first used (the ticket page is read, or a message is written with the link). Until then the ticket is not in the
  * customer's account list, its live events do not reach the account stream, its replay leaves it out and a resolve sends no satisfaction
  * survey; staff see an internal system note at the start of the thread and another when the address is confirmed.
@@ -95,11 +99,12 @@ export class StoreTicketService {
    * Opens a ticket.
    *
    * @param input the subject, the message and who writes
-   * @returns the new ticket as the customer reads it; the ticket token is in it only when the order's tracking token was given (the
-   *   caller already holds that credential). The email path gets no token: it files the ticket under whoever owns the address, so the
-   *   token would let a stranger read that customer's thread. The receipt email carries the link.
-   * @throws {AppError} `VALIDATION_FAILED` (422 on `orderToken` for a token that names no storefront order, on `email` when neither an
-   *   email nor an order token was given); `RATE_LIMITED` (429 with `Retry-After`) from the fourth ticket in an hour of one email address
+   * @returns the new ticket as the customer reads it; the ticket token is in it only when the order's tracking token speaks for the
+   *   order's customer (the account opened the checkout signed in, or the customer has no account). The email path, and an order link of a
+   *   guest checkout filed under an account, get no token: they file the ticket under whoever owns the address, so the token would let a
+   *   stranger read that customer's thread. The receipt email carries the link.
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `orderToken` for a token that names no storefront order or an order of an anonymized
+   *   customer, on `email` when neither an email nor an order token was given); `RATE_LIMITED` (429 with `Retry-After`) from the fourth ticket in an hour of one email address
    *   (the typed one, or the order's customer's with an order link)
    */
   async open(input: OpenStoreTicketInput): Promise<StoreTicketView & { token?: string }> {
@@ -113,7 +118,7 @@ export class StoreTicketService {
       const now = this.clock.now();
       let orderId: number | null = null;
       let customerId: number;
-      // True when the caller holds the order's tracking token, the only proof of identity this route can check.
+      // True when the caller holds an order's tracking token that speaks for the order's customer, the only proof this route can check.
       let provedByOrder = false;
       if (input.orderToken !== undefined) {
         // Decision 054: the order is found by the keyed hash of its tracking token (an order placed before by its plain token).
@@ -125,6 +130,10 @@ export class StoreTicketService {
             ? this.tokens.equals(order.tokenHash, hash)
             : order.token !== null && this.tokens.equals(order.token, input.orderToken));
         if (!order || !valid) throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
+        // A guest checkout can be opened with an account's address: its link proves nothing about the account holder. The link of an
+        // anonymized customer's order opens nothing, like an unknown link (refused before anything is counted or written).
+        const standing = await this.customers.orderLinkStanding(tx, { id: order.id, customerId: order.customerId });
+        if (standing === 'erased') throw refuse('orderToken', 'unknown_order', 'This order link is not valid.');
         // Decision 053: the receipt goes to the order's customer, so the per-address cap counts this path too.
         const requester = await findRequester(tx, 'customer', order.customerId);
         await this.limits.enforce(
@@ -135,7 +144,7 @@ export class StoreTicketService {
         );
         orderId = order.id;
         customerId = order.customerId;
-        provedByOrder = true;
+        provedByOrder = standing === 'speaks-for-customer';
       } else if (input.email !== undefined) {
         customerId = (await this.customers.findOrCreateGuest(tx, { email: input.email, name: input.name ?? '' })).id;
       } else {
@@ -160,7 +169,8 @@ export class StoreTicketService {
         token: null,
         tokenHash: issued.hash,
         tokenEnc: issued.enc,
-        // Decision 053: only the order link proves who is writing; a typed address is unproven until its mailed link is used.
+        // Decision 053: only an order link that speaks for its customer proves who is writing; a typed address, or the link of a guest order
+        // filed under an account, is unproven until the link mailed to the customer's address is used.
         requesterProvenAt: provedByOrder ? now : null,
         createdAt: now,
         updatedAt: now,
@@ -186,7 +196,7 @@ export class StoreTicketService {
         });
         this.events.message(ticket.id, note.id);
       }
-      // The receipt is sent by the job, which re-reads the customer: an anonymized one (reached through an old order link) gets nothing.
+      // The receipt is sent by the job, which re-reads the customer: one anonymized after the ticket was opened gets nothing.
       await this.mail.received(work, ticket);
       this.events.updated(ticket.id);
       const view = toStoreTicket(stored, [{ message, authorName: '' }], NO_FILES);

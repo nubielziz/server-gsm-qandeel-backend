@@ -23,13 +23,18 @@ export interface TrackedOrderRow {
  *
  * @param db the database or a transaction
  * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('tracking', …)`) and the token itself
- * @returns the order id with its stored hash or plain token, or `undefined`
+ * @returns the order id and its customer, with its stored hash or plain token, or `undefined`
  */
 export async function findOrderByTrackingToken(
   db: DbExecutor,
   lookup: { readonly hash: string; readonly token: string },
-): Promise<{ id: number; tokenHash: string | null; token: string | null } | undefined> {
-  const columns = { id: orders.id, tokenHash: orders.publicTokenHash, token: orders.publicToken };
+): Promise<{ id: number; customerId: number | null; tokenHash: string | null; token: string | null } | undefined> {
+  const columns = {
+    id: orders.id,
+    customerId: orders.customerId,
+    tokenHash: orders.publicTokenHash,
+    token: orders.publicToken,
+  };
   const [sealed] = await db.select(columns).from(orders).where(eq(orders.publicTokenHash, lookup.hash)).limit(1);
   if (sealed) return sealed;
   // Orders placed before decision 054 keep the token as issued until the seal pass ran.

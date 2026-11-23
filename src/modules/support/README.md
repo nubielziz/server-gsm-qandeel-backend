@@ -131,10 +131,12 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   again after a reopen gets none, rated or not (`support_tickets.survey_sent_at`, set once in the resolve transaction, is the record). **Reopen** clears `resolved_at`.
 - **Storefront.** `POST /store/v1/tickets` needs Turnstile (decision 034). The body names a subject, a message, an optional category and
   either an `orderToken` (the order's tracking token: the ticket links to that order and belongs to its customer; the typed email is
-  ignored) or an `email` (a known address finds its customer, a new one becomes a guest customer). The ticket token (128 random bits,
+  ignored; the order link of an anonymized customer is `422` on `orderToken` like an unknown one) or an `email` (a known address finds its customer, a new one becomes a guest customer). The ticket token (128 random bits,
   decision 010) is the whole credential of the token routes; it is stored only as a keyed hash (`token_hash`) and an AES-GCM copy
   (`token_enc`, AAD `support_tickets.token_enc`) that the mails and the account list reveal (decision 054). The receipt email holds
-  its link; the 201 answer carries `token` only on the `orderToken` path (the caller already holds the order link). On the `email` path the
+  its link; the 201 answer carries `token` only on an `orderToken` path that speaks for the order's customer: the account opened the checkout
+  signed in, or the customer has no account (`CustomerDirectory.orderLinkStanding`; a guest checkout can be opened with any address, an
+  account's included, and is then filed unproven like a typed address). On the `email` path the
   answer has no token: the ticket is filed under whoever owns the address and Turnstile only stops bots, so a token in the body would let a
   stranger who knows an address read that customer's thread. The receipt goes to an address anyone can type, so besides Turnstile and the
   per-IP limit one email address (case-insensitive) gets at most 3 new tickets an hour (limiter `ticket-email`, decision 021): the fourth is
@@ -155,12 +157,13 @@ Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); oth
   resolved to `open` (a reopen), after which the requester can write again; a staff reply on a resolved ticket stays `409`, and a note is
   still allowed. The account opener (`POST /store/v1/me/tickets`, `POST /client/tickets`) only opens new tickets, so it has nothing to
   refuse; a signed-in customer writes on an existing ticket through its link token. The lock is one helper, `application/requester-lock.ts`.
-- **An unproven ticket (decision 053).** A ticket of the public form opened with a typed `email` (no order link) has `support_tickets.requester_proven_at` null: anyone can type an
+- **An unproven ticket (decision 053).** A ticket of the public form opened with a typed `email` (no order link), or with the order link of a guest checkout filed under an
+  account, has `support_tickets.requester_proven_at` null: anyone can type an
   address, so the ticket stays off the account of the customer who owns it until the link that was mailed to that address is first used. While it is null: the ticket is not in
   `GET /store/v1/me/tickets`, its live events reach only the streams opened with its link (not the requester's account stream), the account stream's replay leaves it out and
   a resolve sends no satisfaction survey (the mail would repeat the typed subject to the address). The ticket is not in the customer's data export (`GET /admin/customers/:id/export`) and is not an evidence line of a dispute of the customer's orders either: all of these reads (the account list, the stream replay, the export and the evidence) use one condition, `requesterProven()` of `db/schema.ts`, which the other modules reach through the schema barrel. The anonymization of a customer still covers every ticket of the customer, confirmed or not. The ticket link itself works as before. The address proves itself when the
   holder of the link opens the ticket page (`GET /store/v1/tickets/:token`) or writes on it (`POST /store/v1/tickets/:token/messages`): a guarded update sets the time once
-  (`WHERE requester_proven_at IS NULL`; `updated_at` stays, it is not activity for staff). Every other ticket is proven when it is made (an order link, a signed-in requester,
+  (`WHERE requester_proven_at IS NULL`; `updated_at` stays, it is not activity for staff). Every other ticket is proven when it is made (an order link that speaks for its customer, a signed-in requester,
   a merchant; the migration gave every existing ticket its `created_at`). Staff see it in the thread: an internal system note after the first message ("Opened on the contact form by
   someone who typed this email address. The address is not confirmed yet: ...") and another when the link proves the address ("The requester opened the link from the receipt email: the
   email address is confirmed."), both ringing the staff stream like the resolve note.

@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { MoneyAdminModule } from '../money';
 import { OrderReceiptService } from './application/order-receipt.service';
 import { OrderTrackingService } from './application/order-tracking.service';
+import { TrackingCustomerPorts } from './application/tracking-customer-port';
 import { TrackingTokenResolver } from './application/tracking-token.resolver';
 import { OrderTrackingController } from './controllers/order-tracking.controller';
 
@@ -11,11 +12,12 @@ import { OrderTrackingController } from './controllers/order-tracking.controller
  * Provides `GET /store/v1/orders/:token` and `GET /store/v1/orders/:token/receipt`.
  *
  * Why: the use case needs the global database and crypto providers and the identity guard's resolver registry, which a
- * database-less test app does not have. It imports `MoneyAdminModule` for `OrderReceipts` (the stored receipt), which goes with it.
+ * database-less test app does not have. It imports `MoneyAdminModule` for `OrderReceipts` (the stored receipt), which goes with it. The
+ * resolver asks the customers module through `TrackingCustomerPorts` whether the order's customer was anonymized.
  */
 @Module({
   imports: [MoneyAdminModule],
   controllers: [OrderTrackingController],
-  providers: [OrderTrackingService, OrderReceiptService, TrackingTokenResolver],
+  providers: [OrderTrackingService, OrderReceiptService, TrackingTokenResolver, TrackingCustomerPorts],
 })
 export class OrderTrackingModule {}

@@ -170,7 +170,9 @@ and `domain/customer-export.ts`, and the reads and writes that reach other modul
   module's `ImeiErasure` does the same for their IMEI checks); the sessions' visitor country (`ip_country`) is cleared with the address
   (decision 050); the erasure request is completed; payments and ledger entries stay.
   The audit row names the customer by number (the log is append-only). Other modules clear what they hold through
-  `CustomerErasureHooks` (run in the same transaction; the support module registers its ticket-link hook there).
+  `CustomerErasureHooks` (run in the same transaction; the support module registers its ticket-link hook there). Afterwards the
+  customer's checkout links (`CheckoutTokenResolver`) and order tracking links (the status, the result and the receipt, through
+  `TrackingCustomerPorts` of the orders module) answer `404` like unknown links, and the ticket form refuses their order link (`422`).
 
 ## Growth pages (feature 19)
 
@@ -258,6 +260,10 @@ and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker load
 The smart sign-in (`SmartSignInService`, feature 24A) is not exported: it is a route of this module.
 `CustomerDirectory` with its `CustomerRef` type (`application/customer-directory.ts`) and `CustomerDirectoryModule` (`customer-directory.module.ts`): find or make a guest
 customer by email in the caller's transaction, used by the support tickets of feature 17, so that no other module inserts into `customers`.
+It also answers for a storefront order link, with the `OrderLinkStanding` type: whether the link speaks for the order's customer (the account
+opened the checkout signed in, or the customer has no account), whether the customer was anonymized, and whom the order's receipt names (the
+account's stored name only for a checkout opened signed in, else the address the checkout was opened with). `CustomerDirectoryModule`
+(loaded by the API and the worker) registers it in the slots of orders (`TrackingCustomerPorts`) and money (`ReceiptBuyerPorts`).
 Feature 16 reads a session through its own use case in this module. Add the services other modules may call here, and nothing
 else: other modules import only `src/modules/customers/index.ts` (lint rule `gsm/module-boundaries`).
 

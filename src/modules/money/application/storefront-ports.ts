@@ -1,6 +1,7 @@
-// The two seams money keeps for the modules that sit above it in the import graph (decision 032): the orders module cancels and annotates
-// storefront orders for a refund or a dispute, and the customers module turns a confirmed payment into an order. Money cannot import
-// either (orders and customers import money), so each registers its implementation at boot, like the webhook verifiers of identity.
+// The seams money keeps for the modules that sit above it in the import graph (decision 032): the orders module cancels and annotates
+// storefront orders for a refund or a dispute, and the customers module turns a confirmed payment into an order and says whom a receipt
+// names. Money cannot import either (orders and customers import money), so each registers its implementation at boot, like the webhook
+// verifiers of identity.
 import { Injectable } from '@nestjs/common';
 import type { DbExecutor } from '../../../infra/db';
 import type { Order } from '../../orders';
@@ -160,6 +161,65 @@ export class StorefrontCaptures {
       throw new Error('The customers module has not registered its storefront capture in this process.');
     }
     return StorefrontCaptures.capture;
+  }
+}
+
+/** Whom a storefront receipt names. */
+export interface ReceiptBuyer {
+  /** The name after "Billed to"; empty when the receipt names no stored name (the address stands in). */
+  readonly name: string;
+  /** The address the receipt shows. */
+  readonly email: string;
+}
+
+/**
+ * What money asks of the customers module when it draws a storefront receipt: whom the receipt names.
+ *
+ * Why: the receipt is handed to whoever holds the order's tracking link, and a guest checkout can be opened with any address, an
+ * account's included. Only the customers module knows how the checkout was opened (`checkout_sessions`) and the account's stored name
+ * (`customers`), so it decides what the document may show.
+ */
+export interface ReceiptBuyerPort {
+  /**
+   * Says whom the receipt of an order names.
+   *
+   * @param db the database or the caller's transaction
+   * @param orderId the order of the receipt
+   * @returns the name and address to print, or `undefined` when the order has no checkout
+   */
+  buyerOf(db: DbExecutor, orderId: number): Promise<ReceiptBuyer | undefined>;
+}
+
+/**
+ * The slot the customers module fills with its {@link ReceiptBuyerPort} (one per process, like {@link StorefrontOrderPorts}).
+ *
+ * Why: the receipt is drawn by the worker's `receipt.render` job and, when that job could not make the copy, by the first download in the
+ * API; both processes load the customers module's directory, which registers itself here.
+ */
+@Injectable()
+export class ReceiptBuyerPorts {
+  private static port: ReceiptBuyerPort | undefined;
+
+  /**
+   * Registers the implementation (the customers module, at boot).
+   *
+   * @param port what money may ask of customers about a receipt
+   */
+  set(port: ReceiptBuyerPort): void {
+    ReceiptBuyerPorts.port = port;
+  }
+
+  /**
+   * Reads the implementation.
+   *
+   * @returns the registered port
+   * @throws {Error} when the customers module is not loaded in this process (a wiring bug, never a client error)
+   */
+  get(): ReceiptBuyerPort {
+    if (!ReceiptBuyerPorts.port) {
+      throw new Error('The customers module has not registered its receipt buyer port in this process.');
+    }
+    return ReceiptBuyerPorts.port;
   }
 }
 

@@ -2,6 +2,7 @@
 import { Module } from '@nestjs/common';
 import { PdfModule, StoredFiles } from '../../platform';
 import { OrderReceipts } from '../application/order-receipts';
+import { ReceiptBuyerPorts } from '../application/storefront-ports';
 import { MoneyOutboxModule } from '../money-outbox.module';
 import { ReceiptRenderProcessor } from './receipt-render.processor';
 
@@ -10,11 +11,12 @@ import { ReceiptRenderProcessor } from './receipt-render.processor';
  *
  * Why: the API never draws a PDF or talks to the file storage while it answers a gateway (decision 020); the worker does. The classes the job
  * needs are plain services (the PDF renderer is dependency-free and the file storage module is the worker's own), so the worker builds them here
- * instead of loading the API's money module.
+ * instead of loading the API's money module. Whom a receipt names comes through `ReceiptBuyerPorts`, which the customers module's directory
+ * fills (the worker loads `CustomerDirectoryModule`).
  */
 @Module({
   imports: [MoneyOutboxModule, PdfModule],
-  providers: [StoredFiles, OrderReceipts, ReceiptRenderProcessor],
+  providers: [StoredFiles, OrderReceipts, ReceiptBuyerPorts, ReceiptRenderProcessor],
   exports: [OrderReceipts],
 })
 export class ReceiptRenderModule {}

@@ -10,7 +10,7 @@ export {
   requiredConsents,
 } from './domain/checkout';
 export { storefrontFunnel, type StorefrontFunnel } from './storefront-funnel';
-export { CustomerDirectory, type CustomerRef } from './application/customer-directory';
+export { CustomerDirectory, type CustomerRef, type OrderLinkStanding } from './application/customer-directory';
 export { CustomerDirectoryModule } from './customer-directory.module';
 export { CheckoutModule } from './checkout.module';
 export { CHECKOUT_RECOVERY_SCHEDULER, CheckoutRecoveryModule } from './checkout-recovery.module';

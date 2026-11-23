@@ -620,6 +620,8 @@ describe('GET /store/v1/orders/:token/receipt', () => {
 
   it('draws a customer and a service named in Arabic with the embedded Arabic font, and serves the stored copy (feature 24E)', async () => {
     const paid = await paidOrder(t, clock, world);
+    // The receipt prints the account's stored name only for a checkout the account opened signed in.
+    await db.update(s.checkoutSessions).set({ openedSignedIn: true });
     await db.update(s.customers).set({ name: 'سارة أحمد' });
     await db.update(s.services).set({ name: 'فك قفل آيفون ١٥' });
     await renderReceipts(t);

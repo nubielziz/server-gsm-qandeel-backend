@@ -42,12 +42,14 @@ export type { PaymentAftermath } from './domain/payment-rules';
 export type { PaymentCheck } from './infra/gateway-drivers/driver';
 export { B2cRefunds } from './application/b2c-refunds';
 export type { RefundActor, RefundLeft, RefundPosting } from './application/b2c-refunds';
-export { StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';
+export { ReceiptBuyerPorts, StorefrontCaptures, StorefrontOrderPorts } from './application/storefront-ports';
 export type {
   CaptureOutcome,
   CaptureRequest,
   PortActor,
   PortTimelineLine,
+  ReceiptBuyer,
+  ReceiptBuyerPort,
   RefundedOrder,
   StorefrontCapture,
   StorefrontOrderPort,

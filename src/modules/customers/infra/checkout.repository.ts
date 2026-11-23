@@ -70,6 +70,37 @@ export async function findCheckoutSession(db: DbExecutor, id: number): Promise<C
   return row;
 }
 
+/** How the checkout behind an order was opened. */
+export interface OrderCheckout {
+  readonly customerId: number | null;
+  /** The address the checkout was opened with. */
+  readonly email: string;
+  /** True when the signed-in account opened it itself. */
+  readonly openedSignedIn: boolean;
+}
+
+/**
+ * Finds the checkout session that created an order.
+ *
+ * Why: whether the order's tracking link speaks for the account, and whom its receipt names, depend on how the checkout was opened.
+ *
+ * @param db the database or a transaction
+ * @param orderId the order
+ * @returns the session's customer, address and sign-in mark, or `undefined` for an order without a checkout
+ */
+export async function findSessionOfOrder(db: DbExecutor, orderId: number): Promise<OrderCheckout | undefined> {
+  const [row] = await db
+    .select({
+      customerId: checkoutSessions.customerId,
+      email: checkoutSessions.email,
+      openedSignedIn: checkoutSessions.openedSignedIn,
+    })
+    .from(checkoutSessions)
+    .where(eq(checkoutSessions.orderId, orderId))
+    .limit(1);
+  return row;
+}
+
 /**
  * Finds a checkout session by id and locks its row until the caller's transaction ends.
  *
@@ -94,13 +125,18 @@ export async function lockCheckoutSession(db: DbExecutor, id: number): Promise<C
  *
  * @param db the database or a transaction
  * @param lookup the hash of the presented token (`CapabilityTokenVault.hashOf('checkout', …)`) and the token itself
- * @returns the session id with its stored hash or plain token, or `undefined`
+ * @returns the session id and its customer, with its stored hash or plain token, or `undefined`
  */
 export async function findSessionByToken(
   db: DbExecutor,
   lookup: { readonly hash: string; readonly token: string },
-): Promise<{ id: number; tokenHash: string | null; token: string | null } | undefined> {
-  const columns = { id: checkoutSessions.id, tokenHash: checkoutSessions.tokenHash, token: checkoutSessions.token };
+): Promise<{ id: number; customerId: number | null; tokenHash: string | null; token: string | null } | undefined> {
+  const columns = {
+    id: checkoutSessions.id,
+    customerId: checkoutSessions.customerId,
+    tokenHash: checkoutSessions.tokenHash,
+    token: checkoutSessions.token,
+  };
   const [sealed] = await db
     .select(columns)
     .from(checkoutSessions)
