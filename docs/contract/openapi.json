@@ -160079,7 +160079,7 @@
     },
     "/admin/services": {
       "get": {
-        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`. Filters: `type`, `status`, `categoryId`, `belowFloor`; they combine. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice.",
+        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, `needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` (the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and `notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without a shop price last).",
         "operationId": "getAdminServices",
         "parameters": [
           {
@@ -160107,7 +160107,7 @@
             "name": "_sort",
             "required": false,
             "in": "query",
-            "description": "Comma-separated sort fields. Allowed: name, type, cost, basePrice, id. Default: name asc.",
+            "description": "Comma-separated sort fields. Allowed: name, type, cost, basePrice, retailPrice, id. Default: name asc.",
             "schema": {
               "type": "string"
             }
@@ -160227,6 +160227,93 @@
             "required": false,
             "in": "query",
             "description": "Keep rows where belowFloor equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "needsAttention",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where needsAttention equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "hasSupplier",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where hasSupplier equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "supplierId",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where supplierId equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,15}$"
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "isListed",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where isListed equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "notOnShop",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where notOnShop equals (repeat the key for IN) the value.",
             "schema": {
               "type": "array",
               "items": {
@@ -160484,6 +160571,125 @@
                           "maximum": 100000
                         },
                         "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
+                      },
+                      "attention": {
+                        "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "no_supplier",
+                            "below_floor",
+                            "price_proposal",
+                            "publish_failed"
+                          ]
+                        }
+                      },
+                      "retailPrice": {
+                        "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "retailPriceSource": {
+                        "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "rule",
+                              "manual"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "retailPriceRule": {
+                        "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991,
+                                "x-gsm-alias": "Id",
+                                "description": "Numeric record id.",
+                                "examples": [
+                                  42
+                                ]
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "label"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "retailPriceWaiting": {
+                        "description": "A proposed change of the following shop price waits for staff. Left out without `pricing:read`.",
+                        "type": "boolean"
+                      },
+                      "listingId": {
+                        "description": "The shop page (listing) of the service, the id the listing routes take; `null` when it has none. Left out without `storefront:read`.",
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991,
+                            "x-gsm-alias": "Id",
+                            "description": "Numeric record id.",
+                            "examples": [
+                              42
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "isListed": {
+                        "description": "The service has a shop page that is switched on (false with none, or one switched off). Left out without `storefront:read`.",
+                        "type": "boolean"
+                      },
+                      "shopBlocked": {
+                        "description": "Why the service cannot go on the shop, in the order the publish rule judges it: `service_disabled`, `category_inactive`, `b2b_only` (the category is not offered to the retail group), `not_orderable` (a file service); `null` when nothing blocks it. Left out without `storefront:read`.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "service_disabled",
+                              "category_inactive",
+                              "b2b_only",
+                              "not_orderable"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -160543,7 +160749,15 @@
                     "verifyWindowH": 0,
                     "minQty": 1,
                     "maxQty": 1,
-                    "qtyOptions": []
+                    "qtyOptions": [],
+                    "attention": [],
+                    "retailPrice": "25.9900",
+                    "retailPriceSource": "manual",
+                    "retailPriceRule": null,
+                    "retailPriceWaiting": false,
+                    "listingId": 5,
+                    "isListed": true,
+                    "shopBlocked": null
                   }
                 ]
               }
@@ -161206,6 +161420,125 @@
                         "maximum": 100000
                       },
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
+                    },
+                    "attention": {
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "no_supplier",
+                          "below_floor",
+                          "price_proposal",
+                          "publish_failed"
+                        ]
+                      }
+                    },
+                    "retailPrice": {
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,14}\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceSource": {
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rule",
+                            "manual"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceRule": {
+                      "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "Numeric record id.",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceWaiting": {
+                      "description": "A proposed change of the following shop price waits for staff. Left out without `pricing:read`.",
+                      "type": "boolean"
+                    },
+                    "listingId": {
+                      "description": "The shop page (listing) of the service, the id the listing routes take; `null` when it has none. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "isListed": {
+                      "description": "The service has a shop page that is switched on (false with none, or one switched off). Left out without `storefront:read`.",
+                      "type": "boolean"
+                    },
+                    "shopBlocked": {
+                      "description": "Why the service cannot go on the shop, in the order the publish rule judges it: `service_disabled`, `category_inactive`, `b2b_only` (the category is not offered to the retail group), `not_orderable` (a file service); `null` when nothing blocks it. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "service_disabled",
+                            "category_inactive",
+                            "b2b_only",
+                            "not_orderable"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -161253,17 +161586,24 @@
                   "marginPct": "100.0000",
                   "belowFloor": false,
                   "slaMinutes": 1440,
-                  "supplier": {
-                    "id": 3,
-                    "name": "DHRU Pro"
-                  },
+                  "supplier": null,
                   "fallbackSupplier": null,
                   "allowCancel": false,
                   "allowVerify": false,
                   "verifyWindowH": 0,
                   "minQty": 1,
                   "maxQty": 1,
-                  "qtyOptions": []
+                  "qtyOptions": [],
+                  "attention": [
+                    "no_supplier"
+                  ],
+                  "retailPrice": null,
+                  "retailPriceSource": null,
+                  "retailPriceRule": null,
+                  "retailPriceWaiting": false,
+                  "listingId": null,
+                  "isListed": false,
+                  "shopBlocked": null
                 }
               }
             },
@@ -162579,7 +162919,7 @@
     },
     "/admin/services/{id}": {
       "get": {
-        "description": "The list row plus the complete custom `fields` (in order), the option lists in `options` and the `groupPrices`. The replace-all dialogs start from this read.",
+        "description": "The list row plus the complete custom `fields` (in order), the option lists in `options` and the `groupPrices`, and, with `storefront:read`, `publishFailure` (decision 060). The replace-all dialogs start from this read.",
         "operationId": "getAdminServicesById",
         "parameters": [
           {
@@ -162837,6 +163177,125 @@
                       },
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     },
+                    "attention": {
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "no_supplier",
+                          "below_floor",
+                          "price_proposal",
+                          "publish_failed"
+                        ]
+                      }
+                    },
+                    "retailPrice": {
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,14}\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceSource": {
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rule",
+                            "manual"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceRule": {
+                      "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "Numeric record id.",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceWaiting": {
+                      "description": "A proposed change of the following shop price waits for staff. Left out without `pricing:read`.",
+                      "type": "boolean"
+                    },
+                    "listingId": {
+                      "description": "The shop page (listing) of the service, the id the listing routes take; `null` when it has none. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "isListed": {
+                      "description": "The service has a shop page that is switched on (false with none, or one switched off). Left out without `storefront:read`.",
+                      "type": "boolean"
+                    },
+                    "shopBlocked": {
+                      "description": "Why the service cannot go on the shop, in the order the publish rule judges it: `service_disabled`, `category_inactive`, `b2b_only` (the category is not offered to the retail group), `not_orderable` (a file service); `null` when nothing blocks it. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "service_disabled",
+                            "category_inactive",
+                            "b2b_only",
+                            "not_orderable"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "fields": {
                       "type": "array",
                       "items": {
@@ -162951,6 +163410,56 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "publishFailure": {
+                      "description": "Why the last publish attempt was refused, while `attention` holds `publish_failed` (decision 060); `null` otherwise. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "runId": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "The publish run of the refused attempt (`GET /admin/publish-runs/:id`).",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "description": "The result reason of the attempt, as the run's items name it: a blocking reason such as `below_floor` or `price_missing`, `cost_moved`, `service_gone` or `failed`."
+                            },
+                            "detail": {
+                              "description": "The words staff read about the refusal; `null` when none.",
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "at": {
+                              "type": "string",
+                              "format": "date-time",
+                              "x-gsm-alias": "IsoDateTime",
+                              "description": "When the attempt finished.",
+                              "examples": [
+                                "2026-03-01T09:30:00.000Z"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runId",
+                            "reason",
+                            "detail",
+                            "at"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -163012,6 +163521,14 @@
                   "minQty": 1,
                   "maxQty": 1,
                   "qtyOptions": [],
+                  "attention": [],
+                  "retailPrice": "25.9900",
+                  "retailPriceSource": "manual",
+                  "retailPriceRule": null,
+                  "retailPriceWaiting": false,
+                  "listingId": 5,
+                  "isListed": true,
+                  "shopBlocked": null,
                   "fields": [
                     {
                       "key": "imei",
@@ -163036,7 +163553,8 @@
                       "groupId": 3,
                       "price": "15.9000"
                     }
-                  ]
+                  ],
+                  "publishFailure": null
                 }
               }
             },
@@ -163721,6 +164239,125 @@
                         "maximum": 100000
                       },
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
+                    },
+                    "attention": {
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "no_supplier",
+                          "below_floor",
+                          "price_proposal",
+                          "publish_failed"
+                        ]
+                      }
+                    },
+                    "retailPrice": {
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^\\d{1,14}\\.\\d{4}$",
+                          "x-gsm-alias": "Money",
+                          "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                          "examples": [
+                            "12.4900"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceSource": {
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rule",
+                            "manual"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceRule": {
+                      "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "Numeric record id.",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "retailPriceWaiting": {
+                      "description": "A proposed change of the following shop price waits for staff. Left out without `pricing:read`.",
+                      "type": "boolean"
+                    },
+                    "listingId": {
+                      "description": "The shop page (listing) of the service, the id the listing routes take; `null` when it has none. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "isListed": {
+                      "description": "The service has a shop page that is switched on (false with none, or one switched off). Left out without `storefront:read`.",
+                      "type": "boolean"
+                    },
+                    "shopBlocked": {
+                      "description": "Why the service cannot go on the shop, in the order the publish rule judges it: `service_disabled`, `category_inactive`, `b2b_only` (the category is not offered to the retail group), `not_orderable` (a file service); `null` when nothing blocks it. Left out without `storefront:read`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "service_disabled",
+                            "category_inactive",
+                            "b2b_only",
+                            "not_orderable"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -163778,7 +164415,15 @@
                   "verifyWindowH": 0,
                   "minQty": 1,
                   "maxQty": 1,
-                  "qtyOptions": []
+                  "qtyOptions": [],
+                  "attention": [],
+                  "retailPrice": "25.9900",
+                  "retailPriceSource": "manual",
+                  "retailPriceRule": null,
+                  "retailPriceWaiting": false,
+                  "listingId": 5,
+                  "isListed": true,
+                  "shopBlocked": null
                 }
               }
             },
@@ -166753,6 +167398,390 @@
       }
     },
     "/admin/services/{id}/supplier-links": {
+      "get": {
+        "description": "Every link of the service in priority order (then link id), as `PUT /admin/services/:id/supplier-links` answers it; `[]` when the service has no link. It lists switched-off links too: the row's `supplier` and `fallbackSupplier` and the filters `hasSupplier` and `supplierId` of `GET /admin/services` count active links only. An unknown or archived service is `404`.",
+        "operationId": "getAdminServicesByIdSupplierLinks",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Numeric record id.",
+            "schema": {
+              "x-gsm-alias": "Id",
+              "description": "Numeric record id.",
+              "type": "string",
+              "pattern": "^[1-9]\\d{0,15}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "priority": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "supplierId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "supplierName": {
+                        "type": "string"
+                      },
+                      "supplierServiceId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "supplierServiceName": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "priority",
+                      "supplierId",
+                      "supplierName",
+                      "supplierServiceId",
+                      "supplierServiceName"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "priority": 1,
+                    "supplierId": 2,
+                    "supplierName": "Gulf Server Hub",
+                    "supplierServiceId": 91,
+                    "supplierServiceName": "Chimera 1 month"
+                  },
+                  {
+                    "priority": 2,
+                    "supplierId": 3,
+                    "supplierName": "Rapid IMEI",
+                    "supplierServiceId": 140,
+                    "supplierServiceName": "Chimera 30 days"
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NOT_FOUND: The requested item was not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 404
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_FOUND"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "NOT_FOUND": {
+                    "summary": "The requested item was not found.",
+                    "value": {
+                      "type": "https://errors.gsm.example/not-found",
+                      "title": "The requested item was not found.",
+                      "status": 404,
+                      "code": "NOT_FOUND",
+                      "detail": "The requested item was not found.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Show the supplier chain of a service",
+        "tags": [
+          "suppliers"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/services/:id/supplier-links",
+        "x-gsm-permission": "catalog:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      },
       "put": {
         "description": "The whole chain in one call: `links` in priority order (priorities are renumbered 1..n from the order given, then by the priority sent); `[]` unlinks the service, and its new orders wait for manual dispatch. A link that stays keeps its field map and its switch. The service's effective cost is recomputed from the first link an order can use (switched on, its supplier active and still listing the service) and the catalog price version moves. An unknown or repeated supplier service is `422` on `links`.",
         "operationId": "putAdminServicesByIdSupplierLinks",
@@ -179561,7 +180590,7 @@
     },
     "/admin/suppliers/{id}/import": {
       "post": {
-        "description": "A new item becomes a service: type from the supplier's type (`imei`, `server`, `remote` or `file`, else `422` on `supplierServiceIds` naming it and nothing is imported), the category found or created from the supplier's group (`Imported` when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price untouched; an archived service counts as unchanged). Ids of another supplier are ignored.",
+        "description": "A new item becomes a service: type from the supplier's type (`imei`, `server`, `remote` or `file`, else `422` on `supplierServiceIds` naming it and nothing is imported), the category found or created from the supplier's group (`Imported` when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the services this call created, in creation order (decision 060).",
         "operationId": "postAdminSuppliersByIdImport",
         "parameters": [
           {
@@ -179639,6 +180668,21 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "createdServiceIds": {
+                      "description": "The services this call created (not the updated or unchanged ones), in creation order, at most 500: what a publish run of the new services takes (decision 060). Always sent; optional in the schema only until the console reads it.",
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      }
                     }
                   },
                   "required": [
@@ -179651,7 +180695,10 @@
                 "example": {
                   "created": 1,
                   "updated": 1,
-                  "unchanged": 0
+                  "unchanged": 0,
+                  "createdServiceIds": [
+                    212
+                  ]
                 }
               }
             },

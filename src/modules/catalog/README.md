@@ -36,6 +36,18 @@ feature 6.
   agreement (composite FK), maps a code clash to `409 CODE_TAKEN`; a `basePrice` or `minProfit` change also needs `pricing:update` (decision 046); delete archives (`archived_at`, status `disabled`, service
   pricing rules off) when anything refers to the service and hard deletes otherwise. Archived services are hidden from every
   read here and their code is free again.
+- **The Catalog page's reads** (decision 060; `application/service-read-access.ts`, `domain/service-attention.ts`,
+  `infra/service-attention.sql.ts`): every answer of the list, show, create and change routes also carries `attention` (the
+  reasons `no_supplier`, `below_floor`, `price_proposal`, `publish_failed`, enabled services only), the shop price
+  `retailPrice` with `retailPriceSource`, and, by permission, `retailPriceRule` and `retailPriceWaiting` (`pricing:read`) and
+  `listingId`, `isListed` and `shopBlocked` (`storefront:read`); the detail adds `publishFailure` (`storefront:read`). A key the
+  caller may not read is left out, and a reason it may not read is not in `attention` nor in `needsAttention`. `serviceReadAccess`
+  is the one rule for the four routes. The list filters `needsAttention`, `hasSupplier`, `supplierId` (the primary supplier),
+  `isListed` and `notOnShop` (the last two `403` without `storefront:read`, before any query) and sorts on `retailPrice`. Each
+  reason, the shop block and "not on the shop" is one SQL expression in `service-attention.sql.ts`, used by the filters, the count
+  and the flags (their own select per page, not the page query, which the bulk price change shares); the parts over supplier and
+  storefront tables are built in `foreign-reads.repository.ts`. `shopBlocked` repeats the first checks of the storefront's publish
+  rule, and a test compares the two over every combination.
 - **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
   the later duplicate's dotted path. A field's `regex` follows the supported form of decision 051 (`src/common/field-pattern.ts`,
   `fieldPatternProblem`: literals, classes, the escapes `\d \w \s` and their capitals, groups that neither repeat nor nest, counts up to
@@ -220,9 +232,11 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   figure of now).
 
 Known deviation (tech debt): `infra/foreign-reads.repository.ts` reads supplier links, `orders`, `service_listings`,
-`checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export no service yet (the
-supplier chain of a service row and the archive-or-delete decision); replace its bodies with their public services as they
-appear (orders 5, suppliers 6, storefront 14a and 15, customers, risk 18). Nothing outside that file knows.
+`listing_publish_items`, `checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export
+no service yet (the supplier chain of a service row, the archive-or-delete decision and the Catalog page's facts of decision 060;
+the storefront imports the catalog, so the catalog cannot call it, decision 032); replace its bodies with their public services as
+they appear (orders 5, suppliers 6, storefront 14a and 15, customers, risk 18). Nothing outside that file and the fragments it hands
+to `infra/service-attention.sql.ts` knows.
 
 ## Public API (`index.ts`)
 
@@ -255,7 +269,7 @@ storefront floor `storefrontFloor(base, floor)` and the retail price), `lockLive
 serviceId, price, { origin, quote })` (the one writer of the retail row of `service_group_prices` outside the group-price route; the caller moves the
 price version after its commit). `PATCH /admin/service-listings/:id` uses it, so the listing page and the group-price page hold
 the retail price to the same floor. Feature 31 (decision 040) adds the origin (`manual` or `rule`), the floor refusal
-`RetailFloorError`, `afterGroupReplace`, `sources`, and exports `RetailPricing`, `priceWithRules`, the pure `evaluateRetailRule`,
+`RetailFloorError`, `afterGroupReplace`, `sources` (whose `RetailPriceSource` also carries the `price` since decision 060), and exports `RetailPricing`, `priceWithRules`, the pure `evaluateRetailRule`,
 `pickRetailRule`, `ruleLabel`, `costMoved`, `DEFAULT_AUTO_FOLLOW_PERCENT` and the lists `RETAIL_RULE_SCOPES` and `RETAIL_ROUNDINGS`.
 The follow pass adds `RetailPriceFollow` with `RetailPriceFollowModule` and its processor (worker only), `RetailFollowScheduler` (in
 `CatalogPricesModule`), the job and scheduler names, and the lists `RETAIL_CHANGE_KINDS`, `RETAIL_CHANGE_REASONS` and

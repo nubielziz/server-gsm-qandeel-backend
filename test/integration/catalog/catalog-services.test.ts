@@ -97,6 +97,11 @@ describe('GET /admin/services', () => {
       minQty: 1,
       maxQty: 1,
       qtyOptions: [],
+      // Decision 060: an automatic service with no supplier link needs attention; no shop price. The caller holds neither
+      // storefront:read nor pricing:read, so the shop page facts, the rule and the waiting proposal are left out.
+      attention: ['no_supplier'],
+      retailPrice: null,
+      retailPriceSource: null,
     });
     // No own minimum profit: max(round(6 % of 19.80, 2), 0.02) = 1.19, so the floor is 20.99 and the price 19.50 is under it.
     expect(res.body[1]).toMatchObject({

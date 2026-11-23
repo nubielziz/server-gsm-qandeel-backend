@@ -20,6 +20,9 @@ import {
   serviceOptions,
   services,
 } from '../db/schema';
+import type { AttentionReason } from '../domain/service-attention';
+import { hasActiveSupplierLinkSql, isListedSql, primarySupplierIdSql } from './foreign-reads.repository';
+import { needsAttentionSql, notOnShopSql, retailPriceSql } from './service-attention.sql';
 import { belowFloorSql, floorPriceSql, marginPctSql, minProfitSql } from './service-figures.sql';
 
 /** A service with its category name and the figures worked out in SQL. */
@@ -33,8 +36,15 @@ export interface ServiceRow {
   readonly belowFloor: boolean;
 }
 
-/** The wire fields of the list and the columns they map to; `belowFloor` depends on the moment (rule windows). */
-const columnsAt = (at: Date): ListColumns => ({
+/** The sorts of `GET /admin/services`. */
+export type ServiceListSort = 'name' | 'type' | 'cost' | 'basePrice' | 'retailPrice' | 'id';
+
+/**
+ * The wire fields of the list and the columns they map to; `belowFloor` and `needsAttention` depend on the moment (rule windows),
+ * `needsAttention` also on the reasons the caller may see (decision 060). Every declared filter has a column, whoever asks: the
+ * use case refuses a filter the caller may not use before this map is read.
+ */
+const columnsAt = (at: Date, reasons: readonly AttentionReason[]): ListColumns => ({
   id: services.id,
   name: services.name,
   type: services.type,
@@ -46,6 +56,12 @@ const columnsAt = (at: Date): ListColumns => ({
   code: services.code,
   'category.name': serviceCategories.name,
   belowFloor: belowFloorSql(at),
+  needsAttention: needsAttentionSql(reasons, at),
+  hasSupplier: hasActiveSupplierLinkSql,
+  supplierId: primarySupplierIdSql,
+  isListed: isListedSql,
+  notOnShop: notOnShopSql,
+  retailPrice: retailPriceSql,
 });
 
 const live = isNull(services.archivedAt);
@@ -70,14 +86,16 @@ function selectRows(db: DbExecutor, at: Date) {
  * @param db the database or a transaction
  * @param query the parsed list request (filters, search, sort, range)
  * @param at the clock's now: the pricing rules in force at it set the minimum profit
+ * @param reasons the attention reasons the caller may see: `needsAttention` is their union (decision 060)
  * @returns the page of services with their figures, and the exact total
  */
 export async function listServiceRows(
   db: DbExecutor,
-  query: ParsedListQuery<'name' | 'type' | 'cost' | 'basePrice' | 'id'>,
+  query: ParsedListQuery<ServiceListSort>,
   at: Date,
+  reasons: readonly AttentionReason[],
 ): Promise<{ rows: ServiceRow[]; total: number }> {
-  const columns = columnsAt(at);
+  const columns = columnsAt(at, reasons);
   const where = listWhere(query, columns, live);
   const [rows, [count]] = await Promise.all([
     selectRows(db, at)

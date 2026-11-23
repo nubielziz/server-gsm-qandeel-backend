@@ -63,6 +63,8 @@ export interface RetailWrite {
 
 /** Whether a service's retail price is typed or follows a rule, and which rule. */
 export interface RetailPriceSource {
+  /** The retail price (net USD before VAT), or `null` when the service has none (the catalog row shows it, decision 060). */
+  readonly price: Money | null;
   /** `rule` when the price follows a rule, `manual` when a person typed it, `null` when the service has no retail price. */
   readonly source: 'rule' | 'manual' | null;
   /** The rule a following price came from (also a rule deleted since: its name stays), or `null`. */
@@ -296,7 +298,8 @@ export class RetailPrices {
    *
    * Why: plan 31 section 5.5: the listing rows carry `retailPriceSource`, `retailPriceRule` and `retailPriceWaiting`, read with
    * a fixed number of queries for a page. A follow row without a retail row (it cannot last: every remover of the row deletes
-   * it) reads as no price. `waiting` says a proposal for the price waits for staff.
+   * it) reads as no price. `waiting` says a proposal for the price waits for staff. The catalog's service rows also read `price`
+   * (decision 060).
    *
    * @param db the database or the caller's transaction
    * @param serviceIds the services of a page
@@ -316,12 +319,14 @@ export class RetailPrices {
     const waiting = await waitingProposalsOf(db, ids);
     for (const id of ids) {
       const follow = follows.get(id);
-      if (!prices.has(id)) {
-        out.set(id, { source: null, rule: null, waiting: false });
+      const price = prices.get(id);
+      if (price === undefined) {
+        out.set(id, { price: null, source: null, rule: null, waiting: false });
         continue;
       }
       const row = follow?.ruleId == null ? undefined : rules.get(follow.ruleId);
       out.set(id, {
+        price,
         source: follow ? 'rule' : 'manual',
         rule: row ? { id: row.rule.id, label: retailRuleOf(row).label } : null,
         waiting: waiting.has(id),

@@ -1,14 +1,19 @@
 // Read-only lookups into tables other modules own, kept in this one file: the supplier chain of a service, whether anything
-// refers to a service, the title a service is published under, and the merchants the price routes name. The catalog screens show who supplies a service, deleting a
-// service archives it when orders, supplier links, listings or other records refer to it (RESOLUTIONS catalog-3), and a client
-// price or a merchant's catalog needs the merchant's name and group.
+// refers to a service, the title a service is published under, the merchants the price routes name, and the supplier, shop page and
+// publish facts of the Catalog page (decision 060). The catalog screens show who supplies a service, deleting a
+// service archives it when orders, supplier links, listings or other records refer to it (RESOLUTIONS catalog-3), a client
+// price or a merchant's catalog needs the merchant's name and group, and the catalog list filters and flags services by their
+// supplier, their shop page and their last publish attempt.
 //
 // DEVIATION to resolve when those features land: decision 016 wants these reads through the owning module's public service.
 // Orders (5), suppliers (6), storefront (14a/15), customers, risk (18) and support export nothing yet, so this file reads
-// `service_supplier_links`, `supplier_services`, `suppliers`, `orders`, `service_listings`, `checkout_sessions`,
-// `help_articles` and `imei_checks`, and identity's `clients`, with plain selects, like money's foreign-directory repository.
+// `service_supplier_links`, `supplier_services`, `suppliers`, `orders`, `service_listings`, `listing_publish_items`,
+// `checkout_sessions`, `help_articles` and `imei_checks`, and identity's `clients`, with plain selects, like money's
+// foreign-directory repository. Storefront imports the catalog, so the catalog cannot call it (decision 032): the SQL fragments of
+// decision 060 over `service_supplier_links`, `service_listings` and `listing_publish_items` are built here and composed in
+// service-attention.sql.ts.
 // Replace the bodies with calls to their services; nothing outside this file knows.
-import { eq, inArray, sql } from 'drizzle-orm';
+import { type SQL, eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 
 /** An id and a name, as a service row joins a supplier. */
@@ -201,4 +206,147 @@ export async function recentOrderPrices(
     groupId: Number(row.group_id),
     lastPrice: row.unit_price,
   }));
+}
+
+// --- The Catalog page's fragments and reads (decision 060) ------------------------------------------------------------------------
+// Each fragment is a boolean or scalar SQL expression over the outer `services` row, written as `"services"."id"` in full (in a
+// select from one table Drizzle prints a selected column without its table, which would bind `id` to the inner table), in
+// parentheses and NULL-free where it is a condition, because a boolean list filter compiles to `(fragment) = false`.
+
+/**
+ * The service has an active supplier link: the links the row's `supplier` and `fallbackSupplier` read.
+ *
+ * Why: decision 060: the filter `hasSupplier` and the reason `no_supplier` (an automatic service with none).
+ */
+export const hasActiveSupplierLinkSql: SQL<boolean> = sql`(exists (
+  select 1 from ${s.serviceSupplierLinks} link where link.service_id = "services"."id" and link.is_active))`;
+
+/**
+ * The supplier of the service's first active link by priority, then link id (the row's `supplier`), or NULL.
+ *
+ * Why: decision 060: the filter `supplierId` means the primary supplier, the one the Supplier cell shows (eq only: NULL never
+ * matches, so a service without one is never found by an id).
+ */
+export const primarySupplierIdSql: SQL<number | null> = sql`(
+  select remote.supplier_id
+  from ${s.serviceSupplierLinks} link
+  join ${s.supplierServices} remote on remote.id = link.supplier_service_id
+  where link.service_id = "services"."id" and link.is_active
+  order by link.priority, link.id
+  limit 1)`;
+
+/**
+ * The service has a listing, switched on or off.
+ *
+ * Why: decision 060: a publish run blocks any service with a listing (`already_listed`), so a refused attempt counts as a failure only
+ * while the service has none; a listing switched off by hand is a person's choice, not a failure.
+ */
+export const hasListingSql: SQL<boolean> = sql`(exists (
+  select 1 from ${s.serviceListings} l where l.service_id = "services"."id"))`;
+
+/**
+ * The service has a listing that is switched on (the listing routes' `isListed`).
+ *
+ * Why: decision 060: the filter and the row field `isListed`, and the "not on the shop" view.
+ */
+export const isListedSql: SQL<boolean> = sql`(exists (
+  select 1 from ${s.serviceListings} l where l.service_id = "services"."id" and l.is_listed))`;
+
+/**
+ * The order of a service's publish rows with a result, newest attempt first: `finished_at` (both writers set it; `updated_at` guards a
+ * row without it), then the row id. The fragment and the detail read share it, so they name the same row.
+ */
+const LATEST_RESULT_ORDER = sql`coalesce(i.finished_at, i.updated_at) desc, i.id desc`;
+
+/**
+ * The service's latest publish row with a result was `refused`.
+ *
+ * Why: decision 060: one part of the reason `publish_failed`. A later `published` or `skipped` row clears it; rows never tried
+ * have no result and do not count.
+ */
+export const latestPublishRefusedSql: SQL<boolean> = sql`(coalesce((
+  select i.result from ${s.listingPublishItems} i
+  where i.service_id = "services"."id" and i.result is not null
+  order by ${LATEST_RESULT_ORDER}
+  limit 1) = 'refused', false))`;
+
+/** The listing of a service, as the catalog row shows it. */
+export interface ListingRef {
+  readonly id: number;
+  readonly isListed: boolean;
+}
+
+/**
+ * Reads the listing of several services in one query.
+ *
+ * Why: decision 060: the row's `listingId` (the listing routes are keyed by it) and `isListed`. A service has at most one listing.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services of a page
+ * @returns the listing by service id; a service without one is absent
+ */
+export async function listingsOf(db: DbExecutor, serviceIds: readonly number[]): Promise<Map<number, ListingRef>> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.serviceListings.id, serviceId: s.serviceListings.serviceId, isListed: s.serviceListings.isListed })
+    .from(s.serviceListings)
+    .where(inArray(s.serviceListings.serviceId, ids));
+  return new Map(rows.map((row) => [row.serviceId, { id: row.id, isListed: row.isListed }]));
+}
+
+/** The latest publish attempt of a service that has a result. */
+export interface PublishAttempt {
+  readonly runId: number;
+  readonly result: string;
+  /** One of the storefront's publish result reasons (`failed` when the row holds none). */
+  readonly reason: string;
+  readonly detail: string | null;
+  /** When the attempt finished (`updated_at` for a row without `finished_at`). */
+  readonly at: Date;
+}
+
+/**
+ * Reads the latest publish attempt with a result of several services, in the order of {@link latestPublishRefusedSql}.
+ *
+ * Why: decision 060: the detail's `publishFailure` says why the last attempt was refused and in which run, so staff can open it.
+ *
+ * @param db the database or a transaction
+ * @param serviceIds the services
+ * @returns the latest attempt by service id; a service never tried is absent
+ */
+export async function latestPublishAttemptsOf(
+  db: DbExecutor,
+  serviceIds: readonly number[],
+): Promise<Map<number, PublishAttempt>> {
+  const ids = [...new Set(serviceIds)];
+  if (ids.length === 0) return new Map();
+  const result = await db.execute<{
+    service_id: string;
+    run_id: string;
+    result: string;
+    reason: string | null;
+    detail: string | null;
+    at: Date | string;
+  }>(sql`
+    select distinct on (i.service_id) i.service_id, i.run_id, i.result, i.result_reason as reason, i.result_detail as detail,
+           coalesce(i.finished_at, i.updated_at) as at
+    from ${s.listingPublishItems} i
+    where i.result is not null and i.service_id in (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )})
+    order by i.service_id, ${LATEST_RESULT_ORDER}`);
+  return new Map(
+    result.rows.map((row) => [
+      Number(row.service_id),
+      {
+        runId: Number(row.run_id),
+        result: row.result,
+        reason: row.reason ?? 'failed',
+        detail: row.detail,
+        at: row.at instanceof Date ? row.at : new Date(row.at),
+      },
+    ]),
+  );
 }

@@ -800,7 +800,7 @@ describe("the supplier's services and the import", () => {
       supplierServiceIds: [remoteByRemoteId.get('a2')!, remoteByRemoteId.get('a4')!],
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ created: 2, updated: 0, unchanged: 0 });
+    expect(res.body).toEqual({ created: 2, updated: 0, unchanged: 0, createdServiceIds: expect.any(Array) });
 
     const [server] = await world.db
       .select()
@@ -835,6 +835,8 @@ describe("the supplier's services and the import", () => {
     expect(imeiCategory).toMatchObject({ name: 'Carrier unlock', type: 'imei' });
     // 'soon' cannot be read: the setting's default of 1440 minutes.
     expect(imei).toMatchObject({ slaMinutes: 1440, basePrice: '8.4800' });
+    // Decision 060: the two services this call created, in creation order (ids grow with each insert).
+    expect(res.body.createdServiceIds).toEqual([server!.id, imei!.id].sort((a, b) => a - b));
     const [link] = await world.db
       .select()
       .from(s.serviceSupplierLinks)
@@ -849,7 +851,7 @@ describe("the supplier's services and the import", () => {
     expect(
       (await staff.post(`/admin/suppliers/${supplierId}/import`, { supplierServiceIds: [remoteByRemoteId.get('a2')!] }))
         .body,
-    ).toEqual({ created: 0, updated: 0, unchanged: 1 });
+    ).toEqual({ created: 0, updated: 0, unchanged: 1, createdServiceIds: [] });
   });
 
   it('takes the next free code on a collision', async () => {
@@ -880,7 +882,7 @@ describe("the supplier's services and the import", () => {
     const res = await staff.post(`/admin/suppliers/${supplierId}/import`, {
       supplierServiceIds: [remoteByRemoteId.get('a1')!],
     });
-    expect(res.body).toEqual({ created: 0, updated: 1, unchanged: 0 });
+    expect(res.body).toEqual({ created: 0, updated: 1, unchanged: 0, createdServiceIds: [] });
     expect((await world.db.select().from(s.services).where(eq(s.services.id, linked!.id)))[0]).toMatchObject({
       cost: '10.0000',
       basePrice: '12.0000',
@@ -893,10 +895,51 @@ describe("the supplier's services and the import", () => {
     expect(
       (await staff.post(`/admin/suppliers/${supplierId}/import`, { supplierServiceIds: [remoteByRemoteId.get('a1')!] }))
         .body,
-    ).toEqual({ created: 0, updated: 0, unchanged: 1 });
+    ).toEqual({ created: 0, updated: 0, unchanged: 1, createdServiceIds: [] });
     expect((await world.db.select().from(s.services).where(eq(s.services.id, linked!.id)))[0]).toMatchObject({
       cost: '9.0000',
     });
+  });
+
+  it('answers createdServiceIds: the services this call created, in creation order, never the updated or unchanged ones (decision 060)', async () => {
+    fake.services = [
+      {
+        id: 'a1',
+        group: 'Carrier unlock',
+        type: 'IMEI',
+        name: 'Telstra Australia',
+        credit: '10.0000',
+        time: '1-2 hours',
+      },
+      { id: 'a2', group: '', type: 'SERVER', name: 'Server pack', credit: '6.0000', time: 'Instant' },
+      { id: 'a4', group: 'Carrier unlock', type: 'IMEI', name: 'Rogers Canada', credit: '8.0000', time: 'soon' },
+    ];
+    const other = (await createSupplier({ name: 'Second import source' })).id;
+    await staff.post(`/admin/suppliers/${other}/sync`);
+    const rows = await world.db.select().from(s.supplierServices).where(eq(s.supplierServices.supplierId, other));
+    const remote = new Map(rows.map((row) => [row.remoteId, row.id]));
+    const serviceOf = async (remoteId: string) =>
+      (
+        await world.db
+          .select({ serviceId: s.serviceSupplierLinks.serviceId })
+          .from(s.serviceSupplierLinks)
+          .where(eq(s.serviceSupplierLinks.supplierServiceId, remote.get(remoteId)!))
+      )[0]!.serviceId;
+
+    const first = await staff.post(`/admin/suppliers/${other}/import`, {
+      supplierServiceIds: [remote.get('a4')!, remote.get('a2')!],
+    });
+    expect(first.status).toBe(200);
+    const made = [await serviceOf('a2'), await serviceOf('a4')].sort((a, b) => a - b);
+    expect(first.body).toEqual({ created: 2, updated: 0, unchanged: 0, createdServiceIds: made });
+
+    // a1 is new, a2 matches now and a4's price moved at the supplier (synced again): only a1 is created by this call.
+    fake.services = fake.services.map((entry) => (entry.id === 'a4' ? { ...entry, credit: '9.0000' } : entry));
+    await staff.post(`/admin/suppliers/${other}/sync`);
+    const second = await staff.post(`/admin/suppliers/${other}/import`, {
+      supplierServiceIds: [remote.get('a1')!, remote.get('a2')!, remote.get('a4')!],
+    });
+    expect(second.body).toEqual({ created: 1, updated: 1, unchanged: 1, createdServiceIds: [await serviceOf('a1')] });
   });
 
   it('refuses the whole import when an item has a type that is not imei, server, remote or file (422 on supplierServiceIds)', async () => {
@@ -1001,7 +1044,14 @@ describe("the supplier's quantity rule (feature 25)", () => {
   });
 
   it('imports the range and the packs (smallest and largest derived), garbage as one per order, and counts them in the audit', async () => {
-    expect(await importIds('q1', 'q2', 'q3', 'q4')).toEqual({ created: 4, updated: 0, unchanged: 0 });
+    const imported = await importIds('q1', 'q2', 'q3', 'q4');
+    const created = await Promise.all(['q1', 'q2', 'q3', 'q4'].map(async (id) => (await serviceOf(id)).id));
+    expect(imported).toEqual({
+      created: 4,
+      updated: 0,
+      unchanged: 0,
+      createdServiceIds: created.sort((a, b) => a - b),
+    });
     expect(await serviceOf('q1')).toMatchObject({ minQty: 2, maxQty: 50, qtyOptions: [] });
     expect(await serviceOf('q2')).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
     expect(await serviceOf('q3')).toMatchObject({ minQty: 1, maxQty: 1, qtyOptions: [] });
@@ -1042,7 +1092,7 @@ describe("the supplier's quantity rule (feature 25)", () => {
     });
 
     // A second import updates the cost of q1 and nothing else.
-    expect(await importIds('q1', 'q2')).toEqual({ created: 0, updated: 1, unchanged: 1 });
+    expect(await importIds('q1', 'q2')).toEqual({ created: 0, updated: 1, unchanged: 1, createdServiceIds: [] });
     expect(await serviceOf('q1')).toMatchObject({ cost: '7.0000', minQty: 1, maxQty: 10, qtyOptions: [] });
     expect(await serviceOf('q2')).toMatchObject({ minQty: 5, maxQty: 25, qtyOptions: [5, 10, 25] });
     const audit = (await auditOfEntity('supplier', supplierId)).at(-1)!;
@@ -1166,6 +1216,65 @@ describe('PUT /admin/services/:id/supplier-links', () => {
     expect((await staff.put('/admin/services/999999/supplier-links', { links: [] })).status).toBe(404);
     const reader = await adminWith(t, ['catalog:read']);
     expect((await reader.put(`/admin/services/${serviceId}/supplier-links`, { links: [] })).status).toBe(403);
+  });
+});
+
+describe('GET /admin/services/:id/supplier-links (decision 060)', () => {
+  it('reads every link in priority order, switched-off ones too, as the PUT answers it', async () => {
+    const supplierA = await insertFakeSupplier(world.db, encryption, fake, { name: 'Chain Alpha' });
+    const supplierB = await insertFakeSupplier(world.db, encryption, fake, { name: 'Chain Beta' });
+    const serviceId = await insertService(world.db, world.auto.categoryId, { name: 'Chain target' });
+    const a = await linkService(world.db, serviceId, supplierA, { remoteId: 'c1', name: 'Alpha remote', priority: 2 });
+    const b = await linkService(world.db, serviceId, supplierB, {
+      remoteId: 'c2',
+      name: 'Beta remote',
+      priority: 1,
+      isActive: false,
+    });
+    const reader = await adminWith(t, ['catalog:read']);
+    const res = await reader.get(`/admin/services/${serviceId}/supplier-links`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      {
+        priority: 1,
+        supplierId: supplierB,
+        supplierName: 'Chain Beta',
+        supplierServiceId: b.supplierServiceId,
+        supplierServiceName: 'Beta remote',
+      },
+      {
+        priority: 2,
+        supplierId: supplierA,
+        supplierName: 'Chain Alpha',
+        supplierServiceId: a.supplierServiceId,
+        supplierServiceName: 'Alpha remote',
+      },
+    ]);
+    // After a replace, the read equals what the PUT answered.
+    const saved = await staff.put(`/admin/services/${serviceId}/supplier-links`, {
+      links: [{ supplierServiceId: a.supplierServiceId, priority: 1 }],
+    });
+    expect(saved.status).toBe(200);
+    expect((await reader.get(`/admin/services/${serviceId}/supplier-links`)).body).toEqual(saved.body);
+  });
+
+  it('answers [] for a service with no link, 404 for an unknown or archived one, and needs catalog:read', async () => {
+    const unlinked = await insertService(world.db, world.auto.categoryId, { name: 'Chain none' });
+    const archived = await insertService(world.db, world.auto.categoryId, {
+      name: 'Chain archived',
+      status: 'disabled',
+      archivedAt: new Date(),
+    });
+    const reader = await adminWith(t, ['catalog:read']);
+    const empty = await reader.get(`/admin/services/${unlinked}/supplier-links`);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual([]);
+    expect((await reader.get(`/admin/services/${archived}/supplier-links`)).status).toBe(404);
+    const unknown = await reader.get('/admin/services/999999/supplier-links');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.code).toBe('NOT_FOUND');
+    const outsider = await adminWith(t, ['suppliers:read']);
+    expect((await outsider.get(`/admin/services/${unlinked}/supplier-links`)).status).toBe(403);
   });
 });
 

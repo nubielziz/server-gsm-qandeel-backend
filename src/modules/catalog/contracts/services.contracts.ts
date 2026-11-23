@@ -1,9 +1,11 @@
 // Route contracts of the services (map domain B, routes /admin/services, stage 4): list, show, create, change, delete and
 // the replace-all custom fields and option lists. Shapes match the console's Service and ServiceDetail
-// (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14).
+// (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14). Decision 060 adds the Catalog page's
+// facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort.
 import { z } from 'zod';
-import { defineRoute, listQuery, zDecimal, zId, zIdParam, zMoney } from '../../../common/contract';
+import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
+import { ATTENTION_REASONS, SHOP_BLOCKS } from '../domain/service-attention';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
 import { NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
 
@@ -82,6 +84,66 @@ const ServiceRow = z.object({
     .array(z.number().int().min(1).max(MAX_QUANTITY))
     .max(MAX_QTY_OPTIONS)
     .describe('Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`.'),
+  attention: z
+    .array(z.enum(ATTENTION_REASONS))
+    .optional()
+    .describe(
+      'Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active ' +
+        'supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), ' +
+        '`publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have ' +
+        'reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without ' +
+        '`storefront:read`. Always sent; optional in the schema only until the console reads it.',
+    ),
+  retailPrice: zMoney
+    .nullable()
+    .optional()
+    .describe(
+      'The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema ' +
+        'only until the console reads it.',
+    ),
+  retailPriceSource: z
+    .enum(['rule', 'manual'])
+    .nullable()
+    .optional()
+    .describe(
+      '`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price ' +
+        '(decision 040). Always sent; optional in the schema only until the console reads it.',
+    ),
+  retailPriceRule: z
+    .object({ id: zId, label: z.string() })
+    .nullable()
+    .optional()
+    .describe(
+      'The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out ' +
+        'without `pricing:read`.',
+    ),
+  retailPriceWaiting: z
+    .boolean()
+    .optional()
+    .describe('A proposed change of the following shop price waits for staff. Left out without `pricing:read`.'),
+  listingId: zId
+    .nullable()
+    .optional()
+    .describe(
+      'The shop page (listing) of the service, the id the listing routes take; `null` when it has none. Left out without ' +
+        '`storefront:read`.',
+    ),
+  isListed: z
+    .boolean()
+    .optional()
+    .describe(
+      'The service has a shop page that is switched on (false with none, or one switched off). Left out without ' +
+        '`storefront:read`.',
+    ),
+  shopBlocked: z
+    .enum(SHOP_BLOCKS)
+    .nullable()
+    .optional()
+    .describe(
+      'Why the service cannot go on the shop, in the order the publish rule judges it: `service_disabled`, ' +
+        '`category_inactive`, `b2b_only` (the category is not offered to the retail group), `not_orderable` (a file ' +
+        'service); `null` when nothing blocks it. Left out without `storefront:read`.',
+    ),
 });
 
 /** One custom field of a service (Dhru `Requires.Custom`). */
@@ -107,6 +169,24 @@ const ServiceDetailRow = ServiceRow.extend({
   fields: z.array(FieldRow),
   options: z.array(OptionRow),
   groupPrices: z.array(z.object({ groupId: zId, price: zMoney })),
+  publishFailure: z
+    .object({
+      runId: zId.describe('The publish run of the refused attempt (`GET /admin/publish-runs/:id`).'),
+      reason: z
+        .string()
+        .describe(
+          "The result reason of the attempt, as the run's items name it: a blocking reason such as `below_floor` or " +
+            '`price_missing`, `cost_moved`, `service_gone` or `failed`.',
+        ),
+      detail: z.string().nullable().describe('The words staff read about the refusal; `null` when none.'),
+      at: zIsoDateTime.describe('When the attempt finished.'),
+    })
+    .nullable()
+    .optional()
+    .describe(
+      'Why the last publish attempt was refused, while `attention` holds `publish_failed` (decision 060); `null` ' +
+        'otherwise. Left out without `storefront:read`.',
+    ),
 });
 
 const SERVICE_EXAMPLE = {
@@ -134,6 +214,14 @@ const SERVICE_EXAMPLE = {
   minQty: 1,
   maxQty: 1,
   qtyOptions: [],
+  attention: [],
+  retailPrice: '25.9900',
+  retailPriceSource: 'manual',
+  retailPriceRule: null,
+  retailPriceWaiting: false,
+  listingId: 5,
+  isListed: true,
+  shopBlocked: null,
 } as const;
 const FIELD_EXAMPLE = {
   key: 'imei',
@@ -182,21 +270,31 @@ export const listServices = defineRoute({
   summary: 'List services',
   description:
     'Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the ' +
-    'effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`. Filters: `type`, `status`, ' +
-    '`categoryId`, `belowFloor`; they combine. `q` is a case-insensitive contains over name, code and category name. ' +
-    'Sorts: name (default), type, cost, basePrice.',
+    "effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of " +
+    'decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, ' +
+    '`needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` ' +
+    "(the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an " +
+    'enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and ' +
+    '`notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive ' +
+    'contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without ' +
+    'a shop price last).',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'catalog:read',
   query: listQuery({
-    sorts: ['name', 'type', 'cost', 'basePrice', 'id'],
+    sorts: ['name', 'type', 'cost', 'basePrice', 'retailPrice', 'id'],
     defaultSort: { field: 'name', order: 'asc' },
     filters: {
       type: { type: 'enum', values: SERVICE_TYPES, ops: ['eq', 'ne'] },
       status: { type: 'enum', values: ['active', 'disabled'], ops: ['eq', 'ne'] },
       categoryId: { type: 'id', ops: ['eq'] },
       belowFloor: { type: 'boolean' },
+      needsAttention: { type: 'boolean' },
+      hasSupplier: { type: 'boolean' },
+      supplierId: { type: 'id', ops: ['eq'] },
+      isListed: { type: 'boolean' },
+      notOnShop: { type: 'boolean' },
     },
     search: ['name', 'code', 'category.name'],
   }),
@@ -210,8 +308,8 @@ export const showService = defineRoute({
   key: 'GET /admin/services/:id',
   summary: 'Show a service',
   description:
-    'The list row plus the complete custom `fields` (in order), the option lists in `options` and the `groupPrices`. The ' +
-    'replace-all dialogs start from this read.',
+    'The list row plus the complete custom `fields` (in order), the option lists in `options` and the `groupPrices`, and, ' +
+    'with `storefront:read`, `publishFailure` (decision 060). The replace-all dialogs start from this read.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -225,6 +323,7 @@ export const showService = defineRoute({
       fields: [FIELD_EXAMPLE],
       options: [OPTION_EXAMPLE],
       groupPrices: [{ groupId: 3, price: '15.9000' }],
+      publishFailure: null,
     },
   },
 });
@@ -273,7 +372,19 @@ export const createService = defineRoute({
       slaMinutes: 1440,
       basePrice: '17.2800',
     },
-    response: { ...SERVICE_EXAMPLE, cost: '0.0000', marginPct: '100.0000', floorPrice: '0.0200', minProfit: '0.0200' },
+    response: {
+      ...SERVICE_EXAMPLE,
+      cost: '0.0000',
+      marginPct: '100.0000',
+      floorPrice: '0.0200',
+      minProfit: '0.0200',
+      supplier: null,
+      attention: ['no_supplier'],
+      retailPrice: null,
+      retailPriceSource: null,
+      listingId: null,
+      isListed: false,
+    },
   },
 });
 

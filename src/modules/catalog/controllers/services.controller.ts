@@ -39,37 +39,49 @@ export class ServicesController {
   /**
    * Lists services.
    *
+   * @param staff the signed-in staff member (decision 060: the shop facts and filters follow the caller's permissions)
    * @param query the parsed list request
    * @returns the rows and the total
    * @route GET /admin/services
    */
   @Route(listServices)
-  list(@Query() query: QueryOf<typeof listServices>): Promise<ResultOf<typeof listServices>> {
-    return this.services.list(query);
+  list(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Query() query: QueryOf<typeof listServices>,
+  ): Promise<ResultOf<typeof listServices>> {
+    return this.services.list(staff, query);
   }
 
   /**
    * Shows a service with its parts.
    *
+   * @param staff the signed-in staff member (decision 060: the shop facts follow the caller's permissions)
    * @param params the service id
    * @returns the service
    * @route GET /admin/services/:id
    */
   @Route(showService)
-  show(@Param() params: ParamsOf<typeof showService>): Promise<ResultOf<typeof showService>> {
-    return this.services.show(params.id);
+  show(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Param() params: ParamsOf<typeof showService>,
+  ): Promise<ResultOf<typeof showService>> {
+    return this.services.show(staff, params.id);
   }
 
   /**
    * Creates a service.
    *
+   * @param staff the signed-in staff member (decision 060: the shop facts of the answer follow the caller's permissions)
    * @param body the service fields
    * @returns the new service
    * @route POST /admin/services
    */
   @Route(createService)
-  create(@Body() body: BodyOf<typeof createService>): Promise<ResultOf<typeof createService>> {
-    return this.services.create(body);
+  create(
+    @CurrentStaff() staff: StaffPrincipal,
+    @Body() body: BodyOf<typeof createService>,
+  ): Promise<ResultOf<typeof createService>> {
+    return this.services.create(staff, body);
   }
 
   /**

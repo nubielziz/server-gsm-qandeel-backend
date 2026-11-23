@@ -1,8 +1,54 @@
-// Route contracts of the supplier chain of a service (PUT /admin/services/:id/supplier-links) and of the supplier call log
-// (/admin/supplier-api-logs), stage 6. Shapes match the console's `src/features/suppliers/types` (resolutions orders-suppliers-3).
+// Route contracts of the supplier chain of a service (PUT /admin/services/:id/supplier-links, and its read of decision 060) and of
+// the supplier call log (/admin/supplier-api-logs), stage 6. Shapes match the console's `src/features/suppliers/types`
+// (resolutions orders-suppliers-3).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zJsonObject } from '../../../common/contract';
 import { SUPPLIER_CALL_OUTCOMES } from '../db/schema';
+
+/** One step of a service's supplier chain: what the PUT answers and the GET reads. */
+const ChainStep = z.object({
+  priority: z.number().int(),
+  supplierId: zId,
+  supplierName: z.string(),
+  supplierServiceId: zId,
+  supplierServiceName: z.string(),
+});
+
+const CHAIN_EXAMPLE = [
+  {
+    priority: 1,
+    supplierId: 2,
+    supplierName: 'Gulf Server Hub',
+    supplierServiceId: 91,
+    supplierServiceName: 'Chimera 1 month',
+  },
+  {
+    priority: 2,
+    supplierId: 3,
+    supplierName: 'Rapid IMEI',
+    supplierServiceId: 140,
+    supplierServiceName: 'Chimera 30 days',
+  },
+] as const;
+
+/** `GET /admin/services/:id/supplier-links`: the supplier chain of one service (decision 060, a route beyond the map). */
+export const showServiceSupplierLinks = defineRoute({
+  key: 'GET /admin/services/:id/supplier-links',
+  summary: 'Show the supplier chain of a service',
+  description:
+    'Every link of the service in priority order (then link id), as `PUT /admin/services/:id/supplier-links` answers it; ' +
+    "`[]` when the service has no link. It lists switched-off links too: the row's `supplier` and `fallbackSupplier` and " +
+    'the filters `hasSupplier` and `supplierId` of `GET /admin/services` count active links only. An unknown or archived ' +
+    'service is `404`.',
+  tags: ['suppliers'],
+  surface: 'admin',
+  access: 'staff-permission',
+  permission: 'catalog:read',
+  params: z.object({ id: zIdParam }),
+  success: { status: 200, schema: z.array(ChainStep) },
+  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'],
+  examples: { response: CHAIN_EXAMPLE },
+});
 
 /** `PUT /admin/services/:id/supplier-links`. */
 export const replaceSupplierLinks = defineRoute({
@@ -29,18 +75,7 @@ export const replaceSupplierLinks = defineRoute({
       )
       .max(50, 'Use at most 50 links.'),
   }),
-  success: {
-    status: 200,
-    schema: z.array(
-      z.object({
-        priority: z.number().int(),
-        supplierId: zId,
-        supplierName: z.string(),
-        supplierServiceId: zId,
-        supplierServiceName: z.string(),
-      }),
-    ),
-  },
+  success: { status: 200, schema: z.array(ChainStep) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {
     request: {
@@ -49,22 +84,7 @@ export const replaceSupplierLinks = defineRoute({
         { supplierServiceId: 140, priority: 2 },
       ],
     },
-    response: [
-      {
-        priority: 1,
-        supplierId: 2,
-        supplierName: 'Gulf Server Hub',
-        supplierServiceId: 91,
-        supplierServiceName: 'Chimera 1 month',
-      },
-      {
-        priority: 2,
-        supplierId: 3,
-        supplierName: 'Rapid IMEI',
-        supplierServiceId: 140,
-        supplierServiceName: 'Chimera 30 days',
-      },
-    ],
+    response: CHAIN_EXAMPLE,
   },
 });
 

@@ -10,20 +10,20 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 392,
+    "rows": 393,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 500,
+    "endpoints": 501,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 118,
-      "endpoints": 118
+      "rows": 119,
+      "endpoints": 119
     },
     "frontendRoutes": 340,
     "bySurface": {
@@ -40,8 +40,8 @@
         "endpoints": 66
       },
       "admin": {
-        "rows": 233,
-        "endpoints": 341
+        "rows": 234,
+        "endpoints": 342
       },
       "hooks": {
         "rows": 3,
@@ -90,8 +90,8 @@
         "endpoints": 15
       },
       "suppliers": {
-        "rows": 16,
-        "endpoints": 21
+        "rows": 17,
+        "endpoints": 22
       },
       "health": {
         "rows": 25,
@@ -17348,6 +17348,43 @@
         "file": "scripts/map-additions/38.mjs",
         "spec": "B-TBD held-payment-close"
       }
+    },
+    {
+      "key": "GET /admin/services/:id/supplier-links",
+      "method": "GET",
+      "path": "/admin/services/:id/supplier-links",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "The supplier chain of a service, in priority order.",
+      "access": "staff-permission",
+      "permission": "catalog:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:read",
+      "stage": 46,
+      "tables": [
+        "service_supplier_links",
+        "supplier_services",
+        "suppliers",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/services/:id/supplier-links",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/services/:id/supplier-links"
+      },
+      "module": "suppliers",
+      "description": "The supplier chain of a service, in priority order.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/46.mjs",
+        "spec": "B-TBD service-supplier-chain"
+      },
+      "successStatus": 200
     }
   ]
 }

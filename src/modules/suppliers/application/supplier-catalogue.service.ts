@@ -1,5 +1,6 @@
 // SupplierCatalogueService: the use cases about a supplier's own services and how they meet our catalog (stage 6): list the synced
-// services, preview and run the import, and replace the supplier chain of a service (resolutions orders-suppliers-10, catalog-9, B24).
+// services, preview and run the import, and read and replace the supplier chain of a service (resolutions orders-suppliers-10,
+// catalog-9, B24; the read: decision 060).
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
@@ -44,6 +45,24 @@ export interface ImportPreviewItem {
   readonly qtyOptions: number[];
   /** A live linked service sells another rule than the supplier's (a `new` item and an archived link: false). */
   readonly quantityDiffers: boolean;
+}
+
+/** One step of a service's supplier chain, as the chain routes answer it. */
+export interface ChainStepView {
+  readonly priority: number;
+  readonly supplierId: number;
+  readonly supplierName: string;
+  readonly supplierServiceId: number;
+  readonly supplierServiceName: string;
+}
+
+/** What an import did: the counts, and the services this call created. */
+export interface ImportOutcome {
+  readonly created: number;
+  readonly updated: number;
+  readonly unchanged: number;
+  /** The ids of the services this call created, in creation order (at most 500: one per picked item). */
+  readonly createdServiceIds: number[];
 }
 
 /** A synced supplier service as the catalogue tab reads it. */
@@ -175,15 +194,13 @@ export class SupplierCatalogueService {
    *
    * @param supplierId the supplier
    * @param ids the picked supplier services
-   * @returns how many services were created, updated and left as they were; a new service starts with the supplier's quantity rule
-   *   (feature 25, B213), and the audit row `imported services from` also counts `createdWithQuantity`
+   * @returns how many services were created, updated and left as they were, and the ids of the created ones in creation order
+   *   (decision 060: the console prepares one publish run per call from them); a new service starts with the supplier's quantity
+   *   rule (feature 25, B213), and the audit row `imported services from` also counts `createdWithQuantity`
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `supplierServiceIds`: none belongs to this supplier, or a new item
    *   has a type that is not imei, server, remote or file; nothing is imported then)
    */
-  async import(
-    supplierId: number,
-    ids: readonly number[],
-  ): Promise<{ created: number; updated: number; unchanged: number }> {
+  async import(supplierId: number, ids: readonly number[]): Promise<ImportOutcome> {
     const defaultSla = await this.settings.integer(IMPORT_DEFAULT_SLA_KEY, DEFAULT_IMPORT_SLA_MINUTES, SLA_BOUNDS);
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
@@ -217,6 +234,7 @@ export class SupplierCatalogueService {
       let updated = 0;
       let unchanged = 0;
       const touched: number[] = [];
+      const createdServiceIds: number[] = [];
       for (const item of plan) {
         if (item.state === 'matching') {
           unchanged += 1;
@@ -230,6 +248,7 @@ export class SupplierCatalogueService {
           });
           if (made.withQuantity) createdWithQuantity += 1;
           touched.push(made.serviceId);
+          createdServiceIds.push(made.serviceId);
           created += 1;
         } else if (item.found!.archived) {
           unchanged += 1;
@@ -248,8 +267,26 @@ export class SupplierCatalogueService {
         entityLabel: supplier.name,
         after: { created, updated, unchanged, createdWithQuantity },
       });
-      return { created, updated, unchanged };
+      return { created, updated, unchanged, createdServiceIds };
     });
+  }
+
+  /**
+   * Reads the supplier chain of a live service.
+   *
+   * Why: decision 060: the catalog's service panel edits the chain of any service, also one no supplier links yet, so it reads the
+   * chain by service (the supplier detail lists only the services one supplier serves). Every link counts, switched on or off, in
+   * the order the PUT saves.
+   *
+   * @param serviceId the service
+   * @returns the chain in priority order (then link id); `[]` when the service has no link
+   * @throws {AppError} `NOT_FOUND` (404: unknown or archived)
+   */
+  async chainOf(serviceId: number): Promise<ChainStepView[]> {
+    const db = this.db.db;
+    if (!(await liveServiceInfo(db, serviceId))) throw new AppError('NOT_FOUND', { detail: 'No service has this id.' });
+    const chain = await chainsOf(db, [serviceId]);
+    return chain.map(({ serviceId: _service, ...step }) => step);
   }
 
   /**

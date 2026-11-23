@@ -581,7 +581,8 @@ export const importServices = defineRoute({
     "when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the " +
     "setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom " +
     "fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price " +
-    'untouched; an archived service counts as unchanged). Ids of another supplier are ignored.',
+    'untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the ' +
+    'services this call created, in creation order (decision 060).',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -590,8 +591,23 @@ export const importServices = defineRoute({
   body: ImportBody,
   success: {
     status: 200,
-    schema: z.object({ created: z.number().int(), updated: z.number().int(), unchanged: z.number().int() }),
+    schema: z.object({
+      created: z.number().int(),
+      updated: z.number().int(),
+      unchanged: z.number().int(),
+      createdServiceIds: z
+        .array(zId)
+        .max(500)
+        .optional()
+        .describe(
+          'The services this call created (not the updated or unchanged ones), in creation order, at most 500: what a publish ' +
+            'run of the new services takes (decision 060). Always sent; optional in the schema only until the console reads it.',
+        ),
+    }),
   },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { request: { supplierServiceIds: [91, 92] }, response: { created: 1, updated: 1, unchanged: 0 } },
+  examples: {
+    request: { supplierServiceIds: [91, 92] },
+    response: { created: 1, updated: 1, unchanged: 0, createdServiceIds: [212] },
+  },
 });

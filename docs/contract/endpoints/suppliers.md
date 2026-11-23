@@ -28,6 +28,7 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 | `GET /admin/suppliers/:id/service-groups` | admin | staff-permission `suppliers:read` | 26 | `listServiceGroups` |
 | `POST /admin/suppliers/:id/quick-add` | admin | staff-permission `catalog:create` | 26 | `startQuickAdd` |
 | `GET /admin/suppliers/:id/quick-add/:runId` | admin | staff-permission `suppliers:read` | 26 | `getQuickAddRun` |
+| `GET /admin/services/:id/supplier-links` | admin | staff-permission `catalog:read` | 46 |  |
 
 ## GET /admin/suppliers
 
@@ -190,4 +191,9 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 
 - **Map addition** (B214, `scripts/map-additions/26.mjs`): The state and progress of a quick add. (حالة الإضافة السريعة وتقدّمها) · staff-permission `suppliers:read` · stage 26 · tables supplier_import_runs · success 200
 - **Frontend**: `getQuickAddRun` (src/features/suppliers/api/quickAdd.ts:38) · params `id: number`, `runId: number` · returns `QuickAddRun`
+
+## GET /admin/services/:id/supplier-links
+
+- **Map addition** (B-TBD service-supplier-chain, `scripts/map-additions/46.mjs`): The supplier chain of a service, in priority order. · staff-permission `catalog:read` · stage 46 · tables service_supplier_links, supplier_services, suppliers, services · success 200
+- **Frontend**: none.
 

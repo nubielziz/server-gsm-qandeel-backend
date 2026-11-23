@@ -63,7 +63,7 @@ Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `sup
 
 ## Routes
 
-19 routes are built (the 13 below, the three quick add routes of feature 26 and the three order routes). Source: `docs/slices/suppliers.json` (generated from the map; `bun run routes:build`). Contracts are under `contracts/`.
+20 routes are built (the 13 below, the three quick add routes of feature 26, the read of a service's supplier chain of feature 46 and the three order routes). Source: `docs/slices/suppliers.json` (generated from the map; `bun run routes:build`). Contracts are under `contracts/`.
 
 ### Admin console
 
@@ -78,10 +78,11 @@ Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `sup
 | `POST /admin/suppliers/:id/sync` | staff-permission · `suppliers:update` | Sync services and balance now (through the worker). | 6 |
 | `GET /admin/suppliers/:id/services` | staff-permission · `suppliers:read` | The supplier's services after syncing; filters `imported`, `remoteGroup`, `type`, `isAvailable` (the last three: feature 26, B215). | 6 |
 | `POST /admin/suppliers/:id/import/preview` | staff-permission · `catalog:create` | Preview the import: new, matching and changed services with the suggested price. | 6 |
-| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links. | 6 |
+| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links; `createdServiceIds` names the services the call created, in creation order (decision 060). | 6 |
 | `GET /admin/suppliers/:id/service-groups` | staff-permission · `suppliers:read` | The supplier's service groups with counts, and its latest quick add (beyond the map, B214). | 26 |
 | `POST /admin/suppliers/:id/quick-add` | staff-permission · `catalog:create` | Quick add: add the supplier's services by group, or all of them, in the background (`202`; beyond the map, B214). | 26 |
 | `GET /admin/suppliers/:id/quick-add/:runId` | staff-permission · `suppliers:read` | The state and progress of a quick add (beyond the map, B214). | 26 |
+| `GET /admin/services/:id/supplier-links` | staff-permission · `catalog:read` | The supplier chain of one service in priority order, switched-off links too; `[]` without a link (beyond the map, decision 060, `scripts/map-additions/46.mjs`). | 46 |
 | `PUT /admin/services/:id/supplier-links` | staff-permission · `catalog:update` | Link the service to suppliers in priority order. | 6 |
 | `GET /admin/supplier-api-logs` | staff-permission · `suppliers:read` | Log of supplier requests and responses. | 6 |
 | `GET /admin/supplier-api-logs/:id` | staff-permission · `suppliers:read` | One call with its masked request and response. | 6 |
@@ -112,7 +113,7 @@ Walked end to end by `test/e2e/{success,reject,timeout}.e2e.test.ts` against a f
 
 ## Permissions
 
-Staff permissions the routes need: `suppliers:read`, `suppliers:create`, `suppliers:update`, `suppliers:delete`, `catalog:create`, `catalog:update`, `orders:update`, and `reports:read` for the report of stage 11. They come from the contracts (`permission` of each `defineRoute`).
+Staff permissions the routes need: `suppliers:read`, `suppliers:create`, `suppliers:update`, `suppliers:delete`, `catalog:read` (the chain of one service), `catalog:create`, `catalog:update`, `orders:update`, and `reports:read` for the report of stage 11. They come from the contracts (`permission` of each `defineRoute`).
 
 ## Events
 

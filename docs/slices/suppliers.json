@@ -4,10 +4,10 @@
   "domain": "C",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 16,
-    "endpoints": 21,
+    "rows": 17,
+    "endpoints": 22,
     "bySurface": {
-      "admin": 17,
+      "admin": 18,
       "supplier": 4
     },
     "frontendCalled": 17
@@ -15,7 +15,8 @@
   "stages": [
     6,
     11,
-    26
+    26,
+    46
   ],
   "ownedTables": [
     {
@@ -852,6 +853,43 @@
       "addition": {
         "file": "scripts/map-additions/26.mjs",
         "spec": "B214"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/services/:id/supplier-links",
+      "method": "GET",
+      "path": "/admin/services/:id/supplier-links",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "suppliers",
+      "descriptionAr": "The supplier chain of a service, in priority order.",
+      "access": "staff-permission",
+      "permission": "catalog:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:read",
+      "stage": 46,
+      "tables": [
+        "service_supplier_links",
+        "supplier_services",
+        "suppliers",
+        "services"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/services/:id/supplier-links",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/services/:id/supplier-links"
+      },
+      "module": "suppliers",
+      "description": "The supplier chain of a service, in priority order.",
+      "frontend": null,
+      "addition": {
+        "file": "scripts/map-additions/46.mjs",
+        "spec": "B-TBD service-supplier-chain"
       },
       "successStatus": 200
     }
