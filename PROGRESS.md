@@ -4,23 +4,27 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**Checks on GitHub and automatic deploys (2026-11-23): built; their first run on GitHub is still to come.** Owner request: a CI/CD pipeline
-for the three repositories. **Decision 057:** a workflow in each repository (`.github/workflows/ci.yml`; backend: the steps of `bun run check`
-in one job, the tests in six shards through `GSM_TEST_SHARD` of `scripts/test-batches.sh` with one more run for a batch that failed, and a
-build of the production image; console: types, lint, tests, build; website: types, lint, unit tests, and a job that only says when its
-generated API types are behind). No workflow reads a secret. The production server deploys a commit of `main` by itself once its runs
-succeeded: `deploy/cd/auto-deploy.sh` on a timer (build, a dump before a migration, migrate, replace, health check, the previous image back
-when that fails; `hold`, `retry`, `force`); nothing is pushed to the server and GitHub holds no key of it. **Decision 058**, found on the same
-day while the production server was put behind a CDN: there the visitor's address comes from the CDN's own header and `TRUST_PROXY` never
-holds a CDN's ranges; `deploy/cd/edge-cdn.py` writes the server's Caddyfile from the repository's, and `deploy/cd/origin-firewall.sh` lets
-only the CDN reach the web ports. The first real run of the runbook also corrected two of its lines: a MinIO user's password is at most 40
-characters, and many hosts close the usual outgoing mail ports. Documents: `docs/OPERATIONS.md` sections 1, 2, 3, 7 and the new section 8;
-README "CI". **Checks:** the whole check on the branch (typecheck, lint, format and the generator checks; 727 test files, 9683 pass, 1 skip;
-one test of the first batch kept its 15-second limit only when the batch ran alone: 522 pass); the console's and the website's workflows run
-by hand in a clean clone (console: 5825 tests and the build; website: 986 tests); two review rounds. **Production** runs since 2026-11-23
-(first deploy by section 2 of the runbook, every check of its step 5 passed); the deployer is installed there, its steps were run once by hand
-for each part, and it waits for the first commit whose runs succeed. **Next:** the owner pushes the three repositories; the first runs on
-GitHub are the test of the workflows themselves, which nothing could run before a push.
+**Checks on GitHub and automatic deploys (2026-11-23): DONE, running.** Owner request: a CI/CD pipeline for the three repositories. **Decision
+057:** a workflow in each repository (`.github/workflows/ci.yml`; backend: the steps of `bun run check` in one job, the tests in six shards
+through `GSM_TEST_SHARD` of `scripts/test-batches.sh` with one more run for a batch that failed, and a build of the production image; console:
+types, lint, tests, build; website: types, lint, unit tests, and a job that only says when its generated API types are behind). No workflow
+reads a secret. The production server deploys a commit of `main` by itself once its runs succeeded: `deploy/cd/auto-deploy.sh` on a timer
+(build, a dump before a migration, migrate, replace, health check, the previous image back when that fails; `hold`, `retry`, `force`); nothing
+is pushed to the server and GitHub holds no key of it. **Decision 058**, found on the same day while the production server was put behind a
+CDN: there the visitor's address comes from the CDN's own header and `TRUST_PROXY` never holds a CDN's ranges; `deploy/cd/edge-cdn.py` writes
+the server's Caddyfile from the repository's, and `deploy/cd/origin-firewall.sh` lets only the CDN reach the web ports. The first real run of
+the runbook also corrected two of its lines: a MinIO user's password is at most 40 characters, and many hosts close the usual outgoing mail
+ports. Documents: `docs/OPERATIONS.md` sections 1, 2, 3, 7 and the new section 8; README "CI". **Checks:** the whole check on the branch
+(typecheck, lint, format and the generator checks; 727 test files, 9683 pass, 1 skip; one test of the first batch kept its 15-second limit
+only when the batch ran alone: 522 pass); the console's and the website's workflows run by hand in a clean clone (console: 5825 tests and the
+build; website: 986 tests); two review rounds. **Production** runs since 2026-11-23 (first deploy by section 2 of the runbook, every check of
+its step 5 passed); the deployer is installed there, its steps were run once by hand for each part, and it waits for the first commit whose
+runs succeed. **First runs on GitHub (2026-11-23):** all three workflows passed on their first real run (backend: the static job 2.6 minutes,
+the six test shards 4 to 8 minutes each, the image under a minute; console 20 minutes; website 1 minute), after one start that GitHub refused
+for the whole account. The server then deployed by itself: the website with its generated API types brought up to the contract (the comparison
+is a required check there since), and the backend (build, no migration, containers replaced, healthy in under ten seconds). One correction
+from that first day: a commit whose checks failed is asked about again after ten minutes, not thirty, so runs started again on GitHub are
+noticed.
 
 **Second pass over money and access (2026-11-23): DONE, merged.** The branch `security/deep-financial-auth-fixes` (35 commits: 33 changes, the
 list of tooling tests and the documents) was fast-forwarded into `main` on the owner's instruction after the final checks. The rules are in
