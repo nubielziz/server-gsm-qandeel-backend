@@ -40,8 +40,9 @@ HEALTH_WAIT=${HEALTH_WAIT:-240}
 CDN_HEADER=${CDN_HEADER:-}
 COMPOSE_OVERRIDE=${COMPOSE_OVERRIDE:-}
 PARTS="backend console shop"
-# Seconds before GitHub is asked again about a commit whose answer was this (60 unsigned requests an hour are allowed).
-ASK_AGAIN_PENDING=300 ASK_AGAIN_NONE=600 ASK_AGAIN_FAILURE=1800 ASK_AGAIN_UNKNOWN=600
+# Seconds before GitHub is asked again about a commit whose answer was this (60 unsigned requests an hour are allowed). A failed
+# commit is asked about again too: its runs can be started again on GitHub, and that must not wait for a new commit.
+ASK_AGAIN_PENDING=300 ASK_AGAIN_NONE=600 ASK_AGAIN_FAILURE=600 ASK_AGAIN_UNKNOWN=600
 
 say() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 

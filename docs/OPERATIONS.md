@@ -1002,4 +1002,5 @@ It needs `git`, `docker`, `curl` and `python3` on the host. The server's own fil
 
 **What it does not do.** It never rolls a migration back. It does not replace the nightly backup: the dump before a migration is on the
 same disk as the database. A release with an order of its own (section 3) is done by hand, with the deploys on hold. And it asks GitHub
-without a key, which allows 60 questions an hour: while a commit waits for its checks it asks every five minutes per part.
+without a key, which allows 60 questions an hour: while a commit waits for its checks it asks every five minutes per part, and every
+ten minutes after they failed, so runs that were started again on GitHub are noticed (`gsm-auto-deploy retry <part>` asks at once).
