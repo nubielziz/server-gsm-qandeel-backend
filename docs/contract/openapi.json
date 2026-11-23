@@ -160079,7 +160079,7 @@
     },
     "/admin/services": {
       "get": {
-        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, `needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` (the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and `notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without a shop price last).",
+        "description": "Live services (archived ones are gone) with category, supplier chain and the figures worked out in SQL: `cost` is the effective cost, `floorPrice` = cost + `minProfit`, `marginPct` and `belowFloor`; with the Catalog page's facts of decision 060 (`attention`, the shop price, the shop page). Filters: `type`, `status`, `categoryId`, `belowFloor`, `needsAttention` (any reason of `attention` the caller may see), `hasSupplier` (an active supplier link), `supplierId` (the primary supplier: the first active link by priority, the row's `supplier`), `isListed` and `notOnShop` (an enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and `notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without a shop price last) and `sort`, the order merchants see: the category position, then the service `sort` (decision 063), then the name, in the direction asked for.",
         "operationId": "getAdminServices",
         "parameters": [
           {
@@ -160107,7 +160107,7 @@
             "name": "_sort",
             "required": false,
             "in": "query",
-            "description": "Comma-separated sort fields. Allowed: name, type, cost, basePrice, retailPrice, id. Default: name asc.",
+            "description": "Comma-separated sort fields. Allowed: name, type, cost, basePrice, retailPrice, sort, id. Default: name asc.",
             "schema": {
               "type": "string"
             }
@@ -160537,18 +160537,24 @@
                         "description": "The second active supplier link by priority."
                       },
                       "allowCancel": {
-                        "description": "Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only because the console does not read it yet.",
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
                       },
                       "allowVerify": {
-                        "description": "Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only because the console does not read it yet.",
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "Whether a merchant may ask for the verification of a completed order. Sent to every reader."
                       },
                       "verifyWindowH": {
-                        "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in the schema only because the console does not read it yet.",
                         "type": "integer",
                         "minimum": 0,
-                        "maximum": 720
+                        "maximum": 720,
+                        "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Sent to every reader."
+                      },
+                      "sort": {
+                        "description": "The position staff gave the service among the services of its category (decision 063); `0` when never set. Merchants and API clients read services by category position, then this, then the name. Always sent; optional in the schema only because the console's `Service` type and its mock rows do not carry it yet (a required key would fail the harvested fixtures). Set with `POST /admin/services/order`.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000
                       },
                       "minQty": {
                         "type": "integer",
@@ -160711,6 +160717,9 @@
                       "slaMinutes",
                       "supplier",
                       "fallbackSupplier",
+                      "allowCancel",
+                      "allowVerify",
+                      "verifyWindowH",
                       "minQty",
                       "maxQty",
                       "qtyOptions",
@@ -160750,6 +160759,7 @@
                     "allowCancel": false,
                     "allowVerify": false,
                     "verifyWindowH": 0,
+                    "sort": 0,
                     "minQty": 1,
                     "maxQty": 1,
                     "qtyOptions": [],
@@ -161389,18 +161399,24 @@
                       "description": "The second active supplier link by priority."
                     },
                     "allowCancel": {
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
                     },
                     "allowVerify": {
-                      "description": "Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may ask for the verification of a completed order. Sent to every reader."
                     },
                     "verifyWindowH": {
-                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in the schema only because the console does not read it yet.",
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 720
+                      "maximum": 720,
+                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Sent to every reader."
+                    },
+                    "sort": {
+                      "description": "The position staff gave the service among the services of its category (decision 063); `0` when never set. Merchants and API clients read services by category position, then this, then the name. Always sent; optional in the schema only because the console's `Service` type and its mock rows do not carry it yet (a required key would fail the harvested fixtures). Set with `POST /admin/services/order`.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
                     },
                     "minQty": {
                       "type": "integer",
@@ -161563,6 +161579,9 @@
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
+                    "allowCancel",
+                    "allowVerify",
+                    "verifyWindowH",
                     "minQty",
                     "maxQty",
                     "qtyOptions",
@@ -161597,6 +161616,7 @@
                   "allowCancel": false,
                   "allowVerify": false,
                   "verifyWindowH": 0,
+                  "sort": 0,
                   "minQty": 1,
                   "maxQty": 1,
                   "qtyOptions": [],
@@ -162923,6 +162943,1185 @@
         "x-gsm-surface": "admin"
       }
     },
+    "/admin/services/order": {
+      "post": {
+        "description": "Sets the position (`sort`) of 1 to 500 services in one transaction: either every position is saved or none is. A position is a whole number from 0 to 1000000; merchants and API clients read services by category position, then this number, then the name, so services with the same number stay in name order. A service already at its position is left alone. A service that is listed twice, or is unknown or archived, is `422` on `items.N.id` (N the later of two equal ids; every problem comes back together) and nothing is saved. The answer says how many services changed. One audit entry (`changed the order of`) holds the old and new positions of the changed services (the first 200), the cached merchant price lists start over, and the services are locked in id order, so two saves never interleave.",
+        "operationId": "postAdminServicesOrder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "x-gsm-alias": "Id",
+                          "description": "Numeric record id.",
+                          "examples": [
+                            42
+                          ]
+                        },
+                        "sort": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sort"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "items"
+                ]
+              },
+              "examples": {
+                "example": {
+                  "value": {
+                    "items": [
+                      {
+                        "id": 5,
+                        "sort": 1
+                      },
+                      {
+                        "id": 6,
+                        "sort": 2
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "updated": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991,
+                      "description": "How many services changed position."
+                    }
+                  },
+                  "required": [
+                    "updated"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "updated": 2
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.\nCSRF_FAILED: The security check for this request failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN",
+                        "CSRF_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
+                  "CSRF_FAILED": {
+                    "summary": "The security check for this request failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/csrf-failed",
+                      "title": "The security check for this request failed.",
+                      "status": 403,
+                      "code": "CSRF_FAILED",
+                      "detail": "The security check for this request failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Set the order of services",
+        "tags": [
+          "admin: services"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-audit": true,
+        "x-gsm-key": "POST /admin/services/order",
+        "x-gsm-permission": "catalog:update",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
+    "/admin/services/price-grid": {
+      "get": {
+        "description": "One page of live services with everything the console prices from, in one read: the effective `cost` (`null` while no cost is on record), the `basePrice` with its margin, the floor, the shop price with where it comes from and its margin, and for every merchant group (kind `b2b`, in the order of the groups page) the stored `fixedPrice`, the `price` the price resolver gives it today and its margin. The group price and the margin come from the same resolver orders use, one load for the page and no read per cell. A margin is the price minus the cost, `null` when the cost is not on record, negative when the price is under the cost. Same list dialect as `GET /admin/services`: filters `type`, `status`, `categoryId`; `q` is a case-insensitive contains over name, code and category name; sorts `name` (default), `sort` (the order merchants see: category position, then the service `sort`, then name) and `id`; the total is in `x-total-count`. Needs `catalog:read` and also `pricing:read`: `403 FORBIDDEN` naming `pricing:read` without it, before anything is read (the figures are the merchant prices and the cost).",
+        "operationId": "getAdminServicesPriceGrid",
+        "parameters": [
+          {
+            "name": "_start",
+            "required": false,
+            "in": "query",
+            "description": "First row to return (0-based, inclusive). Default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000000
+            }
+          },
+          {
+            "name": "_end",
+            "required": false,
+            "in": "query",
+            "description": "Row after the last one to return (exclusive). Default _start + 25; a page holds at most 1000 rows.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "_sort",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sort fields. Allowed: name, sort, id. Default: name asc.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "_order",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated directions (asc or desc), one per sort field in the same order.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive text search over: name, code, category.name.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where type equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "imei",
+                  "server",
+                  "remote",
+                  "file"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "type_ne",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where type is not (repeat the key for NOT IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "imei",
+                  "server",
+                  "remote",
+                  "file"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where status equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "disabled"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "status_ne",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where status is not (repeat the key for NOT IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "disabled"
+                ]
+              }
+            },
+            "style": "form",
+            "explode": true
+          },
+          {
+            "name": "categoryId",
+            "required": false,
+            "in": "query",
+            "description": "Keep rows where categoryId equals (repeat the key for IN) the value.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[1-9]\\d{0,15}$"
+              }
+            },
+            "style": "form",
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "active",
+                          "disabled"
+                        ]
+                      },
+                      "sort": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "The position staff gave the service among those of its category; `0` when never set."
+                      },
+                      "categoryId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991,
+                        "x-gsm-alias": "Id",
+                        "description": "Numeric record id.",
+                        "examples": [
+                          42
+                        ]
+                      },
+                      "supplier": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The first active supplier link by priority, the supplier the service is sent to."
+                      },
+                      "cost": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The effective cost: the larger of the service cost and the cost of the first supplier link an order can use. `null` when no cost is on record (a new service starts at zero until a supplier is linked or imported)."
+                      },
+                      "costChangedFrom": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The previous cost when it rose since the base price was set; else `null`."
+                      },
+                      "basePrice": {
+                        "type": "string",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "baseMargin": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits; may be negative.",
+                            "examples": [
+                              "-12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "`basePrice` minus the cost; `null` when the cost is not on record."
+                      },
+                      "floorPrice": {
+                        "type": "string",
+                        "pattern": "^\\d{1,14}\\.\\d{4}$",
+                        "x-gsm-alias": "Money",
+                        "description": "The cost plus the minimum profit, the lowest price a merchant is charged.",
+                        "examples": [
+                          "12.4900"
+                        ]
+                      },
+                      "belowFloor": {
+                        "type": "boolean"
+                      },
+                      "retailPrice": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                            "examples": [
+                              "12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "The shop price (net USD before VAT); `null` when the service has none."
+                      },
+                      "retailPriceSource": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "rule",
+                              "manual"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a shop price: the words of the service rows (decision 060)."
+                      },
+                      "retailMargin": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^-?\\d{1,14}\\.\\d{4}$",
+                            "x-gsm-alias": "Money",
+                            "description": "Decimal string with exactly 4 fraction digits; may be negative.",
+                            "examples": [
+                              "-12.4900"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "`retailPrice` minus the cost; `null` without a shop price or when the cost is not on record."
+                      },
+                      "groupPrices": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "groupId": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "x-gsm-alias": "Id",
+                              "description": "The merchant group (a client group of kind `b2b`).",
+                              "examples": [
+                                42
+                              ]
+                            },
+                            "fixedPrice": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\d{1,14}\\.\\d{4}$",
+                                  "x-gsm-alias": "Money",
+                                  "description": "Decimal string with exactly 4 fraction digits, 0 or more.",
+                                  "examples": [
+                                    "12.4900"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The price staff fixed for this group and service, as stored; `null` when the group pays the base price less its discount."
+                            },
+                            "price": {
+                              "type": "string",
+                              "pattern": "^\\d{1,14}\\.\\d{4}$",
+                              "x-gsm-alias": "Money",
+                              "description": "What the price resolver gives this group for the service today (the function orders use, with no merchant): the fixed price, or the base price after the pricing rule, the group discount and rounding, never under the floor.",
+                              "examples": [
+                                "12.4900"
+                              ]
+                            },
+                            "margin": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^-?\\d{1,14}\\.\\d{4}$",
+                                  "x-gsm-alias": "Money",
+                                  "description": "Decimal string with exactly 4 fraction digits; may be negative.",
+                                  "examples": [
+                                    "-12.4900"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "`price` minus the cost; `null` when the cost is not on record."
+                            }
+                          },
+                          "required": [
+                            "groupId",
+                            "fixedPrice",
+                            "price",
+                            "margin"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "description": "One entry per merchant group (kind `b2b`), in the order of the groups page (`sort`, then id)."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "code",
+                      "status",
+                      "sort",
+                      "categoryId",
+                      "supplier",
+                      "cost",
+                      "costChangedFrom",
+                      "basePrice",
+                      "baseMargin",
+                      "floorPrice",
+                      "belowFloor",
+                      "retailPrice",
+                      "retailPriceSource",
+                      "retailMargin",
+                      "groupPrices"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "example": [
+                  {
+                    "id": 5,
+                    "name": "AT&T USA Unlock",
+                    "code": "IMEI-ATT-USA",
+                    "status": "active",
+                    "sort": 0,
+                    "categoryId": 4,
+                    "supplier": {
+                      "id": 3,
+                      "name": "DHRU Pro"
+                    },
+                    "cost": "13.5000",
+                    "costChangedFrom": null,
+                    "basePrice": "17.2800",
+                    "baseMargin": "3.7800",
+                    "floorPrice": "14.3100",
+                    "belowFloor": false,
+                    "retailPrice": "25.9900",
+                    "retailPriceSource": "manual",
+                    "retailMargin": "12.4900",
+                    "groupPrices": [
+                      {
+                        "groupId": 1,
+                        "fixedPrice": null,
+                        "price": "17.2800",
+                        "margin": "3.7800"
+                      },
+                      {
+                        "groupId": 2,
+                        "fixedPrice": "16.9000",
+                        "price": "16.9000",
+                        "margin": "3.4000"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-total-count": {
+                "description": "Rows that match the filters, before the range is applied.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED: Authentication failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 401
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "UNAUTHORIZED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "UNAUTHORIZED": {
+                    "summary": "Authentication failed.",
+                    "value": {
+                      "type": "https://errors.gsm.example/unauthorized",
+                      "title": "Authentication failed.",
+                      "status": 401,
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication failed.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "FORBIDDEN: You do not have permission to do this.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 403
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "VALIDATION_FAILED: Some fields are not valid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "title",
+                    "status",
+                    "code",
+                    "detail",
+                    "requestId"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Link that identifies the problem type."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Fixed English title of the code."
+                    },
+                    "status": {
+                      "type": "integer",
+                      "const": 422
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "VALIDATION_FAILED"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "description": "What went wrong this time."
+                    },
+                    "errors": {
+                      "type": "array",
+                      "description": "Field problems; `field` is a dotted path equal to the request key.",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "field",
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "VALIDATION_FAILED": {
+                    "summary": "Some fields are not valid.",
+                    "value": {
+                      "type": "https://errors.gsm.example/validation-failed",
+                      "title": "Some fields are not valid.",
+                      "status": 422,
+                      "code": "VALIDATION_FAILED",
+                      "detail": "Some fields are not valid.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "x-request-id": {
+                "description": "Id of this request; quote it when you report a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "staffSession": []
+          }
+        ],
+        "summary": "Price grid of the services",
+        "tags": [
+          "admin: services"
+        ],
+        "x-gsm-access": "staff-permission",
+        "x-gsm-key": "GET /admin/services/price-grid",
+        "x-gsm-permission": "catalog:read",
+        "x-gsm-session-stages": [
+          "active"
+        ],
+        "x-gsm-surface": "admin"
+      }
+    },
     "/admin/services/{id}": {
       "get": {
         "description": "The list row plus the complete custom `fields` (in order), the option lists in `options` and the `groupPrices`, and, with `storefront:read`, `publishFailure` (decision 060). The replace-all dialogs start from this read.",
@@ -163148,18 +164347,24 @@
                       "description": "The second active supplier link by priority."
                     },
                     "allowCancel": {
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
                     },
                     "allowVerify": {
-                      "description": "Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may ask for the verification of a completed order. Sent to every reader."
                     },
                     "verifyWindowH": {
-                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in the schema only because the console does not read it yet.",
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 720
+                      "maximum": 720,
+                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Sent to every reader."
+                    },
+                    "sort": {
+                      "description": "The position staff gave the service among the services of its category (decision 063); `0` when never set. Merchants and API clients read services by category position, then this, then the name. Always sent; optional in the schema only because the console's `Service` type and its mock rows do not carry it yet (a required key would fail the harvested fixtures). Set with `POST /admin/services/order`.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
                     },
                     "minQty": {
                       "type": "integer",
@@ -163487,6 +164692,9 @@
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
+                    "allowCancel",
+                    "allowVerify",
+                    "verifyWindowH",
                     "minQty",
                     "maxQty",
                     "qtyOptions",
@@ -163527,6 +164735,7 @@
                   "allowCancel": false,
                   "allowVerify": false,
                   "verifyWindowH": 0,
+                  "sort": 0,
                   "minQty": 1,
                   "maxQty": 1,
                   "qtyOptions": [],
@@ -164214,18 +165423,24 @@
                       "description": "The second active supplier link by priority."
                     },
                     "allowCancel": {
-                      "description": "Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may cancel an order of this service that was never sent. Sent to every reader."
                     },
                     "allowVerify": {
-                      "description": "Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only because the console does not read it yet.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "Whether a merchant may ask for the verification of a completed order. Sent to every reader."
                     },
                     "verifyWindowH": {
-                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in the schema only because the console does not read it yet.",
                       "type": "integer",
                       "minimum": 0,
-                      "maximum": 720
+                      "maximum": 720,
+                      "description": "How many hours after completion the merchant may ask for verification; `0` means no window. Sent to every reader."
+                    },
+                    "sort": {
+                      "description": "The position staff gave the service among the services of its category (decision 063); `0` when never set. Merchants and API clients read services by category position, then this, then the name. Always sent; optional in the schema only because the console's `Service` type and its mock rows do not carry it yet (a required key would fail the harvested fixtures). Set with `POST /admin/services/order`.",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
                     },
                     "minQty": {
                       "type": "integer",
@@ -164388,6 +165603,9 @@
                     "slaMinutes",
                     "supplier",
                     "fallbackSupplier",
+                    "allowCancel",
+                    "allowVerify",
+                    "verifyWindowH",
                     "minQty",
                     "maxQty",
                     "qtyOptions",
@@ -164425,6 +165643,7 @@
                   "allowCancel": false,
                   "allowVerify": false,
                   "verifyWindowH": 0,
+                  "sort": 0,
                   "minQty": 1,
                   "maxQty": 1,
                   "qtyOptions": [],
@@ -180602,7 +181821,7 @@
     },
     "/admin/suppliers/{id}/import": {
       "post": {
-        "description": "A new item becomes a service: type from the supplier's type (`imei`, `server`, `remote` or `file`, else `422` on `supplierServiceIds` naming it and nothing is imported), the category found or created from the supplier's group (`Imported` when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the services this call created, in creation order (decision 060).",
+        "description": "A new item becomes a service: type from the supplier's type (`imei`, `server`, `remote` or `file`, else `422` on `supplierServiceIds` naming it and nothing is imported), the category found or created from the supplier's group (`Imported` when empty), automatic fulfilment, code `IMP-<id>` (`-2`, `-3` on a collision), the SLA read from the supplier's time text (the setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the services this call created, in creation order (decision 060). Two optional keys change only what a new item becomes (decision 063): `status` (`active`, the default, or `disabled`: the service is inserted disabled, in the same transaction, so it is never orderable) and `categoryId` (the category every new service goes into instead of the one named after the supplier's group; it must have the type of each new service, else `422` on `categoryId` naming the supplier services that do not fit, and nothing is imported; an unknown id is `422` on `categoryId` too). An updated or unchanged item is not touched by either. Without the keys the route is what it was.",
         "operationId": "postAdminSuppliersByIdImport",
         "parameters": [
           {
@@ -180639,6 +181858,24 @@
                         42
                       ]
                     }
+                  },
+                  "status": {
+                    "description": "The state the new services are created in: `active` (the default) or `disabled`, which is never orderable, not even for an instant (decision 063). Updated and unchanged items are not touched.",
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disabled"
+                    ]
+                  },
+                  "categoryId": {
+                    "description": "The category every new service goes into; it must have the type of each of them, else `422` on `categoryId` naming the supplier services that do not fit (decision 063). Omitted: the category named after the supplier's group, as before.",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "x-gsm-alias": "Id",
+                    "examples": [
+                      42
+                    ]
                   }
                 },
                 "required": [
@@ -181118,7 +182355,7 @@
     },
     "/admin/suppliers/{id}/import/preview": {
       "post": {
-        "description": "For each picked service of this supplier: `new` (no service links it), `matching` (linked, and the service cost equals `credit x credit_rate`) or `changed` (linked, the cost differs: `previousCost` is the service's current cost). `suggestedPrice` (new and changed) is the cost plus the default minimum profit. `minQty`, `maxQty` and `qtyOptions` are the supplier's quantity rule as the import reads it (a Dhru supplier's QNT, MINQNT, MAXQNT and QNTOPTIONS; unreadable values mean one per order): for a `new` item, what the service will get. `quantityDiffers` is true when the item is linked to a live service whose own rule is another one; the service keeps its own rule, and staff edit it to follow the supplier. Changes nothing, so it writes no audit row.",
+        "description": "For each picked service of this supplier: `new` (no service links it), `matching` (linked, and the service cost equals `credit x credit_rate`) or `changed` (linked, the cost differs: `previousCost` is the service's current cost). `suggestedPrice` (new and changed) is the cost plus the default minimum profit. `minQty`, `maxQty` and `qtyOptions` are the supplier's quantity rule as the import reads it (a Dhru supplier's QNT, MINQNT, MAXQNT and QNTOPTIONS; unreadable values mean one per order): for a `new` item, what the service will get. `quantityDiffers` is true when the item is linked to a live service whose own rule is another one; the service keeps its own rule, and staff edit it to follow the supplier. Changes nothing, so it writes no audit row. With `status` or `categoryId` (decision 063, the keys of the import) every item also says the `status` and the `category` a `new` item would get: `status` is `active` unless asked, `category` the picked one, else the category the import finds for the supplier's group, else the name it makes one under with `id` `null`; both are `null` for an item the import would not create. A `categoryId` of another type than a new item answers the import's `422` on `categoryId`. Without either key the items carry neither.",
         "operationId": "postAdminSuppliersByIdImportPreview",
         "parameters": [
           {
@@ -181155,6 +182392,24 @@
                         42
                       ]
                     }
+                  },
+                  "status": {
+                    "description": "The state the new services are created in: `active` (the default) or `disabled`, which is never orderable, not even for an instant (decision 063). Updated and unchanged items are not touched.",
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "disabled"
+                    ]
+                  },
+                  "categoryId": {
+                    "description": "The category every new service goes into; it must have the type of each of them, else `422` on `categoryId` naming the supplier services that do not fit (decision 063). Omitted: the category named after the supplier's group, as before.",
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "x-gsm-alias": "Id",
+                    "examples": [
+                      42
+                    ]
                   }
                 },
                 "required": [
@@ -181300,6 +182555,60 @@
                           "quantityDiffers": {
                             "type": "boolean",
                             "description": "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link."
+                          },
+                          "status": {
+                            "description": "Only when the request carried `status` or `categoryId`: the state a `new` item would be created in; `null` for any other item.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "active",
+                                  "disabled"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "category": {
+                            "description": "Only when the request carried `status` or `categoryId`: the category a `new` item would go into, named exactly: the picked one, else the one the import finds for the supplier's group (by the group text, then by its cleaned name, ignoring case), else the cleaned name it makes a category under (`id` `null`). `null` for any other item.",
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "exclusiveMinimum": 0,
+                                        "maximum": 9007199254740991,
+                                        "x-gsm-alias": "Id",
+                                        "description": "Numeric record id.",
+                                        "examples": [
+                                          42
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "`null` when the import makes the category: no category of that type has the name yet."
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [

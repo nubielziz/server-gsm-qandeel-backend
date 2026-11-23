@@ -1,9 +1,11 @@
 // Drizzle queries of the merchant catalog: the live, active services in an active category that a merchant group may see,
-// ordered by category then name. Archived and disabled services are never listed (RESOLUTIONS catalog-3, RULES services 10).
+// ordered by category position, then the service's own position, then name (decision 063). Archived and disabled services are
+// never listed (RESOLUTIONS catalog-3, RULES services 10).
 import { and, asc, eq, gt, ilike, isNull, or, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, escapeLike, listOrderBy, listWhere } from '../../../infra/db';
 import { type Service, serviceCategories, services } from '../db/schema';
+import { categoryPositionSql, expandSortField } from './service-order.sql';
 
 /** A visible service with its category. */
 export interface VisibleServiceRow {
@@ -30,18 +32,14 @@ export function visibleTo(groupId: number) {
   );
 }
 
-/**
- * The order of a category: its `sort`, then its id, as one text that sorts like the pair (both are written with a fixed width), so
- * two categories with the same `sort` never interleave their services.
- */
-const categoryOrder = sql`(lpad(${serviceCategories.sort}::text, 10, '0') || lpad(${serviceCategories.id}::text, 20, '0'))`;
-
 const COLUMNS: ListColumns = {
   id: services.id,
   name: services.name,
   type: services.type,
   categoryId: services.categoryId,
-  category: categoryOrder,
+  category: categoryPositionSql,
+  // Not a sort of the contract: `category` stands for "category position, then this" (decision 063).
+  position: services.sort,
   code: services.code,
   'category.name': serviceCategories.name,
 };
@@ -72,7 +70,7 @@ export async function pageVisibleServices(
   const [rows, [count]] = await Promise.all([
     select(db)
       .where(where)
-      .orderBy(...listOrderBy(query.sort, COLUMNS, services.id))
+      .orderBy(...listOrderBy(expandSortField(query.sort, 'category', { after: ['position'] }), COLUMNS, services.id))
       .limit(query.range.limit)
       .offset(query.range.start),
     db
@@ -145,7 +143,8 @@ export async function findVisibleService(
 }
 
 /**
- * Lists every service a merchant group may see (up to {@link MAX_CATALOG_ROWS}), by category order then name.
+ * Lists every service a merchant group may see (up to {@link MAX_CATALOG_ROWS}), by category order, then the service's own position
+ * (`services.sort`, decision 063), then name.
  *
  * @param db the database or a transaction
  * @param groupId the merchant's group
@@ -165,6 +164,12 @@ export async function listVisibleServices(
         filter.categoryId === undefined ? undefined : eq(services.categoryId, filter.categoryId),
       ),
     )
-    .orderBy(asc(serviceCategories.sort), asc(serviceCategories.id), asc(services.name), asc(services.id))
+    .orderBy(
+      asc(serviceCategories.sort),
+      asc(serviceCategories.id),
+      asc(services.sort),
+      asc(services.name),
+      asc(services.id),
+    )
     .limit(MAX_CATALOG_ROWS);
 }

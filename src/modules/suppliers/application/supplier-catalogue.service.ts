@@ -4,13 +4,28 @@
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
-import { DbService } from '../../../infra/db';
-import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
+import { type DbExecutor, DbService } from '../../../infra/db';
+import { CatalogPriceVersion, type GroupCategory, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService, SettingsReader } from '../../platform';
-import type { SupplierService } from '../db/schema';
-import { classifyImportItem, importShape, importableType, quantityDiffers } from '../domain/import-plan';
+import type { SupplierImportServiceStatus, SupplierService } from '../db/schema';
+import {
+  type CreatableItem,
+  categoryMisfits,
+  categoryMismatchMessage,
+  classifyImportItem,
+  importShape,
+  importableType,
+  quantityDiffers,
+} from '../domain/import-plan';
 import { supplierQuantityRule } from '../domain/supplier-quantity';
-import { lockLiveServiceRow, linkedServicesOf, liveServiceInfo } from '../infra/foreign-reads.repository';
+import {
+  type CategoryChoice,
+  categoryIdsOfServices,
+  findCategoryChoice,
+  lockLiveServiceRow,
+  linkedServicesOf,
+  liveServiceInfo,
+} from '../infra/foreign-reads.repository';
 import {
   type SupplierServiceListField,
   chainsOf,
@@ -45,6 +60,35 @@ export interface ImportPreviewItem {
   readonly qtyOptions: number[];
   /** A live linked service sells another rule than the supplier's (a `new` item and an archived link: false). */
   readonly quantityDiffers: boolean;
+  /**
+   * Decision 063: present only when the request carried `status` or `categoryId` (without them the item is what it always was). The state a
+   * `new` item would be created in (`active` unless asked); `null` for an item the import would not create.
+   */
+  readonly status?: SupplierImportServiceStatus | null;
+  /**
+   * Decision 063: present together with `status`. The category a `new` item would go into, named exactly: the one staff picked, else
+   * the one the importer finds for the supplier's group (by the group text, then by its cleaned name), else the cleaned name the import
+   * makes a category under (`id` `null`: it does not exist yet). `null` for an item the import would not create.
+   */
+  readonly category?: GroupCategory | null;
+}
+
+/**
+ * What staff may ask of an import beyond the picked services (decision 063, B242); without either key the import is what it always was.
+ */
+export interface ImportOptions {
+  /** The state the new services start in; `active` when omitted. A `disabled` service is inserted disabled: it is never orderable. */
+  readonly status?: SupplierImportServiceStatus | undefined;
+  /** The category every new service goes into (of the same type as each of them); the category named after the supplier's group when omitted. */
+  readonly categoryId?: number | undefined;
+}
+
+/** The state a new service starts in when staff do not say. */
+export const DEFAULT_IMPORT_STATUS: SupplierImportServiceStatus = 'active';
+
+/** A new service the import would create: what the category check reads, and the supplier service it comes from. */
+interface Creatable extends CreatableItem {
+  readonly row: SupplierService;
 }
 
 /** One step of a service's supplier chain, as the chain routes answer it. */
@@ -153,10 +197,17 @@ export class SupplierCatalogueService {
    *
    * @param supplierId the supplier
    * @param ids the picked supplier services
+   * @param options decision 063: the state and the category the new services would get; without either key the answer is what it always
+   *   was, with one of them every item also says its `status` and `category`
    * @returns one item per picked service of this supplier, with the supplier's quantity rule and whether the linked service's differs
-   * @throws {AppError} `NOT_FOUND`
+   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `categoryId`: no such category (`unknown`), or a new service would be
+   *   another type than the category's (`kind_mismatch`, naming them))
    */
-  async preview(supplierId: number, ids: readonly number[]): Promise<{ items: ImportPreviewItem[] }> {
+  async preview(
+    supplierId: number,
+    ids: readonly number[],
+    options: ImportOptions = {},
+  ): Promise<{ items: ImportPreviewItem[] }> {
     const supplier = await findSupplier(this.db.db, supplierId);
     if (!supplier) throw notFound();
     const picked = await supplierServicesByIds(this.db.db, supplierId, ids);
@@ -164,27 +215,57 @@ export class SupplierCatalogueService {
       this.db.db,
       picked.map((row) => row.id),
     );
+    const lines = picked.map((row) => {
+      const found = linked.get(row.id) ?? null;
+      const { state, cost, previousCost } = classifyImportItem(row, supplier.creditRate, found);
+      const rule = supplierQuantityRule(row.raw);
+      // The supplier's type name, unless the import makes the service another type (decision 042: an IMEI service whose main box
+      // is not an IMEI becomes a server service); the console shows the tag upper-cased either way.
+      const shaped = importShape(row).type;
+      const item: ImportPreviewItem = {
+        supplierServiceId: row.id,
+        name: row.name,
+        type: shaped !== undefined && shaped !== importableType(row.type) ? shaped.toUpperCase() : row.type,
+        state,
+        serviceId: found?.serviceId ?? null,
+        serviceName: found?.name ?? null,
+        cost: cost.toWire(),
+        previousCost: previousCost?.toWire() ?? null,
+        suggestedPrice: state === 'matching' ? null : suggestedPrice(cost).toWire(),
+        ...rule,
+        quantityDiffers: quantityDiffers(found, rule),
+      };
+      return { row, item, newType: state === 'new' ? shaped : undefined };
+    });
+    if (options.status === undefined && options.categoryId === undefined)
+      return { items: lines.map((line) => line.item) };
+
+    // Decision 063: what the new services would get. An item the import would not create (matching, changed, or of a type it refuses)
+    // has neither.
+    const creatable: Creatable[] = lines.flatMap((line) =>
+      line.newType === undefined ? [] : [{ row: line.row, name: line.row.name, type: line.newType }],
+    );
+    const status = options.status ?? DEFAULT_IMPORT_STATUS;
+    const chosen =
+      options.categoryId === undefined ? null : await this.pickedCategory(this.db.db, options.categoryId, creatable);
+    // Without a pick, the catalog's importer says where it would put each new service: the same lookups as its `create`.
+    const planned =
+      chosen === null
+        ? await this.importer.categoriesForGroups(
+            this.db.db,
+            creatable.map((item) => ({ type: item.type, group: item.row.remoteGroup })),
+          )
+        : [];
+    const categoryOf = new Map<number, GroupCategory>(
+      creatable.map((item, index): [number, GroupCategory] => [
+        item.row.id,
+        chosen === null ? planned[index]! : { id: chosen.id, name: chosen.name },
+      ]),
+    );
     return {
-      items: picked.map((row) => {
-        const found = linked.get(row.id) ?? null;
-        const { state, cost, previousCost } = classifyImportItem(row, supplier.creditRate, found);
-        const rule = supplierQuantityRule(row.raw);
-        // The supplier's type name, unless the import makes the service another type (decision 042: an IMEI service whose main box
-        // is not an IMEI becomes a server service); the console shows the tag upper-cased either way.
-        const shaped = importShape(row).type;
-        return {
-          supplierServiceId: row.id,
-          name: row.name,
-          type: shaped !== undefined && shaped !== importableType(row.type) ? shaped.toUpperCase() : row.type,
-          state,
-          serviceId: found?.serviceId ?? null,
-          serviceName: found?.name ?? null,
-          cost: cost.toWire(),
-          previousCost: previousCost?.toWire() ?? null,
-          suggestedPrice: state === 'matching' ? null : suggestedPrice(cost).toWire(),
-          ...rule,
-          quantityDiffers: quantityDiffers(found, rule),
-        };
+      items: lines.map(({ row, item }) => {
+        const category = categoryOf.get(row.id);
+        return category === undefined ? { ...item, status: null, category: null } : { ...item, status, category };
       }),
     };
   }
@@ -192,16 +273,25 @@ export class SupplierCatalogueService {
   /**
    * Imports the picked services: creates the new ones and updates the cost of the changed ones.
    *
+   * Why: decision 063 (B242): staff may add the new services switched off, and into a category of their choice instead of the one named after
+   * the supplier's group. A `disabled` service is inserted disabled, in the same transaction as everything else: it is never orderable, not
+   * even for an instant. A picked category must have the type of every service the import creates (a category holds one type).
+   *
    * @param supplierId the supplier
    * @param ids the picked supplier services
+   * @param options `status` (`active` when omitted) and `categoryId` (the category of the supplier's group when omitted) for the services
+   *   this call creates; they change nothing of an updated or unchanged item
    * @returns how many services were created, updated and left as they were, and the ids of the created ones in creation order
    *   (decision 060: the console prepares one publish run per call from them); a new service starts with the supplier's quantity
-   *   rule (feature 25, B213), and the audit row `imported services from` also counts `createdWithQuantity`
+   *   rule (feature 25, B213), and the audit row `imported services from` also counts `createdWithQuantity` (and says `serviceStatus` and
+   *   `categoryId` when the request carried them)
    * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `supplierServiceIds`: none belongs to this supplier, or a new item
-   *   has a type that is not imei, server, remote or file; nothing is imported then)
+   *   has a type that is not imei, server, remote or file; 422 on `categoryId`: no such category (`unknown`), or a new service would be
+   *   another type than the category's (`kind_mismatch`, naming them); nothing is imported then)
    */
-  async import(supplierId: number, ids: readonly number[]): Promise<ImportOutcome> {
+  async import(supplierId: number, ids: readonly number[], options: ImportOptions = {}): Promise<ImportOutcome> {
     const defaultSla = await this.settings.integer(IMPORT_DEFAULT_SLA_KEY, DEFAULT_IMPORT_SLA_MINUTES, SLA_BOUNDS);
+    const status = options.status ?? DEFAULT_IMPORT_STATUS;
     return this.db.runInTransaction(async (work) => {
       const { tx } = work;
       const supplier = await lockSupplier(tx, supplierId);
@@ -217,9 +307,10 @@ export class SupplierCatalogueService {
       const plan = picked.map((row) => ({
         row,
         found: linked.get(row.id) ?? null,
+        shaped: importShape(row).type,
         ...classifyImportItem(row, supplier.creditRate, linked.get(row.id) ?? null),
       }));
-      const refused = plan.filter((item) => item.state === 'new' && importShape(item.row).type === undefined);
+      const refused = plan.filter((item) => item.state === 'new' && item.shaped === undefined);
       if (refused.length > 0) {
         const names = refused.map((item) => `"${item.row.name}" (${item.row.type})`).join(', ');
         throw invalid(
@@ -228,6 +319,15 @@ export class SupplierCatalogueService {
           'unsupported_type',
         );
       }
+      // Decision 063: the picked category is read under a share lock (a rename or a type change waits for this transaction) and must fit
+      // every service this call creates. Its lock comes after the supplier's, like every other lock of this use case.
+      const creatable: Creatable[] = plan.flatMap((item) =>
+        item.state === 'new' && item.shaped !== undefined
+          ? [{ row: item.row, name: item.row.name, type: item.shaped }]
+          : [],
+      );
+      const category =
+        options.categoryId === undefined ? null : await this.pickedCategory(tx, options.categoryId, creatable, 'share');
 
       let created = 0;
       let createdWithQuantity = 0;
@@ -244,7 +344,8 @@ export class SupplierCatalogueService {
             row: item.row,
             cost: item.cost,
             defaultSla,
-            status: 'active',
+            status,
+            categoryName: category?.name,
           });
           if (made.withQuantity) createdWithQuantity += 1;
           touched.push(made.serviceId);
@@ -258,6 +359,15 @@ export class SupplierCatalogueService {
           updated += 1;
         }
       }
+      if (category !== null && createdServiceIds.length > 0) {
+        // The importer finds the picked category by its name; the unique (type, lower(name)) key makes that exact, and this proves it.
+        const placed = await categoryIdsOfServices(tx, createdServiceIds);
+        if (createdServiceIds.some((serviceId) => placed.get(serviceId) !== category.id)) {
+          throw new Error(
+            `The import put a new service outside the picked category ${category.id}; nothing was written.`,
+          );
+        }
+      }
       const moved = await recomputeEffectiveCost(tx, touched);
       if (created > 0 || moved.length > 0) this.priceVersion.bumpAfterCommit(work);
       await this.audit.record(tx, {
@@ -265,10 +375,40 @@ export class SupplierCatalogueService {
         entityType: 'supplier',
         entityId: supplier.id,
         entityLabel: supplier.name,
-        after: { created, updated, unchanged, createdWithQuantity },
+        after: {
+          created,
+          updated,
+          unchanged,
+          createdWithQuantity,
+          ...(options.status === undefined ? {} : { serviceStatus: status }),
+          ...(category === null ? {} : { categoryId: category.id, categoryName: category.name }),
+        },
       });
       return { created, updated, unchanged, createdServiceIds };
     });
+  }
+
+  /**
+   * Reads the category staff picked for an import and checks it fits the services the import would create.
+   *
+   * @param db the database or the import's transaction
+   * @param categoryId the picked category
+   * @param creatable the new services the import would create
+   * @param lock `share` inside the import's transaction, so the category cannot be renamed or retyped under it; omitted for the preview
+   * @returns the category
+   * @throws {AppError} `VALIDATION_FAILED` (422 on `categoryId`: `unknown`, or `kind_mismatch` naming the services that do not fit)
+   */
+  private async pickedCategory(
+    db: DbExecutor,
+    categoryId: number,
+    creatable: readonly Creatable[],
+    lock?: 'share',
+  ): Promise<CategoryChoice> {
+    const category = await findCategoryChoice(db, categoryId, lock);
+    if (!category) throw invalid('categoryId', 'No category has this id.', 'unknown');
+    const misfits = categoryMisfits(creatable, category);
+    if (misfits.length > 0) throw invalid('categoryId', categoryMismatchMessage(category, misfits), 'kind_mismatch');
+    return category;
   }
 
   /**

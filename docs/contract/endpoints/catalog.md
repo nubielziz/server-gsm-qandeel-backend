@@ -57,6 +57,8 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 | `POST /admin/retail-price-rules/preview` | admin | staff-permission `pricing:read` | 31 | `previewRetailPriceRule` |
 | `GET /admin/retail-price-changes` | admin | staff-permission `pricing:read` | 31 | `listRetailPriceChanges` |
 | `POST /admin/retail-price-changes/resolve` | admin | staff-permission `pricing:update` | 31 | `resolveRetailPriceChanges` |
+| `GET /admin/services/price-grid` | admin | staff-permission `catalog:read` | 47 | `listPriceGrid` |
+| `POST /admin/services/order` | admin | staff-permission `catalog:update` | 47 | `orderServices` |
 
 ## DHRU imeiservicelist
 
@@ -452,4 +454,14 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 - **Map addition** (B230, `scripts/map-additions/31.mjs`): Answer waiting price proposals: approve the figure shown, or keep the current price as a typed one. · staff-permission `pricing:update` · stage 31 · tables retail_price_changes, retail_price_follows, service_group_prices, audit_logs · success 200
 - **Frontend**: `resolveRetailPriceChanges` (src/features/storefront/api/retailPricing.ts:107) · params `body: ResolveRetailPriceChangesBody` · returns `ResolveRetailPriceChangesResult`
+
+## GET /admin/services/price-grid
+
+- **Map addition** (B240, `scripts/map-additions/47.mjs`): The price grid: the cost, base, shop and per-group prices of a page of services with their margins. · staff-permission `catalog:read` · stage 47 · tables services, service_categories, client_groups, service_group_prices, pricing_rules, service_supplier_links, supplier_services, suppliers, retail_price_follows · success 200
+- **Frontend**: `listPriceGrid` (src/features/services/api/priceGrid.ts:14) · params `query?: ListQuery` · returns `ListResult<PriceGridRow>`
+
+## POST /admin/services/order
+
+- **Map addition** (B241, `scripts/map-additions/47.mjs`): Set the order of services: the position merchants and API clients see them in, inside a category. · staff-permission `catalog:update` · stage 47 · tables services, audit_logs · success 200
+- **Frontend**: `orderServices` (src/features/services/api/priceGrid.ts:24) · params `body: ServiceOrderBody` · returns `ServiceOrderResult`
 

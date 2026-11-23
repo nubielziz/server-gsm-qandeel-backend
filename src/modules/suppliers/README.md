@@ -51,7 +51,7 @@ Exports the modules (`SuppliersModule`, `SuppliersAdminModule`, `SupplierEngineM
 
 ## Owned tables
 
-Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `supplier_import_runs` is an `additionalTables` entry, feature 26); other modules call its public services. Schema: `db/schema.ts`. Deviations: the orders module names `supplier_api_logs` in one SQL text (`order-supplier.repository.ts`, the poll candidates) and reads `suppliers` for names; the money module reads `suppliers` for ledger owner names; `foreign-reads.repository.ts` here reads `services` and `service_fields` (the catalog exports no service reader) and `service_checks` and `imei_checks` are read with plain selects (health and risk export no reader yet). Writes to the catalog go through the catalog's `ServiceImporter` and `recomputeEffectiveCost`.
+Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `supplier_import_runs` is an `additionalTables` entry, feature 26); other modules call its public services. Schema: `db/schema.ts`. Deviations: the orders module names `supplier_api_logs` in one SQL text (`order-supplier.repository.ts`, the poll candidates) and reads `suppliers` for names; the money module reads `suppliers` for ledger owner names; `foreign-reads.repository.ts` here reads `services`, `service_fields` and `service_categories` (the catalog exports no service or category reader; the category staff pick for an import: decision 063) and `service_checks` and `imei_checks` are read with plain selects (health and risk export no reader yet). Writes to the catalog go through the catalog's `ServiceImporter` and `recomputeEffectiveCost`.
 
 | Table | What it holds |
 |---|---|
@@ -77,8 +77,8 @@ Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `sup
 | `POST /admin/suppliers/:id/test` | staff-permission · `suppliers:update` | Test the connection through `accountinfo`. | 6 |
 | `POST /admin/suppliers/:id/sync` | staff-permission · `suppliers:update` | Sync services and balance now (through the worker). | 6 |
 | `GET /admin/suppliers/:id/services` | staff-permission · `suppliers:read` | The supplier's services after syncing; filters `imported`, `remoteGroup`, `type`, `isAvailable` (the last three: feature 26, B215). | 6 |
-| `POST /admin/suppliers/:id/import/preview` | staff-permission · `catalog:create` | Preview the import: new, matching and changed services with the suggested price. | 6 |
-| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links; `createdServiceIds` names the services the call created, in creation order, `[]` when it created none; it is always sent (decision 060). | 6 |
+| `POST /admin/suppliers/:id/import/preview` | staff-permission · `catalog:create` | Preview the import: new, matching and changed services with the suggested price. With `status` or `categoryId` (decision 063) every item also says the `status` and `category` a new service would get. | 6 |
+| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links; `createdServiceIds` names the services the call created, in creation order, `[]` when it created none; it is always sent (decision 060). Optional `status` (`active` or `disabled`) and `categoryId` (a category of the type of every new service, else `422` on `categoryId` naming the supplier services that do not fit) say what the new services become (decision 063). | 6 |
 | `GET /admin/suppliers/:id/service-groups` | staff-permission · `suppliers:read` | The supplier's service groups with counts, and its latest quick add (beyond the map, B214). | 26 |
 | `POST /admin/suppliers/:id/quick-add` | staff-permission · `catalog:create` | Quick add: add the supplier's services by group, or all of them, in the background (`202`; beyond the map, B214). | 26 |
 | `GET /admin/suppliers/:id/quick-add/:runId` | staff-permission · `suppliers:read` | The state and progress of a quick add (beyond the map, B214). | 26 |
@@ -206,7 +206,8 @@ Staff add a supplier's services to the catalog by whole group, or all of them, w
 beyond the map (`scripts/map-additions/26.mjs`): `GET .../service-groups` (one row per group, a group is the pair `(type, remoteGroup)`
 as `supplier_services` stores it; every service is counted once as `imported`, `unavailable`, `unsupported` or `addable`, in that
 order; the supplier's newest run rides along as `latestRun`), `POST .../quick-add` (`202`, body = a scope, never ids) and
-`GET .../quick-add/:runId` (the console polls it). The picker's `POST .../import` and `.../import/preview` are unchanged.
+`GET .../quick-add/:runId` (the console polls it). The picker's `POST .../import` and `.../import/preview` take two optional keys of their own
+(decision 063, below); the quick add has only its `serviceStatus`.
 
 - **What it takes.** The candidates of the scope: not imported (no link row, an archived service counts as imported), available and
   of an importable type (imei, server, remote, file; `lower(btrim(type))`). Everything else is counted and left out, never refused.
@@ -248,6 +249,33 @@ order; the supplier's newest run rides along as `latestRun`), `POST .../quick-ad
   transaction that closes it: the runner's `close` (succeeded or failed) and the start that closes a stalled run. The storefront's
   `publish_from_quick_add` job makes the one automatic publish run of it and prepares it; the suppliers module never imports the storefront.
   A run that created nothing, or did not ask, writes no event.
+
+## Import options: the state and the category of the new services (decision 063, B242)
+
+`POST /admin/suppliers/:id/import` and its preview take two optional keys. Without them the routes answer and write exactly what they did
+before (the preview items carry no new field, the audit row has no new key).
+
+- **`status`** (`active` by default, or `disabled`). It is handed to `ServiceImporter.create`, which inserts the service in that state: a
+  service created `disabled` is never orderable, not even between two statements (the whole import is one transaction). Quick add already
+  had `serviceStatus`; both go through `createImportedService`. An updated or unchanged item is never touched by it.
+- **`categoryId`**. Every service the call creates goes into that category instead of the one named after the supplier's group. A category
+  holds one service type (`service_categories.type`, the composite key of `services`), so the type each new service becomes
+  (`importShape`: an IMEI service whose main box is not an IMEI is a `server` service, decision 042) must be the category's; else `422` on
+  `categoryId`, code `kind_mismatch`, whose message names the supplier services that do not fit (ten at most, then a count) and nothing is
+  imported. An unknown id is `422` on `categoryId`, code `unknown`. Items the call will not create (matching, changed, archived link) are
+  not checked. The category is read under a share lock (`findCategoryChoice`), so a rename or a type change waits for the import.
+  *How the importer is told:* the catalog's importer finds a category by the supplier's group text first, by (type, name) ignoring case, and
+  `service_categories_name_uq` makes that pair unique, so `createImportedService` gives the picked category's name as the group text
+  (`categoryName`) and the importer finds exactly it and makes none. One read after the loop proves every created service has the category
+  (`categoryIdsOfServices`); a mismatch would roll the transaction back. The audit row `imported services from` gains `serviceStatus` and
+  `categoryId`/`categoryName` when the request carried them.
+- **The preview** (the same keys): each item also says `status` (what a `new` item would be created as) and `category` (`{ id, name }`,
+  named exactly): the picked one, else what the catalog's `ServiceImporter.categoriesForGroups` answers, the category the import finds for
+  the supplier's group by the same lookups as its `create` (the group text, then its cleaned name, by type and name ignoring case), else the
+  cleaned name the import makes a category under, with `id` `null`. Both are `null` for an item the import would not create. The same
+  `422`s as the import.
+- **Not done here:** the quick add takes no category (a group is its own unit there), and nothing is published: the console reads
+  `createdServiceIds` for that (decision 060).
 
 ## Audit resolutions
 

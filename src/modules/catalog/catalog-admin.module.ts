@@ -17,7 +17,9 @@ import { RetailFollowSteps } from './application/retail-follow-steps';
 import { RetailPriceChangesService } from './application/retail-price-changes.service';
 import { RetailPriceRuleAdminService } from './application/retail-price-rule-admin.service';
 import { ServiceAdminService } from './application/service-admin.service';
+import { ServiceOrderService } from './application/service-order.service';
 import { ServicePartsService } from './application/service-parts.service';
+import { ServicePriceGridService } from './application/service-price-grid.service';
 import { TacCatalogAdminService } from './application/tac-catalog-admin.service';
 import { CategoriesController } from './controllers/categories.controller';
 import { ClientCatalogController } from './controllers/client-catalog.controller';
@@ -28,13 +30,14 @@ import { PricingController } from './controllers/pricing.controller';
 import { PricingRulesController } from './controllers/pricing-rules.controller';
 import { RetailPriceChangesController } from './controllers/retail-price-changes.controller';
 import { RetailPriceRulesController } from './controllers/retail-price-rules.controller';
+import { ServiceGridController } from './controllers/service-grid.controller';
 import { ServicesController } from './controllers/services.controller';
 import { V1ServicesController } from './controllers/v1-services.controller';
 import { TacCatalogController } from './controllers/tac-catalog.controller';
 
 /**
- * Provides `/admin/client-groups`, `/admin/service-categories`, `/admin/services` (with `fields`, `options`, `group-prices` and
- * `bulk-price`), `/admin/client-prices`, `/admin/pricing-rules`, `/admin/retail-price-rules` (with `preview`),
+ * Provides `/admin/client-groups`, `/admin/service-categories`, `/admin/services` (with `fields`, `options`, `group-prices`,
+ * `bulk-price`, `price-grid` and `order`), `/admin/client-prices`, `/admin/pricing-rules`, `/admin/retail-price-rules` (with `preview`),
  * `/admin/retail-price-changes` (with `resolve`), `/admin/pricing/resolve`, `/admin/inventory-codes`,
  * `/admin/services/:id/inventory/import`, the portal's `/client/services` and `/client/prices/export`, and the merchant's catalog over
  * REST v1 and Dhru (`/v1/services`, `/v1/services/:id`, `imeiservicelist`).
@@ -48,6 +51,7 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     ClientGroupsController,
     CategoriesController,
     ServicesController,
+    ServiceGridController,
     PricingController,
     ClientPricesController,
     PricingRulesController,
@@ -62,6 +66,8 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     ClientGroupAdminService,
     CategoryAdminService,
     ServiceAdminService,
+    ServicePriceGridService,
+    ServiceOrderService,
     ServicePartsService,
     GroupPriceAdminService,
     ClientPriceAdminService,

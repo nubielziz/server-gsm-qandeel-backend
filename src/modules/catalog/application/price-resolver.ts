@@ -82,6 +82,32 @@ export class PricingContext {
   }
 
   /**
+   * The merchant groups (`kind` `b2b`) in the order staff gave them: `sort`, then id.
+   *
+   * Why: decision 063: the price grid has one column per merchant group, in the order of the groups page.
+   *
+   * @returns the groups in display order
+   */
+  merchantGroupsBySort(): PricedGroupRow[] {
+    return [...this.data.groups.values()]
+      .filter((group) => group.kind === 'b2b')
+      .sort((a, b) => a.sort - b.sort || a.id - b.id);
+  }
+
+  /**
+   * The fixed price a service has for a group, as stored (before the floor clamp that {@link PricingContext.resolve} applies).
+   *
+   * Why: decision 063: the price grid shows the typed price of a cell next to the price the resolver gives today.
+   *
+   * @param serviceId the service
+   * @param groupId the merchant group
+   * @returns the stored group price, or `null` when the service has none for the group
+   */
+  groupFixedPrice(serviceId: number, groupId: number): Money | null {
+    return this.data.groupPrices.get(`${serviceId}|${groupId}`) ?? null;
+  }
+
+  /**
    * Resolves one request.
    *
    * @param request the service, the merchant group and optionally the merchant

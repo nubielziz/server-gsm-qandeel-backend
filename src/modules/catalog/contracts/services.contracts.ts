@@ -2,13 +2,17 @@
 // the replace-all custom fields and option lists. Shapes match the console's Service and ServiceDetail
 // (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14). Decision 060 adds the Catalog page's
 // facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort: `attention`, `retailPrice` and
-// `retailPriceSource` reach every reader and are required; the keys that depend on a permission stay optional for good.
+// `retailPriceSource` reach every reader and are required; the keys that depend on a permission stay optional for good. The merchant
+// switches of feature 7a (`allowCancel`, `allowVerify`, `verifyWindowH`) are required since the console reads them (decision 063).
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
 import { ATTENTION_REASONS, SHOP_BLOCKS } from '../domain/service-attention';
 import { SERVICE_FIELD_TYPES, SERVICE_OPTION_LISTS, SERVICE_TYPES } from '../db/schema';
 import { NamedRef, NonNegativeMoney, PositiveMoney } from './shared';
+
+/** The largest position a service may be given (the CHECK `services_sort_check`): the same bound as a shop page's. */
+export const MAX_SERVICE_SORT = 1_000_000;
 
 /** The longest verification window a service may offer: 30 days. */
 const MAX_VERIFY_WINDOW_H = 720;
@@ -47,27 +51,29 @@ const ServiceRow = z.object({
   fallbackSupplier: NamedRef.nullable().describe('The second active supplier link by priority.'),
   allowCancel: z
     .boolean()
-    .optional()
-    .describe(
-      'Whether a merchant may cancel an order of this service that was never sent. Always sent; optional in the schema only ' +
-        'because the console does not read it yet.',
-    ),
+    .describe('Whether a merchant may cancel an order of this service that was never sent. Sent to every reader.'),
   allowVerify: z
     .boolean()
-    .optional()
-    .describe(
-      'Whether a merchant may ask for the verification of a completed order. Always sent; optional in the schema only ' +
-        'because the console does not read it yet.',
-    ),
+    .describe('Whether a merchant may ask for the verification of a completed order. Sent to every reader.'),
   verifyWindowH: z
     .number()
     .int()
     .min(0)
     .max(MAX_VERIFY_WINDOW_H)
+    .describe(
+      'How many hours after completion the merchant may ask for verification; `0` means no window. Sent to every reader.',
+    ),
+  sort: z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_SERVICE_SORT)
     .optional()
     .describe(
-      'How many hours after completion the merchant may ask for verification; `0` means no window. Always sent; optional in ' +
-        'the schema only because the console does not read it yet.',
+      'The position staff gave the service among the services of its category (decision 063); `0` when never set. Merchants and ' +
+        'API clients read services by category position, then this, then the name. Always sent; optional in the schema only because ' +
+        "the console's `Service` type and its mock rows do not carry it yet (a required key would fail the harvested fixtures). Set " +
+        'with `POST /admin/services/order`.',
     ),
   minQty: z
     .number()
@@ -206,6 +212,7 @@ const SERVICE_EXAMPLE = {
   allowCancel: false,
   allowVerify: false,
   verifyWindowH: 0,
+  sort: 0,
   minQty: 1,
   maxQty: 1,
   qtyOptions: [],
@@ -272,13 +279,14 @@ export const listServices = defineRoute({
     'enabled service that is not listed and that nothing blocks, `shopBlocked` null); they combine. `isListed` and ' +
     '`notOnShop` need `storefront:read`: `403 FORBIDDEN` without it, before anything is read. `q` is a case-insensitive ' +
     'contains over name, code and category name. Sorts: name (default), type, cost, basePrice, retailPrice (a service without ' +
-    'a shop price last).',
+    'a shop price last) and `sort`, the order merchants see: the category position, then the service `sort` (decision 063), then ' +
+    'the name, in the direction asked for.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'catalog:read',
   query: listQuery({
-    sorts: ['name', 'type', 'cost', 'basePrice', 'retailPrice', 'id'],
+    sorts: ['name', 'type', 'cost', 'basePrice', 'retailPrice', 'sort', 'id'],
     defaultSort: { field: 'name', order: 'asc' },
     filters: {
       type: { type: 'enum', values: SERVICE_TYPES, ops: ['eq', 'ne'] },

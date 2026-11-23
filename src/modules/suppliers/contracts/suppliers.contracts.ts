@@ -13,7 +13,7 @@ import {
   zSignedMoney,
 } from '../../../common/contract';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../../catalog';
-import { SUPPLIER_DRIVERS, SUPPLIER_STATUSES } from '../db/schema';
+import { SUPPLIER_DRIVERS, SUPPLIER_IMPORT_SERVICE_STATUSES, SUPPLIER_STATUSES } from '../db/schema';
 
 const id = z.object({ id: zIdParam });
 
@@ -481,6 +481,19 @@ const ImportBody = z.object({
     .array(zId)
     .min(1, 'Pick at least one service.')
     .max(500, 'Pick at most 500 services at a time.'),
+  status: z
+    .enum(SUPPLIER_IMPORT_SERVICE_STATUSES)
+    .optional()
+    .describe(
+      'The state the new services are created in: `active` (the default) or `disabled`, which is never orderable, not even for an ' +
+        'instant (decision 063). Updated and unchanged items are not touched.',
+    ),
+  categoryId: zId
+    .optional()
+    .describe(
+      'The category every new service goes into; it must have the type of each of them, else `422` on `categoryId` naming the supplier ' +
+        "services that do not fit (decision 063). Omitted: the category named after the supplier's group, as before.",
+    ),
 });
 
 /** `POST /admin/suppliers/:id/import/preview`. */
@@ -494,7 +507,11 @@ export const previewImport = defineRoute({
     "rule as the import reads it (a Dhru supplier's QNT, MINQNT, MAXQNT and QNTOPTIONS; unreadable values mean one per order): for a " +
     '`new` item, what the service will get. `quantityDiffers` is true when the item is linked to a live service whose own rule is ' +
     'another one; the service keeps its own rule, and staff edit it to follow the supplier. Changes nothing, so it writes no ' +
-    'audit row.',
+    'audit row. With `status` or `categoryId` (decision 063, the keys of the import) every item also says the `status` and the ' +
+    '`category` a `new` item would get: `status` is `active` unless asked, `category` the picked one, else the category the import ' +
+    "finds for the supplier's group, else the name it makes one under with `id` `null`; both are `null` for an item " +
+    "the import would not create. A `categoryId` of another type than a new item answers the import's `422` on `categoryId`. Without " +
+    'either key the items carry neither.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',
@@ -542,6 +559,27 @@ export const previewImport = defineRoute({
             .describe(
               "True when a live linked service sells a quantity rule other than the supplier's; false for a new item and for an archived link.",
             ),
+          status: z
+            .enum(SUPPLIER_IMPORT_SERVICE_STATUSES)
+            .nullable()
+            .optional()
+            .describe(
+              'Only when the request carried `status` or `categoryId`: the state a `new` item would be created in; `null` for any other item.',
+            ),
+          category: z
+            .object({
+              id: zId
+                .nullable()
+                .describe('`null` when the import makes the category: no category of that type has the name yet.'),
+              name: z.string(),
+            })
+            .nullable()
+            .optional()
+            .describe(
+              'Only when the request carried `status` or `categoryId`: the category a `new` item would go into, named exactly: the picked ' +
+                "one, else the one the import finds for the supplier's group (by the group text, then by its cleaned name, ignoring case), " +
+                'else the cleaned name it makes a category under (`id` `null`). `null` for any other item.',
+            ),
         }),
       ),
     }),
@@ -582,7 +620,12 @@ export const importServices = defineRoute({
     "setting `catalog.importDefaultSlaMinutes`, default 1440, when it cannot be read), the suggested price, the supplier's custom " +
     "fields and a link of priority 1. A changed item updates the linked service's cost and recomputes its effective cost (price " +
     'untouched; an archived service counts as unchanged). Ids of another supplier are ignored. `createdServiceIds` names the ' +
-    'services this call created, in creation order (decision 060).',
+    'services this call created, in creation order (decision 060). Two optional keys change only what a new item becomes (decision 063): ' +
+    '`status` (`active`, the default, or `disabled`: the service is inserted disabled, in the same transaction, so it is never orderable) ' +
+    "and `categoryId` (the category every new service goes into instead of the one named after the supplier's group; it must have the " +
+    'type of each new service, else `422` on `categoryId` naming the supplier services that do not fit, and nothing is imported; an ' +
+    'unknown id is `422` on `categoryId` too). An updated or unchanged item is not touched by either. Without the keys the route is ' +
+    'what it was.',
   tags: ['suppliers'],
   surface: 'admin',
   access: 'staff-permission',

@@ -1,10 +1,11 @@
 // Read-only lookups into tables other modules own, kept in this one file: the services a supplier service is linked to (name, code,
-// status, SLA, cost), the custom fields of a service (to map an order's inputs to the supplier's field names), whether it exists, and
-// the services the sync may bring in line with their supplier (decision 042, feature 33).
+// status, SLA, cost), the custom fields of a service (to map an order's inputs to the supplier's field names), whether it exists, the
+// services the sync may bring in line with their supplier (decision 042, feature 33) and the category staff pick for an import
+// (decision 063; where the import puts a service without a pick is the catalog's `ServiceImporter.categoriesForGroups`).
 //
 // DEVIATION to resolve later: decision 016 wants these reads through the owning module's public service. The catalog exports no
-// service reader, so this file reads `services` and `service_fields` with plain selects, like the other modules' foreign-read files.
-// Writes to the catalog (the import) go through `ServiceImporter`.
+// service or category reader, so this file reads `services`, `service_fields` and `service_categories` with plain selects, like the
+// other modules' foreign-read files. Writes to the catalog (the import) go through `ServiceImporter`.
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import type { LinkedService } from '../domain/import-plan';
@@ -185,4 +186,60 @@ export async function alignmentCandidates(
       ),
     )
     .orderBy(asc(s.services.id));
+}
+
+/** A service category as the import's category choice reads it. */
+export interface CategoryChoice {
+  readonly id: number;
+  readonly name: string;
+  /** The service type the category holds (`imei`, `server`, `remote` or `file`). */
+  readonly type: string;
+}
+
+/**
+ * Reads a service category, and optionally holds it still for the rest of the transaction.
+ *
+ * Why: decision 063: an import that puts its new services into a category staff picked decides on the category's type and finds it
+ * again by its name; a `share` lock makes a concurrent type change or rename of that category wait for the import (the catalog's own
+ * writers take the row for update, `catalog-13`).
+ *
+ * @param db the database or a transaction
+ * @param id the category id
+ * @param lock `share` to lock the row for the rest of the transaction (needs a transaction); omitted for a plain read
+ * @returns the category, or `undefined` when there is none
+ */
+export async function findCategoryChoice(
+  db: DbExecutor,
+  id: number,
+  lock?: 'share',
+): Promise<CategoryChoice | undefined> {
+  const query = db
+    .select({ id: s.serviceCategories.id, name: s.serviceCategories.name, type: s.serviceCategories.type })
+    .from(s.serviceCategories)
+    .where(eq(s.serviceCategories.id, id))
+    .limit(1);
+  const [row] = lock === undefined ? await query : await query.for(lock);
+  return row;
+}
+
+/**
+ * Reads the category of each of some services.
+ *
+ * Why: decision 063: after the import made services in the category staff picked, one read proves every one of them landed there (the
+ * importer finds a category by name, and a mismatch would otherwise go unseen).
+ *
+ * @param db the transaction
+ * @param serviceIds the services
+ * @returns the category id by service id
+ */
+export async function categoryIdsOfServices(
+  db: DbExecutor,
+  serviceIds: readonly number[],
+): Promise<Map<number, number>> {
+  if (serviceIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: s.services.id, categoryId: s.services.categoryId })
+    .from(s.services)
+    .where(inArray(s.services.id, [...serviceIds]));
+  return new Map(rows.map((row) => [row.id, row.categoryId]));
 }

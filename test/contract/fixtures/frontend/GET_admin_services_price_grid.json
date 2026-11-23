@@ -1,0 +1,1034 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-total-count": "27"
+  },
+  "body": [
+    {
+      "id": 2,
+      "name": "Apple Warranty & Activation Date",
+      "code": "IMEI-APL-WRN",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 1,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "cost": "0.0500",
+      "costChangedFrom": null,
+      "basePrice": "0.1000",
+      "baseMargin": "0.0500",
+      "floorPrice": "0.0700",
+      "belowFloor": false,
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "3.9400",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "0.1000",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "0.1000",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "0.0900",
+          "margin": "0.0400"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "AT&T USA Premier Unlock",
+      "code": "IMEI-ATT-USA",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "13.5000",
+      "costChangedFrom": null,
+      "basePrice": "17.2800",
+      "baseMargin": "3.7800",
+      "floorPrice": "14.3100",
+      "belowFloor": false,
+      "retailPrice": "25.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "12.4900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "16.9300",
+          "margin": "3.4300"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "16.2600",
+          "margin": "2.7600"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": "15.9000",
+          "price": "15.9000",
+          "margin": "2.4000"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Blacklist Status (GSMA)",
+      "code": "IMEI-BLK-CHK",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 3,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "cost": "0.0400",
+      "costChangedFrom": null,
+      "basePrice": "0.0900",
+      "baseMargin": "0.0500",
+      "floorPrice": "0.0600",
+      "belowFloor": false,
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "3.9500",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "0.0900",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "0.0900",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "0.0800",
+          "margin": "0.0400"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "Chimera Tool 1 Month",
+      "code": "SRV-CHM-1M",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 7,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "cost": "19.8000",
+      "costChangedFrom": "17.0000",
+      "basePrice": "19.5000",
+      "baseMargin": "-0.3000",
+      "floorPrice": "20.9900",
+      "belowFloor": true,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "20.9900",
+          "margin": "1.1900"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "20.9900",
+          "margin": "1.1900"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "20.9900",
+          "margin": "1.1900"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "EE UK Unlock",
+      "code": "IMEI-EE-UK",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "cost": "6.4000",
+      "costChangedFrom": null,
+      "basePrice": "8.3800",
+      "baseMargin": "1.9800",
+      "floorPrice": "6.7800",
+      "belowFloor": false,
+      "retailPrice": "12.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "6.5900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "8.2100",
+          "margin": "1.8100"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "7.8800",
+          "margin": "1.4800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "7.5600",
+          "margin": "1.1600"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "name": "Huawei ID Remote",
+      "code": "RMT-HUA-ID",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 8,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "cost": "9.2000",
+      "costChangedFrom": null,
+      "basePrice": "12.4200",
+      "baseMargin": "3.2200",
+      "floorPrice": "9.7500",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "12.4200",
+          "margin": "3.2200"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "11.9200",
+          "margin": "2.7200"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "11.4300",
+          "margin": "2.2300"
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "name": "Huawei update.app Firmware",
+      "code": "FIL-HUA-UPD",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 9,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "cost": "1.1000",
+      "costChangedFrom": null,
+      "basePrice": "1.6000",
+      "baseMargin": "0.5000",
+      "floorPrice": "1.1700",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "1.6000",
+          "margin": "0.5000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "1.5400",
+          "margin": "0.4400"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "1.4700",
+          "margin": "0.3700"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "iCloud Clean / Lost Check",
+      "code": "IMEI-ICL-CHK",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 1,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "cost": "0.0800",
+      "costChangedFrom": null,
+      "basePrice": "0.1300",
+      "baseMargin": "0.0500",
+      "floorPrice": "0.1000",
+      "belowFloor": false,
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "3.9100",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "0.1300",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "0.1200",
+          "margin": "0.0400"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "0.1200",
+          "margin": "0.0400"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "iCloud Lost Mode Removal",
+      "code": "IMEI-ICL-LOST",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 1,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "32.0000",
+      "costChangedFrom": null,
+      "basePrice": "39.0400",
+      "baseMargin": "7.0400",
+      "floorPrice": "33.9200",
+      "belowFloor": false,
+      "retailPrice": "58.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "26.9900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "39.0400",
+          "margin": "7.0400"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "37.4800",
+          "margin": "5.4800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "35.9200",
+          "margin": "3.9200"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "name": "iPhone Passcode Remote",
+      "code": "RMT-IPH-PAS",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 8,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "cost": "18.0000",
+      "costChangedFrom": null,
+      "basePrice": "23.4000",
+      "baseMargin": "5.4000",
+      "floorPrice": "19.0800",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "23.4000",
+          "margin": "5.4000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "22.4600",
+          "margin": "4.4600"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "21.5300",
+          "margin": "3.5300"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "MDM Removal, iPhone Premium",
+      "code": "IMEI-MDM-PRM",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 1,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "24.0000",
+      "costChangedFrom": null,
+      "basePrice": "30.0000",
+      "baseMargin": "6.0000",
+      "floorPrice": "25.4400",
+      "belowFloor": false,
+      "retailPrice": "45.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "21.9900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "30.0000",
+          "margin": "6.0000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "28.8000",
+          "margin": "4.8000"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "27.6000",
+          "margin": "3.6000"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "name": "Miracle Box Credits x20",
+      "code": "SRV-MBX-20",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 6,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "cost": "6.1000",
+      "costChangedFrom": null,
+      "basePrice": "7.6900",
+      "baseMargin": "1.5900",
+      "floorPrice": "6.4700",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "7.6900",
+          "margin": "1.5900"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "7.3800",
+          "margin": "1.2800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "7.0700",
+          "margin": "0.9700"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "NCK Dongle Credits x50",
+      "code": "SRV-NCK-50",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 6,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "cost": "12.6000",
+      "costChangedFrom": null,
+      "basePrice": "15.3700",
+      "baseMargin": "2.7700",
+      "floorPrice": "13.3600",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "15.3700",
+          "margin": "2.7700"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "14.7600",
+          "margin": "2.1600"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "14.1400",
+          "margin": "1.5400"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Orange France Unlock",
+      "code": "IMEI-ORG-FR",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "11.2000",
+      "costChangedFrom": null,
+      "basePrice": "14.2200",
+      "baseMargin": "3.0200",
+      "floorPrice": "11.8700",
+      "belowFloor": false,
+      "retailPrice": "21.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "10.7900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "13.9400",
+          "margin": "2.7400"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "13.3800",
+          "margin": "2.1800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "12.8200",
+          "margin": "1.6200"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "name": "Qualcomm Dump File",
+      "code": "FIL-QCM-DMP",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 9,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "cost": "1.6000",
+      "costChangedFrom": null,
+      "basePrice": "2.5600",
+      "baseMargin": "0.9600",
+      "floorPrice": "1.7000",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "2.5600",
+          "margin": "0.9600"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "2.4600",
+          "margin": "0.8600"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "2.3600",
+          "margin": "0.7600"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "name": "Samsung Combination File",
+      "code": "FIL-SAM-CMB",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 9,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "cost": "0.9000",
+      "costChangedFrom": null,
+      "basePrice": "1.4000",
+      "baseMargin": "0.5000",
+      "floorPrice": "0.9500",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "1.4000",
+          "margin": "0.5000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "1.3400",
+          "margin": "0.4400"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "1.2900",
+          "margin": "0.3900"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "Samsung FRP Remote (USB)",
+      "code": "RMT-SAM-FRP",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 8,
+      "supplier": {
+        "id": 4,
+        "name": "RemoteDesk Pro"
+      },
+      "cost": "4.8000",
+      "costChangedFrom": null,
+      "basePrice": "6.9600",
+      "baseMargin": "2.1600",
+      "floorPrice": "5.0900",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "6.9600",
+          "margin": "2.1600"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "6.6800",
+          "margin": "1.8800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "6.4000",
+          "margin": "1.6000"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Samsung Info (KG / FRP / Region)",
+      "code": "IMEI-SAM-INF",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 2,
+      "supplier": {
+        "id": 3,
+        "name": "Rapid IMEI"
+      },
+      "cost": "0.0700",
+      "costChangedFrom": null,
+      "basePrice": "0.1200",
+      "baseMargin": "0.0500",
+      "floorPrice": "0.0900",
+      "belowFloor": false,
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "3.9200",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "0.1200",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "0.1200",
+          "margin": "0.0500"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "0.1100",
+          "margin": "0.0400"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "Samsung KG Lock Fix",
+      "code": "IMEI-SAM-KG",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 2,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "7.5000",
+      "costChangedFrom": null,
+      "basePrice": "9.9800",
+      "baseMargin": "2.4800",
+      "floorPrice": "7.9500",
+      "belowFloor": false,
+      "retailPrice": "14.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "7.4900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "9.9800",
+          "margin": "2.4800"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "9.5800",
+          "margin": "2.0800"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "9.1800",
+          "margin": "1.6800"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "T-Mobile USA Unlock",
+      "code": "IMEI-TMO-USA",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 1,
+        "name": "Nordic GSM"
+      },
+      "cost": "9.8000",
+      "costChangedFrom": null,
+      "basePrice": "12.7400",
+      "baseMargin": "2.9400",
+      "floorPrice": "10.3900",
+      "belowFloor": false,
+      "retailPrice": "19.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "10.1900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "12.4900",
+          "margin": "2.6900"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": "12.1000",
+          "price": "12.1000",
+          "margin": "2.3000"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "11.4900",
+          "margin": "1.6900"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "name": "UnlockTool 1-Day License",
+      "code": "SRV-UT-1D",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 7,
+      "supplier": {
+        "id": 2,
+        "name": "Gulf Server Hub"
+      },
+      "cost": "3.2000",
+      "costChangedFrom": null,
+      "basePrice": "4.0000",
+      "baseMargin": "0.8000",
+      "floorPrice": "3.3900",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "4.0000",
+          "margin": "0.8000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "3.8400",
+          "margin": "0.6400"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "3.6800",
+          "margin": "0.4800"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Verizon USA Clean Unlock",
+      "code": "IMEI-VZW-USA",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "cost": "5.6000",
+      "costChangedFrom": null,
+      "basePrice": "7.5600",
+      "baseMargin": "1.9600",
+      "floorPrice": "5.9400",
+      "belowFloor": false,
+      "retailPrice": "11.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "6.3900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "7.4100",
+          "margin": "1.8100"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "7.1100",
+          "margin": "1.5100"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "6.8200",
+          "margin": "1.2200"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Vodafone UK iPhone Unlock",
+      "code": "IMEI-VOD-UK",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 4,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "cost": "7.2000",
+      "costChangedFrom": null,
+      "basePrice": "9.3600",
+      "baseMargin": "2.1600",
+      "floorPrice": "7.6300",
+      "belowFloor": false,
+      "retailPrice": "14.9900",
+      "retailPriceSource": "rule",
+      "retailMargin": "7.7900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "9.1700",
+          "margin": "1.9700"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "8.8100",
+          "margin": "1.6100"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "8.4400",
+          "margin": "1.2400"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "name": "Xiaomi EDL Auth File",
+      "code": "FIL-XIA-EDL",
+      "status": "active",
+      "sort": 0,
+      "categoryId": 9,
+      "supplier": {
+        "id": 5,
+        "name": "FileForge"
+      },
+      "cost": "2.4000",
+      "costChangedFrom": null,
+      "basePrice": "3.6000",
+      "baseMargin": "1.2000",
+      "floorPrice": "2.5400",
+      "belowFloor": false,
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailMargin": null,
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "3.6000",
+          "margin": "1.2000"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "3.4600",
+          "margin": "1.0600"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "3.3100",
+          "margin": "0.9100"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "Xiaomi Mi Account Clean",
+      "code": "IMEI-XIA-MI",
+      "status": "disabled",
+      "sort": 0,
+      "categoryId": 5,
+      "supplier": {
+        "id": 6,
+        "name": "Bosphorus Unlock"
+      },
+      "cost": "4.2000",
+      "costChangedFrom": null,
+      "basePrice": "5.8800",
+      "baseMargin": "1.6800",
+      "floorPrice": "4.4500",
+      "belowFloor": false,
+      "retailPrice": "8.9900",
+      "retailPriceSource": "manual",
+      "retailMargin": "4.7900",
+      "groupPrices": [
+        {
+          "groupId": 1,
+          "fixedPrice": null,
+          "price": "5.8800",
+          "margin": "1.6800"
+        },
+        {
+          "groupId": 2,
+          "fixedPrice": null,
+          "price": "5.6400",
+          "margin": "1.4400"
+        },
+        {
+          "groupId": 3,
+          "fixedPrice": null,
+          "price": "5.4100",
+          "margin": "1.2100"
+        }
+      ]
+    }
+  ]
+}

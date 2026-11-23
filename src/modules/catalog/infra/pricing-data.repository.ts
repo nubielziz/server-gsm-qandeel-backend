@@ -16,6 +16,8 @@ import {
 /** A merchant group as the resolver reads it, with its kind (the storefront retail group is `b2c_retail`). */
 export interface PricedGroupRow extends PricedGroup {
   readonly kind: string;
+  /** The group's place in the order of groups (`client_groups.sort`); the console's price columns follow it (decision 063). */
+  readonly sort: number;
 }
 
 /** What one load brings back. */
@@ -102,7 +104,7 @@ export async function loadPricing(db: DbExecutor, query: PricingQuery): Promise<
     groups: new Map(
       groupRows.map((group) => [
         group.id,
-        { id: group.id, name: group.name, discountPercent: group.discountPercent, kind: group.kind },
+        { id: group.id, name: group.name, discountPercent: group.discountPercent, kind: group.kind, sort: group.sort },
       ]),
     ),
     groupPrices: new Map(groupPriceRows.map((row) => [`${row.serviceId}|${row.groupId}`, Money.of(row.price)])),

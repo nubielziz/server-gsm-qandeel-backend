@@ -26,6 +26,9 @@
     "minQty": 1,
     "maxQty": 1,
     "qtyOptions": [],
+    "allowCancel": false,
+    "allowVerify": false,
+    "verifyWindowH": 0,
     "supplier": null,
     "fallbackSupplier": null,
     "attention": [

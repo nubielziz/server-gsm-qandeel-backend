@@ -94,6 +94,8 @@ describe('GET /admin/services', () => {
       allowCancel: false,
       allowVerify: false,
       verifyWindowH: 0,
+      // Decision 063: a service nobody has numbered is at position 0.
+      sort: 0,
       minQty: 1,
       maxQty: 1,
       qtyOptions: [],

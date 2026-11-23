@@ -288,3 +288,49 @@ export function importShape(row: {
   const field = mainInputField(main, new Set(others.map((other) => other.key)));
   return { type: 'server', fields: [field, ...others.map((other, index) => ({ ...other, sort: index + 1 }))] };
 }
+
+/** A service an import would create, as the category choice reads it: the supplier service's name and the type it becomes ({@link importShape}). */
+export interface CreatableItem {
+  readonly name: string;
+  readonly type: ImportableType;
+}
+
+/** The most supplier services a category refusal names; the message says how many more there are. */
+export const MAX_NAMED_MISFITS = 10;
+
+/**
+ * Picks the new services that cannot go into a category chosen by staff.
+ *
+ * Why: decision 063 (B242): a category holds services of one type (`service_categories.type`, the composite key of `services`), so a category
+ * picked for an import must have the type of every service the import creates; a service of another type has no place in it.
+ *
+ * @param items the services the import would create, in the order the request gave them
+ * @param category the picked category
+ * @returns the items whose type is not the category's, in the same order (empty when every one fits)
+ */
+export function categoryMisfits(items: readonly CreatableItem[], category: { readonly type: string }): CreatableItem[] {
+  return items.filter((item) => item.type !== category.type);
+}
+
+/**
+ * Words the refusal of a category that does not fit.
+ *
+ * Why: decision 063: the console shows the sentence next to the category box; it names the supplier services that do not fit (at most
+ * {@link MAX_NAMED_MISFITS}, then a count) so staff can unpick them or pick another category.
+ *
+ * @param category the picked category
+ * @param misfits the services that do not fit ({@link categoryMisfits}); at least one
+ * @returns one English sentence, no HTML
+ */
+export function categoryMismatchMessage(
+  category: { readonly name: string; readonly type: string },
+  misfits: readonly CreatableItem[],
+): string {
+  const named = misfits.slice(0, MAX_NAMED_MISFITS).map((item) => `"${item.name}" (${item.type})`);
+  const more = misfits.length - named.length;
+  const list = more > 0 ? `${named.join(', ')} and ${more} more` : named.join(', ');
+  return (
+    `The category "${category.name}" holds ${category.type} services only; these supplier services would be another type: ${list}. ` +
+    "Pick a category of the same type, or none to use the supplier's group."
+  );
+}

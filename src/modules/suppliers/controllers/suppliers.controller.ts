@@ -155,8 +155,8 @@ export class SuppliersController {
    * Previews an import.
    *
    * @param params the supplier id
-   * @param body the picked supplier services
-   * @returns what would happen to each
+   * @param body the picked supplier services, and optionally `status` and `categoryId` for the new ones (decision 063)
+   * @returns what would happen to each; with `status` or `categoryId`, also the status and category each new service would get
    * @route POST /admin/suppliers/:id/import/preview
    */
   @Route(previewImport)
@@ -164,14 +164,17 @@ export class SuppliersController {
     @Param() params: ParamsOf<typeof previewImport>,
     @Body() body: BodyOf<typeof previewImport>,
   ): Promise<ResultOf<typeof previewImport>> {
-    return this.catalogue.preview(params.id, body.supplierServiceIds);
+    return this.catalogue.preview(params.id, body.supplierServiceIds, {
+      status: body.status,
+      categoryId: body.categoryId,
+    });
   }
 
   /**
    * Imports supplier services.
    *
    * @param params the supplier id
-   * @param body the picked supplier services
+   * @param body the picked supplier services, and optionally `status` and `categoryId` for the new ones (decision 063)
    * @returns how many were created, updated and left as they were
    * @route POST /admin/suppliers/:id/import
    */
@@ -180,6 +183,9 @@ export class SuppliersController {
     @Param() params: ParamsOf<typeof importServices>,
     @Body() body: BodyOf<typeof importServices>,
   ): Promise<ResultOf<typeof importServices>> {
-    return this.catalogue.import(params.id, body.supplierServiceIds);
+    return this.catalogue.import(params.id, body.supplierServiceIds, {
+      status: body.status,
+      categoryId: body.categoryId,
+    });
   }
 }

@@ -14,10 +14,15 @@ import {
   serviceFields,
   services,
 } from '../db/schema';
-import { IMPORTED_CATEGORY_NAME, cleanGroupName } from '../domain/category-name';
+import { cleanGroupName, groupLookupName } from '../domain/category-name';
 import { type QuantityRule, quantityRuleProblems } from '../domain/quantity-rule';
 import { deliveryTimeText } from '../domain/service-figures';
-import { insertCategoryRow, lockCategoryRow, nextCategorySort } from '../infra/category.repository';
+import {
+  categoriesByTypeAndName,
+  insertCategoryRow,
+  lockCategoryRow,
+  nextCategorySort,
+} from '../infra/category.repository';
 import { restampRetailFollow } from '../infra/retail-price-rule.repository';
 import {
   findServiceByCode,
@@ -59,6 +64,22 @@ export interface ImportedServiceInput {
     /** The pattern a value must match, `''` for none (the supplier's main box has one: decision 042). */
     readonly regex: string;
   }>;
+}
+
+/** A new service's type and supplier group text, as {@link ServiceImporter.categoriesForGroups} reads them. */
+export interface GroupOfService {
+  readonly type: ServiceType;
+  /** The supplier's group text as stored (`supplier_services.remote_group`). */
+  readonly group: string;
+}
+
+/**
+ * The category `create` puts a new service in: the category it finds (`id` set), or the name it makes one under (`id` `null`: no
+ * category of that type has the name yet).
+ */
+export interface GroupCategory {
+  readonly id: number | null;
+  readonly name: string;
 }
 
 /** The supplier's main box to put first on an IMEI service (decision 042): a required text field sent to the supplier as `IMEI`. */
@@ -165,6 +186,41 @@ export class ServiceImporter {
       );
     }
     return { serviceId: service.id, code, categoryCreated: category.created };
+  }
+
+  /**
+   * Tells, without writing anything, which category `create` would put each new service in.
+   *
+   * Why: decision 063: the preview of a supplier import names the category of every new service exactly. The lookups are the ones
+   * `create` makes (the raw group text, then the cleaned name, by type and name ignoring case), so the preview names the category the
+   * import finds, or the cleaned name it would make one under. Two services of one group get the same answer, as the import puts them
+   * in one category. A category made or renamed between the preview and the import is the import's to see.
+   *
+   * Side effects: none (one read of `service_categories`).
+   *
+   * @param db the database or a transaction
+   * @param wanted the type and the supplier group of each new service (at most the 500 services of a request)
+   * @returns one answer per entry of `wanted`, in its order
+   */
+  async categoriesForGroups(db: DbExecutor, wanted: readonly GroupOfService[]): Promise<GroupCategory[]> {
+    const names = wanted.map(({ type, group }) => ({
+      type,
+      raw: groupLookupName(group),
+      cleaned: cleanGroupName(group),
+    }));
+    // Two lookups per service, in the order `create` makes them: lookup 2n is the raw text, 2n + 1 the cleaned name.
+    const hits = await categoriesByTypeAndName(
+      db,
+      names.flatMap(({ type, raw, cleaned }) => [
+        { type, name: raw },
+        { type, name: cleaned },
+      ]),
+    );
+    const byLookup = new Map(hits.map((hit) => [hit.lookup, hit]));
+    return names.map(({ cleaned }, index) => {
+      const hit = byLookup.get(2 * index) ?? byLookup.get(2 * index + 1);
+      return hit === undefined ? { id: null, name: cleaned } : { id: hit.id, name: hit.name };
+    });
   }
 
   /**
@@ -306,8 +362,7 @@ export class ServiceImporter {
     type: ServiceType,
     group: string,
   ): Promise<{ id: number; created: boolean }> {
-    const raw = group.trim() === '' ? IMPORTED_CATEGORY_NAME : group.trim();
-    const byRaw = await this.findCategory(tx, type, raw);
+    const byRaw = await this.findCategory(tx, type, groupLookupName(group));
     if (byRaw !== undefined) return { id: byRaw, created: false };
     return this.categoryFor(tx, type, cleanGroupName(group));
   }

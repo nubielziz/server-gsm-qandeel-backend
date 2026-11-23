@@ -327,6 +327,11 @@ export const services = pgTable(
     minProfit: money(),
     /** previous cost, to show a price change; schema addition B116 */
     costWas: money(),
+    /**
+     * the position staff gave the service among the services of its category, 0 when never set (decision 063); what merchants and
+     * API clients read is ordered by the category's position, then this, then the name
+     */
+    sort: integer().notNull().default(0),
     /** set when staff delete a service that orders already use; an archived service is disabled (RESOLUTIONS catalog-3) */
     archivedAt: timestampTz(),
     createdAt: createdAt(),
@@ -357,6 +362,7 @@ export const services = pgTable(
     check('services_effective_cost_check', sql`${t.effectiveCost} >= ${t.cost}`),
     check('services_archived_check', sql`${t.archivedAt} is null or ${t.status} = 'disabled'`),
     check('services_sla_check', sql`${t.slaMinutes} > 0`),
+    check('services_sort_check', sql`${t.sort} >= 0 and ${t.sort} <= 1000000`),
     foreignKey({
       name: 'services_category_type_fk',
       columns: [t.categoryId, t.type],

@@ -78,6 +78,8 @@ export interface ServiceView {
   readonly allowCancel: boolean;
   readonly allowVerify: boolean;
   readonly verifyWindowH: number;
+  /** The position staff gave the service among those of its category, 0 when never set (decision 063). */
+  readonly sort: number;
   /** What one order may buy: a range `minQty..maxQty`, or only the packs in `qtyOptions` (ascending) when it is not empty. */
   readonly minQty: number;
   readonly maxQty: number;
@@ -293,6 +295,7 @@ function toView(
     allowCancel: service.allowCancel,
     allowVerify: service.allowVerify,
     verifyWindowH: service.verifyWindowH,
+    sort: service.sort,
     minQty: service.minQty,
     maxQty: service.maxQty,
     qtyOptions: service.qtyOptions,

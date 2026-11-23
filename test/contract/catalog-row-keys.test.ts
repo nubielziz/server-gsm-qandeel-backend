@@ -1,7 +1,7 @@
 // Decision 060: the keys of a service row that depend on the reader's permissions are left out for some readers, so the four routes
 // that answer a row keep them optional for good (a required key left out would be a 500). The keys every reader gets (`attention`,
-// `retailPrice`, `retailPriceSource`; `createdServiceIds` on the answer of an import) are required. The read of a service's supplier
-// chain answers the shape the PUT answers.
+// `retailPrice`, `retailPriceSource`, and the merchant switches since decision 063; `createdServiceIds` on the answer of an import)
+// are required. The read of a service's supplier chain answers the shape the PUT answers.
 import { describe, expect, it } from 'bun:test';
 import { z } from 'zod';
 import {
@@ -26,8 +26,8 @@ const PERMISSION_KEYS = [
   'publishFailure',
 ];
 
-/** The keys every reader of a service row gets, whatever its permissions. */
-const ALWAYS_KEYS = ['attention', 'retailPrice', 'retailPriceSource'];
+/** The keys every reader of a service row gets, whatever its permissions (the merchant switches since the console reads them). */
+const ALWAYS_KEYS = ['attention', 'retailPrice', 'retailPriceSource', 'allowCancel', 'allowVerify', 'verifyWindowH'];
 
 /** The example answer of a route, as one row. */
 const exampleRow = (route: { examples?: { response?: unknown } }): Record<string, unknown> => {
@@ -50,7 +50,7 @@ describe('the service row of decision 060', () => {
     }
   });
 
-  it('requires attention, retailPrice and retailPriceSource on the four routes, and leaves every permission key optional', () => {
+  it('requires attention, retailPrice, retailPriceSource and the merchant switches on the four routes, and leaves every permission key optional', () => {
     for (const route of [listServices, showService, createService, updateService]) {
       const schema = route.success.schema as z.ZodType;
       const row = exampleRow(route);

@@ -4,6 +4,18 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**The Product / Services page of the console, backend part (2026-11-24, decision 063): merged.** The owner replaced the console's
+one-page Catalog with a page in the layout their staff know (console decision 022). The reads of decision 060 stay and are used by it. Three
+additive parts were added for it. `GET /admin/services/price-grid` (feature 47) answers a page of services with the price every merchant
+group pays today, taken from the price resolver the orders use, and the margins over cost. `services.sort` (migration 0063) stores the
+order of services inside a category; `POST /admin/services/order` sets it, and the lists merchants and Dhru clients read follow it (groups
+by category position, then the stored order, then name). `POST /admin/suppliers/:id/import` and its preview take an optional `status` and
+`categoryId`; without them nothing changes on the wire. **Checks:** typecheck, lint, format and every generator check on the merged tree,
+the generated documents rebuilt against the console's new `main` (343 console routes); the API boots. The tests were written and are run by
+the checks on GitHub, not locally. **Release:** the console and this repository are pushed together with the server's deploys on hold, and
+the hold is lifted when both runs are green (the contract check here reads the console's `main`). **Open:** `ServiceRow.sort` is always
+sent and still optional in the contract; it becomes required when the console's service type reads it.
+
 **One-page Catalog, the reads of the backend (2026-11-23, decision 060): merged in two steps.** Owner request: adding and pricing a service
 took three console pages (Services and pricing, Suppliers, Storefront); the console gets one Catalog page. This step only adds. A service
 row carries its attention reasons (`no_supplier`, `below_floor`, `price_proposal`, `publish_failed`), its shop price and where that price

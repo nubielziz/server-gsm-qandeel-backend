@@ -119,6 +119,41 @@ export async function categoryNameTaken(
   return row !== undefined;
 }
 
+/** A category found by one of several (type, name) lookups. */
+export interface CategoryNameHit {
+  /** The position of the lookup in the list asked for, from 0. */
+  readonly lookup: number;
+  readonly id: number;
+  /** The category's own name (its case may differ from the name looked up). */
+  readonly name: string;
+}
+
+/**
+ * Finds the category of each (type, name) pair, ignoring the case of the name, in one statement.
+ *
+ * Why: the importer looks a category up by type and `lower(name)`, which `service_categories_name_uq` makes unique; the preview of
+ * an import (decision 063) asks the same of every new service at once. The names are compared by Postgres's own `lower()`, the
+ * comparison the importer makes, so the preview and the import never disagree on a name.
+ *
+ * @param db the database or a transaction
+ * @param lookups the (type, name) pairs, at most two per supplier service of a request (1000)
+ * @returns one hit per pair that has a category, any order; a pair without one is missing
+ */
+export async function categoriesByTypeAndName(
+  db: DbExecutor,
+  lookups: ReadonlyArray<{ readonly type: ServiceType; readonly name: string }>,
+): Promise<CategoryNameHit[]> {
+  if (lookups.length === 0) return [];
+  const result = await db.execute<{ lookup: number; id: string; name: string }>(sql`
+    select wanted.lookup, category.id, category.name
+    from (values ${sql.join(
+      lookups.map((pair, lookup) => sql`(${lookup}::integer, ${pair.type}::text, ${pair.name}::text)`),
+      sql`, `,
+    )}) as wanted(lookup, type, name)
+    join ${serviceCategories} as category on category.type = wanted.type and lower(category.name) = lower(wanted.name)`);
+  return result.rows.map((row) => ({ lookup: Number(row.lookup), id: Number(row.id), name: row.name }));
+}
+
 /** A category as the pass over the names reads it. */
 export interface CategoryNameRow {
   readonly id: number;

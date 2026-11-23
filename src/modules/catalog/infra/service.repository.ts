@@ -1,8 +1,8 @@
 // Drizzle queries of the service routes on `services` and the parts of a service (`service_fields`, `service_options`,
-// `service_group_prices`): the list and the single row with the figures worked out in SQL, the locks and writes, and the
-// pricing-rule switches of the archive and delete paths.
+// `service_group_prices`): the list and the single row with the figures worked out in SQL, the locks and writes, the stored order
+// of services (decision 063) and the pricing-rule switches of the archive and delete paths.
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
-import type { ParsedListQuery } from '../../../common/contract';
+import type { ListSort, ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import {
   type NewService,
@@ -24,6 +24,7 @@ import type { AttentionReason } from '../domain/service-attention';
 import { hasActiveSupplierLinkSql, isListedSql, primarySupplierIdSql } from './foreign-reads.repository';
 import { needsAttentionSql, notOnShopSql, retailPriceSql } from './service-attention.sql';
 import { belowFloorSql, floorPriceSql, marginPctSql, minProfitSql } from './service-figures.sql';
+import { categoryPositionSql, expandSortField } from './service-order.sql';
 
 /** A service with its category name and the figures worked out in SQL. */
 export interface ServiceRow {
@@ -36,8 +37,8 @@ export interface ServiceRow {
   readonly belowFloor: boolean;
 }
 
-/** The sorts of `GET /admin/services`. */
-export type ServiceListSort = 'name' | 'type' | 'cost' | 'basePrice' | 'retailPrice' | 'id';
+/** The sorts of `GET /admin/services` (the price grid reads `name`, `sort` and `id`). */
+export type ServiceListSort = 'name' | 'type' | 'cost' | 'basePrice' | 'retailPrice' | 'sort' | 'id';
 
 /**
  * The wire fields of the list and the columns they map to; `belowFloor` and `needsAttention` depend on the moment (rule windows),
@@ -62,9 +63,20 @@ const columnsAt = (at: Date, reasons: readonly AttentionReason[]): ListColumns =
   isListed: isListedSql,
   notOnShop: notOnShopSql,
   retailPrice: retailPriceSql,
+  // `sort` stands for "category position, then the service's own position, then name": the order merchants read (decision 063).
+  categoryPosition: categoryPositionSql,
+  sort: services.sort,
 });
 
 const live = isNull(services.archivedAt);
+
+/**
+ * The keys a list sort orders by: `sort` stands for the category position, the service's own position and the name, in the
+ * direction asked for (decision 063).
+ */
+function serviceOrderOf(sort: readonly ListSort[]): ListSort[] {
+  return expandSortField(sort, 'sort', { before: ['categoryPosition'], after: ['name'] });
+}
 
 function selectRows(db: DbExecutor, at: Date) {
   return db
@@ -100,7 +112,7 @@ export async function listServiceRows(
   const [rows, [count]] = await Promise.all([
     selectRows(db, at)
       .where(where)
-      .orderBy(...listOrderBy(query.sort, columns, services.id))
+      .orderBy(...listOrderBy(serviceOrderOf(query.sort), columns, services.id))
       .limit(query.range.limit)
       .offset(query.range.start),
     db
@@ -172,6 +184,58 @@ export async function lockLiveServicesInScope(
     .orderBy(asc(services.id))
     .for('update');
   return rows.map((row) => row.id);
+}
+
+/** A live service as the order of services reads it. */
+export interface ServicePosition {
+  readonly id: number;
+  readonly code: string;
+  readonly sort: number;
+}
+
+/**
+ * Locks the given live services for the rest of the transaction, in id order, and reads their position.
+ *
+ * Why: decision 063: a new order of services is written from the positions nobody can change until the transaction ends, so two
+ * saves (or a save and a delete) never interleave; the id order keeps two saves from deadlocking.
+ *
+ * @param db the transaction
+ * @param ids the service ids to lock (duplicates are fine)
+ * @returns the live services among them, by id; an unknown or archived id is not in the list
+ */
+export async function lockServicePositions(db: DbExecutor, ids: readonly number[]): Promise<ServicePosition[]> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  return db
+    .select({ id: services.id, code: services.code, sort: services.sort })
+    .from(services)
+    .where(and(inArray(services.id, unique), live))
+    .orderBy(asc(services.id))
+    .for('update');
+}
+
+/**
+ * Writes the positions of services that changed.
+ *
+ * @param db the transaction (the services are locked)
+ * @param items the services and their new position
+ * @returns the ids of the services whose position changed (a service already at its position is left alone)
+ */
+export async function writeServicePositions(
+  db: DbExecutor,
+  items: ReadonlyArray<{ readonly id: number; readonly sort: number }>,
+): Promise<number[]> {
+  if (items.length === 0) return [];
+  const result = await db.execute<{ id: string }>(sql`
+    update ${services} as target
+    set sort = changed.sort, updated_at = now()
+    from (values ${sql.join(
+      items.map((item) => sql`(${item.id}::bigint, ${item.sort}::integer)`),
+      sql`, `,
+    )}) as changed(id, sort)
+    where target.id = changed.id and target.sort is distinct from changed.sort
+    returning target.id`);
+  return result.rows.map((row) => Number(row.id)).sort((a, b) => a - b);
 }
 
 /**

@@ -20,6 +20,20 @@ const EDGE_SEPARATORS =
   /^[\s\-\u{2013}\u{2014}/\\|:;,_*~\u{2022}\u{00B7}&]+|[\s\-\u{2013}\u{2014}/\\|:;,_*~\u{2022}\u{00B7}&]+$/gu;
 
 /**
+ * The name the import looks a supplier group's category up by first: the group text as stored, trimmed; `Imported` when it is empty.
+ *
+ * Why: plan 31 section 3.5: a category an earlier import made under the raw text keeps getting its services, so the raw text is looked
+ * up before the cleaned name ({@link cleanGroupName}). The importer and the preview of an import (decision 063) both start here.
+ *
+ * @param group the supplier's group text, as `supplier_services.remote_group` stores it
+ * @returns the trimmed text, or `Imported` when nothing is left
+ */
+export function groupLookupName(group: string): string {
+  const trimmed = group.trim();
+  return trimmed === '' ? IMPORTED_CATEGORY_NAME : trimmed;
+}
+
+/**
  * Cleans the supplier's group text into the name of a category.
  *
  * Why: plan 31 section 3.5 "Category names": Quick add names a category after the supplier's group, and the public menu shows that name, so

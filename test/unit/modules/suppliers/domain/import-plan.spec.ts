@@ -2,6 +2,9 @@
 // service becomes in the catalog (decision 042: the supplier's own main box).
 import { describe, expect, it } from 'bun:test';
 import {
+  MAX_NAMED_MISFITS,
+  categoryMismatchMessage,
+  categoryMisfits,
   classifyImportItem,
   fieldsToRequire,
   importShape,
@@ -309,5 +312,53 @@ describe('fieldsToRequire', () => {
     ];
     expect(fieldsToRequire(fields, { mail: 'Account Email' }, supplier)).toEqual(['mail', 'Region']);
     expect(fieldsToRequire(fields, {}, [])).toEqual([]);
+  });
+});
+
+describe('categoryMisfits', () => {
+  const items = [
+    { name: 'Telstra Australia', type: 'imei' as const },
+    { name: 'Server pack', type: 'server' as const },
+    { name: 'Rogers Canada', type: 'imei' as const },
+    { name: 'Unlock file', type: 'file' as const },
+  ];
+
+  it('keeps the services whose type is not the category type, in the order given', () => {
+    expect(categoryMisfits(items, { type: 'imei' }).map((item) => item.name)).toEqual(['Server pack', 'Unlock file']);
+    expect(categoryMisfits(items, { type: 'server' }).map((item) => item.name)).toEqual([
+      'Telstra Australia',
+      'Rogers Canada',
+      'Unlock file',
+    ]);
+  });
+
+  it('finds nothing when every service has the type, and for no service at all', () => {
+    expect(categoryMisfits([items[0]!, items[2]!], { type: 'imei' })).toEqual([]);
+    expect(categoryMisfits([], { type: 'remote' })).toEqual([]);
+  });
+});
+
+describe('categoryMismatchMessage', () => {
+  const category = { name: 'Carrier unlock', type: 'imei' };
+
+  it('names the category, its type and every service that does not fit, with the type it would be', () => {
+    const message = categoryMismatchMessage(category, [
+      { name: 'Server pack', type: 'server' },
+      { name: 'Unlock file', type: 'file' },
+    ]);
+    expect(message).toContain('"Carrier unlock"');
+    expect(message).toContain('imei services only');
+    expect(message).toContain('"Server pack" (server), "Unlock file" (file)');
+    expect(message).not.toContain('more');
+  });
+
+  it('names at most ten services and counts the rest', () => {
+    const many = Array.from({ length: MAX_NAMED_MISFITS + 3 }, (_, index) => ({
+      name: `Service ${index + 1}`,
+      type: 'server' as const,
+    }));
+    const message = categoryMismatchMessage(category, many);
+    expect(message).toContain(`"Service ${MAX_NAMED_MISFITS}" (server) and 3 more`);
+    expect(message).not.toContain(`"Service ${MAX_NAMED_MISFITS + 1}"`);
   });
 });

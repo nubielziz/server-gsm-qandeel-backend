@@ -28,6 +28,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -71,6 +74,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -114,6 +120,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -157,6 +166,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 3,
         "name": "Rapid IMEI"
@@ -200,6 +212,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -240,6 +255,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -285,6 +303,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -328,6 +349,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -373,6 +397,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -413,6 +440,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -458,6 +488,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -498,6 +531,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -538,6 +574,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 1,
         "name": "Nordic GSM"
@@ -578,6 +617,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
@@ -618,6 +660,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -655,6 +700,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -692,6 +740,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -731,6 +782,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -768,6 +822,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 2,
         "name": "Gulf Server Hub"
@@ -805,6 +862,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -842,6 +902,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -879,6 +942,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -916,6 +982,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 4,
         "name": "RemoteDesk Pro"
@@ -953,6 +1022,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 5,
         "name": "FileForge"
@@ -990,6 +1062,9 @@
       "minQty": 1,
       "maxQty": 1,
       "qtyOptions": [],
+      "allowCancel": false,
+      "allowVerify": false,
+      "verifyWindowH": 0,
       "supplier": {
         "id": 5,
         "name": "FileForge"

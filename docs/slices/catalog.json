@@ -4,22 +4,23 @@
   "domain": "B",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 28,
-    "endpoints": 50,
+    "rows": 30,
+    "endpoints": 52,
     "bySurface": {
       "dhru": 1,
       "v1": 2,
       "client": 3,
-      "admin": 44
+      "admin": 46
     },
-    "frontendCalled": 44
+    "frontendCalled": 46
   },
   "stages": [
     4,
     5,
     7,
     14,
-    31
+    31,
+    47
   ],
   "ownedTables": [
     {
@@ -277,6 +278,18 @@
     {
       "table": "audit_logs",
       "owner": "platform"
+    },
+    {
+      "table": "service_supplier_links",
+      "owner": "suppliers"
+    },
+    {
+      "table": "supplier_services",
+      "owner": "suppliers"
+    },
+    {
+      "table": "suppliers",
+      "owner": "suppliers"
     }
   ],
   "endpoints": [
@@ -1963,6 +1976,91 @@
       "addition": {
         "file": "scripts/map-additions/31.mjs",
         "spec": "B230"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "GET /admin/services/price-grid",
+      "method": "GET",
+      "path": "/admin/services/price-grid",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "The price grid: the cost, base, shop and per-group prices of a page of services with their margins.",
+      "access": "staff-permission",
+      "permission": "catalog:read",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:read",
+      "stage": 47,
+      "tables": [
+        "services",
+        "service_categories",
+        "client_groups",
+        "service_group_prices",
+        "pricing_rules",
+        "service_supplier_links",
+        "supplier_services",
+        "suppliers",
+        "retail_price_follows"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin GET /admin/services/price-grid",
+        "method": "GET",
+        "ops": null,
+        "path": "/admin/services/price-grid"
+      },
+      "module": "catalog",
+      "description": "The price grid: the cost, base, shop and per-group prices of a page of services with their margins.",
+      "frontend": {
+        "file": "src/features/services/api/priceGrid.ts",
+        "line": 12,
+        "fn": "listPriceGrid"
+      },
+      "addition": {
+        "file": "scripts/map-additions/47.mjs",
+        "spec": "B240"
+      },
+      "successStatus": 200
+    },
+    {
+      "key": "POST /admin/services/order",
+      "method": "POST",
+      "path": "/admin/services/order",
+      "op": "action",
+      "surface": "admin",
+      "kind": "http",
+      "group": "catalog",
+      "descriptionAr": "Set the order of services: the position merchants and API clients see them in, inside a category.",
+      "access": "staff-permission",
+      "permission": "catalog:update",
+      "turnstile": false,
+      "idempotencyKey": false,
+      "authRaw": "catalog:update",
+      "stage": 47,
+      "tables": [
+        "services",
+        "audit_logs"
+      ],
+      "dhruResponse": null,
+      "origin": {
+        "row": "admin POST /admin/services/order",
+        "method": "POST",
+        "ops": null,
+        "path": "/admin/services/order"
+      },
+      "module": "catalog",
+      "description": "Set the order of services: the position merchants and API clients see them in, inside a category.",
+      "frontend": {
+        "file": "src/features/services/api/priceGrid.ts",
+        "line": 22,
+        "fn": "orderServices"
+      },
+      "addition": {
+        "file": "scripts/map-additions/47.mjs",
+        "spec": "B241"
       },
       "successStatus": 200
     }

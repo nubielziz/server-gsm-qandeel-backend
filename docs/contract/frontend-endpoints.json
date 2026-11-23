@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 341,
+ "count": 343,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -18543,6 +18543,15 @@
           "type": "number"
          }
         },
+        "allowCancel": {
+         "type": "boolean"
+        },
+        "allowVerify": {
+         "type": "boolean"
+        },
+        "verifyWindowH": {
+         "type": "number"
+        },
         "code": {
          "type": "string"
         },
@@ -18764,6 +18773,15 @@
       "array": {
        "type": "number"
       }
+     },
+     "allowCancel": {
+      "type": "boolean"
+     },
+     "allowVerify": {
+      "type": "boolean"
+     },
+     "verifyWindowH": {
+      "type": "number"
      },
      "code": {
       "type": "string"
@@ -19064,6 +19082,219 @@
       "supplierServiceName": {
        "type": "string"
       }
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/services/price-grid",
+   "fn": "listPriceGrid",
+   "file": "src/features/services/api/priceGrid.ts",
+   "line": 14,
+   "params": [
+    {
+     "name": "query",
+     "optional": true,
+     "typeText": "ListQuery",
+     "shape": {
+      "object": {
+       "start": {
+        "type": "number",
+        "optional": true
+       },
+       "end": {
+        "type": "number",
+        "optional": true
+       },
+       "sort": {
+        "array": {
+         "type": "string"
+        },
+        "optional": true
+       },
+       "order": {
+        "array": {
+         "enum": [
+          "asc",
+          "desc"
+         ]
+        },
+        "optional": true
+       },
+       "q": {
+        "type": "string",
+        "optional": true
+       },
+       "filters": {
+        "object": {},
+        "record": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "number"
+          },
+          {
+           "array": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             }
+            ]
+           }
+          },
+          {
+           "type": "boolean"
+          }
+         ],
+         "undefinable": true
+        },
+        "optional": true
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ListResult<PriceGridRow>",
+   "returns": {
+    "object": {
+     "data": {
+      "array": {
+       "object": {
+        "id": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "name": {
+         "type": "string"
+        },
+        "code": {
+         "type": "string"
+        },
+        "status": {
+         "enum": [
+          "active",
+          "disabled"
+         ]
+        },
+        "sort": {
+         "type": "number"
+        },
+        "categoryId": {
+         "type": "number",
+         "alias": "Id"
+        },
+        "supplier": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
+          }
+         },
+         "nullable": true
+        },
+        "cost": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "costChangedFrom": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "basePrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "baseMargin": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "floorPrice": {
+         "type": "string",
+         "alias": "Money"
+        },
+        "belowFloor": {
+         "type": "boolean"
+        },
+        "retailPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "retailPriceSource": {
+         "enum": [
+          "manual",
+          "rule"
+         ],
+         "nullable": true
+        },
+        "retailMargin": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money"
+        },
+        "groupPrices": {
+         "array": {
+          "object": {
+           "groupId": {
+            "type": "number",
+            "alias": "Id"
+           },
+           "fixedPrice": {
+            "type": "string",
+            "nullable": true,
+            "alias": "Money"
+           },
+           "price": {
+            "type": "string",
+            "alias": "Money"
+           },
+           "margin": {
+            "type": "string",
+            "nullable": true,
+            "alias": "Money"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "total": {
+      "type": "number"
      }
     }
    }
@@ -30537,6 +30768,18 @@
         },
         "optional": true
        },
+       "allowCancel": {
+        "type": "boolean",
+        "optional": true
+       },
+       "allowVerify": {
+        "type": "boolean",
+        "optional": true
+       },
+       "verifyWindowH": {
+        "type": "number",
+        "optional": true
+       },
        "minProfit": {
         "type": "string",
         "alias": "Money",
@@ -30608,6 +30851,15 @@
       "array": {
        "type": "number"
       }
+     },
+     "allowCancel": {
+      "type": "boolean"
+     },
+     "allowVerify": {
+      "type": "boolean"
+     },
+     "verifyWindowH": {
+      "type": "number"
      },
      "code": {
       "type": "string"
@@ -43443,7 +43695,8 @@
         }
        },
        "sort": {
-        "type": "number"
+        "type": "number",
+        "optional": true
        },
        "isActive": {
         "type": "boolean"
@@ -43976,6 +44229,18 @@
          "type": "number"
         },
         "optional": true
+       },
+       "allowCancel": {
+        "type": "boolean",
+        "optional": true
+       },
+       "allowVerify": {
+        "type": "boolean",
+        "optional": true
+       },
+       "verifyWindowH": {
+        "type": "number",
+        "optional": true
        }
       }
      }
@@ -44029,6 +44294,15 @@
       "array": {
        "type": "number"
       }
+     },
+     "allowCancel": {
+      "type": "boolean"
+     },
+     "allowVerify": {
+      "type": "boolean"
+     },
+     "verifyWindowH": {
+      "type": "number"
      },
      "code": {
       "type": "string"
@@ -44425,6 +44699,64 @@
       }
      },
      "belowFloor": {
+      "type": "number"
+     }
+    }
+   }
+  },
+  {
+   "key": "POST /admin/services/order",
+   "fn": "orderServices",
+   "file": "src/features/services/api/priceGrid.ts",
+   "line": 24,
+   "params": [
+    {
+     "name": "body",
+     "optional": false,
+     "typeText": "ServiceOrderBody",
+     "shape": {
+      "object": {
+       "items": {
+        "array": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "sort": {
+           "type": "number"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ServiceOrderResult",
+   "returns": {
+    "object": {
+     "updated": {
       "type": "number"
      }
     }
@@ -45102,6 +45434,18 @@
          "type": "number",
          "alias": "Id"
         }
+       },
+       "status": {
+        "enum": [
+         "active",
+         "disabled"
+        ],
+        "optional": true
+       },
+       "categoryId": {
+        "type": "number",
+        "alias": "Id",
+        "optional": true
        }
       }
      }
@@ -45175,6 +45519,18 @@
          "type": "number",
          "alias": "Id"
         }
+       },
+       "status": {
+        "enum": [
+         "active",
+         "disabled"
+        ],
+        "optional": true
+       },
+       "categoryId": {
+        "type": "number",
+        "alias": "Id",
+        "optional": true
        }
       }
      }
@@ -45259,6 +45615,28 @@
         },
         "quantityDiffers": {
          "type": "boolean"
+        },
+        "status": {
+         "enum": [
+          "active",
+          "disabled"
+         ],
+         "nullable": true,
+         "optional": true
+        },
+        "category": {
+         "object": {
+          "id": {
+           "type": "number",
+           "nullable": true,
+           "alias": "Id"
+          },
+          "name": {
+           "type": "string"
+          }
+         },
+         "nullable": true,
+         "optional": true
         }
        }
       }

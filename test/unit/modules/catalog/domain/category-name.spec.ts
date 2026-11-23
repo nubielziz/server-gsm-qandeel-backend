@@ -1,7 +1,7 @@
-// Unit tests of the cleaned category name of an import (feature 31, plan 31 section 3.5). Arabic script and invisible characters are
-// written with escapes only (decision 039): `english:check` reads no Arabic in any file.
+// Unit tests of the cleaned category name of an import (feature 31, plan 31 section 3.5) and of the raw lookup name (decision 063).
+// Arabic script and invisible characters are written with escapes only (decision 039): `english:check` reads no Arabic in any file.
 import { describe, expect, it } from 'bun:test';
-import { IMPORTED_CATEGORY_NAME, cleanGroupName } from '@src/modules/catalog/domain/category-name';
+import { IMPORTED_CATEGORY_NAME, cleanGroupName, groupLookupName } from '@src/modules/catalog/domain/category-name';
 
 /** Arabic letters for "Apple" (U+0622 U+0628 U+0644). */
 const ARABIC_APPLE = '\u{0622}\u{0628}\u{0644}';
@@ -91,5 +91,18 @@ describe('cleanGroupName', () => {
       const once = cleanGroupName(raw);
       expect(cleanGroupName(once)).toBe(once);
     }
+  });
+});
+
+describe('groupLookupName', () => {
+  it('is the group text as stored, trimmed, uncleaned', () => {
+    expect(groupLookupName('  Apple &amp; Samsung ')).toBe('Apple &amp; Samsung');
+    expect(groupLookupName('Carrier unlock')).toBe('Carrier unlock');
+  });
+
+  it('is Imported for an empty group, never a cleaned name', () => {
+    expect(groupLookupName('')).toBe(IMPORTED_CATEGORY_NAME);
+    expect(groupLookupName('   ')).toBe(IMPORTED_CATEGORY_NAME);
+    expect(groupLookupName('--')).toBe('--');
   });
 });

@@ -24,8 +24,16 @@ export interface ImportedServiceArgs {
   readonly cost: Money;
   /** The SLA in minutes when the supplier's time text cannot be read (`catalog.importDefaultSlaMinutes`). */
   readonly defaultSla: number;
-  /** The state the service starts in. */
+  /** The state the service starts in; the service is inserted in it, so a `disabled` one is never orderable (decision 063). */
   readonly status: SupplierImportServiceStatus;
+  /**
+   * The name of the category staff picked for the import (decision 063); omitted for the category of the supplier's group.
+   *
+   * The importer finds a category by the supplier's group text first, by (type, name) ignoring case, and those pairs are unique, so the
+   * picked category's name stands in for the group text and the importer finds exactly it. The caller locks the category and checks
+   * afterwards that every service landed in it.
+   */
+  readonly categoryName?: string | undefined;
   /** The quick add run that creates the service (written on its first link); omitted for the picker's import. */
   readonly importRunId?: number | null | undefined;
 }
@@ -55,14 +63,14 @@ export const suggestedPrice = (cost: Money): Money => cost.add(defaultMinProfit(
  * Why: orders-suppliers-10 and B213: a new item becomes a service with the `POST /admin/services` defaults, the category of its type and
  * group, the suggested price, the supplier's custom fields and the supplier's quantity rule, written at creation only. The type and the
  * fields are `importShape`'s: an IMEI service whose main box is not an IMEI is a `server` service with that box first (decision 042). The picker's
- * import (always `active`) and the quick add (`active` or `disabled`) both come here.
+ * import and the quick add (both `active` or `disabled`) come here; the import may also name the category (decision 063).
  *
- * Side effects: inserts `service_categories` (when the group has none yet), `services`, `service_fields` and `service_supplier_links`
+ * Side effects: inserts `service_categories` (when the group has none yet; never when a category name is given), `services`, `service_fields` and `service_supplier_links`
  * (with `import_run_id` when a quick add run makes it) on the caller's transaction. The caller recomputes the effective cost, moves the catalog price version and writes the audit row.
  *
  * @param tx the transaction (the supplier row is locked)
  * @param importer the catalog's importer
- * @param args the supplier service, its cost, the default SLA, the starting state and the quick add run that makes it
+ * @param args the supplier service, its cost, the default SLA, the starting state, the picked category's name and the quick add run that makes it
  * @returns the new service's id and what the creation did besides it
  * @throws {Error} when the supplier service's type is not importable (the caller checks first), or the database refuses a row
  */
@@ -71,7 +79,7 @@ export async function createImportedService(
   importer: ServiceImporter,
   args: ImportedServiceArgs,
 ): Promise<ImportedServiceResult> {
-  const { row, cost, defaultSla, status, importRunId = null } = args;
+  const { row, cost, defaultSla, status, categoryName, importRunId = null } = args;
   // An IMEI service whose main box is not an IMEI becomes a server service with that box first (decision 042).
   const { type, fields } = importShape(row);
   if (type === undefined)
@@ -82,7 +90,7 @@ export async function createImportedService(
     supplierServiceId: row.id,
     type,
     name: row.name,
-    group: row.remoteGroup,
+    group: categoryName ?? row.remoteGroup,
     time: row.time,
     cost: cost.toWire(),
     basePrice: suggestedPrice(cost).toWire(),

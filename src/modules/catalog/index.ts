@@ -18,7 +18,13 @@ export type { ClientGroupRef, FindGroupOptions } from './application/client-grou
 export { recomputeEffectiveCost } from './application/effective-cost';
 export { belowFloorSql } from './infra/service-figures.sql';
 export { ServiceImporter } from './application/service-importer';
-export type { AdoptedField, AdoptedService, ImportedServiceInput } from './application/service-importer';
+export type {
+  AdoptedField,
+  AdoptedService,
+  GroupCategory,
+  GroupOfService,
+  ImportedServiceInput,
+} from './application/service-importer';
 export { PriceResolver, PricingContext } from './application/price-resolver';
 export type { ContextOptions, FloorQuote, PriceRequest } from './application/price-resolver';
 export { RetailFloorError, RetailPrices } from './application/retail-prices';

@@ -4,7 +4,7 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41). Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -148,7 +148,9 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   service is split between two categories), **then by the cleaned name** (`cleanGroupName` in `domain/category-name.ts`: entities
   decoded; control and invisible characters, direction marks, emoji, decoration and Arabic script runs removed; spaces collapsed;
   separators at either end dropped; nothing left gives `Imported`), and only then creates the category, under the cleaned name. The
-  picker's import goes through the same lookup, and the adoption below keeps its exact-name lookup. The categories that already exist
+  picker's import goes through the same lookup, and the adoption below keeps its exact-name lookup. `categoriesForGroups(db, [{ type, group }])`
+  makes the same two lookups without writing (one read, Postgres's own `lower()`): the preview of a supplier import names with it the
+  category each new service goes into, or the cleaned name the import makes one under (`id` `null`; decision 063). The categories that already exist
   get their clean names from `CategoryNameCleanup` (see "Jobs and schedules"), which leaves a name another category of the type holds.
   `decodeEntities` and the two character patterns live in `src/common/text.ts` (the storefront search re-exports `decodeEntities`).
   Feature 33 (decision 042): a field of `ImportedServiceInput.fields` carries its `regex` (the supplier's main box gets `^.{min,max}$`
@@ -179,6 +181,28 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   `catalog` version counter after the commit of every write that can change a resolved price (services, group prices, client
   prices, rules, a group's discount or delete, categories); feature 6 calls it when `recomputeEffectiveCost` reports a change.
   Cached price lists read through `CatalogPriceVersion.versioned(key)`. This feature caches nothing itself.
+
+### The price grid and the stored order of services (decision 063)
+
+- **Price grid** (`GET /admin/services/price-grid`, `application/service-price-grid.service.ts`, `domain/price-grid.ts`,
+  `contracts/service-grid.contracts.ts`): one page of live services in the list dialect of `GET /admin/services` (filters `type`, `status`,
+  `categoryId`, `q`; sorts `name`, `sort`, `id`; `x-total-count`), for the console's price page. A row has the effective `cost`
+  (`null` while the cost is zero: no cost on record), `costChangedFrom`, the base price with `baseMargin`, the floor and `belowFloor`, the
+  shop price with `retailPriceSource` (`rule` or `manual`, the words of the service rows) and `retailMargin`, and `groupPrices`: one entry per merchant group (`b2b`, in the order
+  of the groups page) with the stored `fixedPrice`, the `price` and its `margin`. The group `price` is `PricingContext.resolve`, the function the
+  merchant catalog and the order path call (never a second formula); a margin is price minus cost, signed, `null` without a cost. A page is
+  one list query, one `PriceResolver.context` load, one supplier-chain read and one shop-price read: nothing per cell. It needs
+  `catalog:read` and `pricing:read` (the second checked in the use case: `403` naming it). `PricingContext.merchantGroupsBySort()` and
+  `groupFixedPrice()` are what it adds to the resolver's context.
+- **Stored order** (`POST /admin/services/order`, `application/service-order.service.ts`, `catalog:update`): `services.sort` (migration 0063,
+  default 0, `CHECK` 0 to 1000000) is the position of a service in its category. The body `{ items: [{ id, sort }] }` (1 to 500) is saved in
+  one transaction (services locked in id order; a service listed twice, unknown or archived is `422` on `items.N.id`, all problems together,
+  nothing saved), only the positions that differ are written, one `changed the order of` audit entry is written (also when nothing moved), and the
+  catalog price version moves after the commit. The answer is `{ updated }`.
+- **Who follows it**: the portal catalog (its `category` sort is category position, then the service position, then the caller's next key; the
+  default order is category, name), the price export and the Dhru service list (`MerchantCatalog.all`: category position, `services.sort`, name).
+  `_sort=sort` of the admin list and of the grid is the same order. One definition: `infra/service-order.sql.ts`. REST v1 stays in id order (its cursor).
+  Inside a Dhru group `SERVICES` is an object keyed by service id, which a JSON reader sorts by key whatever the writer did.
 
 ### Retail price rules (feature 31, decision 040, B229)
 
@@ -308,6 +332,9 @@ Only this module reads and writes these 10 tables, `listed_prices`, `retail_pric
 
 43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
 
+Decision 063 adds two admin routes beyond the map (`scripts/map-additions/47.mjs`, `contracts/service-grid.contracts.ts`):
+`GET /admin/services/price-grid` (`catalog:read` and `pricing:read`) and `POST /admin/services/order` (`catalog:update`).
+
 Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs`). Spec B229, `contracts/retail-price-rules.contracts.ts`:
 `GET /admin/retail-price-rules` (`pricing:read`), `POST /admin/retail-price-rules` (`pricing:create`, 201), `PATCH
 /admin/retail-price-rules/:id` (`pricing:update`), `DELETE /admin/retail-price-rules/:id` (`pricing:delete`, 204) and `POST
@@ -390,7 +417,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 ## Permissions
 
 Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
-rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046).
+rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046). `GET /admin/services/price-grid` (decision 063) needs `catalog:read` and also `pricing:read`; `POST /admin/services/order` needs `catalog:update` and writes the audit entry `changed the order of` (entity `service`).
 
 API key scopes on its REST v1 routes: `services:read`.
 
@@ -449,6 +476,9 @@ database had none, so `POST /client/auth/register` and `POST /admin/clients` ans
 default when groups exist without one, inserts `Standard` (default, no discount, threshold 0, no deposit limit, no overdraft) when
 there is no merchant group, and inserts `Storefront retail` when there is no `b2c_retail` group. The seed's demo groups reuse or
 replace these rows (`scripts/seed/identity.ts`).
+
+`drizzle/0063_service_sort.sql` adds `services.sort` (decision 063): integer, default 0, `CHECK` from 0 to 1000000. Every service starts at 0, which keeps the
+name order the merchant lists had; nothing is backfilled.
 
 ## Cache keys
 
