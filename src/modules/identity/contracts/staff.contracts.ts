@@ -101,6 +101,8 @@ export const createStaff = defineRoute({
     'generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. ' +
     'Only an owner can give the new account a role that grants `*`. ' +
     'The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046).' +
+    ' Only an owner can give a role that grants `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create` ' +
+    '(their money limits count per staff member, `403 FORBIDDEN`, decision 049).' +
     ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['staff'],
   surface: 'admin',
@@ -128,7 +130,11 @@ export const updateStaff = defineRoute({
     "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role " +
     '(`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and ' +
     'giving a role that grants `*` need an owner. ' +
-    "On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046).",
+    "On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046). " +
+    'Only an owner can give another member a role that grants `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or ' +
+    "`invoices:create`, or change another member's email when the member's role, or the new role, grants one of them " +
+    '(their money limits count per staff member, `403 FORBIDDEN`, decision 049). A new email voids the ' +
+    "member's unused invite and reset links: send a new link after the change.",
   tags: ['staff'],
   surface: 'admin',
   access: 'staff-permission',
@@ -162,6 +168,8 @@ export const setStaffPassword = defineRoute({
     'only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for ' +
     'the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. ' +
     "An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046)." +
+    ' Only an owner sets a temporary password for another member whose role grants `wallet:adjust`, `wallet:credit_limit`, ' +
+    '`payments:approve` or `invoices:create` (`403 FORBIDDEN`, decision 049).' +
     ' A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.',
   tags: ['staff'],
   surface: 'admin',

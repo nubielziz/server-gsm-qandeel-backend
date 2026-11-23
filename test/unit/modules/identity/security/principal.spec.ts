@@ -7,6 +7,7 @@ import {
   assertOwnerTargetAllowed,
   assertWithinCeiling,
   customerContactOf,
+  grantsPerPersonMoney,
   isOwner,
   missingPermission,
   requireOwner,
@@ -159,5 +160,23 @@ describe('customerContactOf (decision 047)', () => {
     ]) {
       expect(customerContactOf(holder(...permissions)), permissions.join()).toBe('masked');
     }
+  });
+});
+
+describe('grantsPerPersonMoney (decision 049)', () => {
+  it('is true for each money permission whose rules count per staff member, also through its area wildcard or *', () => {
+    for (const permission of ['wallet:adjust', 'wallet:credit_limit', 'payments:approve', 'invoices:create']) {
+      expect(grantsPerPersonMoney(['staff:read', permission])).toBe(true);
+    }
+    expect(grantsPerPersonMoney(['wallet:*'])).toBe(true);
+    expect(grantsPerPersonMoney(['payments:*'])).toBe(true);
+    expect(grantsPerPersonMoney(['invoices:*'])).toBe(true);
+    expect(grantsPerPersonMoney(['*'])).toBe(true);
+  });
+
+  it('is false for roles without them, the read permissions of the same areas included', () => {
+    expect(grantsPerPersonMoney([])).toBe(false);
+    expect(grantsPerPersonMoney(['staff:*', 'roles:*', 'orders:*'])).toBe(false);
+    expect(grantsPerPersonMoney(['wallet:read', 'payments:read', 'invoices:read', 'payments:gateways'])).toBe(false);
   });
 });

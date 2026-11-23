@@ -20,9 +20,15 @@ import {
   staffIdsOfRole,
   updateRoleRow,
 } from '../infra/role.repository';
-import { grantsEverything } from '../security/permission-grammar';
+import { grants, grantsEverything } from '../security/permission-grammar';
 import { PermissionsCatalog } from '../security/permissions-catalog';
-import { assertOwnerTargetAllowed, assertWithinCeiling, isOwner } from '../security/principal';
+import {
+  PER_PERSON_MONEY_PERMISSIONS,
+  assertOwnerTargetAllowed,
+  assertWithinCeiling,
+  isOwner,
+  requireOwner,
+} from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { RolePermissions } from '../security/role-permissions';
 import { SessionService } from '../security/session.service';
@@ -50,6 +56,10 @@ const toView = ({ role, staffCount }: RoleWithCount): RoleView => ({
 
 const snapshot = (role: Pick<Role, 'name' | 'permissions'>) => ({ name: role.name, permissions: role.permissions });
 
+const OWNER_ARMS_HELD_ROLE_DETAIL =
+  'Only an owner can give a role that staff members hold the right to adjust wallets, set credit limits, approve payments or ' +
+  'issue invoices.';
+
 function nameTaken(): AppError {
   return new AppError('VALIDATION_FAILED', {
     errors: [{ field: 'name', code: 'duplicate', message: 'Another role already has this name.' }],
@@ -70,6 +80,9 @@ function nameTaken(): AppError {
  *
  * Privilege ceiling (decision 046): the caller must hold every permission of a role they create, edit or delete, and every
  * permission they give it; only an Owner edits the role they hold themselves (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
+ *
+ * Money rules per person (decision 049): a role that a staff member of any status holds gains an entry of
+ * `PER_PERSON_MONEY_PERMISSIONS` only from an Owner; a role nobody holds stays editable, because giving it to a member needs an Owner.
  *
  * Open live streams: a change of a role's permissions ends the open streams of its members (`SessionService.invalidateSubject`, so
  * each stream gets `bye reauth` and reconnects with the permissions of the moment); the streams copy the permissions when they open.
@@ -166,7 +179,8 @@ export class RoleAdminService {
    *
    * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422), `CANNOT_CHANGE_OWN_ROLE` (409: the caller holds this role and
    *   is not an Owner), `FORBIDDEN` (403: an Owner role, or granting `*`, needs an Owner; the caller must hold every permission
-   *   the role has and every permission sent, decision 046), `LAST_OWNER` (409 on `permissions`)
+   *   the role has and every permission sent, decision 046; a role somebody holds gains a permission whose money rules count per
+   *   person only from an Owner, decision 049), `LAST_OWNER` (409 on `permissions`)
    */
   async update(caller: StaffPrincipal, id: number, changes: RoleChanges): Promise<RoleView> {
     const permissions = changes.permissions === undefined ? undefined : this.checkedPermissions(changes.permissions);
@@ -183,6 +197,17 @@ export class RoleAdminService {
       assertWithinCeiling(caller, before.permissions, 'role');
       if (permissions && grantsEverything(permissions)) assertOwnerTargetAllowed(caller, { permissions });
       if (permissions) assertWithinCeiling(caller, permissions, 'list');
+      // Decision 049 counts these money rules per staff member: the holders of a role must not gain one without an Owner. Adding a
+      // member and changing a member's role lock this role row too, so the count cannot miss a holder added meanwhile.
+      if (
+        permissions &&
+        PER_PERSON_MONEY_PERMISSIONS.some(
+          (entry) => grants(permissions, entry) && !grants(before.permissions, entry),
+        ) &&
+        (await countStaffOfRole(work.tx, id)) > 0
+      ) {
+        requireOwner(caller, OWNER_ARMS_HELD_ROLE_DETAIL);
+      }
       if (permissions && grantsEverything(before.permissions) && !grantsEverything(permissions)) {
         await this.assertAnotherOwnerRemains(work.tx, before.id);
       }

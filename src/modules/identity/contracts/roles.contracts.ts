@@ -86,7 +86,9 @@ export const updateRole = defineRoute({
   description:
     'Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Only an ' +
     'owner edits the role they hold: for everyone else it is `409 CANNOT_CHANGE_OWN_ROLE`. The caller must hold every ' +
-    'permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Removing `*` from the role of the last ' +
+    'permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Only an owner adds `wallet:adjust`, ' +
+    '`wallet:credit_limit`, `payments:approve` or `invoices:create` to a role that a staff member holds (their money limits ' +
+    'count per staff member, `403 FORBIDDEN`, decision 049). Removing `*` from the role of the last ' +
     'active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.',
   tags: ['roles'],
   surface: 'admin',

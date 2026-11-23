@@ -380,6 +380,23 @@ describe('PATCH /admin/staff/:id', () => {
     expect(target.staffId).toBeGreaterThan(0);
   });
 
+  it('a new email voids the open links of the member; a name or role change keeps them', async () => {
+    const rami = await owner();
+    const support = await roleNamed('Support', ['staff:read']);
+    const finance = await roleNamed('Finance', ['roles:read']);
+    const { db } = await testDb();
+    const lina = await insertStaff(db, support, { name: 'Lina S.', email: 'lina@example.com' });
+    await rami.post(`/admin/staff/${lina}/password`, { mode: 'reset_link', revokeSessions: false });
+    expect((await rami.patch(`/admin/staff/${lina}`, { name: 'Lina Saleh', roleId: finance })).status).toBe(200);
+    expect((await tokensOf(lina)).map((row) => row.usedAt)).toEqual([null]);
+
+    const moved = await rami.patch(`/admin/staff/${lina}`, { email: 'lina.saleh@example.com' });
+    expect(moved.status).toBe(200);
+    const [link] = await tokensOf(lina);
+    expect(link!.usedAt?.toISOString()).toBe(clock.now().toISOString());
+    expect((await staffRow(lina)).email).toBe('lina.saleh@example.com');
+  });
+
   it('refuses an email another member uses (EMAIL_TAKEN) and an unchanged-email edit is fine', async () => {
     const rami = await owner();
     const support = await roleNamed('Support');
@@ -842,6 +859,176 @@ describe('the privilege ceiling (decision 046)', () => {
       (await admin.post(`/admin/staff/${admin.staffId}/password`, { mode: 'reset_link', revokeSessions: false }))
         .status,
     ).toBe(200);
+  });
+});
+
+describe('roles whose money rules count per staff member (decision 049)', () => {
+  // The limits on wallet adjustments, credit limits and payment approvals, and the rule that another staff member approves the
+  // payment of a manual invoice, count per account: only an Owner adds such an account or hands out a way to sign in to one.
+  const COUNTED = [
+    'wallet:adjust',
+    'wallet:credit_limit',
+    'payments:approve',
+    'invoices:create',
+    'wallet:*',
+    'payments:*',
+  ];
+  const WHAT = 'whose role can adjust wallets, set credit limits, approve payments or issue invoices.';
+  const ADD_DETAIL = `Only an owner can add a member ${WHAT}`;
+  const TEMPORARY_DETAIL = `Only an owner can set a temporary password for a member ${WHAT}`;
+  const EMAIL_DETAIL = `Only an owner can change the email of a member ${WHAT}`;
+  const GIVE_DETAIL =
+    'Only an owner can give a member a role that can adjust wallets, set credit limits, approve payments or issue invoices.';
+
+  it('refuses a caller who is not an Owner adding a member with such a role, by link or temporary password', async () => {
+    const { db } = await testDb();
+    for (const [i, permission] of COUNTED.entries()) {
+      const admin = await adminWith(t, ['staff:create', 'staff:read', permission]);
+      const before = (await db.select().from(s.staffUsers)).length;
+      for (const onboarding of ['invite', 'temporary_password'] as const) {
+        const refused = await admin.post('/admin/staff', {
+          name: 'Second Member',
+          email: `second.${i}.${onboarding}@example.com`,
+          roleId: admin.roleId,
+          onboarding,
+        });
+        expect(refused.status, permission).toBe(403);
+        expect(refused.body.code).toBe('FORBIDDEN');
+        expect(refused.body.detail).toBe(ADD_DETAIL);
+        expect(refused.body.temporaryPassword).toBeUndefined();
+      }
+      expect((await db.select().from(s.staffUsers)).length).toBe(before);
+    }
+    expect(await db.select().from(s.authTokens)).toHaveLength(0);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('lets an Owner add a member with such a role, and any caller add a member with another role', async () => {
+    const rami = await owner();
+    const finance = await roleNamed('Finance', ['staff:read', 'wallet:adjust', 'payments:approve']);
+    const byOwner = await rami.post('/admin/staff', {
+      name: 'Nadia H.',
+      email: 'nadia@example.com',
+      roleId: finance,
+      onboarding: 'temporary_password',
+    });
+    expect(byOwner.status).toBe(201);
+    expect(typeof byOwner.body.temporaryPassword).toBe('string');
+
+    const admin = await adminWith(t, ['staff:create', 'staff:read', 'wallet:adjust']);
+    const support = await roleNamed('Support', ['staff:read']);
+    const created = await admin.post('/admin/staff', {
+      name: 'Lina S.',
+      email: 'lina@example.com',
+      roleId: support,
+      onboarding: 'temporary_password',
+    });
+    expect(created.status).toBe(201);
+    expect(typeof created.body.temporaryPassword).toBe('string');
+  });
+
+  it('refuses a temporary password for another member with such a role unless the caller is an Owner; a link is fine', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read', 'wallet:adjust']);
+    const { db } = await testDb();
+    const nadia = await insertStaff(db, admin.roleId, { name: 'Nadia H.', passwordHash: 'old-hash' });
+    const session = await openSession(t, { type: 'staff', id: nadia });
+    const refused = await admin.post(`/admin/staff/${nadia}/password`, {
+      mode: 'temporary_password',
+      revokeSessions: true,
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe(TEMPORARY_DETAIL);
+    expect(refused.body.temporaryPassword).toBeUndefined();
+    expect(await staffRow(nadia)).toMatchObject({ passwordHash: 'old-hash', mustChangePassword: false });
+    expect((await sessionsOf(nadia)).find((entry) => entry.id === session.sessionId)?.revokedAt).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
+
+    // The link goes to the member's own mailbox, so it stays within the ceiling of decision 046.
+    const link = await admin.post(`/admin/staff/${nadia}/password`, { mode: 'reset_link', revokeSessions: false });
+    expect(link.status).toBe(200);
+    const rami = await owner();
+    const set = await rami.post(`/admin/staff/${nadia}/password`, {
+      mode: 'temporary_password',
+      revokeSessions: false,
+    });
+    expect(set.status).toBe(200);
+    expect(typeof set.body.temporaryPassword).toBe('string');
+  });
+
+  it('lets a caller who is not an Owner set a temporary password for a member with another role, and for themselves', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read', 'wallet:adjust']);
+    const support = await roleNamed('Support', ['staff:read']);
+    const { db } = await testDb();
+    const lina = await insertStaff(db, support, { name: 'Lina S.' });
+    const other = await admin.post(`/admin/staff/${lina}/password`, {
+      mode: 'temporary_password',
+      revokeSessions: false,
+    });
+    expect(other.status).toBe(200);
+    const own = await admin.post(`/admin/staff/${admin.staffId}/password`, {
+      mode: 'temporary_password',
+      revokeSessions: false,
+    });
+    expect(own.status).toBe(200);
+  });
+
+  it('refuses changing the email of another member with such a role, or of a member given one in the same request', async () => {
+    const admin = await adminWith(t, ['staff:update', 'staff:read', 'wallet:adjust']);
+    const support = await roleNamed('Support', ['staff:read']);
+    const { db } = await testDb();
+    const nadia = await insertStaff(db, admin.roleId, { name: 'Nadia H.', email: 'nadia@example.com' });
+    const lina = await insertStaff(db, support, { name: 'Lina S.', email: 'lina@example.com' });
+
+    const refused = await admin.patch(`/admin/staff/${nadia}`, { email: 'nadia.new@example.com' });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('FORBIDDEN');
+    expect(refused.body.detail).toBe(EMAIL_DETAIL);
+    const moved = await admin.patch(`/admin/staff/${lina}`, { email: 'lina.new@example.com', roleId: admin.roleId });
+    expect(moved.status).toBe(403);
+    expect(moved.body.detail).toBe(GIVE_DETAIL);
+    expect(await staffRow(nadia)).toMatchObject({ email: 'nadia@example.com' });
+    expect(await staffRow(lina)).toMatchObject({ email: 'lina@example.com', roleId: support });
+    expect(await auditRows()).toHaveLength(0);
+
+    // A name, an unchanged address, another role's address and the caller's own address stay within decision 046.
+    expect((await admin.patch(`/admin/staff/${nadia}`, { name: 'Nadia Hamdan' })).status).toBe(200);
+    expect((await admin.patch(`/admin/staff/${nadia}`, { email: 'NADIA@example.com' })).status).toBe(200);
+    expect((await admin.patch(`/admin/staff/${lina}`, { email: 'lina.new@example.com' })).status).toBe(200);
+    expect((await admin.patch(`/admin/staff/${admin.staffId}`, { email: 'admin.new@example.com' })).status).toBe(200);
+    const rami = await owner();
+    expect((await rami.patch(`/admin/staff/${nadia}`, { email: 'nadia.new@example.com' })).status).toBe(200);
+  });
+
+  it('refuses a caller who is not an Owner moving another member into such a role, and changes nothing', async () => {
+    const support = await roleNamed('Support', ['staff:read']);
+    const { db } = await testDb();
+    for (const [i, permission] of COUNTED.entries()) {
+      const admin = await adminWith(t, ['staff:update', 'staff:read', permission]);
+      const counted = await roleNamed(`Counted ${i}`, ['staff:read', permission]);
+      const lina = await insertStaff(db, support, { name: 'Lina S.', email: `lina.${i}@example.com` });
+      const refused = await admin.patch(`/admin/staff/${lina}`, { roleId: counted });
+      expect(refused.status, permission).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe(GIVE_DETAIL);
+      expect((await staffRow(lina)).roleId).toBe(support);
+    }
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it('lets an Owner move a member into such a role, and any caller move a member into another role', async () => {
+    const support = await roleNamed('Support', ['staff:read']);
+    const finance = await roleNamed('Finance', ['staff:read', 'wallet:adjust']);
+    const { db } = await testDb();
+    const lina = await insertStaff(db, support, { name: 'Lina S.', email: 'lina@example.com' });
+    const nadia = await insertStaff(db, finance, { name: 'Nadia H.', email: 'nadia@example.com' });
+    const rami = await owner();
+    expect((await rami.patch(`/admin/staff/${lina}`, { roleId: finance })).status).toBe(200);
+    expect((await staffRow(lina)).roleId).toBe(finance);
+
+    const admin = await adminWith(t, ['staff:update', 'staff:read', 'wallet:adjust']);
+    expect((await admin.patch(`/admin/staff/${nadia}`, { roleId: support })).status).toBe(200);
+    expect((await staffRow(nadia)).roleId).toBe(support);
   });
 });
 

@@ -27,7 +27,12 @@ import {
 } from '../infra/staff-admin.repository';
 import { countLiveStaffSessions } from '../infra/session-admin.repository';
 import { grantsEverything } from '../security/permission-grammar';
-import { assertOwnerTargetAllowed, assertWithinCeiling } from '../security/principal';
+import {
+  assertOwnerTargetAllowed,
+  assertWithinCeiling,
+  grantsPerPersonMoney,
+  requireOwner,
+} from '../security/principal';
 import type { StaffPrincipal } from '../security/principal';
 import { SessionPolicy } from '../security/session-policy';
 import { SessionService } from '../security/session.service';
@@ -83,6 +88,14 @@ function invalid(field: string, message: string): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code: 'invalid', message }] });
 }
 
+// The refusals of the rule that only an Owner staffs a role whose money rules count per person (`grantsPerPersonMoney`).
+const PER_PERSON_ROLE = 'whose role can adjust wallets, set credit limits, approve payments or issue invoices.';
+const OWNER_ADDS_DETAIL = `Only an owner can add a member ${PER_PERSON_ROLE}`;
+const OWNER_SETS_PASSWORD_DETAIL = `Only an owner can set a temporary password for a member ${PER_PERSON_ROLE}`;
+const OWNER_MOVES_EMAIL_DETAIL = `Only an owner can change the email of a member ${PER_PERSON_ROLE}`;
+const OWNER_GIVES_ROLE_DETAIL =
+  'Only an owner can give a member a role that can adjust wallets, set credit limits, approve payments or issue invoices.';
+
 /**
  * Manages staff members.
  *
@@ -93,7 +106,10 @@ function invalid(field: string, message: string): AppError {
  * password reset with `revokeSessions`, "end all sessions" and a 2FA reset end the member's sessions in the same transaction.
  * Sensitive actions re-check the caller's account in the database, not the cached session. Privilege ceiling (decision 046): the
  * role given to a new member or by a role change, and the role of any other member the caller acts on, may hold nothing the caller
- * does not hold (an Owner passes always). A temporary password works for 72 hours and lifts the failed-sign-in lock of the member's email
+ * does not hold (an Owner passes always). The money rules of decision 049 count per staff member, so a role that grants one of
+ * `PER_PERSON_MONEY_PERMISSIONS` is staffed by an Owner: only an Owner adds a member with such a role, gives such a role to another
+ * member, sets a temporary password for another member who holds one, or changes that member's email. A new email voids the member's open links in the same transaction (the
+ * links went to the old address). A temporary password works for 72 hours and lifts the failed-sign-in lock of the member's email
  * (decision 052).
  *
  * Side effects: writes `staff_users`, `auth_tokens`, `sessions`, `outbox_events` (the invitation and reset mails, ids only) and `audit_logs`; deletes cached session views and
@@ -147,8 +163,8 @@ export class StaffAdminService {
    * @param input name, email, role and how the member gets a first password
    * @returns the new member (status `invited`) and, for the temporary-password onboarding, the password (shown once)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `name` or `roleId`), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a role that
-   *   grants `*` needs an Owner; the role has permissions the caller does not hold, decision 046), `ACCOUNT_SUSPENDED` (403: the
-   *   caller was suspended meanwhile)
+   *   grants `*` needs an Owner; the role has permissions the caller does not hold, decision 046; a role that grants a permission
+   *   whose money rules count per person needs an Owner, decision 049), `ACCOUNT_SUSPENDED` (403: the caller was suspended meanwhile)
    */
   async create(
     caller: StaffPrincipal,
@@ -169,6 +185,7 @@ export class StaffAdminService {
       if (!role) throw invalid('roleId', 'Choose a role.');
       if (grantsEverything(role.permissions)) assertOwnerTargetAllowed(caller, role);
       assertWithinCeiling(caller, role.permissions, 'role');
+      if (grantsPerPersonMoney(role.permissions)) requireOwner(caller, OWNER_ADDS_DETAIL);
       const now = this.clock.now();
       let created: StaffUser;
       try {
@@ -222,6 +239,8 @@ export class StaffAdminService {
   /**
    * Changes a staff member's name, email or role.
    *
+   * A new email voids the member's unused invite and reset links: they were mailed to the old address.
+   *
    * @param caller the signed-in staff member
    * @param id the member
    * @param changes the keys to change
@@ -229,7 +248,8 @@ export class StaffAdminService {
    * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422 on `name` or `roleId`), `EMAIL_TAKEN` (409),
    *   `CANNOT_CHANGE_OWN_ROLE` (409 on `roleId`), `LAST_OWNER` (409 on `roleId`), `FORBIDDEN` (403: an Owner account, or a
    *   role that grants `*`, needs an Owner; another member's role, or the new role, has permissions the caller does not hold,
-   *   decision 046)
+   *   decision 046; a new role that grants a permission whose money rules count per person, and another member's email when their
+   *   role or the new role grants one, need an Owner, decision 049)
    */
   async update(caller: StaffPrincipal, id: number, changes: StaffChanges): Promise<StaffMemberView> {
     const name = changes.name === undefined ? undefined : collapse(changes.name);
@@ -242,7 +262,7 @@ export class StaffAdminService {
       this.assertMayActOn(caller, target.staff.id, target.permissions);
 
       const roleChanged = changes.roleId !== undefined && changes.roleId !== target.staff.roleId;
-      if (roleChanged) await this.checkRoleChange(work.tx, caller, target, changes.roleId);
+      const newPermissions = roleChanged ? await this.checkRoleChange(work.tx, caller, target, changes.roleId) : [];
 
       const written: Partial<StaffUser> = {
         ...(name !== undefined && name !== target.staff.name ? { name } : {}),
@@ -251,6 +271,15 @@ export class StaffAdminService {
           : {}),
         ...(roleChanged ? { roleId: changes.roleId } : {}),
       };
+      // The sign-in links go to the email: judged on the role the member holds and on the one this request gives.
+      if (written.email !== undefined) {
+        this.assertOwnerForPerPersonMoney(
+          caller,
+          id,
+          [...target.permissions, ...newPermissions],
+          OWNER_MOVES_EMAIL_DETAIL,
+        );
+      }
       if (Object.keys(written).length > 0) {
         try {
           await updateStaffRow(work.tx, id, written);
@@ -258,6 +287,8 @@ export class StaffAdminService {
           if (isUniqueViolation(error, 'staff_users_email_uq')) throw emailTaken();
           throw error;
         }
+        // The open links were mailed to the old address: only a link sent after the change works.
+        if (written.email !== undefined) await voidOpenStaffTokens(work.tx, id, this.clock.now());
         // The cached session view holds the member's role id and name (the audit actor's snapshot).
         if (written.roleId !== undefined || written.name !== undefined) {
           await this.sessions.invalidateSubject('staff', id, work);
@@ -283,7 +314,9 @@ export class StaffAdminService {
    * @param input the mode and whether to end the member's sessions
    * @returns `{ temporaryPassword }` for the temporary mode (shown once), `{}` for the link
    * @throws {AppError} `NOT_FOUND` (404), `FORBIDDEN` (403: an Owner account needs an Owner; another member's role has
-   *   permissions the caller does not hold, decision 046), `RATE_LIMITED` (429: the link mode, five mails an hour per member)
+   *   permissions the caller does not hold, decision 046; a temporary password for another member whose role grants a permission
+   *   whose money rules count per person needs an Owner, decision 049), `RATE_LIMITED` (429: the link mode, five mails an hour per
+   *   member)
    */
   async setPassword(
     caller: StaffPrincipal,
@@ -294,6 +327,9 @@ export class StaffAdminService {
     if (!existing) throw new AppError('NOT_FOUND', { detail: 'No staff member has this id.' });
     // Decision 046: a refused caller must not spend the member's link mails; the check under the lock below is the one that counts.
     this.assertMayActOn(caller, existing.staff.id, existing.role.permissions);
+    if (input.mode === 'temporary_password') {
+      this.assertOwnerForPerPersonMoney(caller, id, existing.role.permissions, OWNER_SETS_PASSWORD_DETAIL);
+    }
     // Mail bombing guard: five link mails an hour per member (O-11); the temporary mode sends no mail.
     if (input.mode === 'reset_link')
       await this.limits.enforce('account-mail', accountMailKey('staff', id, 'password_link'));
@@ -309,6 +345,7 @@ export class StaffAdminService {
       this.assertMayActOn(caller, target.staff.id, target.permissions);
       const now = this.clock.now();
       if (passwordHash !== undefined) {
+        this.assertOwnerForPerPersonMoney(caller, id, target.permissions, OWNER_SETS_PASSWORD_DETAIL);
         await updateStaffRow(work.tx, id, { passwordHash, mustChangePassword: true, passwordChangedAt: now });
         // An older link must not undo the temporary password.
         await voidOpenStaffTokens(work.tx, id, now);
@@ -476,6 +513,19 @@ export class StaffAdminService {
     if (targetId !== caller.staffId) assertWithinCeiling(caller, permissions, 'account');
   }
 
+  /**
+   * Decision 049 counts these money rules per staff member: a caller who is not an Owner does not get the sign-in of another member
+   * whose permissions grant one of them (the caller's own account is theirs already).
+   */
+  private assertOwnerForPerPersonMoney(
+    caller: StaffPrincipal,
+    targetId: number,
+    permissions: readonly string[],
+    detail: string,
+  ): void {
+    if (targetId !== caller.staffId && grantsPerPersonMoney(permissions)) requireOwner(caller, detail);
+  }
+
   /** The caller's account is read again: a suspension that landed a moment ago stops the next write. */
   private async assertCallerActive(tx: TransactionContext['tx'], caller: StaffPrincipal): Promise<void> {
     const status = await statusOfStaff(tx, caller.staffId);
@@ -491,14 +541,15 @@ export class StaffAdminService {
 
   /**
    * The rules of changing a member's role: not your own, a role that exists, `*` only by an Owner, a role the caller holds
-   * entirely (decision 046), never the last Owner.
+   * entirely (decision 046), a role whose money rules count per person only by an Owner (decision 049), never the last Owner.
+   * Answers the permissions of the new role.
    */
   private async checkRoleChange(
     tx: TransactionContext['tx'],
     caller: StaffPrincipal,
     target: { staff: StaffUser; permissions: string[] },
     roleId: number,
-  ): Promise<void> {
+  ): Promise<readonly string[]> {
     if (target.staff.id === caller.staffId) {
       throw new AppError('CANNOT_CHANGE_OWN_ROLE', {
         errors: [{ field: 'roleId', code: 'CANNOT_CHANGE_OWN_ROLE', message: 'You cannot change your own role.' }],
@@ -508,6 +559,8 @@ export class StaffAdminService {
     if (!role) throw invalid('roleId', 'Choose a role.');
     if (grantsEverything(role.permissions)) assertOwnerTargetAllowed(caller, role);
     assertWithinCeiling(caller, role.permissions, 'role');
+    // Decision 049 counts these money rules per staff member: only an Owner brings another account into such a role.
+    if (grantsPerPersonMoney(role.permissions)) requireOwner(caller, OWNER_GIVES_ROLE_DETAIL);
     if (
       target.staff.status === 'active' &&
       grantsEverything(target.permissions) &&
@@ -519,6 +572,7 @@ export class StaffAdminService {
         errors: [{ field: 'roleId', code: 'LAST_OWNER', message: 'This is the last active owner.' }],
       });
     }
+    return role.permissions;
   }
 
   private async viewOf(db: Parameters<typeof findStaffRow>[0], id: number): Promise<StaffMemberView> {

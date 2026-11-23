@@ -9,7 +9,7 @@ import { UnrecoverableError } from '@src/infra/queues';
 import { DeliveryError } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { type AdminApi, adminWith } from '../../support/admin-api';
-import { clearIdentityCaches, insertRole, insertStaff } from '../../support/auth';
+import { clearIdentityCaches, insertRole, insertStaff, openSession } from '../../support/auth';
 import { HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import {
@@ -326,6 +326,66 @@ describe('POST /admin/staff/:id/password', () => {
     await api.post(`/admin/staff/${lina}/password`, { mode: 'reset_link', revokeSessions: false });
     expect((await api.post(`/admin/staff/${lina}/suspend`, { reason: 'On leave' })).status).toBe(204);
     expect(await runStaffMailJob(t, 'password_reset')).toEqual({ sent: false, skipped: 'staff_suspended' });
+    expect(mailbox(t).sent).toEqual([]);
+  });
+});
+
+describe('a change of the email address', () => {
+  it('voids the invitation mailed to the old address; the next link goes to the new one and works', async () => {
+    const api = await owner();
+    const id = await invite(api, 'nadia@gsm-supply.exampel');
+    expect(await runStaffMailJob(t, 'invited')).toEqual({ sent: true });
+    const old = tokenIn(mailbox(t).sent[0]!.text);
+
+    expect((await api.patch(`/admin/staff/${id}`, { email: 'nadia@gsm-supply.example' })).status).toBe(200);
+    expect((await tokensOf(id)).every((row) => row.usedAt !== null)).toBe(true);
+    const refused = await new StaffConsole(t).setPassword({ token: old, password: PASSWORD }, { csrf: false });
+    expect(refused.statusCode).toBe(410);
+    expect(refused.json().code).toBe('TOKEN_INVALID');
+    const [row] = await (await testDb()).db.select().from(s.staffUsers).where(eq(s.staffUsers.id, id));
+    expect(row!.passwordHash).toBeNull();
+
+    expect((await api.post(`/admin/staff/${id}/password`, { mode: 'reset_link', revokeSessions: false })).status).toBe(
+      200,
+    );
+    expect(await runStaffMailJob(t, 'invited')).toEqual({ sent: true });
+    const [, mail] = mailbox(t).sent;
+    expect(mail!.to).toBe('nadia@gsm-supply.example');
+    const ok = await new StaffConsole(t).setPassword(
+      { token: tokenIn(mail!.text), password: PASSWORD },
+      { csrf: false },
+    );
+    expect(ok.statusCode).toBe(204);
+  });
+
+  it('voids a reset link mailed to the old address: the password stays and the member keeps their sessions', async () => {
+    const api = await owner();
+    const { db } = await testDb();
+    const lina = await insertStaff(db, await supportRole(), {
+      email: 'lina@old-mailbox.example',
+      name: 'Lina S.',
+      passwordHash: 'old-hash',
+      twofaEnabled: true,
+    });
+    const session = await openSession(t, { type: 'staff', id: lina });
+    await api.post(`/admin/staff/${lina}/password`, { mode: 'reset_link', revokeSessions: false });
+    expect(await runStaffMailJob(t, 'password_reset')).toEqual({ sent: true });
+    const old = tokenIn(mailbox(t).sent[0]!.text);
+
+    expect((await api.patch(`/admin/staff/${lina}`, { email: 'lina@new-mailbox.example' })).status).toBe(200);
+    const refused = await new StaffConsole(t).setPassword({ token: old, password: PASSWORD }, { csrf: false });
+    expect(refused.statusCode).toBe(410);
+    const [row] = await db.select().from(s.staffUsers).where(eq(s.staffUsers.id, lina));
+    expect(row!.passwordHash).toBe('old-hash');
+    const me = await t.app.inject({ method: 'GET', url: '/admin/auth/me', headers: session.headers });
+    expect(me.statusCode).toBe(200);
+  });
+
+  it('sends no mail for a link issued before the change: staff send a new one', async () => {
+    const api = await owner();
+    const id = await invite(api, 'nadia@gsm-supply.exampel');
+    expect((await api.patch(`/admin/staff/${id}`, { email: 'nadia@gsm-supply.example' })).status).toBe(200);
+    expect(await runStaffMailJob(t, 'invited')).toEqual({ sent: false, skipped: 'link_not_usable' });
     expect(mailbox(t).sent).toEqual([]);
   });
 });

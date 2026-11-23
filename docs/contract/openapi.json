@@ -144677,7 +144677,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Only an owner edits the role they hold: for everyone else it is `409 CANNOT_CHANGE_OWN_ROLE`. The caller must hold every permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Removing `*` from the role of the last active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.",
+        "description": "Only the keys sent change. A permission change applies to everyone who holds the role on their next request. Only an owner edits the role they hold: for everyone else it is `409 CANNOT_CHANGE_OWN_ROLE`. The caller must hold every permission the role has and every permission sent (`403 FORBIDDEN`, decision 046). Only an owner adds `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create` to a role that a staff member holds (their money limits count per staff member, `403 FORBIDDEN`, decision 049). Removing `*` from the role of the last active owner is `409 LAST_OWNER` on `permissions`; the Owner role may be renamed.",
         "operationId": "patchAdminRolesById",
         "parameters": [
           {
@@ -169545,7 +169545,7 @@
         "x-gsm-surface": "admin"
       },
       "post": {
-        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`. The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
+        "description": "The account starts `invited`. `invite` creates a one-hour, single-use link token (hash only) and emails the link (`<CONSOLE_BASE_URL>/set-password?token=...`) to the new member; `temporary_password` generates a password, stores its hash, forces a change at the first sign-in and returns it once in this answer. Only an owner can give the new account a role that grants `*`. The caller must hold every permission of the role given (`403 FORBIDDEN`, decision 046). Only an owner can give a role that grants `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create` (their money limits count per staff member, `403 FORBIDDEN`, decision 049). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminStaff",
         "parameters": [],
         "requestBody": {
@@ -170842,7 +170842,7 @@
         "x-gsm-surface": "admin"
       },
       "patch": {
-        "description": "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role (`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and giving a role that grants `*` need an owner. On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046).",
+        "description": "Only the keys sent change. A role change applies on the member's next request. Nobody changes their own role (`CANNOT_CHANGE_OWN_ROLE`), and the last active owner cannot be demoted (`LAST_OWNER`). Actions on an owner account and giving a role that grants `*` need an owner. On another member, the caller must hold every permission of the member's role and of a new role (`403 FORBIDDEN`, decision 046). Only an owner can give another member a role that grants `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create`, or change another member's email when the member's role, or the new role, grants one of them (their money limits count per staff member, `403 FORBIDDEN`, decision 049). A new email voids the member's unused invite and reset links: send a new link after the change.",
         "operationId": "patchAdminStaffById",
         "parameters": [
           {
@@ -171674,7 +171674,7 @@
     },
     "/admin/staff/{id}/password": {
       "post": {
-        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
+        "description": "`reset_link` issues a one-hour link token (purpose `invite` while the account is still invited, else `reset`) and emails the link to the member (never returned here); at most five link mails an hour per member (`429`). The current password keeps working until the link is used. `temporary_password` generates and stores a password (hash only), forces a change at the next sign-in and returns it once. Always `200` with `Cache-Control: no-store`: `{}` for the link, `{temporaryPassword}` for the temporary password. `revokeSessions` ends every session of the member. An owner account needs an owner; on another member, the caller must hold every permission of the member's role (`403 FORBIDDEN`, decision 046). Only an owner sets a temporary password for another member whose role grants `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create` (`403 FORBIDDEN`, decision 049). A temporary password works for 72 hours; after that it is refused like a wrong password and a new one must be set. Setting one also lifts the lock that repeated failed sign-ins put on the email.",
         "operationId": "postAdminStaffByIdPassword",
         "parameters": [
           {

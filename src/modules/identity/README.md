@@ -307,6 +307,12 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   `GET /admin/sessions` masks the address and device (`•••`) of another member's session whose role the caller does not cover (an Owner's, for
   everyone but an Owner), and a merchant's email unless the caller holds `clients:read`; `DELETE /admin/sessions/:id` on a merchant's session also
   needs `clients:security` (decisions 046 and 047).
+  **Money rules per person** (decision 049, `grantsPerPersonMoney`): the limits and the second-person rule of `wallet:adjust`,
+  `wallet:credit_limit`, `payments:approve` and `invoices:create` count per staff account (`PER_PERSON_MONEY_PERMISSIONS`), so only an
+  Owner adds a member whose role grants one of them, gives such a role to another member, sets a temporary password for another member
+  whose role does, or changes that member's email (`403 FORBIDDEN`). Only an Owner adds one of them to a role that a member of any
+  status holds (`RoleAdminService.update`, under the role's row lock that adding a member and a role change also take); a role nobody
+  holds stays editable.
 - **What a change does to sessions and caches:** a suspension, "end all sessions", a password reset with `revokeSessions` and a 2FA reset
   call `SessionService.revokeAllOf` (the caller keeps their own session when they reset their own 2FA); a rename or role change, and a
   reactivation, call `invalidateSubject`; a role change calls `RolePermissions.invalidate`, and a change of a role's permissions also calls
@@ -315,7 +321,8 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
 - **Staff links** (`StaffAuthTokens`): `POST /admin/staff` (invite) and `reset_link` issue an `auth_tokens` row (purpose `invite` while the member
   is `invited`, `reset` otherwise; hash only, one hour, only the newest link works). The link itself is built and mailed by the
   notifications feature (12a): until then the raw token is not delivered anywhere. A temporary password stores only its argon2id hash,
-  forces a change, voids unused links and is shown once (never in the audit log).
+  forces a change, voids unused links and is shown once (never in the audit log). A change of the member's email voids their unused links
+  in the same transaction (they were mailed to the old address); a queued mail of such a link is then skipped and staff send a new one.
 - **One live-session rule** (`liveSessionCondition`, `security/session.repository.ts`, resolution `identity-platform-6`): not revoked, not past
   `expires_at`, and (for a full session) used within the idle limit of its subject type. `GET /admin/sessions` (staff and merchant sessions at
   stage `active` only), `StaffMember.activeSessions` and the `404` of `DELETE /admin/sessions/:id` all use it, with the clock's time as a
@@ -734,7 +741,9 @@ area:
   `notifications:update`, `system:manage`.
 
 Decision 049 adds limits on top: a staff member's credits beyond the daily approval limit, a single debit above it, a credit limit above it
-and the approval of a payment for an invoice one issued oneself need an Owner.
+and the approval of a payment for an invoice one issued oneself need an Owner. Because these count per staff account, only an Owner adds a
+member with `wallet:adjust`, `wallet:credit_limit`, `payments:approve` or `invoices:create`, gives such a role to another member,
+adds one of them to a role somebody holds, sets a temporary password for another member who holds one, or changes that member's email.
 
 The development seed's roles follow the console's demo and hold several of these through area wildcards: they are for development only.
 

@@ -199,6 +199,40 @@ export function requireOwner(caller: PermissionHolder, detail: string): void {
 }
 
 /**
+ * The permissions whose money rules count per staff member: a limit per person, or an action left to a second person.
+ *
+ * Why: decision 049 and its extension judge these per staff account, so each account has to stand for one person:
+ * - `wallet:adjust`: the 24-hour credit sums of merchant wallets and of customer balances, and a single debit above the limit
+ *   (`WalletService.adjust`, `CustomerWallets.adjust` in the money module);
+ * - `wallet:credit_limit`: the raised part of a credit limit counts in the same merchant sum, at an invitation too
+ *   (`WalletService.setCreditLimit`, `MerchantAccounts.open`);
+ * - `payments:approve`: the 24-hour sum of transfer receipt approvals, and the payment of a manual invoice is approved by someone
+ *   other than its issuer (`PaymentReviewService.approve`);
+ * - `invoices:create`: the issuer of a manual invoice, whom that approval rule names (`InvoiceAdminService.issue`).
+ * Keep this list in step with those rules.
+ */
+export const PER_PERSON_MONEY_PERMISSIONS: readonly string[] = [
+  'wallet:adjust',
+  'wallet:credit_limit',
+  'payments:approve',
+  'invoices:create',
+];
+
+/**
+ * Tells whether permissions grant one of the money permissions whose rules count per staff member.
+ *
+ * Why: only an Owner adds a member with such a role, gives such a role to another member, sets a temporary password for another
+ * member who holds one, or changes that member's email address (`StaffAdminService`), and only an Owner adds such a permission to a
+ * role somebody holds (`RoleAdminService`), so that an account such a rule counts is a person an Owner put there.
+ *
+ * @param permissions the permissions of a role
+ * @returns true when they grant an entry of {@link PER_PERSON_MONEY_PERMISSIONS} (also through `area:*` or `*`)
+ */
+export function grantsPerPersonMoney(permissions: readonly string[]): boolean {
+  return PER_PERSON_MONEY_PERMISSIONS.some((permission) => grants(permissions, permission));
+}
+
+/**
  * The permission of the Customers pages, which also decides whether other staff answers show a customer's address in full.
  *
  * Why: decision 047: the address is personal data; outside the Customers pages only a role that may read customers sees it unmasked.

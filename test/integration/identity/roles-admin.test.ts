@@ -392,3 +392,61 @@ describe('the privilege ceiling (decision 046)', () => {
     expect(own.body.code).toBe('ROLE_IN_USE');
   });
 });
+
+describe('roles whose money rules count per staff member (decision 049)', () => {
+  const DETAIL =
+    'Only an owner can give a role that staff members hold the right to adjust wallets, set credit limits, approve payments or ' +
+    'issue invoices.';
+  const COUNTED = [
+    'wallet:adjust',
+    'wallet:credit_limit',
+    'payments:approve',
+    'invoices:create',
+    'wallet:*',
+    'payments:*',
+  ];
+  const permissionsOf = async (roleId: number) =>
+    (await (await testDb()).db.select().from(s.roles).where(eq(s.roles.id, roleId)))[0]!.permissions;
+
+  it('refuses a caller who is not an Owner giving such a permission to a role somebody holds; an Owner can', async () => {
+    const { db } = await testDb();
+    for (const [i, permission] of COUNTED.entries()) {
+      const admin = await adminWith(t, ['roles:update', 'staff:read', permission]);
+      const roleId = await insertRole(db, ['staff:read'], `Support ${i}`);
+      await insertStaff(db, roleId, { status: 'invited' });
+      const refused = await admin.patch(`/admin/roles/${roleId}`, { permissions: ['staff:read', permission] });
+      expect(refused.status, permission).toBe(403);
+      expect(refused.body.code).toBe('FORBIDDEN');
+      expect(refused.body.detail).toBe(DETAIL);
+      expect(await permissionsOf(roleId)).toEqual(['staff:read']);
+    }
+    expect(await auditRows()).toHaveLength(0);
+
+    const owner = await adminWith(t, ['*'], { roleName: 'Founders' });
+    const held = await insertRole(db, ['staff:read'], 'Finance');
+    await insertStaff(db, held);
+    const edited = await owner.patch(`/admin/roles/${held}`, { permissions: ['staff:read', 'wallet:adjust'] });
+    expect(edited.status).toBe(200);
+    expect(await permissionsOf(held)).toContain('wallet:adjust');
+  });
+
+  it('lets a caller who is not an Owner give such a permission to a role nobody holds, and edit a held role that gains none', async () => {
+    const { db } = await testDb();
+    const admin = await adminWith(t, ['roles:update', 'staff:read', 'wallet:adjust', 'wallet:read']);
+    const desk = await insertRole(db, ['staff:read'], 'Desk');
+    expect((await admin.patch(`/admin/roles/${desk}`, { permissions: ['staff:read', 'wallet:adjust'] })).status).toBe(
+      200,
+    );
+    expect(await permissionsOf(desk)).toContain('wallet:adjust');
+
+    const finance = await insertRole(db, ['staff:read', 'wallet:adjust'], 'Finance');
+    await insertStaff(db, finance);
+    const kept = await admin.patch(`/admin/roles/${finance}`, {
+      name: 'Finance desk',
+      permissions: ['staff:read', 'wallet:adjust', 'wallet:read'],
+    });
+    expect(kept.status).toBe(200);
+    expect((await admin.patch(`/admin/roles/${finance}`, { permissions: ['staff:read'] })).status).toBe(200);
+    expect(await permissionsOf(finance)).toEqual(['staff:read']);
+  });
+});
