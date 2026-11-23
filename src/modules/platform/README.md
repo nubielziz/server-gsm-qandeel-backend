@@ -556,7 +556,7 @@ mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approv
 opts in), the bot's `telegram.linked` and `telegram.unlinked`, the transactional `webhook.endpoint_disabled` (decision 053: an endpoint switched off after 20 failed deliveries in a row; `notifications` route only, no webhook route, no in-app text), the six customer events of the console's Customer emails tab (their producers are the storefront
 features) and the four transactional customer account mails of feature 14b (`customer.magic_link`, `customer.password_reset`, `customer.invited`,
 `customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). Feature 12b adds two staff events, `alert.fired` and `alert.resolved` (email and Telegram,
-always sent), for the messages of alerts. They go to no person's row but to the ops mailbox(es) and chat of the configuration
+always sent), for the messages of alerts, and feature 31 adds the staff event `retail.prices_followed` (the hourly counts of the shop prices that follow a rule; its `link` opens the console's Shop price rules tab, `<CONSOLE_BASE_URL>/catalog?view=settings&tab=shop-prices`, decision 060, and its sample shows the same address). They go to no person's row but to the ops mailbox(es) and chat of the configuration
 (`ALERTS_EMAIL_TO`, `ALERTS_TELEGRAM_CHAT_ID`): `NotificationService.enqueueToAddress({ tx }, ...)` writes the row for the
 pseudo-recipient (`staff`, `OPERATIONS_RECIPIENT_ID` = 0) with the address or chat in the payload (`to`, `chatId`; the log masks
 both), or a `failed` row with the caller's reason when none is configured. The default English templates are `DEFAULT_TEMPLATES`; migration `0011_notifications_delivery.sql` inserts the

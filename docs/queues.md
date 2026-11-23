@@ -821,7 +821,7 @@ Moves the retail prices that follow a pricing rule to what the rule gives now (d
   (`detached`). A service that loses to another transaction (`40P01`, `40001`) or fails is counted and left to the next pass; the pass goes on.
 - **It ends by itself:** one `CatalogPriceVersion.bump()` at the end when a price was written. That asks for one more pass, which finds nothing, writes nothing and does not bump.
 - **The message:** at the end of a pass, when rows have no `notified_at` and none was reported in the last 60 minutes, one transaction marks them and writes `retail.prices_followed` (the counts `changed`,
-  `waiting`, `detached` and the link to the Retail pricing tab) to the ops recipients of `ALERTS_EMAIL_TO` and `ALERTS_TELEGRAM_CHAT_ID`, one notification per channel, dedupe key
+  `waiting`, `detached` and the link `<console>/catalog?view=settings&tab=shop-prices`, the Shop price rules tab of the Catalog settings) to the ops recipients of `ALERTS_EMAIL_TO` and `ALERTS_TELEGRAM_CHAT_ID`, one notification per channel, dedupe key
   `retail-follow:<first id>:<channel>`. A channel with no recipient is a failed notification with the reason; the console's Price changes list is the notice either way.
 - **Idempotency:** it compares stored state with computed state and writes differences, so a repeat finds nothing; two passes side by side serialize on each service row (one change row per service) and on
   an advisory lock for the message (one message). An unchanged waiting proposal is not rewritten and keeps its `notified_at`.

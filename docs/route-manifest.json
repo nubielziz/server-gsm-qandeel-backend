@@ -25,7 +25,7 @@
       "rows": 119,
       "endpoints": 119
     },
-    "frontendRoutes": 340,
+    "frontendRoutes": 341,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -6250,7 +6250,7 @@
       "description": "Link the service to suppliers in priority order.",
       "frontend": {
         "file": "src/features/suppliers/api/links.ts",
-        "line": 11,
+        "line": 12,
         "fn": "replaceSupplierLinks"
       }
     },
@@ -17379,7 +17379,11 @@
       },
       "module": "suppliers",
       "description": "The supplier chain of a service, in priority order.",
-      "frontend": null,
+      "frontend": {
+        "file": "src/features/suppliers/api/links.ts",
+        "line": 27,
+        "fn": "getServiceSupplierLinks"
+      },
       "addition": {
         "file": "scripts/map-additions/46.mjs",
         "spec": "B-TBD service-supplier-chain"

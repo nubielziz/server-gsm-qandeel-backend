@@ -1860,6 +1860,9 @@ describe('the job', () => {
 });
 
 describe('the hourly message', () => {
+  /** The Shop price rules tab of the Catalog page (decision 060); the older `/storefront?tab=pricing` is only a redirect now. */
+  const SHOP_PRICES_LINK = 'http://localhost:5173/catalog?view=settings&tab=shop-prices';
+
   beforeEach(async () => {
     await seedDefaultTemplates(db);
   });
@@ -1891,7 +1894,7 @@ describe('the hourly message', () => {
         changed: '1',
         waiting: '1',
         detached: '1',
-        link: 'http://localhost:5173/storefront?tab=pricing',
+        link: SHOP_PRICES_LINK,
       });
     }
     expect(rows.find((row) => row.channel === 'email')!.payload).toMatchObject({ to: EMAILS });
@@ -1901,7 +1904,8 @@ describe('the hourly message', () => {
     await sendAllQueued(t);
     const mail = mailbox(t).sent.find((one) => one.subject.startsWith('IMEI-HUB shop prices'));
     expect(mail?.subject).toBe('IMEI-HUB shop prices: 1 changed, 1 waiting');
-    expect(mail?.text).toContain('http://localhost:5173/storefront?tab=pricing');
+    expect(mail?.text).toContain(SHOP_PRICES_LINK);
+    expect(mail?.text).not.toContain('/storefront');
   });
 
   it('sends at most one an hour, and the next one counts only what is new', async () => {

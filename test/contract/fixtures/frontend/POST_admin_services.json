@@ -27,6 +27,16 @@
     "maxQty": 1,
     "qtyOptions": [],
     "supplier": null,
-    "fallbackSupplier": null
+    "fallbackSupplier": null,
+    "attention": [
+      "no_supplier"
+    ],
+    "retailPrice": null,
+    "retailPriceSource": null,
+    "retailPriceRule": null,
+    "retailPriceWaiting": false,
+    "listingId": null,
+    "isListed": false,
+    "shopBlocked": null
   }
 }

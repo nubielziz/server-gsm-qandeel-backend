@@ -43,6 +43,17 @@ afterAll(async () => {
   await closeTestDb();
 });
 
+/** The keys every reader gets, and the keys that depend on the reader's permissions (decision 060). */
+const ALWAYS_KEYS = ['attention', 'retailPrice', 'retailPriceSource'];
+const PERMISSION_KEYS = [
+  'retailPriceRule',
+  'retailPriceWaiting',
+  'listingId',
+  'isListed',
+  'shopBlocked',
+  'publishFailure',
+];
+
 interface Row {
   readonly id: number;
   readonly name: string;
@@ -252,6 +263,40 @@ describe('the Catalog page facts of a service row (decision 060)', () => {
         retailPriceSource: null,
         ...keys,
       });
+    }
+  });
+
+  it('sends attention, retailPrice and retailPriceSource to a reader with the catalog permissions alone, on the list, show, POST and PATCH answers, and none of the keys that depend on the reader', async () => {
+    const { db, category } = await world();
+    const bare = await adminWith(t, ['catalog:read', 'catalog:create', 'catalog:update']);
+    // No supplier, no shop price, no shop page: the keys are there with their empty values, not left out.
+    const id = await serviceIn(db, category, 'Bare check');
+    const created = await bare.post('/admin/services', {
+      name: 'Bare new check',
+      code: 'IMEI-BARE-NEW',
+      categoryId: category,
+      type: 'imei',
+      slaMinutes: 90,
+      basePrice: '2.5000',
+    });
+    expect(created.status).toBe(201);
+    const list = await all(bare);
+    const show = await bare.get(`/admin/services/${id}`);
+    const patched = await bare.patch(`/admin/services/${id}`, { slaMinutes: 90 });
+    expect(show.status).toBe(200);
+    expect(patched.status).toBe(200);
+    const answers: Array<[string, Record<string, unknown>]> = [
+      ['list', list.rows.find((row) => row.id === id) as unknown as Record<string, unknown>],
+      ['show', show.body],
+      ['POST', created.body],
+      ['PATCH', patched.body],
+    ];
+    for (const [label, row] of answers) {
+      for (const key of ALWAYS_KEYS) expect(row, `${label} ${key}`).toHaveProperty(key);
+      expect(Array.isArray(row.attention), label).toBe(true);
+      expect(row.retailPrice, label).toBeNull();
+      expect(row.retailPriceSource, label).toBeNull();
+      for (const key of PERMISSION_KEYS) expect(row, `${label} ${key}`).not.toHaveProperty(key);
     }
   });
 

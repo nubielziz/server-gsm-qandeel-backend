@@ -223,7 +223,8 @@ export class RetailPriceFollow {
         changed: String(changed),
         waiting: String(waiting),
         detached: String(detached),
-        link: `${this.config.http.consoleBaseUrl}/storefront?tab=pricing`,
+        // The Shop price rules tab of the Catalog page (decision 060); the console redirects the older `/storefront?tab=pricing` here.
+        link: `${this.config.http.consoleBaseUrl}/catalog?view=settings&tab=shop-prices`,
       };
       for (const channel of NOTICE_CHANNELS) {
         await this.notifications.enqueueToAddress(

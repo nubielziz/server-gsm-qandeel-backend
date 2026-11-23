@@ -78,7 +78,7 @@ Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `sup
 | `POST /admin/suppliers/:id/sync` | staff-permission · `suppliers:update` | Sync services and balance now (through the worker). | 6 |
 | `GET /admin/suppliers/:id/services` | staff-permission · `suppliers:read` | The supplier's services after syncing; filters `imported`, `remoteGroup`, `type`, `isAvailable` (the last three: feature 26, B215). | 6 |
 | `POST /admin/suppliers/:id/import/preview` | staff-permission · `catalog:create` | Preview the import: new, matching and changed services with the suggested price. | 6 |
-| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links; `createdServiceIds` names the services the call created, in creation order (decision 060). | 6 |
+| `POST /admin/suppliers/:id/import` | staff-permission · `catalog:create` | Import the selected items as services, fields and links; `createdServiceIds` names the services the call created, in creation order, `[]` when it created none; it is always sent (decision 060). | 6 |
 | `GET /admin/suppliers/:id/service-groups` | staff-permission · `suppliers:read` | The supplier's service groups with counts, and its latest quick add (beyond the map, B214). | 26 |
 | `POST /admin/suppliers/:id/quick-add` | staff-permission · `catalog:create` | Quick add: add the supplier's services by group, or all of them, in the background (`202`; beyond the map, B214). | 26 |
 | `GET /admin/suppliers/:id/quick-add/:runId` | staff-permission · `suppliers:read` | The state and progress of a quick add (beyond the map, B214). | 26 |

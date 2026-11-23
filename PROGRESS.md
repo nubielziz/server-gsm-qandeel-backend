@@ -4,7 +4,7 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
-**One-page Catalog, the reads of the backend (2026-11-23, decision 060): step 1 of 3, merged.** Owner request: adding and pricing a service
+**One-page Catalog, the reads of the backend (2026-11-23, decision 060): merged in two steps.** Owner request: adding and pricing a service
 took three console pages (Services and pricing, Suppliers, Storefront); the console gets one Catalog page. This step only adds. A service
 row carries its attention reasons (`no_supplier`, `below_floor`, `price_proposal`, `publish_failed`), its shop price and where that price
 comes from, and with the right permission its listing, its shop state, the reason it cannot go on the shop, and its price rule; the detail
@@ -12,10 +12,10 @@ carries the last refused publish. The list takes the filters `needsAttention`, `
 sort `retailPrice`. New route `GET /admin/services/:id/supplier-links` (feature 46, `scripts/map-additions/46.mjs`). The import of supplier
 services answers with the services it created. Every new field is optional on the wire, so the present console keeps working. **Checks:**
 typecheck, lint, format and every generator check on the merged tree; the tests ran on the branch (a first run on a loaded machine had
-failures that passed when run again); two reviews. **Next:** step 2 is the console's Catalog page. Step 3 follows at once when that console is
-deployed: the contract documents are regenerated against it, `attention`, `retailPrice`, `retailPriceSource` and `createdServiceIds` become
-required, and the link of the retail-follow mail moves to the Catalog address. Between steps 2 and 3 this repository's contract check is
-behind the console: nothing else is pushed here then. Seen and left as it was: an import of a changed item is refused with a server error
+failures that passed when run again); two reviews. **Steps 2 and 3 (the same day):** the console's Catalog page is on its `main`; this repository then rebuilt the contract documents against
+it (341 console routes), made `attention`, `retailPrice`, `retailPriceSource` and `createdServiceIds` required on the wire, and moved the link
+of the retail-follow mail to `/catalog?view=settings&tab=shop-prices`. The push of step 1 met the new console on GitHub before step 3
+existed, so its checks failed and nothing was deployed; the server's deploys were put on hold until this step is green. Seen and left as it was: an import of a changed item is refused with a server error
 when the supplier's price moved without a sync (`services_effective_cost_check`).
 
 **Checks on GitHub and automatic deploys (2026-11-23): DONE, running.** Owner request: a CI/CD pipeline for the three repositories. **Decision

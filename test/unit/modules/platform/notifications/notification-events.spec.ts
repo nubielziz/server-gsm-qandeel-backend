@@ -88,6 +88,11 @@ describe('the built-in events', () => {
     expect(registry.merchantPreferenceEvents().map((one) => one.key)).not.toContain(RETAIL_PRICES_FOLLOWED_EVENT);
   });
 
+  it('sample the link of the hourly message about retail prices with the Catalog address of the shop price rules (decision 060)', () => {
+    const definition = new NotificationEventRegistry().get(RETAIL_PRICES_FOLLOWED_EVENT, 'staff');
+    expect(definition?.sample.link).toBe('https://console.example.com/catalog?view=settings&tab=shop-prices');
+  });
+
   it('register the four customer account mails as transactional email events, next to the seven console events', () => {
     const registry = new NotificationEventRegistry();
     for (const key of CUSTOMER_MAIL_EVENT_KEYS) {

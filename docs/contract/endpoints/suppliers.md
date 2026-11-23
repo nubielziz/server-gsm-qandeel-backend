@@ -28,7 +28,7 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 | `GET /admin/suppliers/:id/service-groups` | admin | staff-permission `suppliers:read` | 26 | `listServiceGroups` |
 | `POST /admin/suppliers/:id/quick-add` | admin | staff-permission `catalog:create` | 26 | `startQuickAdd` |
 | `GET /admin/suppliers/:id/quick-add/:runId` | admin | staff-permission `suppliers:read` | 26 | `getQuickAddRun` |
-| `GET /admin/services/:id/supplier-links` | admin | staff-permission `catalog:read` | 46 |  |
+| `GET /admin/services/:id/supplier-links` | admin | staff-permission `catalog:read` | 46 | `getServiceSupplierLinks` |
 
 ## GET /admin/suppliers
 
@@ -125,7 +125,7 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 ## PUT /admin/services/:id/supplier-links
 
 - **Map**: Link the service to suppliers in priority order. (ربط الخدمة بالموردين بالأولوية) · staff-permission `catalog:update` · stage 6 · tables service_supplier_links
-- **Frontend**: `replaceSupplierLinks` (src/features/suppliers/api/links.ts:13) · params `serviceId: number`, `body: ReplaceLinksBody` · returns `ChainStep[]` · success 200 · assumed contract
+- **Frontend**: `replaceSupplierLinks` (src/features/suppliers/api/links.ts:14) · params `serviceId: number`, `body: ReplaceLinksBody` · returns `ChainStep[]` · success 200 · assumed contract
 - **Request**: Body `{ links: [{ supplierServiceId, priority }] }`: the whole chain, priorities from 1; [] unlinks (the toast says its orders now wait for manual dispatch, useReplaceLinks.ts:29-31). Replace in one transaction.
 - **Response**: The new chain ordered by priority and renumbered 1..n (catalogueRoutes.ts:131-141): [{priority, supplierId, supplierName, supplierServiceId, supplierServiceName}]. imported/linkedServiceId of the affected supplier services follow; field_map default {}, is_active true.
 - **Errors**: 422 VALIDATION_FAILED (errors[{field: links}]: unknown or duplicate supplier service (catalogueRoutes.ts:127-130)); 404 NOT_FOUND (service id unknown); 403 FORBIDDEN (no catalog:update)
@@ -195,5 +195,5 @@ Frontend features covering this module: `suppliers` (rules in `RULES.md`).
 ## GET /admin/services/:id/supplier-links
 
 - **Map addition** (B-TBD service-supplier-chain, `scripts/map-additions/46.mjs`): The supplier chain of a service, in priority order. · staff-permission `catalog:read` · stage 46 · tables service_supplier_links, supplier_services, suppliers, services · success 200
-- **Frontend**: none.
+- **Frontend**: `getServiceSupplierLinks` (src/features/suppliers/api/links.ts:29) · params `serviceId: number` · returns `ChainStep[]`
 

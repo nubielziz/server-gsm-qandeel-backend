@@ -114,7 +114,7 @@ const STAFF_SAMPLE = {
   changed: '12',
   waiting: '2',
   detached: '1',
-  link: 'https://console.example.com/storefront?tab=pricing',
+  link: 'https://console.example.com/catalog?view=settings&tab=shop-prices',
 } as const;
 
 /** Picks the samples of the listed variables; a variable with no sample is a programming error that the unit test catches. */

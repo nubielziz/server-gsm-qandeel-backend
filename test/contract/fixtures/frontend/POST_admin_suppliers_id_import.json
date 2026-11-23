@@ -6,6 +6,7 @@
   "body": {
     "created": 0,
     "updated": 1,
-    "unchanged": 1
+    "unchanged": 1,
+    "createdServiceIds": []
   }
 }

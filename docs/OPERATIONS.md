@@ -762,7 +762,7 @@ check it with the supplier, then fetch its result or send it again (when the sup
 a line that names it). A merchant cannot cancel an order that was sent once, even when it reads Pending again; staff cancel it by rejecting it.
 
 **Retail prices that follow a rule** (feature 31, decision 040). The worker moves them when the cost, the floor or a rule changes, at most once a
-minute and at least once an hour, and lists every move and every proposal under Storefront, Retail pricing. Once an hour at most it sends the counts to
+minute and at least once an hour, and lists every move and every proposal under Catalog, Settings, Shop price rules. Once an hour at most it sends the counts to
 the ops recipients: `ALERTS_EMAIL_TO` for the email and `ALERTS_TELEGRAM_CHAT_ID` for Telegram. Without them the message is recorded as failed in the
 notification log with the reason, and the list in the console is the only notice.
 

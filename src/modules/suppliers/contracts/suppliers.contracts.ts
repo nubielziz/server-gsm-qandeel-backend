@@ -598,10 +598,9 @@ export const importServices = defineRoute({
       createdServiceIds: z
         .array(zId)
         .max(500)
-        .optional()
         .describe(
-          'The services this call created (not the updated or unchanged ones), in creation order, at most 500: what a publish ' +
-            'run of the new services takes (decision 060). Always sent; optional in the schema only until the console reads it.',
+          'The services this call created (not the updated or unchanged ones), in creation order, at most 500; `[]` when none ' +
+            'was created: what a publish run of the new services takes (decision 060). Always sent.',
         ),
     }),
   },

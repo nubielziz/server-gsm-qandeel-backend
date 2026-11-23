@@ -39,7 +39,8 @@ feature 6.
 - **The Catalog page's reads** (decision 060; `application/service-read-access.ts`, `domain/service-attention.ts`,
   `infra/service-attention.sql.ts`): every answer of the list, show, create and change routes also carries `attention` (the
   reasons `no_supplier`, `below_floor`, `price_proposal`, `publish_failed`, enabled services only), the shop price
-  `retailPrice` with `retailPriceSource`, and, by permission, `retailPriceRule` and `retailPriceWaiting` (`pricing:read`) and
+  `retailPrice` with `retailPriceSource` (these three are sent to every reader on every path and are required in the contract; `toView`
+  in `service-admin.service.ts` writes them for the list, the detail and both write answers), and, by permission, `retailPriceRule` and `retailPriceWaiting` (`pricing:read`) and
   `listingId`, `isListed` and `shopBlocked` (`storefront:read`); the detail adds `publishFailure` (`storefront:read`). A key the
   caller may not read is left out, and a reason it may not read is not in `attention` nor in `needsAttention`. `serviceReadAccess`
   is the one rule for the four routes. The list filters `needsAttention`, `hasSupplier`, `supplierId` (the primary supplier),
@@ -220,8 +221,10 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   differs and keeps `notified_at`. Nothing locks a rule row (the foreign key checks take `FOR KEY SHARE`, which a rule edit or delete
   never waits for). Every move and every
   proposal is a change row and an audit row (entity `service`, actor `system`: `changed`, `proposed`, `detached retail price of`).
-  The hourly message (`retail.prices_followed`, at most once an hour, one notification per channel) goes to the ops recipients; a
-  marking of nothing but closed proposals tells nobody and does not count for the hour.
+  The hourly message (`retail.prices_followed`, at most once an hour, one notification per channel) goes to the ops recipients and its `link`
+  is `<CONSOLE_BASE_URL>/catalog?view=settings&tab=shop-prices` (the Shop price rules tab of the Catalog settings; the console still
+  redirects the older `/storefront?tab=pricing`, so a stored mail keeps working); a marking of nothing but closed proposals tells nobody
+  and does not count for the hour.
 - **The price changes routes** (`retail-price-changes.service.ts`, `controllers/retail-price-changes.controller.ts`; `pricing:read`,
   `pricing:update`): `GET /admin/retail-price-changes` (filters `kind`, `waiting`, `serviceId`; sorts `id`, newest first by default,
   and `createdAt`) and `POST /admin/retail-price-changes/resolve` (`{ ids, action, seen }`, one transaction per id): `apply` names in

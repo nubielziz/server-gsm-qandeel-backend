@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
  "frontend": "../frontend-admin",
- "count": 340,
+ "count": 341,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -1480,13 +1480,13 @@
          "type": "number",
          "alias": "Id"
         },
+        "value": {
+         "type": "number"
+        },
         "resolvedAt": {
          "type": "string",
          "nullable": true,
          "alias": "IsoDateTime"
-        },
-        "value": {
-         "type": "number"
         },
         "ruleId": {
          "type": "number",
@@ -1642,13 +1642,13 @@
       "type": "number",
       "alias": "Id"
      },
+     "value": {
+      "type": "number"
+     },
      "resolvedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
-     },
-     "value": {
-      "type": "number"
      },
      "ruleId": {
       "type": "number",
@@ -2208,8 +2208,8 @@
           "card",
           "country",
           "imei",
-          "domain",
-          "device"
+          "device",
+          "domain"
          ]
         },
         "source": {
@@ -2304,8 +2304,8 @@
        "card",
        "country",
        "imei",
-       "domain",
-       "device"
+       "device",
+       "domain"
       ]
      },
      "source": {
@@ -4710,10 +4710,10 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "title": {
+        "slug": {
          "type": "string"
         },
-        "slug": {
+        "title": {
          "type": "string"
         },
         "bodyMd": {
@@ -4733,10 +4733,10 @@
         "kind": {
          "enum": [
           "country",
-          "model",
-          "brand",
           "carrier",
+          "model",
           "tool",
+          "brand",
           "static",
           "blog"
          ]
@@ -4817,10 +4817,10 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "title": {
+     "slug": {
       "type": "string"
      },
-     "slug": {
+     "title": {
       "type": "string"
      },
      "bodyMd": {
@@ -4840,10 +4840,10 @@
      "kind": {
       "enum": [
        "country",
-       "model",
-       "brand",
        "carrier",
+       "model",
        "tool",
+       "brand",
        "static",
        "blog"
       ]
@@ -6029,8 +6029,8 @@
        },
        "days": {
         "enum": [
-         1,
          7,
+         1,
          14
         ]
        }
@@ -7831,15 +7831,15 @@
          "type": "string",
          "alias": "Money"
         },
-        "cost": {
-         "type": "string",
-         "alias": "Money"
-        },
         "model": {
          "type": "string"
         },
         "brand": {
          "type": "string"
+        },
+        "cost": {
+         "type": "string",
+         "alias": "Money"
         },
         "cachedUntil": {
          "type": "string",
@@ -7973,15 +7973,15 @@
       "type": "string",
       "alias": "Money"
      },
-     "cost": {
-      "type": "string",
-      "alias": "Money"
-     },
      "model": {
       "type": "string"
      },
      "brand": {
       "type": "string"
+     },
+     "cost": {
+      "type": "string",
+      "alias": "Money"
      },
      "cachedUntil": {
       "type": "string",
@@ -8459,16 +8459,16 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "resolvedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
         "title": {
          "type": "string"
         },
         "summary": {
          "type": "string"
+        },
+        "resolvedAt": {
+         "type": "string",
+         "nullable": true,
+         "alias": "IsoDateTime"
         },
         "startedAt": {
          "type": "string",
@@ -8622,16 +8622,16 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "resolvedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "title": {
       "type": "string"
      },
      "summary": {
       "type": "string"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "startedAt": {
       "type": "string",
@@ -10541,9 +10541,9 @@
           "sent",
           "failed",
           "draft",
+          "cancelled",
           "scheduled",
-          "sending",
-          "cancelled"
+          "sending"
          ]
         },
         "scheduledAt": {
@@ -10690,9 +10690,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -13535,8 +13535,8 @@
         "scope": {
          "enum": [
           "service",
-          "global",
-          "category"
+          "category",
+          "global"
          ]
         },
         "targetId": {
@@ -13583,9 +13583,9 @@
         "rounding": {
          "enum": [
           "none",
+          "ends_99",
           "nearest_0.05",
-          "nearest_0.10",
-          "ends_99"
+          "nearest_0.10"
          ]
         },
         "startsAt": {
@@ -13671,8 +13671,8 @@
      "scope": {
       "enum": [
        "service",
-       "global",
-       "category"
+       "category",
+       "global"
       ]
      },
      "targetId": {
@@ -13719,9 +13719,9 @@
      "rounding": {
       "enum": [
        "none",
+       "ends_99",
        "nearest_0.05",
-       "nearest_0.10",
-       "ends_99"
+       "nearest_0.10"
       ]
      },
      "startsAt": {
@@ -13834,8 +13834,8 @@
         "state": {
          "enum": [
           "none",
-          "win",
           "apply",
+          "win",
           "skip"
          ]
         },
@@ -14008,8 +14008,8 @@
           "running",
           "succeeded",
           "draft",
-          "cancelled",
-          "preparing"
+          "preparing",
+          "cancelled"
          ]
         },
         "source": {
@@ -14254,8 +14254,8 @@
        "running",
        "succeeded",
        "draft",
-       "cancelled",
-       "preparing"
+       "preparing",
+       "cancelled"
       ]
      },
      "source": {
@@ -14616,8 +14616,8 @@
           },
           "brandKind": {
            "enum": [
-            "device",
             "tool",
+            "device",
             "app"
            ],
            "nullable": true
@@ -14688,8 +14688,8 @@
         "state": {
          "enum": [
           "review",
-          "blocked",
-          "ready"
+          "ready",
+          "blocked"
          ]
         },
         "blockedReason": {
@@ -15978,8 +15978,8 @@
       "object": {
        "days": {
         "enum": [
-         1,
          7,
+         1,
          14
         ]
        },
@@ -16529,8 +16529,8 @@
         "scope": {
          "enum": [
           "type",
-          "global",
-          "category"
+          "category",
+          "global"
          ]
         },
         "serviceType": {
@@ -16561,10 +16561,10 @@
         },
         "rounding": {
          "enum": [
-          "ends_99",
           "cent",
           "step_0.05",
-          "step_0.10"
+          "step_0.10",
+          "ends_99"
          ]
         },
         "roundFrom": {
@@ -18114,9 +18114,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "brand": {
-         "type": "string"
-        },
         "slug": {
          "type": "string"
         },
@@ -18127,6 +18124,9 @@
          "type": "string"
         },
         "carrier": {
+         "type": "string"
+        },
+        "brand": {
          "type": "string"
         },
         "publicTitle": {
@@ -18291,9 +18291,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "brand": {
-      "type": "string"
-     },
      "slug": {
       "type": "string"
      },
@@ -18304,6 +18301,9 @@
       "type": "string"
      },
      "carrier": {
+      "type": "string"
+     },
+     "brand": {
       "type": "string"
      },
      "publicTitle": {
@@ -18628,6 +18628,68 @@
           }
          },
          "nullable": true
+        },
+        "attention": {
+         "array": {
+          "enum": [
+           "below_floor",
+           "no_supplier",
+           "price_proposal",
+           "publish_failed"
+          ]
+         },
+         "optional": true
+        },
+        "retailPrice": {
+         "type": "string",
+         "nullable": true,
+         "alias": "Money",
+         "optional": true
+        },
+        "retailPriceSource": {
+         "enum": [
+          "manual",
+          "rule"
+         ],
+         "nullable": true,
+         "optional": true
+        },
+        "retailPriceRule": {
+         "object": {
+          "id": {
+           "type": "number",
+           "alias": "Id"
+          },
+          "label": {
+           "type": "string"
+          }
+         },
+         "nullable": true,
+         "optional": true
+        },
+        "retailPriceWaiting": {
+         "type": "boolean",
+         "optional": true
+        },
+        "listingId": {
+         "type": "number",
+         "nullable": true,
+         "alias": "Id",
+         "optional": true
+        },
+        "isListed": {
+         "type": "boolean",
+         "optional": true
+        },
+        "shopBlocked": {
+         "enum": [
+          "service_disabled",
+          "category_inactive",
+          "b2b_only",
+          "not_orderable"
+         ],
+         "nullable": true,
+         "optional": true
         }
        }
       }
@@ -18789,6 +18851,68 @@
       },
       "nullable": true
      },
+     "attention": {
+      "array": {
+       "enum": [
+        "below_floor",
+        "no_supplier",
+        "price_proposal",
+        "publish_failed"
+       ]
+      },
+      "optional": true
+     },
+     "retailPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money",
+      "optional": true
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean",
+      "optional": true
+     },
+     "listingId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id",
+      "optional": true
+     },
+     "isListed": {
+      "type": "boolean",
+      "optional": true
+     },
+     "shopBlocked": {
+      "enum": [
+       "service_disabled",
+       "category_inactive",
+       "b2b_only",
+       "not_orderable"
+      ],
+      "nullable": true,
+      "optional": true
+     },
      "fields": {
       "array": {
        "object": {
@@ -18857,6 +18981,88 @@
          "alias": "Money"
         }
        }
+      }
+     },
+     "publishFailure": {
+      "object": {
+       "runId": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "reason": {
+        "type": "string"
+       },
+       "detail": {
+        "type": "string",
+        "nullable": true
+       },
+       "at": {
+        "type": "string",
+        "alias": "IsoDateTime"
+       }
+      },
+      "nullable": true,
+      "optional": true
+     }
+    }
+   }
+  },
+  {
+   "key": "GET /admin/services/:id/supplier-links",
+   "fn": "getServiceSupplierLinks",
+   "file": "src/features/suppliers/api/links.ts",
+   "line": 29,
+   "params": [
+    {
+     "name": "serviceId",
+     "optional": false,
+     "typeText": "number",
+     "shape": {
+      "type": "number",
+      "alias": "Id"
+     }
+    },
+    {
+     "name": "init",
+     "optional": true,
+     "typeText": "ApiInit | undefined",
+     "shape": {
+      "object": {
+       "signal": {
+        "type": "AbortSignal",
+        "optional": true
+       },
+       "headers": {
+        "object": {},
+        "record": {
+         "type": "string"
+        },
+        "optional": true
+       }
+      }
+     }
+    }
+   ],
+   "returnsText": "ChainStep[]",
+   "returns": {
+    "array": {
+     "object": {
+      "priority": {
+       "type": "number"
+      },
+      "supplierId": {
+       "type": "number",
+       "alias": "Id"
+      },
+      "supplierName": {
+       "type": "string"
+      },
+      "supplierServiceId": {
+       "type": "number",
+       "alias": "Id"
+      },
+      "supplierServiceName": {
+       "type": "string"
       }
      }
     }
@@ -27070,11 +27276,11 @@
      "typeText": "Partial<Omit<CreatePageBody, \"kind\">>",
      "shape": {
       "object": {
-       "title": {
+       "slug": {
         "type": "string",
         "optional": true
        },
-       "slug": {
+       "title": {
         "type": "string",
         "optional": true
        },
@@ -27130,10 +27336,10 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "title": {
+     "slug": {
       "type": "string"
      },
-     "slug": {
+     "title": {
       "type": "string"
      },
      "bodyMd": {
@@ -27153,10 +27359,10 @@
      "kind": {
       "enum": [
        "country",
-       "model",
-       "brand",
        "carrier",
+       "model",
        "tool",
+       "brand",
        "static",
        "blog"
       ]
@@ -27880,16 +28086,16 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "resolvedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "title": {
       "type": "string"
      },
      "summary": {
       "type": "string"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "startedAt": {
       "type": "string",
@@ -28130,9 +28336,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -28785,8 +28991,8 @@
        "scope": {
         "enum": [
          "service",
-         "global",
-         "category"
+         "category",
+         "global"
         ],
         "optional": true
        },
@@ -28823,9 +29029,9 @@
        "rounding": {
         "enum": [
          "none",
+         "ends_99",
          "nearest_0.05",
-         "nearest_0.10",
-         "ends_99"
+         "nearest_0.10"
         ],
         "optional": true
        },
@@ -28906,8 +29112,8 @@
      "scope": {
       "enum": [
        "service",
-       "global",
-       "category"
+       "category",
+       "global"
       ]
      },
      "targetId": {
@@ -28954,9 +29160,9 @@
      "rounding": {
       "enum": [
        "none",
+       "ends_99",
        "nearest_0.05",
-       "nearest_0.10",
-       "ends_99"
+       "nearest_0.10"
       ]
      },
      "startsAt": {
@@ -29130,8 +29336,8 @@
        },
        "brandKind": {
         "enum": [
-         "device",
          "tool",
+         "device",
          "app"
         ],
         "nullable": true
@@ -29202,8 +29408,8 @@
      "state": {
       "enum": [
        "review",
-       "blocked",
-       "ready"
+       "ready",
+       "blocked"
       ]
      },
      "blockedReason": {
@@ -29433,10 +29639,10 @@
        },
        "rounding": {
         "enum": [
-         "ends_99",
          "cent",
          "step_0.05",
-         "step_0.10"
+         "step_0.10",
+         "ends_99"
         ],
         "optional": true
        },
@@ -29487,8 +29693,8 @@
      "scope": {
       "enum": [
        "type",
-       "global",
-       "category"
+       "category",
+       "global"
       ]
      },
      "serviceType": {
@@ -29519,10 +29725,10 @@
      },
      "rounding": {
       "enum": [
-       "ends_99",
        "cent",
        "step_0.05",
-       "step_0.10"
+       "step_0.10",
+       "ends_99"
       ]
      },
      "roundFrom": {
@@ -30141,9 +30347,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "brand": {
-      "type": "string"
-     },
      "slug": {
       "type": "string"
      },
@@ -30154,6 +30357,9 @@
       "type": "string"
      },
      "carrier": {
+      "type": "string"
+     },
+     "brand": {
       "type": "string"
      },
      "publicTitle": {
@@ -30488,6 +30694,68 @@
        }
       },
       "nullable": true
+     },
+     "attention": {
+      "array": {
+       "enum": [
+        "below_floor",
+        "no_supplier",
+        "price_proposal",
+        "publish_failed"
+       ]
+      },
+      "optional": true
+     },
+     "retailPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money",
+      "optional": true
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean",
+      "optional": true
+     },
+     "listingId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id",
+      "optional": true
+     },
+     "isListed": {
+      "type": "boolean",
+      "optional": true
+     },
+     "shopBlocked": {
+      "enum": [
+       "service_disabled",
+       "category_inactive",
+       "b2b_only",
+       "not_orderable"
+      ],
+      "nullable": true,
+      "optional": true
      }
     }
    }
@@ -31886,13 +32154,13 @@
       "type": "number",
       "alias": "Id"
      },
+     "value": {
+      "type": "number"
+     },
      "resolvedAt": {
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
-     },
-     "value": {
-      "type": "number"
      },
      "ruleId": {
       "type": "number",
@@ -32211,8 +32479,8 @@
        "card",
        "country",
        "imei",
-       "domain",
-       "device"
+       "device",
+       "domain"
       ]
      },
      "source": {
@@ -33528,10 +33796,10 @@
        "kind": {
         "enum": [
          "country",
-         "model",
-         "brand",
          "carrier",
+         "model",
          "tool",
+         "brand",
          "static",
          "blog"
         ]
@@ -33594,10 +33862,10 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "title": {
+     "slug": {
       "type": "string"
      },
-     "slug": {
+     "title": {
       "type": "string"
      },
      "bodyMd": {
@@ -33617,10 +33885,10 @@
      "kind": {
       "enum": [
        "country",
-       "model",
-       "brand",
        "carrier",
+       "model",
        "tool",
+       "brand",
        "static",
        "blog"
       ]
@@ -33707,10 +33975,10 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "title": {
+     "slug": {
       "type": "string"
      },
-     "slug": {
+     "title": {
       "type": "string"
      },
      "bodyMd": {
@@ -33730,10 +33998,10 @@
      "kind": {
       "enum": [
        "country",
-       "model",
-       "brand",
        "carrier",
+       "model",
        "tool",
+       "brand",
        "static",
        "blog"
       ]
@@ -33826,10 +34094,10 @@
          "type": "string",
          "alias": "IsoDateTime"
         },
-        "title": {
+        "slug": {
          "type": "string"
         },
-        "slug": {
+        "title": {
          "type": "string"
         },
         "bodyMd": {
@@ -33849,10 +34117,10 @@
         "kind": {
          "enum": [
           "country",
-          "model",
-          "brand",
           "carrier",
+          "model",
           "tool",
+          "brand",
           "static",
           "blog"
          ]
@@ -35597,16 +35865,16 @@
       "type": "string",
       "alias": "IsoDateTime"
      },
-     "resolvedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
      "title": {
       "type": "string"
      },
      "summary": {
       "type": "string"
+     },
+     "resolvedAt": {
+      "type": "string",
+      "nullable": true,
+      "alias": "IsoDateTime"
      },
      "startedAt": {
       "type": "string",
@@ -36698,9 +36966,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -37039,9 +37307,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -37477,9 +37745,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -37830,9 +38098,9 @@
        "sent",
        "failed",
        "draft",
+       "cancelled",
        "scheduled",
-       "sending",
-       "cancelled"
+       "sending"
       ]
      },
      "scheduledAt": {
@@ -40052,8 +40320,8 @@
        "scope": {
         "enum": [
          "service",
-         "global",
-         "category"
+         "category",
+         "global"
         ]
        },
        "targetId": {
@@ -40084,9 +40352,9 @@
        "rounding": {
         "enum": [
          "none",
+         "ends_99",
          "nearest_0.05",
-         "nearest_0.10",
-         "ends_99"
+         "nearest_0.10"
         ]
        },
        "minProfit": {
@@ -40158,8 +40426,8 @@
      "scope": {
       "enum": [
        "service",
-       "global",
-       "category"
+       "category",
+       "global"
       ]
      },
      "targetId": {
@@ -40206,9 +40474,9 @@
      "rounding": {
       "enum": [
        "none",
+       "ends_99",
        "nearest_0.05",
-       "nearest_0.10",
-       "ends_99"
+       "nearest_0.10"
       ]
      },
      "startsAt": {
@@ -40346,8 +40614,8 @@
        "running",
        "succeeded",
        "draft",
-       "cancelled",
-       "preparing"
+       "preparing",
+       "cancelled"
       ]
      },
      "source": {
@@ -40599,8 +40867,8 @@
        "running",
        "succeeded",
        "draft",
-       "cancelled",
-       "preparing"
+       "preparing",
+       "cancelled"
       ]
      },
      "source": {
@@ -40850,8 +41118,8 @@
        "running",
        "succeeded",
        "draft",
-       "cancelled",
-       "preparing"
+       "preparing",
+       "cancelled"
       ]
      },
      "source": {
@@ -41080,8 +41348,8 @@
              "state": {
               "enum": [
                "review",
-               "blocked",
-               "ready"
+               "ready",
+               "blocked"
               ],
               "optional": true
              },
@@ -41109,8 +41377,8 @@
              },
              "brandKind": {
               "enum": [
-               "device",
                "tool",
+               "device",
                "app"
               ],
               "optional": true
@@ -41247,8 +41515,8 @@
        "running",
        "succeeded",
        "draft",
-       "cancelled",
-       "preparing"
+       "preparing",
+       "cancelled"
       ]
      },
      "source": {
@@ -42260,8 +42528,8 @@
        "scope": {
         "enum": [
          "type",
-         "global",
-         "category"
+         "category",
+         "global"
         ]
        },
        "serviceType": {
@@ -42289,10 +42557,10 @@
        },
        "rounding": {
         "enum": [
-         "ends_99",
          "cent",
          "step_0.05",
-         "step_0.10"
+         "step_0.10",
+         "ends_99"
         ]
        },
        "roundFrom": {
@@ -42342,8 +42610,8 @@
      "scope": {
       "enum": [
        "type",
-       "global",
-       "category"
+       "category",
+       "global"
       ]
      },
      "serviceType": {
@@ -42374,10 +42642,10 @@
      },
      "rounding": {
       "enum": [
-       "ends_99",
        "cent",
        "step_0.05",
-       "step_0.10"
+       "step_0.10",
+       "ends_99"
       ]
      },
      "roundFrom": {
@@ -42427,8 +42695,8 @@
              "scope": {
               "enum": [
                "type",
-               "global",
-               "category"
+               "category",
+               "global"
               ]
              },
              "serviceType": {
@@ -42456,10 +42724,10 @@
              },
              "rounding": {
               "enum": [
-               "ends_99",
                "cent",
                "step_0.05",
-               "step_0.10"
+               "step_0.10",
+               "ends_99"
               ]
              },
              "roundFrom": {
@@ -42502,10 +42770,10 @@
              },
              "rounding": {
               "enum": [
-               "ends_99",
                "cent",
                "step_0.05",
-               "step_0.10"
+               "step_0.10",
+               "ends_99"
               ],
               "optional": true
              },
@@ -43349,9 +43617,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "brand": {
-      "type": "string"
-     },
      "slug": {
       "type": "string"
      },
@@ -43362,6 +43627,9 @@
       "type": "string"
      },
      "carrier": {
+      "type": "string"
+     },
+     "brand": {
       "type": "string"
      },
      "publicTitle": {
@@ -43534,9 +43802,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "brand": {
-      "type": "string"
-     },
      "slug": {
       "type": "string"
      },
@@ -43547,6 +43812,9 @@
       "type": "string"
      },
      "carrier": {
+      "type": "string"
+     },
+     "brand": {
       "type": "string"
      },
      "publicTitle": {
@@ -43847,6 +44115,68 @@
        }
       },
       "nullable": true
+     },
+     "attention": {
+      "array": {
+       "enum": [
+        "below_floor",
+        "no_supplier",
+        "price_proposal",
+        "publish_failed"
+       ]
+      },
+      "optional": true
+     },
+     "retailPrice": {
+      "type": "string",
+      "nullable": true,
+      "alias": "Money",
+      "optional": true
+     },
+     "retailPriceSource": {
+      "enum": [
+       "manual",
+       "rule"
+      ],
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceRule": {
+      "object": {
+       "id": {
+        "type": "number",
+        "alias": "Id"
+       },
+       "label": {
+        "type": "string"
+       }
+      },
+      "nullable": true,
+      "optional": true
+     },
+     "retailPriceWaiting": {
+      "type": "boolean",
+      "optional": true
+     },
+     "listingId": {
+      "type": "number",
+      "nullable": true,
+      "alias": "Id",
+      "optional": true
+     },
+     "isListed": {
+      "type": "boolean",
+      "optional": true
+     },
+     "shopBlocked": {
+      "enum": [
+       "service_disabled",
+       "category_inactive",
+       "b2b_only",
+       "not_orderable"
+      ],
+      "nullable": true,
+      "optional": true
      }
     }
    }
@@ -44808,6 +45138,13 @@
      },
      "unchanged": {
       "type": "number"
+     },
+     "createdServiceIds": {
+      "array": {
+       "type": "number",
+       "alias": "Id"
+      },
+      "optional": true
      }
     }
    }
@@ -46887,7 +47224,7 @@
    "key": "PUT /admin/services/:id/supplier-links",
    "fn": "replaceSupplierLinks",
    "file": "src/features/suppliers/api/links.ts",
-   "line": 13,
+   "line": 14,
    "params": [
     {
      "name": "serviceId",

@@ -1,7 +1,8 @@
 // Route contracts of the services (map domain B, routes /admin/services, stage 4): list, show, create, change, delete and
 // the replace-all custom fields and option lists. Shapes match the console's Service and ServiceDetail
 // (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-1, -2, -3, -9, -11, -13 and -14). Decision 060 adds the Catalog page's
-// facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort.
+// facts of a row (attention reasons, shop price, shop page), its filters and the shop price sort: `attention`, `retailPrice` and
+// `retailPriceSource` reach every reader and are required; the keys that depend on a permission stay optional for good.
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { MAX_QTY_OPTIONS, MAX_QUANTITY } from '../domain/quantity-rule';
@@ -86,28 +87,22 @@ const ServiceRow = z.object({
     .describe('Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`.'),
   attention: z
     .array(z.enum(ATTENTION_REASONS))
-    .optional()
     .describe(
       'Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active ' +
         'supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), ' +
         '`publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have ' +
         'reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without ' +
-        '`storefront:read`. Always sent; optional in the schema only until the console reads it.',
+        '`storefront:read`. Sent to every reader.',
     ),
   retailPrice: zMoney
     .nullable()
-    .optional()
-    .describe(
-      'The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema ' +
-        'only until the console reads it.',
-    ),
+    .describe('The shop price (the retail group price, net USD before VAT); `null` when unset. Sent to every reader.'),
   retailPriceSource: z
     .enum(['rule', 'manual'])
     .nullable()
-    .optional()
     .describe(
       '`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price ' +
-        '(decision 040). Always sent; optional in the schema only until the console reads it.',
+        '(decision 040). Sent to every reader.',
     ),
   retailPriceRule: z
     .object({ id: zId, label: z.string() })

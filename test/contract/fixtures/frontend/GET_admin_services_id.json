@@ -34,8 +34,20 @@
       "id": 1,
       "name": "Nordic GSM"
     },
+    "attention": [],
+    "retailPrice": "3.9900",
+    "retailPriceSource": "rule",
+    "retailPriceRule": {
+      "id": 2,
+      "label": "IMEI +30%"
+    },
+    "retailPriceWaiting": false,
+    "listingId": 1,
+    "isListed": true,
+    "shopBlocked": null,
     "fields": [],
     "options": [],
-    "groupPrices": []
+    "groupPrices": [],
+    "publishFailure": null
   }
 }

@@ -35,7 +35,18 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
+      "listingId": 1,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 2,
@@ -67,7 +78,18 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
+      "listingId": 2,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 3,
@@ -99,7 +121,18 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
+      "listingId": 3,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 4,
@@ -131,7 +164,18 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "3.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 2,
+        "label": "IMEI +30%"
+      },
+      "retailPriceWaiting": false,
+      "listingId": 4,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 5,
@@ -163,7 +207,15 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [],
+      "retailPrice": "25.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 5,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 6,
@@ -195,7 +247,20 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [
+        "price_proposal"
+      ],
+      "retailPrice": "19.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
+      "listingId": 6,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 7,
@@ -227,7 +292,18 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "11.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": false,
+      "listingId": 7,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 8,
@@ -259,7 +335,20 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [
+        "price_proposal"
+      ],
+      "retailPrice": "14.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
+      "listingId": 8,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 9,
@@ -291,7 +380,15 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "12.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 9,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 10,
@@ -323,7 +420,20 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [
+        "price_proposal"
+      ],
+      "retailPrice": "21.9900",
+      "retailPriceSource": "rule",
+      "retailPriceRule": {
+        "id": 3,
+        "label": "Carrier unlock +20% +$0.50, up to 5 cents"
+      },
+      "retailPriceWaiting": true,
+      "listingId": 10,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 11,
@@ -355,7 +465,15 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [],
+      "retailPrice": "45.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 11,
+      "isListed": false,
+      "shopBlocked": "b2b_only"
     },
     {
       "id": 12,
@@ -387,7 +505,15 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [],
+      "retailPrice": "58.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 12,
+      "isListed": false,
+      "shopBlocked": "b2b_only"
     },
     {
       "id": 13,
@@ -419,7 +545,15 @@
       "fallbackSupplier": {
         "id": 6,
         "name": "Bosphorus Unlock"
-      }
+      },
+      "attention": [],
+      "retailPrice": "14.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 13,
+      "isListed": true,
+      "shopBlocked": null
     },
     {
       "id": 14,
@@ -451,7 +585,15 @@
       "fallbackSupplier": {
         "id": 1,
         "name": "Nordic GSM"
-      }
+      },
+      "attention": [],
+      "retailPrice": "8.9900",
+      "retailPriceSource": "manual",
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": 14,
+      "isListed": false,
+      "shopBlocked": "service_disabled"
     },
     {
       "id": 15,
@@ -480,7 +622,15 @@
         "id": 2,
         "name": "Gulf Server Hub"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 16,
@@ -509,7 +659,15 @@
         "id": 2,
         "name": "Gulf Server Hub"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 17,
@@ -538,7 +696,17 @@
         "id": 2,
         "name": "Gulf Server Hub"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [
+        "below_floor"
+      ],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 18,
@@ -567,7 +735,15 @@
         "id": 2,
         "name": "Gulf Server Hub"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 19,
@@ -596,7 +772,15 @@
         "id": 2,
         "name": "Gulf Server Hub"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 20,
@@ -625,7 +809,15 @@
         "id": 4,
         "name": "RemoteDesk Pro"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 21,
@@ -654,7 +846,15 @@
         "id": 4,
         "name": "RemoteDesk Pro"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 22,
@@ -683,7 +883,15 @@
         "id": 4,
         "name": "RemoteDesk Pro"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 23,
@@ -712,7 +920,15 @@
         "id": 4,
         "name": "RemoteDesk Pro"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": null
     },
     {
       "id": 24,
@@ -741,7 +957,15 @@
         "id": 5,
         "name": "FileForge"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": "not_orderable"
     },
     {
       "id": 25,
@@ -770,7 +994,15 @@
         "id": 5,
         "name": "FileForge"
       },
-      "fallbackSupplier": null
+      "fallbackSupplier": null,
+      "attention": [],
+      "retailPrice": null,
+      "retailPriceSource": null,
+      "retailPriceRule": null,
+      "retailPriceWaiting": false,
+      "listingId": null,
+      "isListed": false,
+      "shopBlocked": "not_orderable"
     }
   ]
 }

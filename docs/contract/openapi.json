@@ -160573,7 +160573,6 @@
                         "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                       },
                       "attention": {
-                        "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
                         "type": "array",
                         "items": {
                           "type": "string",
@@ -160583,10 +160582,10 @@
                             "price_proposal",
                             "publish_failed"
                           ]
-                        }
+                        },
+                        "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                       },
                       "retailPrice": {
-                        "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
                         "anyOf": [
                           {
                             "type": "string",
@@ -160600,10 +160599,10 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Sent to every reader."
                       },
                       "retailPriceSource": {
-                        "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
                         "anyOf": [
                           {
                             "type": "string",
@@ -160615,7 +160614,8 @@
                           {
                             "type": "null"
                           }
-                        ]
+                        ],
+                        "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Sent to every reader."
                       },
                       "retailPriceRule": {
                         "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
@@ -160713,7 +160713,10 @@
                       "fallbackSupplier",
                       "minQty",
                       "maxQty",
-                      "qtyOptions"
+                      "qtyOptions",
+                      "attention",
+                      "retailPrice",
+                      "retailPriceSource"
                     ],
                     "additionalProperties": false
                   }
@@ -161422,7 +161425,6 @@
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     },
                     "attention": {
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
                       "type": "array",
                       "items": {
                         "type": "string",
@@ -161432,10 +161434,10 @@
                           "price_proposal",
                           "publish_failed"
                         ]
-                      }
+                      },
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
-                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -161449,10 +161451,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Sent to every reader."
                     },
                     "retailPriceSource": {
-                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -161464,7 +161466,8 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Sent to every reader."
                     },
                     "retailPriceRule": {
                       "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
@@ -161562,7 +161565,10 @@
                     "fallbackSupplier",
                     "minQty",
                     "maxQty",
-                    "qtyOptions"
+                    "qtyOptions",
+                    "attention",
+                    "retailPrice",
+                    "retailPriceSource"
                   ],
                   "additionalProperties": false
                 },
@@ -163178,7 +163184,6 @@
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     },
                     "attention": {
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
                       "type": "array",
                       "items": {
                         "type": "string",
@@ -163188,10 +163193,10 @@
                           "price_proposal",
                           "publish_failed"
                         ]
-                      }
+                      },
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
-                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -163205,10 +163210,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Sent to every reader."
                     },
                     "retailPriceSource": {
-                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -163220,7 +163225,8 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Sent to every reader."
                     },
                     "retailPriceRule": {
                       "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
@@ -163484,6 +163490,9 @@
                     "minQty",
                     "maxQty",
                     "qtyOptions",
+                    "attention",
+                    "retailPrice",
+                    "retailPriceSource",
                     "fields",
                     "options",
                     "groupPrices"
@@ -164241,7 +164250,6 @@
                       "description": "Fixed pack sizes, ascending; empty means any whole quantity from `minQty` to `maxQty`."
                     },
                     "attention": {
-                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Always sent; optional in the schema only until the console reads it.",
                       "type": "array",
                       "items": {
                         "type": "string",
@@ -164251,10 +164259,10 @@
                           "price_proposal",
                           "publish_failed"
                         ]
-                      }
+                      },
+                      "description": "Why the service needs staff attention (decision 060), in this order: `no_supplier` (an automatic service with no active supplier link), `below_floor` (the price is under the floor), `price_proposal` (a proposed shop price waits for staff), `publish_failed` (the last publish attempt was refused and the service has no shop page). Only enabled services have reasons; `[]` when none holds. `price_proposal` is left out without `pricing:read` and `publish_failed` without `storefront:read`. Sent to every reader."
                     },
                     "retailPrice": {
-                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -164268,10 +164276,10 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "The shop price (the retail group price, net USD before VAT); `null` when unset. Sent to every reader."
                     },
                     "retailPriceSource": {
-                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Always sent; optional in the schema only until the console reads it.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -164283,7 +164291,8 @@
                         {
                           "type": "null"
                         }
-                      ]
+                      ],
+                      "description": "`rule` when the shop price follows a retail price rule, `manual` when a person typed it, `null` without a price (decision 040). Sent to every reader."
                     },
                     "retailPriceRule": {
                       "description": "The rule a following shop price came from (its name stays after the rule is deleted); `null` otherwise. Left out without `pricing:read`.",
@@ -164381,7 +164390,10 @@
                     "fallbackSupplier",
                     "minQty",
                     "maxQty",
-                    "qtyOptions"
+                    "qtyOptions",
+                    "attention",
+                    "retailPrice",
+                    "retailPriceSource"
                   ],
                   "additionalProperties": false
                 },
@@ -180670,7 +180682,6 @@
                       "maximum": 9007199254740991
                     },
                     "createdServiceIds": {
-                      "description": "The services this call created (not the updated or unchanged ones), in creation order, at most 500: what a publish run of the new services takes (decision 060). Always sent; optional in the schema only until the console reads it.",
                       "maxItems": 500,
                       "type": "array",
                       "items": {
@@ -180682,13 +180693,15 @@
                         "examples": [
                           42
                         ]
-                      }
+                      },
+                      "description": "The services this call created (not the updated or unchanged ones), in creation order, at most 500; `[]` when none was created: what a publish run of the new services takes (decision 060). Always sent."
                     }
                   },
                   "required": [
                     "created",
                     "updated",
-                    "unchanged"
+                    "unchanged",
+                    "createdServiceIds"
                   ],
                   "additionalProperties": false
                 },
