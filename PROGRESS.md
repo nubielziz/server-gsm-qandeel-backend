@@ -14,7 +14,14 @@ by category position, then the stored order, then name). `POST /admin/suppliers/
 the generated documents rebuilt against the console's new `main` (343 console routes); the API boots. The tests were written and are run by
 the checks on GitHub, not locally. **Release:** the console and this repository are pushed together with the server's deploys on hold, and
 the hold is lifted when both runs are green (the contract check here reads the console's `main`). **Open:** `ServiceRow.sort` is always
-sent and still optional in the contract; it becomes required when the console's service type reads it.
+sent and still optional in the contract; it becomes required when the console's service type reads it. **First run on GitHub (2026-11-23):** types, lint, the
+generated documents and the production image passed; four tests failed and were corrected: the list of columns added to the map's tables
+did not name `services.sort`; and three tests of the import options were wrong about the test, not the code (the two modules each hold
+an importer, so its calls are watched on the class; Bun's `toMatchObject` leaves its matcher in the place of a text it matched; and two
+fixtures put the price floor of a linked service under the supplier's new price, a state the sync never leaves for a first supplier).
+**Known defect, older than this feature, not fixed here:** an import that raises the cost of a linked service above its price floor (the
+supplier is not the service's first one, so the sync did not lift the floor) is refused by the check `services_effective_cost_check` and
+answers 500. The cost and the floor must move together, through the bookkeeping the sync uses (`cost_was`, the price version).
 
 **One-page Catalog, the reads of the backend (2026-11-23, decision 060): merged in two steps.** Owner request: adding and pricing a service
 took three console pages (Services and pricing, Suppliers, Storefront); the console gets one Catalog page. This step only adds. A service

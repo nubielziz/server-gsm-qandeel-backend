@@ -187,9 +187,10 @@ describe('POST /admin/suppliers/:id/import with status', () => {
     const unlock = await remote(supplierId);
     const tools = await remote(supplierId, { remoteGroup: 'Tools', type: 'SERVER' });
     const moved = await remote(supplierId, { credit: '12.0000' });
-    const linkedId = await importedBy(moved, { cost: '10.0000', effectiveCost: '10.0000', status: 'active' });
-    const importer = t.app.get(ServiceImporter, { strict: false });
-    const create = spyOn(importer, 'create');
+    // The sync that read the supplier's new price lifted the price floor to it already, as it does for a first supplier.
+    const linkedId = await importedBy(moved, { cost: '10.0000', effectiveCost: '12.0000', status: 'active' });
+    // The API and the supplier engine each hold an importer of their own, so the calls are watched on the class.
+    const create = spyOn(ServiceImporter.prototype, 'create');
     let res;
     try {
       res = await staff.post(importUrl(supplierId), { supplierServiceIds: [unlock, tools, moved], status: 'disabled' });
@@ -351,7 +352,8 @@ describe('POST /admin/suppliers/:id/import with categoryId', () => {
     const carriers = await insertCategory(db, { name: 'Carriers', type: 'imei' });
     const phone = await remote(supplierId);
     const pack = await remote(supplierId, { type: 'SERVER', credit: '12.0000' });
-    const linkedId = await importedBy(pack, { type: 'server', cost: '10.0000', effectiveCost: '10.0000' });
+    // The price floor is where the sync left it, at the supplier's new price.
+    const linkedId = await importedBy(pack, { type: 'server', cost: '10.0000', effectiveCost: '12.0000' });
     const res = await staff.post(importUrl(supplierId), { supplierServiceIds: [phone, pack], categoryId: carriers });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ created: 1, updated: 1, unchanged: 0 });
@@ -491,12 +493,11 @@ describe('POST /admin/suppliers/:id/import/preview with the options', () => {
       categoryId: carriers,
     });
     expect(refused.status).toBe(422);
-    expect(refused.body.errors[0]).toMatchObject({
-      field: 'categoryId',
-      code: 'kind_mismatch',
-      message: expect.stringContaining('"Server pack" (server)'),
-    });
-    expect(refused.body.errors[0].message).not.toContain('Telstra Australia');
+    expect(refused.body.errors[0]).toMatchObject({ field: 'categoryId', code: 'kind_mismatch' });
+    // The text is read on its own: Bun's toMatchObject leaves its matcher in the place of a text it matched.
+    const refusal: string = refused.body.errors[0].message;
+    expect(refusal).toContain('"Server pack" (server)');
+    expect(refusal).not.toContain('Telstra Australia');
     const unknown = await staff.post(previewUrl(supplierId), { supplierServiceIds: [phone], categoryId: 987654 });
     expect(unknown.status).toBe(422);
     expect(unknown.body.errors[0]).toMatchObject({ field: 'categoryId', code: 'unknown' });
