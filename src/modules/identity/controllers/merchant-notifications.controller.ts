@@ -62,14 +62,18 @@ export class MerchantNotificationsController {
   /**
    * Makes a one-time link to connect Telegram.
    *
+   * Why: a connected chat keeps receiving the merchant's notifications, so the link is refused while the account's password or email
+   * address is one staff set (`MachineCredentialHold`, decision 046).
+   *
    * @param merchant the signed-in merchant
    * @returns the link and its expiry
+   * @throws {AppError} `FORBIDDEN` (403: the account's password or email address is one staff set), `UNAVAILABLE` (503: no bot is set up)
    * @route POST /client/telegram/link
    */
   @Route(merchantCreateTelegramLink)
   @Header('Cache-Control', 'no-store')
   link(@CurrentMerchant() merchant: MerchantPrincipal): Promise<ResultOf<typeof merchantCreateTelegramLink>> {
-    return this.telegram.createLink(merchant.clientId, merchant.ip);
+    return this.telegram.createLink(merchant);
   }
 
   /**

@@ -10,7 +10,7 @@ import { IDENTITY_DEFAULT_TEMPLATES } from './application/mail/identity-template
  * Why: `NotificationDelivery` looks the event of a row up in the registry of its own process, so the worker must know these events
  * too. Nest builds a module once, so importing {@link IdentityMailEventsModule} from several modules registers the events once.
  *
- * Side effects: adds eight events to the registry at boot, and their shipped texts (decision 047: the fallback of the security mails).
+ * Side effects: adds nine events to the registry at boot, and their shipped texts (decision 047: the fallback of the security mails).
  */
 @Injectable()
 export class IdentityMailEventRegistration implements OnModuleInit {

@@ -51,10 +51,11 @@ export interface CreatedApiKey {
  * Why: B155 and decision 019. A key authenticates REST v1 and Dhru calls (P2.5c); the merchant creates, limits and revokes its
  * own. Only the keyed hash of a key and its first 8 characters are stored, so the full key exists only in the answer of the
  * creation. A key that belongs to another merchant is `404`, like an unknown one, so a merchant cannot probe other ids. Merchant
- * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`. A new key sends the merchant the same
- * security notice as a key staff make, and no key is made while the account's password or email address is one staff set (`MachineCredentialHold`).
+ * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`. A new key sends the merchant a notice that says
+ * the key was made in the portal (`merchant.portal_api_key_created`; a key staff make sends the security notice that names the support team),
+ * and no key is made while the account's password or email address is one staff set (`MachineCredentialHold`).
  *
- * Side effects: writes `api_keys`; a creation also writes a `merchant.security_notice` notification and its outbox event; a change or a
+ * Side effects: writes `api_keys`; a creation also writes a `merchant.portal_api_key_created` notification and its outbox event; a change or a
  * revocation drops the cached view of the key after the commit (`ApiKeyDirectory.invalidate`), so it applies on the next call and not up
  * to a minute later.
  *
@@ -107,7 +108,7 @@ export class MerchantApiKeyService {
         createdBy: null,
         limitMessage: `You already have ${MAX_LIVE_KEYS} active keys; revoke one first.`,
       });
-      await this.lifecycleMails.securityNotice(work, client, 'api_key_created');
+      await this.lifecycleMails.portalApiKeyCreated(work, client);
       return key;
     });
     return { key: apiKeyToWire(issued.row), secret: issued.secret };

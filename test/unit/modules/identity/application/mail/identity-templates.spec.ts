@@ -1,12 +1,13 @@
 // Unit tests of the identity events and their default templates (feature 20): every template belongs to a registered event and channel and
-// uses only that event's placeholders, every event has one English email, the custom migration that shipped them holds each row, and
-// `identityTemplatesSql()` writes today's shape (no language, decision 039).
+// uses only that event's placeholders, every event has one English email, the custom migration that shipped them holds each row (except
+// the events whose text is only shipped with the code), and `identityTemplatesSql()` writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { insertedTemplates } from '../../../../../support/applied-templates';
 import { NotificationEventRegistry } from '@src/modules/platform';
 import { IDENTITY_MAIL_EVENTS } from '@src/modules/identity/application/mail/identity-mail-events';
 import {
   IDENTITY_DEFAULT_TEMPLATES,
+  IDENTITY_SHIPPED_TEXT_ONLY,
   IDENTITY_TEMPLATES_MIGRATION,
   identityTemplatesSql,
 } from '@src/modules/identity/application/mail/identity-templates';
@@ -31,6 +32,7 @@ describe('IDENTITY_MAIL_EVENTS', () => {
       'merchant.kyc_approved',
       'merchant.kyc_rejected',
       'merchant.security_notice',
+      'merchant.portal_api_key_created',
       'staff.invited',
       'staff.password_reset',
     ]);
@@ -55,7 +57,7 @@ describe('IDENTITY_MAIL_EVENTS', () => {
 describe('IDENTITY_DEFAULT_TEMPLATES', () => {
   it('belong to a registered event and channel, use only that event’s placeholders, and have a subject and a body', () => {
     const events = registry();
-    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(8);
+    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(9);
     for (const template of IDENTITY_DEFAULT_TEMPLATES) {
       const label = `${template.event} ${template.channel} ${template.audience}`;
       const definition = events.get(template.event, template.audience);
@@ -103,13 +105,34 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
 });
 
 describe(`migration ${IDENTITY_TEMPLATES_MIGRATION}`, () => {
-  it('holds every template of the code, in English, with the same event, channel, audience, subject and body', () => {
+  it('holds every template of the code that a migration installs, in English, with the same event, channel, audience, subject and body', () => {
     const shipped = insertedTemplates(IDENTITY_TEMPLATES_MIGRATION);
     // The file also holds the Arabic rows it shipped with (migration 0035 deletes them): every English row is one of the code's.
     const english = shipped.filter((row) => row.locale === 'en');
-    expect(english).toHaveLength(IDENTITY_DEFAULT_TEMPLATES.length);
-    for (const template of IDENTITY_DEFAULT_TEMPLATES)
-      expect(english, template.event).toContainEqual({ ...template, locale: 'en' });
+    const installed = IDENTITY_DEFAULT_TEMPLATES.filter(
+      (template) => !IDENTITY_SHIPPED_TEXT_ONLY.includes(template.event),
+    );
+    expect(english).toHaveLength(installed.length);
+    for (const template of installed) expect(english, template.event).toContainEqual({ ...template, locale: 'en' });
+  });
+
+  it('names only events of the code as shipped with the code alone, and none of them is in the migration', () => {
+    const inMigration = insertedTemplates(IDENTITY_TEMPLATES_MIGRATION).map((row) => row.event);
+    for (const event of IDENTITY_SHIPPED_TEXT_ONLY) {
+      expect(
+        IDENTITY_DEFAULT_TEMPLATES.some((template) => template.event === event),
+        event,
+      ).toBe(true);
+      expect(inMigration, event).not.toContain(event);
+    }
+  });
+
+  it('keeps the notice of a key made in the portal free of the support team, and the text of the staff notice as it was', () => {
+    const portal = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'merchant.portal_api_key_created')!;
+    expect(portal.body).toContain('{{change}}');
+    expect(`${portal.subject} ${portal.body}`).not.toMatch(/support/i);
+    const staff = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'merchant.security_notice')!;
+    expect(staff.body).toContain('Our support team made this change to your account: {{change}}.');
   });
 });
 
@@ -118,6 +141,10 @@ describe('identityTemplatesSql()', () => {
     const insert = identityTemplatesSql();
     expect(insert).toContain('("event", "channel", "audience", "subject", "body", "is_active")');
     expect(insert).toEndWith('ON CONFLICT ("event", "channel", "audience") DO NOTHING;');
-    expect(insert.match(/, true\)/g)).toHaveLength(IDENTITY_DEFAULT_TEMPLATES.length);
+    // The event shipped with the code alone has no stored row in production, so the test database gets none either.
+    expect(insert.match(/, true\)/g)).toHaveLength(
+      IDENTITY_DEFAULT_TEMPLATES.length - IDENTITY_SHIPPED_TEXT_ONLY.length,
+    );
+    expect(insert).not.toContain('merchant.portal_api_key_created');
   });
 });

@@ -87,7 +87,9 @@ export const merchantCreateTelegramLink = defineRoute({
   summary: 'A one-time link to connect Telegram',
   description:
     'Answers `https://t.me/<bot>?start=<token>`: opening it starts the bot with `/start <token>`, which links the chat. The token is single-use, ' +
-    'valid for 15 minutes and stored only as a hash; a new call revokes the previous link. `503 UNAVAILABLE` when the bot is not configured. The answer says `Cache-Control: no-store`.',
+    'valid for 15 minutes and stored only as a hash; a new call revokes the previous link. `503 UNAVAILABLE` when the bot is not configured. The answer says `Cache-Control: no-store`. ' +
+    "While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to its " +
+    "address), and after staff changed the account's email address, the route is `403 FORBIDDEN` and issues no link.",
   tags: ['notifications'],
   surface: 'client',
   access: 'merchant-session',
@@ -95,7 +97,7 @@ export const merchantCreateTelegramLink = defineRoute({
     status: 201,
     schema: z.object({ url: z.string(), expiresAt: zIsoDateTime }),
   },
-  errors: [...PORTAL_ERRORS, 'CSRF_FAILED', 'UNAVAILABLE'],
+  errors: ['FORBIDDEN', ...PORTAL_ERRORS, 'CSRF_FAILED', 'UNAVAILABLE'],
   examples: {
     response: {
       url: 'https://t.me/gsm_supply_bot?start=Qx4fD0nQ2hX8mV3vT9cKzY6bJ1aW5eRuLs7NpG4HtM0',

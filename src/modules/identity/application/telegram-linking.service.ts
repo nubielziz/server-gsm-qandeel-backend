@@ -1,5 +1,6 @@
 // TelegramLinking: connecting a merchant's Telegram chat (feature 12a, MISMATCHES B165): the one-time link of `POST /client/telegram/link`
-// and the bot's update webhook `POST /webhooks/telegram/:secret` that spends it (`/start <token>`) or ends it (`/stop`).
+// (not issued while the account's password or email address is one staff set) and the bot's update webhook `POST /webhooks/telegram/:secret`
+// that spends it (`/start <token>`) or ends it (`/stop`).
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -15,6 +16,8 @@ import {
   saveTelegramChat,
   voidTelegramLinks,
 } from '../infra/merchant-notification.repository';
+import type { MerchantPrincipal } from '../security/principal';
+import { MachineCredentialHold } from './machine-credential-hold';
 
 /** A Telegram link works for 15 minutes (B165). */
 export const TELEGRAM_LINK_TTL_MS = 15 * 60 * 1000;
@@ -71,13 +74,15 @@ export function parseTelegramUpdate(update: unknown): ParsedUpdate | undefined {
  * Links and unlinks Telegram chats.
  *
  * Why: B165. A merchant asks for a link (`https://t.me/<bot>?start=<token>`): a single-use `telegram_link` token of 15 minutes, stored only
- * as a keyed hash, and a new call revokes the previous one. Opening it makes Telegram send `/start <token>` to the webhook: a live token
+ * as a keyed hash, and a new call revokes the previous one. A connected chat keeps receiving the merchant's notifications, so a link is
+ * issued only while the account's password and email address are not ones staff set (`MachineCredentialHold`, decision 046); a chat that is
+ * connected stays connected, and the webhook and the notification preferences are not held. Opening a link makes Telegram send `/start <token>` to the webhook: a live token
  * sets the merchant's `telegram_chat_id` (a chat that another merchant had moves to this one) and is spent, then the bot answers "Linked to
  * <merchant name>." through the notification path. `/stop` clears the chat of the merchant linked to it and turns its Telegram events off.
  * Every update is processed once: the answer is a `notifications` row with the dedupe key `telegram-update-<update_id>`, checked first, and
  * the token is single-use, so a repeated update changes nothing.
  *
- * Side effects: `createLink` inserts an `auth_tokens` row and voids the merchant's older links; `handleUpdate` updates `clients`
+ * Side effects: `createLink` inserts an `auth_tokens` row and voids the merchant's older links (nothing is written when it refuses); `handleUpdate` updates `clients`
  * (`telegram_chat_id`, `notification_prefs`), spends a token and enqueues one Telegram notification.
  *
  * @see docs/contract/MISMATCHES.md (B165)
@@ -90,6 +95,7 @@ export class TelegramLinking {
     private readonly db: DbService,
     private readonly tokens: TokenService,
     private readonly notifications: NotificationService,
+    private readonly hold: MachineCredentialHold,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
@@ -97,20 +103,23 @@ export class TelegramLinking {
   /**
    * Makes the one-time link of a merchant.
    *
-   * @param clientId the signed-in merchant
-   * @param ip the address of the request, for the record
+   * @param principal the signed-in merchant (its address is recorded with the link)
    * @returns the link and when it stops working
-   * @throws {AppError} `UNAVAILABLE` (503) when the bot's username is not configured
+   * @throws {AppError} `UNAVAILABLE` (503) when the bot's username is not configured; `FORBIDDEN` (403) while the account's password or
+   *   email address is one staff set (`STAFF_SET_PASSWORD_HOLD`, `STAFF_SET_EMAIL_HOLD`); `UNAUTHORIZED` (401) when the session ended meanwhile
    */
-  async createLink(clientId: number, ip: string): Promise<TelegramLink> {
+  async createLink(principal: MerchantPrincipal): Promise<TelegramLink> {
+    const { clientId, ip } = principal;
     const username = this.config.telegram.botUsername;
     if (username === undefined) throw new AppError('UNAVAILABLE', { detail: 'Telegram is not set up on this server.' });
     const now = this.clock.now();
     const token = this.tokens.random(32);
     const expiresAt = new Date(now.getTime() + TELEGRAM_LINK_TTL_MS);
     await this.db.runInTransaction(async ({ tx }) => {
-      // Lock the merchant first, so two parallel calls take turns: the newest link is the only one left.
+      // Lock the merchant first, so two parallel calls take turns: the newest link is the only one left. The hold is read under that lock,
+      // so a staff change that sets a mark takes turns with this call too.
       await lockClient(tx, clientId);
+      await this.hold.assertMayIssue(principal, tx);
       await voidTelegramLinks(tx, clientId, now);
       await insertAuthToken(tx, {
         purpose: 'telegram_link',

@@ -203,7 +203,7 @@ describe('the flags of decision 047', () => {
     expect(registry.get('retail.prices_followed', 'staff')?.secretLink).toBeUndefined();
   });
 
-  it('marks exactly the account link mails and the two notices as security mails, and the two notices as named-address events', () => {
+  it('marks exactly the account link mails and the notices as security mails, and the two staff-action notices as named-address events', () => {
     const registry = booted();
     expect(keysOf(registry, 'security')).toEqual(
       [
@@ -217,6 +217,7 @@ describe('the flags of decision 047', () => {
         'staff:staff.invited',
         'staff:staff.password_reset',
         'merchant:merchant.security_notice',
+        'merchant:merchant.portal_api_key_created',
         'customer:customer.security_notice',
       ].sort(),
     );

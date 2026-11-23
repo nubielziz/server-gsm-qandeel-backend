@@ -1,6 +1,7 @@
-// MachineCredentialHold: whether the signed-in merchant may hand out a machine credential now (an API key, or a webhook endpoint with its
-// signing secret, routes POST /client/api-keys, POST /client/webhooks and PATCH /client/webhooks/:id): not while the account's password is
-// one staff set, or its email address one that a staff member who is not an Owner set and no Owner has confirmed since (decision 046).
+// MachineCredentialHold: whether the signed-in merchant may hand out a machine credential now (an API key, a webhook endpoint with its
+// signing secret, or a connected Telegram chat; routes POST /client/api-keys, POST /client/webhooks, PATCH /client/webhooks/:id and
+// POST /client/telegram/link): not while the account's password is one staff set, or its email address one that a staff member who is
+// not an Owner set and no Owner has confirmed since (decision 046).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -13,11 +14,11 @@ import { findLiveSessionByHash } from '../security/session.repository';
 /** The sentence of the `403` while the hold lasts: what the merchant does to end it. */
 export const STAFF_SET_PASSWORD_HOLD =
   'Your password was set by our support team. Set a new one from a link sent to your email address (Forgot password on the ' +
-  'sign-in page) before you create API keys or webhook endpoints.';
+  'sign-in page) before you create API keys or webhook endpoints or connect Telegram.';
 
 /** The sentence of the `403` while the hold of an email address staff set lasts. */
 export const STAFF_SET_EMAIL_HOLD =
-  'Your email address was changed by our support team. Contact our support team before you create API keys or webhook endpoints.';
+  'Your email address was changed by our support team. Contact our support team before you create API keys or webhook endpoints or connect Telegram.';
 
 /**
  * Refuses machine credentials while the merchant's password is one staff set, or its email address one that a staff member who is not an
@@ -25,9 +26,10 @@ export const STAFF_SET_EMAIL_HOLD =
  *
  * Why: decision 046 keeps the creation of a merchant's API key by staff for Owners; merchants create their own. A temporary password
  * is shared with staff, so a session that started from it (the forced change included) does not show that the owner of the mailbox is
- * the one asking, and an API key or a webhook endpoint outlives every later password change. While `clients.password_set_by_staff` holds (from a staff
- * temporary password until the merchant chooses a password from a link mailed to its address), a portal session creates no API key and
- * creates or changes no webhook endpoint; signing in and the rest of the portal work. The same holds while `clients.email_set_by_staff`
+ * the one asking, and an API key, a webhook endpoint or a connected Telegram chat outlives every later password change. While
+ * `clients.password_set_by_staff` holds (from a staff temporary password until the merchant chooses a password from a link mailed to its
+ * address), a portal session creates no API key, creates or changes no webhook endpoint and asks for no Telegram link
+ * (`POST /client/telegram/link`); signing in and the rest of the portal work, and a chat that was connected before stays connected. The same holds while `clients.email_set_by_staff`
  * is set (from a change of the email address by a staff member who is not an Owner, until an Owner changes the address or sends it
  * unchanged in a details edit, `ClientDetailsEditor`): the account's reset and invitation links then go to an address staff chose, so a
  * password from such a link does not end that hold.
@@ -44,7 +46,7 @@ export class MachineCredentialHold {
   ) {}
 
   /**
-   * Checks that the signed-in merchant may create a machine credential now.
+   * Checks that the signed-in merchant may create a machine credential (or connect a Telegram chat) now.
    *
    * Why: the session guard works from a view cached for up to a minute; this reads the account and the session themselves (decision 018).
    *

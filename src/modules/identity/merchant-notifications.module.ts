@@ -2,6 +2,7 @@
 // /webhooks/telegram/:secret, stage 12). Separate so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
 import { NotificationDeliveryModule } from '../platform';
+import { MachineCredentialHold } from './application/machine-credential-hold';
 import { MerchantNotificationSettings } from './application/merchant-notification-settings.service';
 import { TelegramLinking } from './application/telegram-linking.service';
 import { TelegramWebhookSecret } from './application/telegram-webhook-secret';
@@ -11,11 +12,12 @@ import { MerchantNotificationsController } from './controllers/merchant-notifica
  * Provides the four routes of B165.
  *
  * Why: the use cases need the global database, crypto and clock providers and the platform's notification service (which writes the answer the bot
- * sends); the module is exported to the rest of the app only through `index.ts`.
+ * sends) and `MachineCredentialHold` (a Telegram link is not issued while the account's password or email address is one staff set); the
+ * module is exported to the rest of the app only through `index.ts`.
  */
 @Module({
   imports: [NotificationDeliveryModule],
   controllers: [MerchantNotificationsController],
-  providers: [MerchantNotificationSettings, TelegramLinking, TelegramWebhookSecret],
+  providers: [MachineCredentialHold, MerchantNotificationSettings, TelegramLinking, TelegramWebhookSecret],
 })
 export class MerchantNotificationsModule {}

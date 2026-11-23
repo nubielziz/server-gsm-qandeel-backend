@@ -264,14 +264,14 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect((await owner.post(`/admin/clients/${clientId}/api-keys`, BODY)).status).toBe(201);
   });
 
-  it("the merchant's own POST /client/api-keys keeps created_by null and mails the same notice", async () => {
+  it("the merchant's own POST /client/api-keys keeps created_by null and mails the notice of a key made in the portal", async () => {
     const clientId = await insertMerchant(db);
     const portal = await portalFor(t, clientId);
     const res = await portal.call('POST', '/client/api-keys', { name: 'Mine', scopes: ['dhru'] });
     expect(res.status).toBe(201);
     expect((await keyRows())[0]).toMatchObject({ createdBy: null, rateLimitPerMin: 60 });
     expect((await notificationRows(db)).map((row) => [row.event, row.recipientId])).toEqual([
-      ['merchant.security_notice', clientId],
+      ['merchant.portal_api_key_created', clientId],
     ]);
   });
 });

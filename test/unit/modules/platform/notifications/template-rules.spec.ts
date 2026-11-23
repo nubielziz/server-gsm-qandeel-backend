@@ -507,7 +507,8 @@ describe('protectedTemplateProblems: the template of a security email (decision 
       else notices += 1;
       expect(protectedTemplateProblems(definition, shipped), `${definition.audience}:${definition.key}`).toEqual([]);
     }
-    expect(notices).toBe(2);
+    // The merchant's two notices (staff action, key made in the portal) and the customer's.
+    expect(notices).toBe(3);
     expect(links).toBeGreaterThan(8);
   });
 

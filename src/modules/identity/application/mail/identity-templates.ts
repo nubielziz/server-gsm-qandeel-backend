@@ -1,6 +1,6 @@
 // The default templates of the identity events of feature 20 (merchant lifecycle and staff link mails): English emails for merchants and
 // staff. Migration `0025_merchant_management_templates` inserted them (with Arabic twins that migration 0035 deletes); a spec finds every
-// row of this file in it.
+// row of this file in it, except the events of {@link IDENTITY_SHIPPED_TEXT_ONLY}, whose text is only shipped with the code.
 import { type DefaultTemplate, templatesInsertSql } from '../../../platform';
 
 /**
@@ -27,11 +27,20 @@ const staff = (event: string, subject: string, body: string): DefaultTemplate =>
 });
 
 /**
+ * The events of {@link IDENTITY_DEFAULT_TEMPLATES} that no migration installed.
+ *
+ * Why: the notice of an API key the merchant made in the portal came after migration 0025. It is a security email, so it is always sent
+ * from this shipped text (decision 047) while no stored template exists; staff who want other words add a template for the event.
+ * `identityTemplatesSql()` leaves these out, so a test database holds the rows production holds.
+ */
+export const IDENTITY_SHIPPED_TEXT_ONLY: readonly string[] = ['merchant.portal_api_key_created'];
+
+/**
  * The templates the identity events start with.
  *
  * Why: a missing template sends nothing (RULES settings 10; the account link mails and the security notices are then written from their
- * shipped text, decision 047), so the mails come with the migration. They live here and not in the
- * platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration (LEAD-DECISIONS L2).
+ * shipped text, decision 047), so the mails come with the migration, except those of {@link IDENTITY_SHIPPED_TEXT_ONLY}. They live here
+ * and not in the platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration (LEAD-DECISIONS L2).
  */
 export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
   merchant(
@@ -64,6 +73,11 @@ export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     'A security change on your merchant account',
     'Hi {{merchantName}},\n\nOur support team made this change to your account: {{change}}.\n\nIf you did not ask for it, reply to this email or contact our support team at once.',
   ),
+  merchant(
+    'merchant.portal_api_key_created',
+    'A new API key was created in your account',
+    'Hi {{merchantName}},\n\n{{change}}\n\nIf you did not create it, revoke it in the portal and change your password.',
+  ),
   staff(
     'staff.invited',
     'You were invited to the GSM admin console',
@@ -80,10 +94,13 @@ export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
  * Writes the identity templates as the SQL that installs them (today's shape: no language, one per event, channel and audience).
  *
  * Why: the text is written once here; the applied migration {@link IDENTITY_TEMPLATES_MIGRATION} keeps the shape it shipped with
- * (decision 027), so the spec finds every row of this file in it, and the test support runs this SQL.
+ * (decision 027), so the spec finds every row of this file in it, and the test support runs this SQL. The events of
+ * {@link IDENTITY_SHIPPED_TEXT_ONLY} have no stored row in production, so none is written here.
  *
- * @returns one `INSERT ... ON CONFLICT DO NOTHING` statement for every identity template
+ * @returns one `INSERT ... ON CONFLICT DO NOTHING` statement for every identity template a migration installed
  */
 export function identityTemplatesSql(): string {
-  return templatesInsertSql(IDENTITY_DEFAULT_TEMPLATES);
+  return templatesInsertSql(
+    IDENTITY_DEFAULT_TEMPLATES.filter((template) => !IDENTITY_SHIPPED_TEXT_ONLY.includes(template.event)),
+  );
 }

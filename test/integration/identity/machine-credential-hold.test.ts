@@ -3,13 +3,17 @@
 // create API keys and does not create or change webhook endpoints; the rest of the portal works. A password chosen from a link mailed to
 // the merchant's address lifts the hold. A change of the email address by a staff member who is not an Owner puts on the same hold, and a
 // link mailed to the new address (an address staff chose) does not lift it; an Owner's change of the address sets none, and an Owner's
-// details edit that carries the stored address lifts it. A key made in the portal sends the merchant the security notice of a new key.
+// details edit that carries the stored address lifts it. Connecting a Telegram chat (`POST /client/telegram/link`) is held the same way. A
+// key made in the portal sends the merchant a notice that says so; a key staff made keeps the notice that names the support team.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { ClientDetailsEditor } from '@src/modules/identity/application/client-details-editor';
-import { STAFF_SET_EMAIL_HOLD } from '@src/modules/identity/application/machine-credential-hold';
+import {
+  STAFF_SET_EMAIL_HOLD,
+  STAFF_SET_PASSWORD_HOLD,
+} from '@src/modules/identity/application/machine-credential-hold';
 import { SECURITY_NOTICE_PHRASES } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -28,7 +32,7 @@ import {
   makeMerchant,
   seedPortalBasics,
 } from '../../support/merchant-portal';
-import { mailbox, notificationRows, tokenIn } from '../../support/notifications';
+import { mailbox, notificationRows, sendAllQueued, tokenIn } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { WebhookTestModule, insertEndpoint, resetWebhookPolicy } from '../../support/webhooks';
 
@@ -36,7 +40,15 @@ const clock = new TestClock('2026-11-11T09:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ env: { CORS_ORIGINS: PORTAL_ORIGIN }, clock, imports: [WebhookTestModule] });
+  t = await createTestApp({
+    env: {
+      CORS_ORIGINS: PORTAL_ORIGIN,
+      TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token',
+      TELEGRAM_BOT_USERNAME: 'gsm_test_bot',
+    },
+    clock,
+    imports: [WebhookTestModule],
+  });
 });
 afterEach(() => {
   mock.restore();
@@ -98,6 +110,9 @@ describe('machine credentials while the password is one staff set', () => {
     const problem = key.json<{ code: string; detail: string }>();
     expect(problem.code).toBe('FORBIDDEN');
     expect(problem.detail).toContain('Forgot password');
+    // The sentence names the third thing the hold covers.
+    expect(problem.detail).toBe(STAFF_SET_PASSWORD_HOLD);
+    expect(problem.detail).toEndWith('before you create API keys or webhook endpoints or connect Telegram.');
     const created = await portal.call('POST', '/client/webhooks', ENDPOINT);
     expect(created.statusCode).toBe(403);
     expect(created.json<{ code: string }>().code).toBe('FORBIDDEN');
@@ -164,6 +179,7 @@ describe('machine credentials after staff changed the email address', () => {
       code: 'FORBIDDEN',
       detail: STAFF_SET_EMAIL_HOLD,
     });
+    expect(STAFF_SET_EMAIL_HOLD).toEndWith('before you create API keys or webhook endpoints or connect Telegram.');
     const created = await portal.call('POST', '/client/webhooks', ENDPOINT);
     expect(created.statusCode).toBe(403);
     expect(created.json<{ code: string }>().code).toBe('FORBIDDEN');
@@ -377,18 +393,118 @@ describe('the hold of a password staff set and the invitation link', () => {
   });
 });
 
-describe('POST /client/api-keys notice', () => {
-  it('sends the merchant the security notice of a new key', async () => {
+/** The Telegram link tokens that exist. */
+async function telegramLinkTokens() {
+  const { db } = await testDb();
+  return db.select().from(s.authTokens).where(eq(s.authTokens.purpose, 'telegram_link'));
+}
+
+describe('POST /client/telegram/link while a credential is one staff set', () => {
+  it('refuses with 403 and writes no link while the password is one staff set, and links again after a password from a mailed link', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
+    const portal = await signedInWithStaffPassword(merchant);
+
+    const refused = await portal.call('POST', '/client/telegram/link');
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<{ code: string; detail: string }>()).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: STAFF_SET_PASSWORD_HOLD,
+    });
+    expect(await telegramLinkTokens()).toEqual([]);
+    // The rest of the portal works in that session, the notification settings included.
+    expect((await portal.call('GET', '/client/notification-preferences')).statusCode).toBe(200);
+
+    // A change on the security page is not a mailed link: the hold stays.
+    expect((await portal.changePassword('chosen-after-temporary-31', 'changed-on-security-page-47')).statusCode).toBe(
+      204,
+    );
+    expect((await portal.call('POST', '/client/telegram/link')).statusCode).toBe(403);
+    expect(await telegramLinkTokens()).toEqual([]);
+
+    // A password set from the link mailed to the merchant's address lifts it.
+    clock.advance(60_000);
+    await resetFromMailedLink(merchant.email, 'owner-chose-from-link-71');
+    const owner = new MerchantPortal(t, freshClientIp());
+    expect((await owner.login(merchant.email, 'owner-chose-from-link-71')).json()).toEqual({ next: 'done' });
+    const linked = await owner.call('POST', '/client/telegram/link');
+    expect(linked.statusCode).toBe(201);
+    expect(linked.json<{ url: string }>().url).toMatch(/^https:\/\/t\.me\/gsm_test_bot\?start=/);
+    expect(await telegramLinkTokens()).toHaveLength(1);
+  });
+
+  it('refuses with 403 and writes no link after a staff member who is not an Owner changed the email address', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
+    await staffChangesEmail(merchant.id, 'desk-inbox-tg@example.com');
+    clock.advance(60_000);
+    // A password from a link to the new address does not end this hold.
+    await resetFromMailedLink('desk-inbox-tg@example.com', 'chosen-from-new-address-72');
+    const portal = new MerchantPortal(t, freshClientIp());
+    expect((await portal.login('desk-inbox-tg@example.com', 'chosen-from-new-address-72')).json()).toEqual({
+      next: 'done',
+    });
+
+    const refused = await portal.call('POST', '/client/telegram/link');
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<{ code: string; detail: string }>()).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: STAFF_SET_EMAIL_HOLD,
+    });
+    expect(await telegramLinkTokens()).toEqual([]);
+  });
+
+  it('leaves a merchant without a mark free to connect Telegram', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
+    const portal = new MerchantPortal(t, freshClientIp());
+    expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
+    const linked = await portal.call('POST', '/client/telegram/link');
+    expect(linked.statusCode).toBe(201);
+    expect(await telegramLinkTokens()).toHaveLength(1);
+  });
+});
+
+describe('the notice of a new API key', () => {
+  beforeEach(() => {
+    mailbox(t).reset();
+  });
+
+  it('says that a key made in the portal was made in the portal, and names no action of the support team', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
 
     const { db } = await testDb();
-    const notices = (await notificationRows(db)).filter((row) => row.event === 'merchant.security_notice');
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatchObject({ recipientType: 'client', recipientId: merchant.id, channel: 'email' });
-    expect(JSON.stringify(notices[0]!.payload)).toContain(SECURITY_NOTICE_PHRASES.api_key_created);
+    const rows = await notificationRows(db);
+    expect(rows.map((row) => row.event)).toEqual(['merchant.portal_api_key_created']);
+    expect(rows[0]).toMatchObject({ recipientType: 'client', recipientId: merchant.id, channel: 'email' });
+
+    // The stored templates of the test database are the ones the migrations installed: this event has none, so the shipped text is sent.
+    await sendAllQueued(t);
+    const sent = mailbox(t).sent;
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ to: merchant.email, subject: 'A new API key was created in your account' });
+    expect(sent[0]!.text).toBe(
+      "Hi Test Merchant,\n\nA new API key was created in your account's portal.\n\n" +
+        'If you did not create it, revoke it in the portal and change your password.',
+    );
+    expect(sent[0]!.text).not.toContain('support');
+  });
+
+  it('keeps the text that names the support team in the notice of a key staff made', async () => {
+    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.post(`/admin/clients/${merchant.id}/api-keys`, KEY)).status).toBe(201);
+
+    const { db } = await testDb();
+    const rows = await notificationRows(db);
+    expect(rows.map((row) => row.event)).toEqual(['merchant.security_notice']);
+    expect(JSON.stringify(rows[0]!.payload)).toContain(SECURITY_NOTICE_PHRASES.api_key_created);
+    await sendAllQueued(t);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(mailbox(t).sent[0]!.text).toBe(
+      'Hi Test Merchant,\n\nOur support team made this change to your account: a new API key was created for your account.\n\n' +
+        'If you did not ask for it, reply to this email or contact our support team at once.',
+    );
   });
 
   it('sends nothing when the key is refused', async () => {

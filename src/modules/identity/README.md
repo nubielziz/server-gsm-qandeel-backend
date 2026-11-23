@@ -510,7 +510,7 @@ MISMATCHES B165.
 |---|---|---|
 | `GET /client/notification-preferences` | merchant session | `{ email: { address }, telegram: { linked }, lowBalanceThreshold (money or null), events: [{ event, label, email, telegram }] }`: the non-transactional merchant events of the platform's registry; never saved reads as email on, Telegram off (the order results stay off until chosen) |
 | `PUT /client/notification-preferences` | merchant session | `{ lowBalanceThreshold?, events }` replaces the listed events, keeps the others and the keys it does not know; `422` on `events.N.event` (unknown, always-sent or repeated), on `events.N.telegram` ("Link Telegram first."; sending back the value the GET showed is accepted, so the announcements' default Telegram on saves without a chat) and on `lowBalanceThreshold` (negative or malformed); answers the GET body; the row is locked, so it takes turns with a Telegram link |
-| `POST /client/telegram/link` | merchant session | `201 { url: 'https://t.me/<bot>?start=<token>', expiresAt }`, `Cache-Control: no-store`: a single-use `telegram_link` token (hash only, 15 minutes); a new call voids the previous link; `503 UNAVAILABLE` without `TELEGRAM_BOT_USERNAME` |
+| `POST /client/telegram/link` | merchant session | `201 { url: 'https://t.me/<bot>?start=<token>', expiresAt }`, `Cache-Control: no-store`: a single-use `telegram_link` token (hash only, 15 minutes); a new call voids the previous link; `503 UNAVAILABLE` without `TELEGRAM_BOT_USERNAME`; `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set (`MachineCredentialHold`; no token is written) |
 | `POST /webhooks/telegram/:secret` | url-secret | the path segment and `X-Telegram-Bot-Api-Secret-Token` carry two different values derived from `TELEGRAM_WEBHOOK_SECRET` (decision 054; `scripts/telegram-webhook.ts` registers both), compared in constant time, else `404`; always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
 
 The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
@@ -547,8 +547,11 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   Every chosen password (reset link, invitation, security page) clears the flag.
 - **Machine credentials after a staff-set password** (`MachineCredentialHold`, decision 046). `password_set_by_staff` is set with a temporary
   password and cleared only by a password from a link mailed to the merchant's address (reset or invitation; the forced change and the
-  security page do not clear it). While it is set, `POST /client/api-keys`, `POST /client/webhooks` and `PATCH /client/webhooks/:id` answer
-  `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest of the portal work. The check reads
+  security page do not clear it). While it is set, `POST /client/api-keys`, `POST /client/webhooks`, `PATCH /client/webhooks/:id` and
+  `POST /client/telegram/link` answer `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest
+  of the portal work, the notification preferences included, and a Telegram chat that was connected before stays connected (the bot's
+  webhook `POST /webhooks/telegram/:secret` is not held). The Telegram link reads the hold under the merchant row lock, before it voids
+  or writes a token, so a refused call writes nothing. The check reads
   the account and then the caller's session row (the link that clears the flag ends every session in the same commit). A change of the
   email address by a staff member who is not an Owner sets `email_set_by_staff`, with the same hold and its own sentence (contact support);
   a password from a link does not clear it, because the link goes to the address staff chose. An Owner's change of the address sets no
@@ -564,7 +567,11 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   (`registerBuiltInTemplates`), the fallback of the security emails (decision 047). The security notice has five kinds, each one fixed sentence
   (`SECURITY_NOTICE_PHRASES`): `temporary_password`, `twofa_reset`, `api_key_created`, `api_key_changed` and `email_changed`; the `email_changed` notice names the address
   it goes to (`to`: the address before the change), because the merchant's current address is the new one. The event is flagged `security` and `namedAddress`
-  in the registry, and `staff.invited` and `staff.password_reset` are flagged `security` and `secretLink`.
+  in the registry, and `staff.invited` and `staff.password_reset` are flagged `security` and `secretLink`. The notice of a key the merchant makes in the
+  portal is its own event, `merchant.portal_api_key_created` (`MerchantLifecycleMails.portalApiKeyCreated`, flagged `security`): the sentence "A new API key was
+  created in your account's portal." (`PORTAL_API_KEY_NOTICE_PHRASE`) and what to do about a key the merchant did not make; the staff notice's wording
+  ("Our support team made this change") does not fit it. No migration installs its text, so the shipped text is what is sent until staff add a template for the
+  event (`IDENTITY_SHIPPED_TEXT_ONLY`).
   KYC decisions and the end of one merchant session are audited under `merchant`.
 - **Staff link mails** (`StaffMailModule`, loaded by the API through `AccessAdminModule` and by the worker): `POST /admin/staff` (onboarding `invite`) and
   `POST /admin/staff/:id/password` (`reset_link`) write `staff.invited` (while the member is `invited`) or `staff.password_reset` with `StaffMailOutbox.enqueue`
@@ -594,7 +601,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 | Approval | none | none | none | `merchant.approved` |
 | KYC decision | none | none | none | `merchant.kyc_approved` / `merchant.kyc_rejected` |
 | Staff create a key | none | none | none | `merchant.security_notice` |
-| The merchant creates a key in the portal | none | none | none | `merchant.security_notice` (the same notice) |
+| The merchant creates a key in the portal | none | none | none | `merchant.portal_api_key_created` (its own notice: the key was made in the portal, and what to do if it was not the merchant) |
 | Staff edit a key's limits or revoke it | none | none | that key's view dropped | none |
 | The merchant chooses a password (change, reset, invitation) | the others ended, this one rotated | password links voided | session views dropped | none |
 
@@ -824,7 +831,7 @@ except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (prob
 
 ## Events
 
-Feature 20's merchant lifecycle mails are not outbox types of this module: they are `notifications` rows with a `notification.send` event written by `MerchantLifecycleMails` in the transaction of the staff action (events `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`, `merchant.kyc_rejected`, `merchant.security_notice`).
+Feature 20's merchant lifecycle mails are not outbox types of this module: they are `notifications` rows with a `notification.send` event written by `MerchantLifecycleMails` in the transaction of the staff action (events `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`, `merchant.kyc_rejected`, `merchant.security_notice`, `merchant.portal_api_key_created`).
 
 Outbox events produced (types, payload ids; all on the `notifications` queue, registered by `MerchantMailOutbox`):
 `merchant.email_verification` (`POST /client/auth/register`, token purpose `verify_email`) and `merchant.password_reset`
@@ -908,7 +915,7 @@ Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controll
 | Route | Access | What it does |
 |---|---|---|
 | `GET /client/api-keys` | merchant | the merchant's keys, live first then revoked, newest first, `x-total-count`; the console's `ApiKey` (never the hash) |
-| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races); a `merchant.security_notice` mail (`api_key_created`); `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set |
+| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races); a `merchant.portal_api_key_created` mail (the notice says the key was made in the portal; a key staff make sends `merchant.security_notice`, kind `api_key_created`); `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set |
 | `PATCH /client/api-keys/:id` | merchant | `{ name?, allowedIps? }`; a revoked key is `409 INVALID_TRANSITION`; drops the cached view after the commit |
 | `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
 | `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |

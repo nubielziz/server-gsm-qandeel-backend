@@ -236580,7 +236580,7 @@
     },
     "/client/telegram/link": {
       "post": {
-        "description": "Answers `https://t.me/<bot>?start=<token>`: opening it starts the bot with `/start <token>`, which links the chat. The token is single-use, valid for 15 minutes and stored only as a hash; a new call revokes the previous link. `503 UNAVAILABLE` when the bot is not configured. The answer says `Cache-Control: no-store`.",
+        "description": "Answers `https://t.me/<bot>?start=<token>`: opening it starts the bot with `/start <token>`, which links the chat. The token is single-use, valid for 15 minutes and stored only as a hash; a new call revokes the previous link. `503 UNAVAILABLE` when the bot is not configured. The answer says `Cache-Control: no-store`. While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is `403 FORBIDDEN` and issues no link.",
         "operationId": "postClientTelegramLink",
         "parameters": [],
         "responses": {
@@ -236716,7 +236716,7 @@
             }
           },
           "403": {
-            "description": "ACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
+            "description": "FORBIDDEN: You do not have permission to do this.\nACCOUNT_SUSPENDED: This account is suspended.\nACCOUNT_PENDING_APPROVAL: This account is waiting for approval.\nIP_NOT_ALLOWED: Access from this network address is not allowed.\nCSRF_FAILED: The security check for this request failed.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -236746,6 +236746,7 @@
                     "code": {
                       "type": "string",
                       "enum": [
+                        "FORBIDDEN",
                         "ACCOUNT_SUSPENDED",
                         "ACCOUNT_PENDING_APPROVAL",
                         "IP_NOT_ALLOWED",
@@ -236785,6 +236786,17 @@
                   }
                 },
                 "examples": {
+                  "FORBIDDEN": {
+                    "summary": "You do not have permission to do this.",
+                    "value": {
+                      "type": "https://errors.gsm.example/forbidden",
+                      "title": "You do not have permission to do this.",
+                      "status": 403,
+                      "code": "FORBIDDEN",
+                      "detail": "You do not have permission to do this.",
+                      "requestId": "0197f2b4-6a3c-7e10-9d44-5c1c2b7a9e01"
+                    }
+                  },
                   "ACCOUNT_SUSPENDED": {
                     "summary": "This account is suspended.",
                     "value": {

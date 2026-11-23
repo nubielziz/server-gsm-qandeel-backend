@@ -14,6 +14,8 @@ export const MERCHANT_KYC_APPROVED_EVENT = 'merchant.kyc_approved';
 export const MERCHANT_KYC_REJECTED_EVENT = 'merchant.kyc_rejected';
 /** Staff changed something security-relevant on the merchant's account (temporary password, 2FA reset, API key, email change). */
 export const MERCHANT_SECURITY_NOTICE_EVENT = 'merchant.security_notice';
+/** The merchant created an API key in the portal: the notice says so, and does not name the support team. */
+export const MERCHANT_PORTAL_API_KEY_CREATED_EVENT = 'merchant.portal_api_key_created';
 /** A staff member was invited to the console: the link where they choose a password. */
 export const STAFF_INVITED_EVENT = 'staff.invited';
 /** A staff member got a link to choose a new password. */
@@ -35,14 +37,14 @@ const STAFF_SAMPLE = {
 const event = (
   audience: 'merchant' | 'staff',
   spec: Pick<NotificationEventDefinition, 'key' | 'label' | 'description' | 'variables'> &
-    Partial<Pick<NotificationEventDefinition, 'security' | 'secretLink' | 'namedAddress'>>,
+    Partial<Pick<NotificationEventDefinition, 'security' | 'secretLink' | 'namedAddress' | 'sample'>>,
 ): NotificationEventDefinition => {
   const source: Readonly<Record<string, string>> = audience === 'merchant' ? MERCHANT_SAMPLE : STAFF_SAMPLE;
   return {
     ...spec,
     audience,
     channels: ['email'],
-    sample: Object.fromEntries(spec.variables.map((name) => [name, source[name] ?? ''])),
+    sample: { ...Object.fromEntries(spec.variables.map((name) => [name, source[name] ?? ''])), ...spec.sample },
     // Always sent, never in a merchant's preferences, delivered to a suspended recipient (the suspension mail needs it).
     transactional: true,
     defaultEmail: true,
@@ -97,6 +99,15 @@ export const IDENTITY_MAIL_EVENTS: readonly NotificationEventDefinition[] = [
     variables: ['merchantName', 'change'],
     security: true,
     namedAddress: true,
+  }),
+  event('merchant', {
+    key: MERCHANT_PORTAL_API_KEY_CREATED_EVENT,
+    label: 'API key created in the portal',
+    description:
+      'The merchant created an API key in the portal: tells the merchant, in case it was not them. A key staff create sends the security change by support instead.',
+    variables: ['merchantName', 'change'],
+    sample: { change: "A new API key was created in your account's portal." },
+    security: true,
   }),
   event('staff', {
     key: STAFF_INVITED_EVENT,
