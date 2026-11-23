@@ -524,7 +524,10 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   `ClientDetailsEditor`). An email change also needs `clients:security` (decision 047; checked before the limiter and again on the locked row), clears
   `email_verified_at`, uses every open link up, ends every session of the merchant, sends a security notice (`merchant.security_notice`, kind `email_changed`)
   to the address before the change, sends a verification (or the invitation while there is no password) to the new address, drops the session and API key cache
-  keys, sets `email_set_by_staff` (the hold of machine credentials below), and counts on the `account-mail` limiter. A name change keeps the sessions.
+  keys, sets `email_set_by_staff` when the caller is not an Owner and clears it when the caller is an Owner (the hold of machine credentials
+  below), and counts on the `account-mail` limiter. An Owner's edit that carries the stored `email` clears a set `email_set_by_staff` and does
+  nothing else to the email (no link, mail, notice or limiter point; the sessions stay); its audit row records `emailSetByStaff` going from
+  `true` to `false`. A name change keeps the sessions.
 - **Security tools** (`ClientSecurityAdminService`, permission `clients:security`): `POST /admin/clients/:id/password` (`reset_link` mails
   an invitation or reset link, `temporary_password` shows a 14-character password once and sets `must_change_password` and
   `password_set_by_staff`),
@@ -539,9 +542,10 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   password and cleared only by a password from a link mailed to the merchant's address (reset or invitation; the forced change and the
   security page do not clear it). While it is set, `POST /client/api-keys`, `POST /client/webhooks` and `PATCH /client/webhooks/:id` answer
   `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest of the portal work. The check reads
-  the account and then the caller's session row (the link that clears the flag ends every session in the same commit). A staff change
-  of the email address sets `email_set_by_staff`, with the same hold and its own sentence (contact support); a password from a link does
-  not clear it, because the link goes to the address staff chose.
+  the account and then the caller's session row (the link that clears the flag ends every session in the same commit). A change of the
+  email address by a staff member who is not an Owner sets `email_set_by_staff`, with the same hold and its own sentence (contact support);
+  a password from a link does not clear it, because the link goes to the address staff chose. An Owner's change of the address sets no
+  mark and clears one, and so does an Owner's details edit that carries the stored address (the way support lifts the hold).
 - **Verification resend.** `POST /client/auth/verify-email/resend` (merchant session) and the staff action share the `account-mail` counter
   (5 an hour per merchant and kind); there is no public route. `verify-email` answers `410` for a suspended merchant.
 - **Suspension.** Voids every open link, accepts `pending -> suspended` (this is how an application is declined), and mails the merchant

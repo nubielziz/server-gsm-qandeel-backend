@@ -136,3 +136,32 @@ export function detailChanges(client: Client, input: ClientChangeInput): DetailC
     nameChanged: columns.name !== undefined,
   };
 }
+
+/** What {@link emailMarkAfterEdit} reads of a details edit. */
+export interface EmailMarkEdit {
+  /** The stored mark (`clients.email_set_by_staff` of the locked row). */
+  readonly marked: boolean;
+  /** Whether the body carries the `email` key. */
+  readonly emailSent: boolean;
+  /** Whether the edit changes the address ({@link DetailChanges.emailChanged}). */
+  readonly emailChanged: boolean;
+  /** Whether the caller is an Owner. */
+  readonly byOwner: boolean;
+}
+
+/**
+ * The value of `clients.email_set_by_staff` after a details edit, or `undefined` when the edit leaves it as it is.
+ *
+ * Why: decision 046 keeps the creation of a merchant's API key by staff for Owners. The mark means that the address was last set
+ * by a staff member who is not an Owner and that no Owner has confirmed it since (`MachineCredentialHold`). An email change sets it
+ * when the caller is not an Owner and clears it when the caller is an Owner. An Owner's edit that carries the stored address (the
+ * console sends the whole form) confirms the address and clears a set mark. Any other edit leaves it.
+ *
+ * @param edit the stored mark, the body's `email` key, the comparison and the caller
+ * @returns the new value of the mark, or `undefined` when it stays
+ */
+export function emailMarkAfterEdit(edit: EmailMarkEdit): boolean | undefined {
+  if (edit.emailChanged) return !edit.byOwner;
+  if (edit.byOwner && edit.emailSent && edit.marked) return false;
+  return undefined;
+}

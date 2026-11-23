@@ -281,8 +281,9 @@ export const clients = pgTable(
      */
     passwordSetByStaff: boolean().notNull().default(false),
     /**
-     * true from the moment staff change the merchant's email address; a password from a link does not clear it (the link goes to the
-     * address staff chose); while true, a portal session creates no API key and creates or changes no webhook endpoint (decision 046)
+     * true from the moment a staff member who is not an Owner changes the merchant's email address until an Owner changes it or sends it
+     * unchanged in a details edit; a password from a link does not clear it (the link goes to the address staff chose); while true, a
+     * portal session creates no API key and creates or changes no webhook endpoint (decision 046)
      */
     emailSetByStaff: boolean().notNull().default(false),
     /** written when a session of the merchant becomes fully signed in (feature 20) */

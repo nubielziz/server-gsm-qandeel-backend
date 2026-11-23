@@ -81,8 +81,8 @@ export const portalCreateApiKey = defineRoute({
     '(`Cache-Control: no-store`): only a keyed hash is stored, so a lost key cannot be shown again. The per-minute limit is the ' +
     `server default; only staff change it. A merchant may hold ${MAX_LIVE_KEYS} live keys: the next one is \`422\` on \`name\`. Every new ` +
     "key sends the merchant a security notice by email. While the account's password is one staff set (a temporary password, until the " +
-    "merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route is " +
-    '`403 FORBIDDEN`.',
+    'merchant chooses a password from a link mailed to its address), and after a staff member who is not an Owner changed the ' +
+    "account's email address (until an Owner changes it or confirms it), the route is `403 FORBIDDEN`.",
   tags: ['api-keys'],
   surface: 'client',
   access: 'merchant-session',

@@ -1,7 +1,8 @@
-// Unit tests of the staff edit rules of a merchant (feature 20): the three kinds of change and the comparison with the stored row.
+// Unit tests of the staff edit rules of a merchant (feature 20): the three kinds of change, the comparison with the stored row and the
+// mark of an address staff set (decision 046).
 import { describe, expect, it } from 'bun:test';
 import type { Client } from '@src/modules/identity/db/schema';
-import { detailChanges, kindOfClientChange } from '@src/modules/identity/domain/client-details';
+import { detailChanges, emailMarkAfterEdit, kindOfClientChange } from '@src/modules/identity/domain/client-details';
 
 const stored = {
   name: 'Zain Mobile Hub',
@@ -82,5 +83,27 @@ describe('detailChanges', () => {
       emailChanged: false,
       nameChanged: false,
     });
+  });
+});
+
+describe('emailMarkAfterEdit', () => {
+  const edit = { marked: false, emailSent: true, emailChanged: true, byOwner: false };
+
+  it('sets the mark on an email change by a staff member who is not an Owner, and clears it on one by an Owner', () => {
+    expect(emailMarkAfterEdit(edit)).toBe(true);
+    expect(emailMarkAfterEdit({ ...edit, marked: true })).toBe(true);
+    expect(emailMarkAfterEdit({ ...edit, byOwner: true })).toBe(false);
+    expect(emailMarkAfterEdit({ ...edit, marked: true, byOwner: true })).toBe(false);
+  });
+
+  it('clears a set mark when an Owner sends the stored address', () => {
+    expect(emailMarkAfterEdit({ marked: true, emailSent: true, emailChanged: false, byOwner: true })).toBe(false);
+  });
+
+  it('leaves the mark otherwise', () => {
+    expect(emailMarkAfterEdit({ marked: false, emailSent: true, emailChanged: false, byOwner: true })).toBeUndefined();
+    expect(emailMarkAfterEdit({ marked: true, emailSent: true, emailChanged: false, byOwner: false })).toBeUndefined();
+    expect(emailMarkAfterEdit({ marked: true, emailSent: false, emailChanged: false, byOwner: true })).toBeUndefined();
+    expect(emailMarkAfterEdit({ marked: true, emailSent: false, emailChanged: false, byOwner: false })).toBeUndefined();
   });
 });

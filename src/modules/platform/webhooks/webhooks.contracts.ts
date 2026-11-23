@@ -79,8 +79,8 @@ export const portalCreateWebhook = defineRoute({
     `${MAX_ENDPOINTS_PER_MERCHANT} endpoints: the next is \`422\` on \`url\`. The answer carries the signing secret once as ` +
     '`secret` (`Cache-Control: no-store`); it is stored encrypted and never read back. Deliveries are signed with it: see the ' +
     "webhook events in the public API reference. While the account's password is one staff set (a temporary password, until the " +
-    "merchant chooses a password from a link mailed to its address), and after staff changed the account's email address, the route " +
-    'is `403 FORBIDDEN`.',
+    'merchant chooses a password from a link mailed to its address), and after a staff member who is not an Owner changed the ' +
+    "account's email address (until an Owner changes it or confirms it), the route is `403 FORBIDDEN`.",
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',
@@ -101,7 +101,8 @@ export const portalUpdateWebhook = defineRoute({
     'A partial body: a missing key stays as it is. `isActive: false` pauses the endpoint (events are not sent to it); turning it ' +
     'on again resets `failureCount` and the count of failed deliveries that switches an endpoint off after 20 in a row. A changed address is checked like a new one. Another merchant’s and an unknown endpoint are `404`. ' +
     "While the account's password is one staff set (a temporary password, until the merchant chooses a password from a link mailed to " +
-    "its address), and after staff changed the account's email address, the route is `403 FORBIDDEN`.",
+    "its address), and after a staff member who is not an Owner changed the account's email address (until an Owner changes it or " +
+    'confirms it), the route is `403 FORBIDDEN`.',
   tags: ['webhooks'],
   surface: 'client',
   access: 'merchant-session',

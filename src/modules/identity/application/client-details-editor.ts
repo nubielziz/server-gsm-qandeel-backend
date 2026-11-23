@@ -7,12 +7,12 @@ import { RateLimitService } from '../../../infra/rate-limit';
 import { AuditService } from '../../platform';
 import type { Client } from '../db/schema';
 import { accountMailKey } from '../domain/account-mail';
-import { type ClientChangeInput, detailChanges } from '../domain/client-details';
+import { type ClientChangeInput, detailChanges, emailMarkAfterEdit } from '../domain/client-details';
 import { MERCHANT_EMAIL_CHANGE_PERMISSION } from '../domain/client-rules';
 import { updateClientRow } from '../infra/client-admin.repository';
 import { CLIENT_TOKEN_PURPOSES, voidOpenClientTokens } from '../infra/merchant-token.repository';
 import { ApiKeyDirectory } from '../security/machine/api-keys/api-key.directory';
-import { type StaffPrincipal, requirePermission } from '../security/principal';
+import { type StaffPrincipal, isOwner, requirePermission } from '../security/principal';
 import { SessionService } from '../security/session.service';
 import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
 import { MerchantMailOutbox } from './mail/merchant-mail-outbox';
@@ -26,10 +26,13 @@ import { MerchantAuthTokens } from './merchant-auth-tokens';
  * an old one would prove the new address), clears the verification and sends a new verification (or the invitation while there is no password)
  * to the new address. Decision 047: an email change needs `clients:security`, ends every session of the merchant and sends a security notice to
  * the address before the change (the address is where the account's sign-in and password links go); a name change keeps the sessions.
- * An email change also sets `email_set_by_staff`: the account's links now go to an address staff chose, so its portal sessions create no API
- * key and create or change no webhook endpoint (`MachineCredentialHold`, decision 046).
+ * `email_set_by_staff` (decision 046, `emailMarkAfterEdit`) says that the address was last set by a staff member who is not an Owner and that no
+ * Owner has confirmed it since; while it is set, the account's portal sessions create no API key and create or change no webhook endpoint
+ * (`MachineCredentialHold`). An email change by a staff member who is not an Owner sets it (the account's links now go to an address staff
+ * chose); an email change by an Owner clears it. An Owner's edit that carries the stored address clears a set mark and does nothing else to
+ * the email (no link, mail, notice or limiter point, and the sessions stay); its audit row records `emailSetByStaff` going from true to false.
  *
- * Side effects: writes `clients`, `auth_tokens`, `outbox_events` (`merchant.email_verification` or `merchant.invited`, ids only),
+ * Side effects: writes `clients` (`email_set_by_staff` included), `auth_tokens`, `outbox_events` (`merchant.email_verification` or `merchant.invited`, ids only),
  * `sessions`, a `notifications` row with its outbox event (`merchant.security_notice`, to the previous address) and `audit_logs`; drops
  * the cached session and API key views of the merchant after the commit when the name or email changed; the email change counts one point
  * of the `account-mail` limiter.
@@ -80,14 +83,25 @@ export class ClientDetailsEditor {
     }
     // Decision 047: judged on the locked row, so an edit that turned "same email" into "new email" since the pre-check is still refused.
     if (changes.emailChanged) requirePermission(caller, MERCHANT_EMAIL_CHANGE_PERMISSION);
-    const after: Record<string, unknown> = { ...changes.after };
-    if (Object.keys(changes.columns).length > 0) {
+    // Decision 046: the mark of an address that a staff member who is not an Owner set, judged on the locked row.
+    const mark = emailMarkAfterEdit({
+      marked: client.emailSetByStaff,
+      emailSent: input.email !== undefined,
+      emailChanged: changes.emailChanged,
+      byOwner: isOwner(caller),
+    });
+    // An Owner confirmed the stored address: only the mark changes, and the audit row says so.
+    const confirmed = !changes.emailChanged && mark === false;
+    const before: Record<string, unknown> = { ...changes.before, ...(confirmed ? { emailSetByStaff: true } : {}) };
+    const after: Record<string, unknown> = { ...changes.after, ...(confirmed ? { emailSetByStaff: false } : {}) };
+    const columns = {
+      ...changes.columns,
+      ...(changes.emailChanged ? { emailVerifiedAt: null } : {}),
+      ...(mark === undefined ? {} : { emailSetByStaff: mark }),
+    };
+    if (Object.keys(columns).length > 0) {
       try {
-        await updateClientRow(work.tx, client.id, {
-          ...changes.columns,
-          // The account's links now go to an address staff chose: its sessions hand out no API key or webhook endpoint (decision 046).
-          ...(changes.emailChanged ? { emailVerifiedAt: null, emailSetByStaff: true } : {}),
-        });
+        await updateClientRow(work.tx, client.id, columns);
       } catch (error) {
         if (isUniqueViolation(error, 'clients_email_uq')) {
           throw new AppError('EMAIL_TAKEN', {
@@ -123,7 +137,7 @@ export class ClientDetailsEditor {
       entityType: 'merchant',
       entityId: client.id,
       entityLabel: changes.columns.name ?? client.name,
-      before: changes.before,
+      before,
       after,
     });
   }

@@ -1,12 +1,14 @@
 // Integration tests of the hold that a password set by staff puts on a merchant's machine credentials (decision 046: a key that spends a
 // merchant's money is made by the merchant or by an Owner). While the account's password is one staff set, a portal session does not
 // create API keys and does not create or change webhook endpoints; the rest of the portal works. A password chosen from a link mailed to
-// the merchant's address lifts the hold. A staff change of the email address puts on the same hold, and a link mailed to the new address
-// (an address staff chose) does not lift it. A key made in the portal sends the merchant the security notice of a new key.
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { eq } from 'drizzle-orm';
+// the merchant's address lifts the hold. A change of the email address by a staff member who is not an Owner puts on the same hold, and a
+// link mailed to the new address (an address staff chose) does not lift it; an Owner's change of the address sets none, and an Owner's
+// details edit that carries the stored address lifts it. A key made in the portal sends the merchant the security notice of a new key.
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
+import { and, eq } from 'drizzle-orm';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
+import { ClientDetailsEditor } from '@src/modules/identity/application/client-details-editor';
 import { STAFF_SET_EMAIL_HOLD } from '@src/modules/identity/application/machine-credential-hold';
 import { SECURITY_NOTICE_PHRASES } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
 import { adminWith } from '../../support/admin-api';
@@ -193,6 +195,162 @@ describe('machine credentials after staff changed the email address', () => {
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
     expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(403);
     expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
+  });
+});
+
+/** A merchant with a verified address and a full details form (the console sends every key, the country included). */
+const formMerchant = () =>
+  makeMerchant(t, {
+    emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z'),
+    company: 'Zain',
+    phone: '+962 6',
+    country: 'JO',
+  });
+
+/** The console's details form of the merchant as stored: every detail key, the email included. */
+async function detailsForm(merchantId: number): Promise<Record<string, string>> {
+  const row = await clientRow(merchantId);
+  return {
+    name: row.name,
+    company: row.company,
+    phone: row.phone,
+    country: row.country,
+    email: row.email,
+    address: row.address,
+    taxId: row.taxId,
+    internalNotes: row.internalNotes,
+  };
+}
+
+/** Signs the merchant in to a full portal session with the password it has. */
+async function signedIn(email: string): Promise<MerchantPortal> {
+  const portal = new MerchantPortal(t, freshClientIp());
+  expect((await portal.login(email)).json()).toEqual({ next: 'done' });
+  return portal;
+}
+
+/** The merchant's links, sessions and audit rows, the notifications and the outbox. */
+async function accountTrail(merchantId: number) {
+  const { db } = await testDb();
+  const client = (table: typeof s.authTokens | typeof s.sessions) =>
+    and(eq(table.subjectType, 'client'), eq(table.subjectId, merchantId));
+  return {
+    tokens: await db.select().from(s.authTokens).where(client(s.authTokens)).orderBy(s.authTokens.id),
+    sessions: await db.select().from(s.sessions).where(client(s.sessions)).orderBy(s.sessions.id),
+    outbox: await db.select().from(s.outboxEvents).orderBy(s.outboxEvents.id),
+    notifications: await notificationRows(db),
+    audit: await db
+      .select()
+      .from(s.auditLogs)
+      .where(and(eq(s.auditLogs.entityType, 'merchant'), eq(s.auditLogs.entityId, merchantId)))
+      .orderBy(s.auditLogs.id),
+  };
+}
+
+describe('the hold of an email address and an Owner', () => {
+  it('is lifted when an Owner sends the details form with the stored address, which changes nothing else of the email', async () => {
+    const merchant = await formMerchant();
+    await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
+    const portal = await signedIn('desk-inbox@example.com');
+    const refused = await portal.call('POST', '/client/api-keys', KEY);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<{ detail: string }>().detail).toBe(STAFF_SET_EMAIL_HOLD);
+
+    const before = await accountTrail(merchant.id);
+    const links = emailedLinks().length;
+    const limiter = spyOn(t.app.get(ClientDetailsEditor, { strict: false }), 'enforceEmailChangeLimit');
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/clients/${merchant.id}`, await detailsForm(merchant.id))).status).toBe(200);
+
+    expect(await clientRow(merchant.id)).toMatchObject({
+      email: 'desk-inbox@example.com',
+      emailVerifiedAt: null,
+      emailSetByStaff: false,
+      passwordSetByStaff: false,
+    });
+    const after = await accountTrail(merchant.id);
+    const added = after.audit.slice(before.audit.length);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      action: 'edited details of',
+      actorType: 'staff',
+      actorId: owner.staffId,
+      before: { emailSetByStaff: true },
+      after: { emailSetByStaff: false },
+    });
+    expect(added[0]!.before).toEqual({ emailSetByStaff: true });
+    expect(added[0]!.after).toEqual({ emailSetByStaff: false });
+    // No link, no mail job, no notice, no point of the limiter, and the merchant's sessions live on.
+    expect({ ...after, audit: before.audit }).toEqual(before);
+    expect(emailedLinks()).toHaveLength(links);
+    expect(limiter).not.toHaveBeenCalled();
+    expect((await portal.me()).statusCode).toBe(200);
+
+    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
+    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
+  });
+
+  it('stays after the same form from a staff member who is not an Owner, and after an Owner edit without the email', async () => {
+    const merchant = await formMerchant();
+    await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
+    const portal = await signedIn('desk-inbox@example.com');
+
+    const support = await adminWith(t, ['clients:read', 'clients:update', 'clients:security']);
+    expect((await support.patch(`/admin/clients/${merchant.id}`, await detailsForm(merchant.id))).status).toBe(200);
+    expect((await clientRow(merchant.id)).emailSetByStaff).toBe(true);
+    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
+
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/clients/${merchant.id}`, { phone: '+962 79 555' })).status).toBe(200);
+    expect(await clientRow(merchant.id)).toMatchObject({ phone: '+962 79 555', emailSetByStaff: true });
+    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
+    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(403);
+  });
+
+  it('is not set by an Owner change of the address, which still ends the sessions, voids the links and tells the old address', async () => {
+    const merchant = await formMerchant();
+    const first = await signedIn(merchant.email);
+    const { db } = await testDb();
+    await db.insert(s.authTokens).values({
+      purpose: 'reset',
+      subjectType: 'client',
+      subjectId: merchant.id,
+      tokenHash: 'open-reset-before-the-change',
+      expiresAt: new Date(clock.nowMs() + 3_600_000),
+    });
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/clients/${merchant.id}`, { email: 'owner-typed@example.com' })).status).toBe(200);
+
+    expect(await clientRow(merchant.id)).toMatchObject({
+      email: 'owner-typed@example.com',
+      emailVerifiedAt: null,
+      emailSetByStaff: false,
+    });
+    expect((await first.me()).statusCode).toBe(401);
+    const { tokens, notifications } = await accountTrail(merchant.id);
+    expect(tokens.find((row) => row.tokenHash === 'open-reset-before-the-change')!.usedAt).not.toBeNull();
+    expect(tokens.filter((row) => row.usedAt === null).map((row) => row.purpose)).toEqual(['verify_email']);
+    const notices = notifications.filter((row) => row.event === 'merchant.security_notice');
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.payload).toMatchObject({ to: merchant.email });
+
+    const portal = await signedIn('owner-typed@example.com');
+    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
+    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
+  });
+
+  it('is cleared by an Owner change of an address a staff member who is not an Owner set', async () => {
+    const merchant = await formMerchant();
+    await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
+    expect((await clientRow(merchant.id)).emailSetByStaff).toBe(true);
+
+    const owner = await adminWith(t, ['*']);
+    expect((await owner.patch(`/admin/clients/${merchant.id}`, { email: 'merchant-own@example.com' })).status).toBe(
+      200,
+    );
+    expect((await clientRow(merchant.id)).emailSetByStaff).toBe(false);
+    const portal = await signedIn('merchant-own@example.com');
+    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
   });
 });
 
