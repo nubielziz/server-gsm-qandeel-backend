@@ -9,6 +9,7 @@ import { LogThrottle } from '../../../common/log-throttle';
 import { CacheKeys, CacheService } from '../../../infra/cache';
 import { TokenService } from '../../../infra/crypto';
 import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { RATE_LIMITERS } from '../../../infra/rate-limit';
 import { RealtimePublisher, SESSION_TOPIC } from '../../../infra/realtime';
 import type { SubjectType } from '../db/schema';
 import { SessionPolicy } from './session-policy';
@@ -37,6 +38,27 @@ export const TOUCH_INTERVAL_MS = 60_000;
 export const SESSION_CACHE_TTL_SECONDS = 60;
 /** How long "no live session for this token" stays in the cache, so a flood of bad tokens does not reach Postgres. */
 export const UNKNOWN_SESSION_TTL_SECONDS = 10;
+/**
+ * A cached session view read with less than this many seconds of freshness left is loaded again in the background.
+ *
+ * Why: decision 053. While an address has used up its budget of failed lookups, only sessions whose view is in the cache are answered;
+ * with {@link SESSION_CACHE_GRACE_SECONDS}, a session used at least every 90 seconds (this plus the grace) stays answered there.
+ */
+export const SESSION_CACHE_REFRESH_AHEAD_SECONDS = 30;
+/**
+ * How long a session view stays in the cache after its freshness for the cache-only lookup ({@link SessionService.lookupCached}):
+ * one window of the failed-lookup budget (the `ip` limiter).
+ *
+ * Why: decision 053. A view is fresh for 60 s +-15 % (51 s at least), shorter than the budget window, so a session used once a minute
+ * would drop out of the cache between two requests. The normal lookup still reads the database once the view is no longer fresh.
+ */
+export const SESSION_CACHE_GRACE_SECONDS = RATE_LIMITERS.ip.windowSeconds;
+/** The cache options of a session view. */
+const VIEW_CACHE = {
+  negativeTtlSeconds: UNKNOWN_SESSION_TTL_SECONDS,
+  refreshAheadSeconds: SESSION_CACHE_REFRESH_AHEAD_SECONDS,
+  cachedOnlyGraceSeconds: SESSION_CACHE_GRACE_SECONDS,
+} as const;
 
 /** 32 random bytes in base64url are 43 characters; anything else cannot be one of our tokens. */
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
@@ -94,7 +116,9 @@ export class SessionService {
    * Why: login creates a pending session (10 minutes) and the sign-in steps rotate it to `active`; merchant and customer
    * sign-in create their sessions directly.
    *
-   * Side effects: inserts a `sessions` row (the token hash only).
+   * Side effects: inserts a `sessions` row (the token hash only); after the commit, loads its view into the cache (best effort;
+   * decision 053: an address that used up its budget of failed lookups is answered from the cache only, so a new session is served
+   * there from its first request).
    *
    * @param input subject, stage, IP, user agent and an optional lifetime
    * @param work the caller's transaction, if it has one
@@ -103,7 +127,11 @@ export class SessionService {
    */
   create(input: CreateSessionInput, work?: SessionWork): Promise<IssuedSession> {
     assertCreateInput(input);
-    return this.within(work, ({ tx }) => this.insert(tx, input, this.clock.now()));
+    return this.within(work, async (context) => {
+      const issued = await this.insert(context.tx, input, this.clock.now());
+      this.cacheAfterCommit(context, issued.session.tokenHash);
+      return issued;
+    });
   }
 
   /**
@@ -112,8 +140,9 @@ export class SessionService {
    * Why: decision 018: reaching `active` rotates the token, so a token known before the last sign-in step is worthless
    * (session fixation). The CSRF token changes with it.
    *
-   * Side effects: revokes the old row and inserts the new one in one transaction; deletes the old cache key and rings `session
-   * ended` for the old session after the commit.
+   * Side effects: revokes the old row and inserts the new one in one transaction; deletes the old cache key, rings `session
+   * ended` for the old session and loads the view of the new one into the cache (best effort, as in {@link SessionService.create})
+   * after the commit.
    *
    * @param current the session being replaced (`principal.session`)
    * @param input the new stage and, optionally, IP, user agent and lifetime
@@ -139,6 +168,7 @@ export class SessionService {
       const issued = await this.insert(context.tx, create, now);
       this.forgetAfterCommit(context, [old.tokenHash]);
       this.announceEnded(context, [old.id]);
+      this.cacheAfterCommit(context, issued.session.tokenHash);
       return issued;
     });
   }
@@ -150,19 +180,43 @@ export class SessionService {
    * The result can be up to a minute old, so the caller judges expiry with `livenessOf` on every request. The view is used only
    * when it belongs to the presented token (decision 055): a cached view whose token hash is another one is refused and deleted.
    *
-   * Side effects: on a view that does not belong to the token, deletes its cache key (best effort) and logs one warning a minute.
+   * Side effects: on a view that does not belong to the token, deletes its cache key (best effort) and logs one warning a minute; a
+   * cached view with less than {@link SESSION_CACHE_REFRESH_AHEAD_SECONDS} left is loaded again in the background (decision 053).
    *
    * @param token the value of the session cookie
    * @returns the session view, or `undefined` for an unknown, revoked or ended session, an account that is gone, a token
    *   that cannot be one of ours, or a cached view of another token
    */
-  async lookup(token: string): Promise<SessionView | undefined> {
+  lookup(token: string): Promise<SessionView | undefined> {
+    return this.find(token, false);
+  }
+
+  /**
+   * Finds the session behind a cookie token in the cache only, never in the database.
+   *
+   * Why: decision 053. An address that used up its budget of failed lookups costs no database read, and the sessions in use stay
+   * served there: a view is answered while it is fresh and for {@link SESSION_CACHE_GRACE_SECONDS} after.
+   *
+   * Side effects: as {@link SessionService.lookup}, without the load on a miss; a view past its freshness is loaded again in the
+   * background.
+   *
+   * @param token the value of the session cookie
+   * @returns the cached session view, or `undefined` when the cache holds none for the token (or "nothing", or a view of another
+   *   token)
+   */
+  lookupCached(token: string): Promise<SessionView | undefined> {
+    return this.find(token, true);
+  }
+
+  /** The lookup of {@link SessionService.lookup}; `cachedOnly` answers from the cache alone. */
+  private async find(token: string, cachedOnly: boolean): Promise<SessionView | undefined> {
     if (!TOKEN_SHAPE.test(token)) return undefined;
     const hash = this.tokens.hash(token);
     const key = this.keys.session(hash);
-    const view = await this.cache.getOrLoad(key, SESSION_CACHE_TTL_SECONDS, () => this.load(hash), {
-      negativeTtlSeconds: UNKNOWN_SESSION_TTL_SECONDS,
-    });
+    const load = () => this.load(hash);
+    const view = cachedOnly
+      ? await this.cache.getIfCached(key, SESSION_CACHE_TTL_SECONDS, load, VIEW_CACHE)
+      : await this.cache.getOrLoad(key, SESSION_CACHE_TTL_SECONDS, load, VIEW_CACHE);
     // A cached "nothing" comes back as null.
     if (!view) return undefined;
     if (!this.tokens.equals(view.tokenHash, hash)) {
@@ -180,9 +234,11 @@ export class SessionService {
    *
    * Why: decision 018 measures idleness with it; writing on every request would turn every read into a write.
    *
-   * Side effects: updates `sessions.last_seen_at` and deletes the cached view, so the next lookup sees the new time. The view
-   * is dropped even when another instance wrote first: it carries an old time either way, and keeping it would repeat the
-   * failed write on every request until the entry expires.
+   * Side effects: updates `sessions.last_seen_at` and loads the cached view again from the database over the old one
+   * ({@link CacheService.reload}), so the next lookup sees the new time and a session in use never leaves the cache, not even while the
+   * view loads (decision 053: an address that used up its budget of failed lookups is answered from the cache only). The view is replaced
+   * even when another instance wrote first: it carries an old time either way, and keeping it would repeat the failed write on every
+   * request until the entry expires; a failed load deletes it.
    *
    * @param view the session as the guard saw it
    * @param nowMs the current time in milliseconds; default the injected clock's (decision 031)
@@ -191,7 +247,11 @@ export class SessionService {
   async touch(view: SessionView, nowMs: number = this.clock.nowMs()): Promise<boolean> {
     if (nowMs - view.lastSeenAtMs < TOUCH_INTERVAL_MS) return false;
     const written = await touchSession(this.db.db, view.id, new Date(nowMs), TOUCH_INTERVAL_MS);
-    await this.cache.del(this.keys.session(view.tokenHash));
+    // Written over the old view, never deleted first, so a concurrent cache-only lookup still finds it. Best effort, like a lookup: a
+    // failed load deletes the key and the next lookup loads it.
+    await this.cache
+      .reload(this.keys.session(view.tokenHash), SESSION_CACHE_TTL_SECONDS, () => this.load(view.tokenHash), VIEW_CACHE)
+      .catch(() => undefined);
     return written;
   }
 
@@ -326,6 +386,15 @@ export class SessionService {
 
   private within<T>(work: SessionWork | undefined, fn: (context: SessionWork) => Promise<T>): Promise<T> {
     return work ? fn(work) : this.db.runInTransaction((context) => fn(context));
+  }
+
+  /** Loads the view of a new session into the cache after the commit; a failure only leaves the key empty (decision 053). */
+  private cacheAfterCommit(context: Pick<SessionWork, 'afterCommit'>, hash: string): void {
+    context.afterCommit(async () => {
+      await this.cache
+        .getOrLoad(this.keys.session(hash), SESSION_CACHE_TTL_SECONDS, () => this.load(hash), VIEW_CACHE)
+        .catch(() => undefined);
+    });
   }
 
   private forgetAfterCommit(context: Pick<SessionWork, 'afterCommit'>, hashes: readonly string[]): void {

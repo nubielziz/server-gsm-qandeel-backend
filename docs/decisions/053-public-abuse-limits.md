@@ -31,8 +31,13 @@ branch only; the API server set no time bounds on a request.
   audience; the `Content-Type` is read the way Fastify picks the body parser (leading whitespace dropped, any case), so a type that
   starts with a non-breaking space is judged as multipart too: the `415` of the routes that take no multipart body, the per-route
   bounds, the large-body count of the per-IP limit and this precheck all use one test. A session cookie that names no live session costs one point of a budget per client address and audience (300 a minute, the
-  budget of unknown API keys); once it is used up, the address is answered `429` without a lookup, and unknown API keys are judged the same
-  way. Quotas: a merchant not approved yet keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most 500 files (5 GiB)
+  budget of unknown API keys); once it is used up, the address costs no database lookup: a session whose view is in the cache is still
+  served (a new session's view is cached after the commit, and a session in use keeps its view fresh: a view counts for one budget window
+  after its freshness here, and the last-use write replaces the view without deleting it first, so a session used at least every 90 s stays
+  served, also for requests sent side by side), and any other cookie is answered `429`. Unknown API keys
+  and Dhru usernames that are not the key's are judged the same way, on a budget of their own. A credential served this way still costs its
+  once-a-minute last-use write and the reloads of its view; with the refresh ahead, a credential in steady use costs about two view loads a
+  minute instead of one. Quotas: a merchant not approved yet keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most 500 files (5 GiB)
   in 24 hours; a customer 30 files (100 MiB); one ticket link 20 files (50 MiB). A refusal is `422` on `file` with the code `quota`. A
   daily job deletes the stored files that nothing has used for 7 days; each delete is one statement that repeats the whole "nothing
   references it" test for that row, so only a reference that is not committed yet can race it (a file attached through an array column in

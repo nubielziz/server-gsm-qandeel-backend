@@ -72,8 +72,11 @@ route's own pipes and interceptors. A route without a contract is refused (`500`
 
 **Failed session lookups (decision 053).** In required mode (the guard, the queues board, the `upload-session` stage) a cookie that names no live session of the audience costs
 one point of the budget `session-failures:<subject>:<address key>` on the `ip` limiter (300 a minute per client address and audience, the budget of unknown API keys; `sessionFailureKey`);
-the budget is read first (`RateLimitService.peek`) and an address that used it up is answered `429 RATE_LIMITED` with `Retry-After` without a lookup (the queues board gate sends the header
-too). A request without the cookie and a live session cost nothing; `authenticateOptional` (public routes that accept an optional session) charges nothing.
+the budget is read first (`RateLimitService.peek`); an address that used it up costs no database lookup: its cookies are looked up in the session cache only
+(`SessionService.lookupCached`), so a live session whose view is cached is served, and any other cookie is answered `429 RATE_LIMITED` with `Retry-After` (the queues board gate
+sends the header too). A session in use keeps its view cached: a new or rotated session's view is loaded after the commit, a view read with less than 30 s left is loaded again in
+the background, the once-a-minute touch loads it again after its write and writes it over the old view (`CacheService.reload`, never deleting it first), and the cache-only lookup answers a view for 60 s (the budget window, `SESSION_CACHE_GRACE_SECONDS`) after its
+freshness and loads it again then, so a session used at least every 90 s stays served, also when it sends requests side by side. A request without the cookie and a live session cost nothing; `authenticateOptional` (public routes that accept an optional session) charges nothing.
 **`upload-session` stage** (`security/upload-session.hook.ts`, `UploadSessionModule`, API only, the fourth stage of `PIPELINE_STAGES`): for a `multipart/form-data` request on a route of
 `MULTIPART_ROUTES` whose contract signs in with a session cookie (`POST /client/files`, `POST /store/v1/files`, the three console uploads), `SessionAuthenticator.precheck(subject, request)` refuses
 with `401 UNAUTHORIZED` unless the cookie of the route's audience names a live session, before the body is read; suspension, stage, approval, CSRF and permission stay in the guard.
@@ -159,7 +162,11 @@ order, with the answer of each:
 
 Only accepted calls count against the key's limit. Unknown keys and wrong usernames are counted per client address (the `ip` limiter,
 300 a minute, under the key `api-key-failures:<ip>`; IPv6 by /64): REST v1 and Dhru have no per-IP stage in the pipeline and an unknown
-key has no limit of its own; that budget is peeked before the lookup (decision 053), so an address that used it up gets `429` without a lookup.
+key has no limit of its own; that budget is peeked before the lookup (decision 053), so an address that used it up costs no database lookup: its keys are
+looked up in the key cache only (`ApiKeyDirectory.findCached`), a key whose view is cached is judged as usual, and a key the cache does not hold gets `429` (a
+username that is not the cached key's is still charged, and answered `429` then). A key in use keeps its view cached: a view read with less than 30 s left is
+loaded again in the background, the once-a-minute "last used" write loads it again over the old view (`CacheService.reload`), and the cache-only lookup answers a view for 60 s (the budget window,
+`API_KEY_CACHE_GRACE_SECONDS`) after its freshness and loads it again then, so a key used at least every 90 s stays served, also when it sends calls side by side.
 A bulk placement costs more than one point: `ApiKeyCredentials.points` (default 1; `requestPoints` in `api-keys/request-points.ts`: the length of `orders` of `POST /v1/orders/bulk`,
 the item ids of a Dhru `placeimeiorderbulk`, clamped to 1 to 100; `getimeiorderbulk` stays one) is charged in the one `consume`, at most the key's own limit, so the `RateLimit-*` headers stay true. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
 below 1 is a data error: the limiter's default (60) applies. `last_used_at` / `last_used_ip` are written at most once a minute (best

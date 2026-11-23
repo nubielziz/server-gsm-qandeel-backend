@@ -132,12 +132,22 @@ describe('create', () => {
     const b = await sessions.create(input());
     expect(a.token).not.toBe(b.token);
   });
+
+  it('puts the view of the new session in the cache after the commit, and a rotation does the same for its new token (decision 053)', async () => {
+    const { token, session } = await sessions.create(input({ stage: 'pending_totp' }));
+    expect(await sessions.lookupCached(token)).toMatchObject({ id: session.id, stage: 'pending_totp' });
+    const fresh = await sessions.rotate({ id: session.id }, { stage: 'active' });
+    expect(await sessions.lookupCached(token)).toBeUndefined();
+    expect(await sessions.lookupCached(fresh.token)).toMatchObject({ id: fresh.session.id, stage: 'active' });
+  });
 });
 
 describe('lookup', () => {
   it('returns the view with the account state and the idle limit, and caches it', async () => {
     const { token, session } = await sessions.create(input());
-    expect(await cached(token)).toBe(false);
+    // The commit of the new session cached its view; without it, the lookup reads the database and caches the view again.
+    expect(await cached(token)).toBe(true);
+    await t.app.get(CacheService).del(cacheKey(token));
     const view = await sessions.lookup(token);
     expect(view).toMatchObject({
       id: session.id,
@@ -189,6 +199,8 @@ describe('lookup', () => {
     const { db } = await testDb();
     const suspended = await sessions.create(input());
     await db.update(s.staffUsers).set({ status: 'suspended' }).where(eq(s.staffUsers.id, staffId));
+    // The status changed behind the cache, so the view the commit of the session cached goes too.
+    await t.app.get(CacheService).del(cacheKey(suspended.token));
     expect((await sessions.lookup(suspended.token))?.subject.state).toBe('suspended');
 
     const ghost = await sessions.create(input({ subjectId: 987_654 }));
@@ -303,7 +315,7 @@ describe('revoke', () => {
 });
 
 describe('touch', () => {
-  it('writes last_seen_at only when the stored value is a minute old, and drops the cached view', async () => {
+  it('writes last_seen_at only when the stored value is a minute old, and caches the view again with the new time', async () => {
     const { db } = await testDb();
     const { token, session } = await sessions.create(input());
     const view = (await sessions.lookup(token))!;
@@ -317,15 +329,26 @@ describe('touch', () => {
     expect(await sessions.touch(view)).toBe(true);
     const [row] = await db.select().from(s.sessions).where(eq(s.sessions.id, session.id));
     expect(row!.lastSeenAt.getTime()).toBe(later);
-    expect(await cached(token)).toBe(false);
-    expect((await sessions.lookup(token))?.lastSeenAtMs).toBe(later);
-    // A second instance with the same stale view writes nothing (the database guard sees a fresh value), but it drops the
-    // stale cached view all the same, so the next lookup carries the time that was written.
-    await sessions.lookup(token);
+    // The view is in the cache again, loaded after the write (decision 053: a session in use stays in the cache).
     expect(await cached(token)).toBe(true);
+    expect((await sessions.lookupCached(token))?.lastSeenAtMs).toBe(later);
+    // A second instance with the same stale view writes nothing (the database guard sees a fresh value), but it replaces the
+    // cached view all the same, so the next lookup carries the time that was written.
     clock.advance(10);
     expect(await sessions.touch(view)).toBe(false);
-    expect(await cached(token)).toBe(false);
+    expect((await sessions.lookupCached(token))?.lastSeenAtMs).toBe(later);
+  });
+
+  it('caches "nothing" rather than a revoked session when it loads the view again', async () => {
+    const { token, session } = await sessions.create(input());
+    const view = (await sessions.lookup(token))!;
+    clock.advance(TOUCH_INTERVAL_MS);
+    // The row is ended behind the cached view's back; the touch that follows loads the view again from the database.
+    const { db } = await testDb();
+    await db.update(s.sessions).set({ revokedAt: clock.now() }).where(eq(s.sessions.id, session.id));
+    await sessions.touch(view);
+    expect(await sessions.lookupCached(token)).toBeUndefined();
+    expect(await sessions.lookup(token)).toBeUndefined();
   });
 
   it('does not resurrect a revoked session', async () => {
@@ -389,17 +412,24 @@ describe("inside the caller's transaction", () => {
     const out = await db.runInTransaction(async (work) => {
       const first = await sessions.create(input({ stage: 'pending_totp' }), work);
       const second = await sessions.rotate({ id: first.session.id }, { stage: 'active' }, work);
+      // Nothing is cached before the commit.
+      expect(await cached(first.token)).toBe(false);
+      expect(await cached(second.token)).toBe(false);
       return { first, second };
     });
+    expect(await sessions.lookupCached(out.first.token)).toBeUndefined();
+    expect((await sessions.lookupCached(out.second.token))?.stage).toBe('active');
     expect(await sessions.lookup(out.first.token)).toBeUndefined();
     expect((await sessions.lookup(out.second.token))?.stage).toBe('active');
+    let dropped = '';
     const rolledBack = await rejectionOf(
       db.runInTransaction(async (work) => {
-        await sessions.create(input({ ttlSeconds: 77 }), work);
+        dropped = (await sessions.create(input({ ttlSeconds: 77 }), work)).token;
         throw new Error('rollback');
       }),
     );
     expect((rolledBack as Error).message).toBe('rollback');
+    expect(await cached(dropped)).toBe(false);
     const rows = await (await testDb()).db.select().from(s.sessions);
     expect(rows.some((row) => Math.round((row.expiresAt.getTime() - row.createdAt.getTime()) / 1000) === 77)).toBe(
       false,

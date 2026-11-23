@@ -4,7 +4,7 @@ Cache-aside on the cache Redis (decisions 022 and 055). `docs/cache-keys.md` lis
 
 | What                                                     | Where                                                           |
 | -------------------------------------------------------- | --------------------------------------------------------------- |
-| `CacheService`: `getOrLoad`, `del`, `invalidate`, `delByPrefix`, `bumpVersion`, `versioned` | `cache.service.ts`                 |
+| `CacheService`: `getOrLoad`, `getIfCached`, `reload`, `del`, `invalidate`, `delByPrefix`, `bumpVersion`, `versioned` | `cache.service.ts` |
 | `CacheKeys`: the only way to build a key, `CACHE_KEY_FAMILIES` | `cache-keys.ts`                                           |
 | Sealed entries (`sealEntry`, `openEntry`, `cacheMacKey`), TTL jitter, the 100 KB limit | `cache-entry.ts`                      |
 | The retries of `invalidate` (`withRetries`)              | `cache-invalidation.ts`                                         |
@@ -40,6 +40,19 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 - **Stale-while-revalidate:** the key outlives its freshness by the stale window; a stale read answers at once and starts
   one background refresh (a failing refresh keeps the old value). **Stale entries** are served only inside the caller's
   `staleWhileRevalidate` window, counted from the entry's freshness time (decision 055).
+- **Refresh ahead** (decision 053): with `refreshAheadSeconds` (shorter than the TTL), a read that finds a fresh value with less than
+  that left answers it and starts one background refresh, so a value read at least that often never drops out of the cache. A
+  negative entry is never refreshed ahead.
+- **`getIfCached(key, ttl, loader, options)`** (decision 053) answers from the cache alone: a fresh value, `null` for a negative
+  entry, `undefined` otherwise (a stale entry too, outside the grace below); it never loads on a miss and never shares a load. The
+  loader serves only the background refreshes.
+- **`reload(key, ttl, loader, options)`** (decision 053) loads a value again and writes it over the cached one, which stays readable
+  until then (a writer that changed the value never leaves the key empty for `getIfCached`). It stops earlier loads of the key in this
+  process from storing, shares its load with the `getOrLoad` calls that arrive meanwhile, stores nothing when the key is deleted while it
+  loads, and deletes the key when its loader fails.
+- **Grace of cache-only reads** (decision 053): with `cachedOnlyGraceSeconds`, the key outlives its freshness by that many seconds
+  (a negative entry does not). `getOrLoad` treats such an entry as a miss and loads; `getIfCached` answers it and starts one
+  background refresh.
 - **Redis down:** a read or write failure is a miss (the loader runs, `cache_errors_total` counts it). `del`,
   `delByPrefix` and `bumpVersion` throw instead, because a missed invalidation leaves old data until the TTL.
 - **`invalidate(...keys)`** retries a failed delete twice (50 ms, 250 ms), then writes one error line and counts

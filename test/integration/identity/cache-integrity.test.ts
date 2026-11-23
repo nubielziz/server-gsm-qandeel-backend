@@ -144,7 +144,7 @@ describe('cached API key views (decision 055)', () => {
     const call = (key: string) =>
       t.app.inject({ method: 'GET', url: '/v1/t/mach/read', headers: { authorization: `Bearer ${key}` } });
     expect((await call(second.key)).statusCode).toBe(200);
-    // The call's touch dropped the view (last use); a lookup stores it again.
+    // The call's touch stored the view again with the new last use; a lookup finds it.
     await t.app.get(ApiKeyDirectory).findByKey(second.key);
     const secondView = await storedView<Record<string, unknown>>(keys().apiKey(second.keyHash));
     const firstKey = keys().apiKey(first.keyHash);

@@ -216,6 +216,8 @@ describe('staff session guard', () => {
     const session = await openSession(t, { type: 'staff', id: staffId });
     await db.delete(s.sessions).where(eq(s.sessions.id, session.sessionId));
     await db.delete(s.staffUsers).where(eq(s.staffUsers.id, staffId));
+    // The rows went behind the cache, so the view the new session cached goes too.
+    await clearIdentityCaches(t);
     expect((await get('/admin/t/sec/session', session.headers)).statusCode).toBe(401);
   });
 

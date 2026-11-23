@@ -50,9 +50,11 @@ export function sessionFailureKey(subject: SubjectType, ip: string): string {
  *
  * Decision 053: in required mode (the access guard, the queues board, {@link SessionAuthenticator.precheck}) a cookie that names no live
  * session of the audience costs one point of the budget `session-failures:<subject>:<address key>` on the `ip` limiter (300 a minute,
- * the budget of unknown API keys); once it is used up the address is answered `429` without a lookup. A request without the cookie
- * costs nothing, and neither does a cookie of a live session. `authenticateOptional` (public routes that accept an optional session)
- * charges nothing: the store is counted per address by the `ip` stage already.
+ * the budget of unknown API keys); once it is used up the address costs no database lookup: its cookies are answered from the session
+ * cache alone, so a session in use there (its view is kept fresh by its requests) is still served, and a cookie the cache does not
+ * hold is refused `429`. A request without the cookie costs nothing, and neither does a cookie of a live session.
+ * `authenticateOptional` (public routes that accept an optional session) charges nothing: the store is counted per address by the
+ * `ip` stage already.
  *
  * Side effects: reads the session and role caches; writes `sessions.last_seen_at` at most once a minute; a suspended account
  * has all its sessions revoked; one point of the failed-lookup budget on the cache Redis per unknown cookie.
@@ -77,7 +79,8 @@ export class SessionAuthenticator {
    * @param options the stages the route accepts
    * @returns the session and the principal
    * @throws {AppError} `UNAUTHORIZED` (401) for no, unknown, revoked, ended or wrong-stage sessions; `ACCOUNT_SUSPENDED`
-   *   (403) for a suspended account; `RATE_LIMITED` (429 with `Retry-After`) when the address used up its failed-lookup budget
+   *   (403) for a suspended account; `RATE_LIMITED` (429 with `Retry-After`) when the address used up its failed-lookup budget and the
+   *   cache holds no live view of the session
    */
   async authenticate(
     subject: SubjectType,
@@ -101,7 +104,7 @@ export class SessionAuthenticator {
    * @param subject which subject's cookie to read
    * @param request the Fastify request
    * @throws {AppError} `UNAUTHORIZED` (401) for no cookie or a cookie that names no live session of the audience; `RATE_LIMITED` (429
-   *   with `Retry-After`) when the address used up its failed-lookup budget
+   *   with `Retry-After`) when the address used up its failed-lookup budget and the cache holds no live view of the session
    */
   async precheck(subject: SubjectType, request: FastifyRequest): Promise<void> {
     const token = this.cookies.readToken(request, subject);
@@ -112,10 +115,11 @@ export class SessionAuthenticator {
   /**
    * The session a cookie names, when it is live and of the audience.
    *
-   * Why: decision 053. With `charge` the failed-lookup budget of the address is read first (nothing is looked up for an address that used
-   * it up) and a cookie that does not count costs one point after the lookup; a valid session pays nothing.
+   * Why: decision 053. With `charge` the failed-lookup budget of the address is read first: for an address that used it up the session
+   * is looked up in the cache only (no database read), so a session in use there is still served; otherwise a cookie that does not
+   * count costs one point after the lookup. A valid session pays nothing.
    *
-   * @throws {AppError} `RATE_LIMITED` when `charge` is set and the budget is used up
+   * @throws {AppError} `RATE_LIMITED` when `charge` is set, the budget is used up and the cache holds no live view of the session
    */
   private async liveView(
     subject: SubjectType,
@@ -124,12 +128,12 @@ export class SessionAuthenticator {
     charge: boolean,
   ): Promise<SessionView | undefined> {
     const key = sessionFailureKey(subject, request.ip);
-    if (charge) {
-      const budget = await this.limits.peek('ip', key);
-      if (!budget.allowed) throw rateLimitedError(budget.retryAfterSeconds);
-    }
-    const view = await this.sessions.lookup(token);
+    const budget = charge ? await this.limits.peek('ip', key) : undefined;
+    // An address that used up its budget costs no database lookup; a session whose view is cached is still served.
+    const exhausted = budget !== undefined && !budget.allowed;
+    const view = exhausted ? await this.sessions.lookupCached(token) : await this.sessions.lookup(token);
     if (view && view.subjectType === subject && livenessOf(view, this.clock.nowMs()) === 'live') return view;
+    if (budget && !budget.allowed) throw rateLimitedError(budget.retryAfterSeconds);
     if (charge) {
       const spent = await this.limits.consume('ip', key);
       if (!spent.allowed) throw rateLimitedError(spent.retryAfterSeconds);

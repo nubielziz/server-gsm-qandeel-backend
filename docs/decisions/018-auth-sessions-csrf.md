@@ -59,4 +59,8 @@ IP changes that would shut out an Owner) and second permissions for stronger act
 multipart body of a route that signs in with a session cookie (the portal and customer uploads, the three console uploads) is read only when
 the request carries a live session of the route's audience (`401` otherwise; the full checks stay in the guard). In required mode the
 session authenticator charges a cookie that names no live session to a budget of the client address and audience on the `ip` limiter
-(`session-failures:<subject>:<address key>`, 300 a minute), read before the lookup and answered `429` when used up.
+(`session-failures:<subject>:<address key>`, 300 a minute), read before the lookup and answered `429` when used up, unless the session cache
+holds a live view of the session (decision 053). The view of a new or rotated session is cached after the commit (so a change written to
+the database outside the application reaches such a session only when its view is loaded again, as for any cached view); for this
+cache-only answer a view counts for 60 s after its freshness (each such answer loads it again), so after a failed invalidation such an
+address is served the old view at most that much longer than the 60 s +-15 % of the lookup.

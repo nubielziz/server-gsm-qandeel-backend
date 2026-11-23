@@ -28,6 +28,7 @@ const request = (ip = '203.0.113.9') => ({ ip }) as unknown as FastifyRequest;
 interface Setup {
   readonly authenticator: ApiKeyAuthenticator;
   readonly lookups: string[];
+  readonly cachedLookups: string[];
   readonly consumed: { name: string; key: string; points: number }[];
   readonly enforced: { name: string; key: string; points: number; options: unknown }[];
   readonly peeked: { name: string; key: string }[];
@@ -36,9 +37,16 @@ interface Setup {
 
 function setup(
   found: ApiKeyView | undefined,
-  options: { failureAllowed?: boolean; keyAllowed?: boolean; touchFails?: boolean; peekAllowed?: boolean } = {},
+  options: {
+    failureAllowed?: boolean;
+    keyAllowed?: boolean;
+    touchFails?: boolean;
+    peekAllowed?: boolean;
+    cached?: ApiKeyView;
+  } = {},
 ): Setup {
   const lookups: string[] = [];
+  const cachedLookups: string[] = [];
   const consumed: Setup['consumed'] = [];
   const enforced: Setup['enforced'] = [];
   const peeked: Setup['peeked'] = [];
@@ -47,6 +55,11 @@ function setup(
     findByKey: (key: string) => {
       lookups.push(key);
       return Promise.resolve(found);
+    },
+    // The cache alone: what an address that used up its budget is answered from (decision 053).
+    findCached: (key: string) => {
+      cachedLookups.push(key);
+      return Promise.resolve(options.cached);
     },
     touch: (_view: ApiKeyView, ip: string) => {
       touches.push(ip);
@@ -90,6 +103,7 @@ function setup(
   return {
     authenticator: new ApiKeyAuthenticator(directory, limits, new TestClock('2026-11-01T10:00:00.000Z')),
     lookups,
+    cachedLookups,
     consumed,
     enforced,
     peeked,
@@ -148,15 +162,53 @@ describe('ApiKeyAuthenticator', () => {
     expect(s.touches).toEqual(['203.0.113.9']);
   });
 
-  it('answers 429 before the lookup once the address used its unknown-key budget (decision 053)', async () => {
+  it('answers 429 before the lookup once the address used its unknown-key budget and the cache holds no view of the key (decision 053)', async () => {
     const s = setup(view(), { peekAllowed: false });
     const error = await rejectionOf(s.authenticator.authenticate(request(), { ...asking, key: 'the-key' }));
     expect(error).toMatchObject({ code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 33 });
     expect(s.peeked).toEqual([{ name: 'ip', key: 'api-key-failures:203.0.113.9' }]);
-    // No lookup, and nothing is charged for the refused call.
+    // No database lookup, only the cache, and nothing is charged for the refused call.
     expect(s.lookups).toEqual([]);
+    expect(s.cachedLookups).toEqual(['the-key']);
     expect(s.consumed).toEqual([]);
     expect(s.enforced).toEqual([]);
+  });
+
+  it('serves a key whose view is cached while the address has used up its unknown-key budget, without a database lookup', async () => {
+    const s = setup(undefined, { peekAllowed: false, cached: view() });
+    const principal = await s.authenticator.authenticate(request(), { ...asking, key: 'the-key' });
+    expect(principal).toMatchObject({ kind: 'api-key', clientId: 3, keyId: 7 });
+    expect(s.lookups).toEqual([]);
+    expect(s.cachedLookups).toEqual(['the-key']);
+    // The key's own limit still counts the call, and its use is recorded.
+    expect(s.enforced).toEqual([{ name: 'api-key', key: '7', points: 1, options: { limit: 25 } }]);
+    expect(s.consumed).toEqual([]);
+    expect(s.touches).toEqual(['203.0.113.9']);
+  });
+
+  it('judges a cached key like a looked-up one while the budget is used up: its refusals stay', async () => {
+    const s = setup(undefined, { peekAllowed: false, cached: view({ scopes: [] }) });
+    expect(await rejectionOf(s.authenticator.authenticate(request(), { ...asking, key: 'k' }))).toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(s.consumed).toEqual([]);
+  });
+
+  it("charges a Dhru username that is not the cached key's while the budget is used up, and answers 429", async () => {
+    const s = setup(undefined, { peekAllowed: false, failureAllowed: false, cached: view() });
+    const error = await rejectionOf(
+      s.authenticator.authenticate(request(), { key: 'k', username: 'other', scope: 'dhru', surface: 'dhru' }),
+    );
+    expect(error).toMatchObject({ code: 'RATE_LIMITED', status: 429, retryAfterSeconds: 42 });
+    expect(s.consumed).toEqual([{ name: 'ip', key: 'api-key-failures:203.0.113.9', points: 1 }]);
+    expect(s.enforced).toEqual([]);
+  });
+
+  it('looks a key up in the database, not the cache alone, while the address has budget left', async () => {
+    const s = setup(view(), { cached: view() });
+    await s.authenticator.authenticate(request(), { ...asking, key: 'the-key' });
+    expect(s.lookups).toEqual(['the-key']);
+    expect(s.cachedLookups).toEqual([]);
   });
 
   it('reads the budget of an address by its /64 network before the lookup, and a call without a key reads nothing', async () => {

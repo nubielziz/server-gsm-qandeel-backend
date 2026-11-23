@@ -42,6 +42,19 @@ export interface GetOrLoadOptions {
    * repeatedly (an unknown TAC); without it a missing value is never cached.
    */
   readonly negativeTtlSeconds?: number;
+  /**
+   * Loads a fresh value again in the background, once, when a read finds it with less than this many seconds of freshness left
+   * (shorter than the TTL). Use it where a value that is read often must not drop out of the cache between two reads: a
+   * credential in use (decision 053). A negative entry is never refreshed ahead.
+   */
+  readonly refreshAheadSeconds?: number;
+  /**
+   * Seconds the key outlives its freshness in Redis for {@link CacheService.getIfCached} alone: `getOrLoad` treats such an entry
+   * as a miss and loads, while `getIfCached` answers it and loads it again in the background. Use it where a caller that must not
+   * reach the source answers what was true a moment ago: a credential in use while its address is over its budget of failed lookups
+   * (decision 053). A negative entry gets no such time.
+   */
+  readonly cachedOnlyGraceSeconds?: number;
 }
 
 /** A load that is running in this process, shared by every caller that asks for the same key meanwhile. */
@@ -82,7 +95,7 @@ function assertTtl(ttlSeconds: number): void {
   }
 }
 
-function assertOptions(options: GetOrLoadOptions): void {
+function assertOptions(options: GetOrLoadOptions, ttlSeconds: number): void {
   for (const [name, value] of Object.entries(options)) {
     if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
       throw new RangeError(`getOrLoad option ${name} must be a positive number, got ${String(value)}`);
@@ -92,11 +105,17 @@ function assertOptions(options: GetOrLoadOptions): void {
   if (options.lockMs !== undefined && options.lockMs > MAX_LOCK_MS) {
     throw new RangeError(`getOrLoad option lockMs must be at most ${MAX_LOCK_MS}, got ${options.lockMs}`);
   }
-  for (const name of ['staleWhileRevalidate', 'negativeTtlSeconds'] as const) {
+  for (const name of ['staleWhileRevalidate', 'negativeTtlSeconds', 'cachedOnlyGraceSeconds'] as const) {
     const value = options[name];
     if (value !== undefined && value > MAX_TTL_SECONDS) {
       throw new RangeError(`getOrLoad option ${name} must be at most ${MAX_TTL_SECONDS}, got ${value}`);
     }
+  }
+  // A window as long as the TTL would refresh on every read.
+  if (options.refreshAheadSeconds !== undefined && options.refreshAheadSeconds >= ttlSeconds) {
+    throw new RangeError(
+      `getOrLoad option refreshAheadSeconds must be shorter than the TTL of ${ttlSeconds}, got ${options.refreshAheadSeconds}`,
+    );
   }
 }
 
@@ -111,7 +130,7 @@ function assertOptions(options: GetOrLoadOptions): void {
  *
  * Side effects: reads and writes keys built by {@link CacheKeys}; counts `cache_hits_total`, `cache_misses_total` and
  * `cache_errors_total` per key family (`operation="mac"`, logged at error level, is an entry whose seal did not match); a
- * background refresh may run after a call returned a stale value.
+ * background refresh may run after a call returned a stale value, or a value close to its end (`refreshAheadSeconds`).
  *
  * @see docs/decisions/022-caching.md, docs/decisions/055-infra.md and docs/cache-keys.md
  */
@@ -165,7 +184,8 @@ export class CacheService implements OnApplicationShutdown {
    * callers of one load, so never mutate a returned value. `null`/`undefined` results are never cached unless
    * `negativeTtlSeconds` is set; a negative entry is returned as `null`.
    *
-   * Side effects: one Redis read per call; on a miss one write with a TTL of `ttlSeconds` +-15 % (plus the stale window);
+   * Side effects: one Redis read per call; on a miss one write with a TTL of `ttlSeconds` +-15 % (plus the stale window or the grace
+   * of cache-only reads, the longer);
    * the lock key while loading. A write that fails or is too large (over 100 KB) is logged and counted, and the value
    * is still returned.
    *
@@ -185,11 +205,96 @@ export class CacheService implements OnApplicationShutdown {
   ): Promise<T> {
     this.assertOwned(key);
     assertTtl(ttlSeconds);
-    assertOptions(options);
+    assertOptions(options, ttlSeconds);
     const shared = this.loading.get(key);
     if (shared) return shared.promise as Promise<T>;
     const flight: InFlight = { promise: Promise.resolve(), invalidated: false };
     flight.promise = this.readThrough<T>(key, ttlSeconds, loader, options, flight).finally(() => {
+      if (this.loading.get(key) === flight) this.loading.delete(key);
+    });
+    this.loading.set(key, flight);
+    return flight.promise as Promise<T>;
+  }
+
+  /**
+   * Returns the cached value when the cache holds a fresh one, or one inside its `cachedOnlyGraceSeconds`, and never loads on a
+   * miss.
+   *
+   * Why: decision 053. A caller that must not reach the source for a request (an address that used up its budget of failed
+   * lookups) can still answer from what the cache already holds. The loader and the options are those of the
+   * {@link CacheService.getOrLoad} calls of the same key: they serve only the background refreshes. An entry past its freshness is
+   * answered only inside `cachedOnlyGraceSeconds` and is then loaded again in the background; `staleWhileRevalidate` does not
+   * count here. A load of the key that runs in this process is not joined, and this read is never shared with a `getOrLoad`
+   * caller.
+   *
+   * Side effects: one Redis read; counts a hit when it answers from the cache; the background refresh of
+   * {@link CacheService.getOrLoad} for a value close to its end (`refreshAheadSeconds`) or inside its grace.
+   *
+   * @param key the key, from {@link CacheKeys}
+   * @param ttlSeconds the TTL of a refreshed value, as in {@link CacheService.getOrLoad}
+   * @param loader reads the source of truth, for the background refreshes only
+   * @param options as in {@link CacheService.getOrLoad}
+   * @returns the value, `null` for a negative entry, `undefined` when the cache holds no fresh entry and none inside its grace
+   * @throws {RangeError} for a TTL or option that is not a positive number, or a key not built by {@link CacheKeys}
+   */
+  async getIfCached<T>(
+    key: CacheKey,
+    ttlSeconds: number,
+    loader: () => Promise<T>,
+    options: GetOrLoadOptions = {},
+  ): Promise<T | null | undefined> {
+    this.assertOwned(key);
+    assertTtl(ttlSeconds);
+    assertOptions(options, ttlSeconds);
+    const now = this.clock.nowMs();
+    const entry = await this.lookup(key);
+    if (!entry) return undefined;
+    if (now <= entry.freshUntil) {
+      this.hits.inc({ family: familyOf(key) });
+      this.refreshAheadIfDue(key, entry, now, ttlSeconds, loader, options);
+      return entry.value as T | null;
+    }
+    // Past its freshness: answered only inside the grace of this reader, and loaded again behind the answer.
+    const grace = options.cachedOnlyGraceSeconds;
+    if (entry.negative || grace === undefined || now > entry.freshUntil + grace * 1000) return undefined;
+    this.hits.inc({ family: familyOf(key) });
+    this.refreshInBackground(key, ttlSeconds, loader, options);
+    return entry.value as T;
+  }
+
+  /**
+   * Loads a value again and writes it over the cached one, which stays readable until the new value replaces it.
+   *
+   * Why: decision 053. A writer that changed what a cached value shows (the once-a-minute last-use write of a session or an API key)
+   * replaces the value without a moment in which the key is empty, because a reader that answers from the cache alone
+   * ({@link CacheService.getIfCached}) would find nothing then. Loads of the key that run in this process and started earlier
+   * (they may have read the source before the change) are told not to store their value. This load is shared with the
+   * {@link CacheService.getOrLoad} calls that arrive meanwhile, and a {@link CacheService.del} or {@link CacheService.invalidate} of the
+   * key while it runs stops it from storing, as for any load. It takes no cross-process lock.
+   *
+   * Side effects: runs the loader; one write with a TTL as in {@link CacheService.getOrLoad}; when the loader fails, deletes the key
+   * (best effort, unless a later load or a delete of the key took over), so the old value is not answered after the change.
+   *
+   * @param key the key, from {@link CacheKeys}
+   * @param ttlSeconds how long the value stays fresh, as in {@link CacheService.getOrLoad}
+   * @param loader reads the source of truth; its errors reach every waiting caller and nothing is cached
+   * @param options as in {@link CacheService.getOrLoad}
+   * @returns the loaded value
+   * @throws {RangeError} for a TTL or option that is not a positive number, or a key not built by {@link CacheKeys}
+   * @throws whatever the loader throws
+   */
+  async reload<T>(
+    key: CacheKey,
+    ttlSeconds: number,
+    loader: () => Promise<T>,
+    options: GetOrLoadOptions = {},
+  ): Promise<T> {
+    this.assertOwned(key);
+    assertTtl(ttlSeconds);
+    assertOptions(options, ttlSeconds);
+    this.cancelLoads(key);
+    const flight: InFlight = { promise: Promise.resolve(), invalidated: false };
+    flight.promise = this.loadOver<T>(key, ttlSeconds, loader, options, flight).finally(() => {
       if (this.loading.get(key) === flight) this.loading.delete(key);
     });
     this.loading.set(key, flight);
@@ -420,6 +525,7 @@ export class CacheService implements OnApplicationShutdown {
     if (entry) {
       if (now <= entry.freshUntil) {
         this.hits.inc({ family });
+        this.refreshAheadIfDue(key, entry, now, ttlSeconds, loader, options);
         return entry.value as T;
       }
       // Decision 055: a stale entry is served only inside this reader's own window, whatever lifetime the key has in Redis.
@@ -481,7 +587,10 @@ export class CacheService implements OnApplicationShutdown {
     const negative = value === null || value === undefined;
     if (negative && options.negativeTtlSeconds === undefined) return;
     const freshMs = jitterTtlMs(negative ? (options.negativeTtlSeconds ?? ttlSeconds) : ttlSeconds);
-    const staleMs = negative ? 0 : Math.round((options.staleWhileRevalidate ?? 0) * 1000);
+    // The key outlives its freshness by the longer of the stale window and the grace of cache-only reads.
+    const staleMs = negative
+      ? 0
+      : Math.round(Math.max(options.staleWhileRevalidate ?? 0, options.cachedOnlyGraceSeconds ?? 0) * 1000);
     try {
       const text = sealEntry(this.macKey, key, value, this.clock.nowMs() + freshMs);
       await this.redis.cache.set(key, text, 'PX', freshMs + staleMs);
@@ -527,6 +636,38 @@ export class CacheService implements OnApplicationShutdown {
       }
     }
     return undefined;
+  }
+
+  /** The load of {@link CacheService.reload}; a failed load deletes the key unless a later load or a delete took over. */
+  private async loadOver<T>(
+    key: CacheKey,
+    ttlSeconds: number,
+    loader: () => Promise<T>,
+    options: GetOrLoadOptions,
+    flight: InFlight,
+  ): Promise<T> {
+    try {
+      return await this.loadAndStore(key, ttlSeconds, loader, options, flight);
+    } catch (error) {
+      // Otherwise the old value would be answered after the change; `del` counts and logs its own failure.
+      if (!flight.invalidated) await this.del(key).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /** Starts the background refresh of a fresh, non-negative entry whose freshness ends within `refreshAheadSeconds`. */
+  private refreshAheadIfDue<T>(
+    key: CacheKey,
+    entry: CacheEntry,
+    now: number,
+    ttlSeconds: number,
+    loader: () => Promise<T>,
+    options: GetOrLoadOptions,
+  ): void {
+    if (options.refreshAheadSeconds === undefined || entry.negative) return;
+    if (entry.freshUntil - now < options.refreshAheadSeconds * 1000) {
+      this.refreshInBackground(key, ttlSeconds, loader, options);
+    }
   }
 
   private refreshInBackground<T>(

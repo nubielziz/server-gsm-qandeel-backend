@@ -1,6 +1,7 @@
 // Integration tests of CacheService (decision 022) on the test cache Redis (database 1): cache-aside, TTL jitter, stampede
 // protection inside one process and across two (the lock), stale-while-revalidate, negative caching, deletion by key and by
-// prefix, version keys, values over 100 KB, hit/miss metrics, and the fallback to the loader while Redis is down.
+// prefix, version keys, values over 100 KB, hit/miss metrics, the reload that writes over a value, and the fallback to the loader
+// while Redis is down.
 // Freshness is counted on the injected clock (decision 031), so TTLs and stale windows pass by moving a TestClock; what Redis
 // itself does with a TTL is asserted by reading it back (PTTL), never by waiting for it. The only real waits are the lock
 // tests, which are about the polling and the deadline of the cross-process lock, and the retry waits of invalidate() on a dead Redis
@@ -414,6 +415,257 @@ describe('stale-while-revalidate', () => {
     clock.advance(800);
     await cache.getOrLoad(key, 0.2, source.loader);
     expect(source.state.calls).toBe(2);
+  });
+});
+
+describe('refresh ahead (decision 053)', () => {
+  it('loads a fresh value again once, in the background, when a read finds less than refreshAheadSeconds left', async () => {
+    const key = newKey();
+    let version = 0;
+    let calls = 0;
+    const loader = () => {
+      calls++;
+      return Promise.resolve(++version);
+    };
+    const options = { refreshAheadSeconds: 30 };
+    expect(await cache.getOrLoad(key, 60, loader, options)).toBe(1);
+    clock.advance(10_000); // 41 to 59 s left (60 s +-15 %): nothing to do
+    expect(await cache.getOrLoad(key, 60, loader, options)).toBe(1);
+    expect(calls).toBe(1);
+    clock.advance(30_000); // 11 to 29 s left: the value is served and refreshed behind it
+    const during = await Promise.all(Array.from({ length: 10 }, () => cache.getOrLoad(key, 60, loader, options)));
+    expect(during.every((value) => value === 1 || value === 2)).toBe(true);
+    expect(
+      await eventually(async () => ((await cache.getOrLoad(key, 60, loader, options)) === 2 ? 2 : undefined)),
+    ).toBe(2);
+    expect(calls, 'one load and exactly one refresh').toBe(2);
+  });
+
+  it('never refreshes a negative entry ahead', async () => {
+    const key = newKey();
+    const source = counted(null);
+    const options = { negativeTtlSeconds: 40, refreshAheadSeconds: 30 };
+    expect(await cache.getOrLoad(key, 60, source.loader, options)).toBeNull();
+    clock.advance(30_000); // the negative entry has 4 to 16 s left
+    expect(await cache.getOrLoad(key, 60, source.loader, options)).toBeNull();
+    await Bun.sleep(50);
+    expect(source.state.calls).toBe(1);
+  });
+
+  it('refuses a window that is not shorter than the TTL', async () => {
+    const source = counted('v');
+    await expectRejection(cache.getOrLoad(newKey(), 30, source.loader, { refreshAheadSeconds: 30 }), RangeError);
+    await expectRejection(cache.getIfCached(newKey(), 30, source.loader, { refreshAheadSeconds: 31 }), RangeError);
+    expect(source.state.calls).toBe(0);
+  });
+});
+
+describe('getIfCached (decision 053)', () => {
+  it('answers a fresh value, null for a negative entry and undefined for a miss, and never loads on a miss', async () => {
+    const key = newKey();
+    const source = counted('v');
+    expect(await cache.getIfCached(key, 60, source.loader)).toBeUndefined();
+    expect(await redis.cache.exists(key)).toBe(0);
+    expect(source.state.calls).toBe(0);
+    await cache.getOrLoad(key, 60, source.loader);
+    expect(await cache.getIfCached(key, 60, source.loader)).toBe('v');
+    expect(source.state.calls).toBe(1);
+
+    const nothing = newKey();
+    await cache.getOrLoad(nothing, 60, () => Promise.resolve(null), { negativeTtlSeconds: 10 });
+    expect(await cache.getIfCached(nothing, 60, source.loader)).toBeNull();
+  });
+
+  it('treats a stale entry as a miss, also inside a stale window', async () => {
+    const key = newKey();
+    const source = counted('v');
+    const options = { staleWhileRevalidate: 300 };
+    await cache.getOrLoad(key, 1, source.loader, options);
+    clock.advance(2_000);
+    expect(await cache.getIfCached(key, 1, source.loader, options)).toBeUndefined();
+    await Bun.sleep(50);
+    expect(source.state.calls, 'no refresh either').toBe(1);
+  });
+
+  it('does not join a load that runs in this process, and a load does not join it', async () => {
+    const key = newKey();
+    const hold = gate();
+    const source = counted('v', hold);
+    const loading = cache.getOrLoad(key, 60, source.loader);
+    expect(await cache.getIfCached(key, 60, source.loader)).toBeUndefined();
+    hold.open();
+    expect(await loading).toBe('v');
+    expect(await cache.getIfCached(key, 60, source.loader)).toBe('v');
+    expect(source.state.calls).toBe(1);
+  });
+
+  it('refreshes ahead like getOrLoad', async () => {
+    const key = newKey();
+    let version = 0;
+    const loader = () => Promise.resolve(++version);
+    const options = { refreshAheadSeconds: 30 };
+    await cache.getOrLoad(key, 60, loader, options);
+    clock.advance(40_000);
+    expect(await cache.getIfCached(key, 60, loader, options)).toBe(1);
+    expect(
+      await eventually(async () => ((await cache.getIfCached(key, 60, loader, options)) === 2 ? 2 : undefined)),
+    ).toBe(2);
+    expect(version).toBe(2);
+  });
+
+  it('counts a hit for a value it answers', async () => {
+    const key = newKey();
+    await cache.getOrLoad(key, 60, () => Promise.resolve('v'));
+    const before = await metrics('cache_hits_total');
+    await cache.getIfCached(key, 60, () => Promise.resolve('v'));
+    expect(await metrics('cache_hits_total')).toBe(before + 1);
+  });
+});
+
+describe('cachedOnlyGraceSeconds (decision 053)', () => {
+  it('keeps a value in Redis for the grace after its freshness, which getIfCached answers and loads again behind the answer', async () => {
+    const key = newKey();
+    let version = 0;
+    let calls = 0;
+    const loader = () => {
+      calls++;
+      return Promise.resolve(++version);
+    };
+    const options = { cachedOnlyGraceSeconds: 60 };
+    expect(await cache.getOrLoad(key, 10, loader, options)).toBe(1);
+    // 10 s +-15 % of freshness, then the grace.
+    expect(await redis.cache.pttl(key)).toBeGreaterThan(68_000);
+    clock.advance(20_000); // past its freshness (8.5 to 11.5 s), inside the grace
+    expect(await cache.getIfCached(key, 10, loader, options)).toBe(1);
+    expect(
+      await eventually(async () => ((await cache.getIfCached(key, 10, loader, options)) === 2 ? 2 : undefined)),
+    ).toBe(2);
+    expect(calls, 'one load and exactly one refresh').toBe(2);
+  });
+
+  it('is not served by getOrLoad: an entry past its freshness is loaded again at once, inside the grace too', async () => {
+    const key = newKey();
+    let version = 0;
+    const loader = () => Promise.resolve(++version);
+    const options = { cachedOnlyGraceSeconds: 60 };
+    expect(await cache.getOrLoad(key, 10, loader, options)).toBe(1);
+    clock.advance(20_000);
+    expect(await cache.getOrLoad(key, 10, loader, options)).toBe(2);
+  });
+
+  it('ends with the grace: later, getIfCached answers undefined and loads nothing', async () => {
+    const key = newKey();
+    const source = counted('v');
+    const options = { cachedOnlyGraceSeconds: 60 };
+    await cache.getOrLoad(key, 10, source.loader, options);
+    clock.advance(72_000); // past 11.5 s of freshness and 60 s of grace
+    expect(await cache.getIfCached(key, 10, source.loader, options)).toBeUndefined();
+    await Bun.sleep(50);
+    expect(source.state.calls).toBe(1);
+  });
+
+  it('gives a negative entry no grace', async () => {
+    const key = newKey();
+    const options = { negativeTtlSeconds: 10, cachedOnlyGraceSeconds: 60 };
+    expect(await cache.getOrLoad(key, 60, () => Promise.resolve(null), options)).toBeNull();
+    expect(await redis.cache.pttl(key)).toBeLessThanOrEqual(11_500);
+    clock.advance(12_000);
+    expect(await cache.getIfCached(key, 60, () => Promise.resolve('v'), options)).toBeUndefined();
+  });
+
+  it('refuses a grace that is not a positive number of seconds up to the longest TTL', async () => {
+    const source = counted('v');
+    await expectRejection(cache.getIfCached(newKey(), 60, source.loader, { cachedOnlyGraceSeconds: 0 }), RangeError);
+    await expectRejection(
+      cache.getOrLoad(newKey(), 60, source.loader, { cachedOnlyGraceSeconds: 31 * 24 * 60 * 60 }),
+      RangeError,
+    );
+    expect(source.state.calls).toBe(0);
+  });
+});
+
+describe('reload (decision 053)', () => {
+  it('writes the new value over the old one, which stays readable while the new one loads', async () => {
+    const key = newKey();
+    const options = { cachedOnlyGraceSeconds: 60 };
+    await cache.getOrLoad(key, 60, () => Promise.resolve('old'), options);
+    const hold = gate();
+    const source = counted('new', hold);
+    const reloading = cache.reload(key, 60, source.loader, options);
+    await eventually(() => (source.state.calls > 0 ? true : undefined)); // the load is running
+    expect(await cache.getIfCached(key, 60, source.loader, options)).toBe('old');
+    hold.open();
+    expect(await reloading).toBe('new');
+    expect(await cache.getIfCached(key, 60, source.loader, options)).toBe('new');
+    // 60 s +-15 % of freshness, then the grace, as a load of getOrLoad stores it.
+    expect(await redis.cache.pttl(key)).toBeGreaterThan(110_000);
+    expect(source.state.calls).toBe(1);
+  });
+
+  it('stops an earlier load of the key from storing, and shares its own load with the getOrLoad calls that arrive meanwhile', async () => {
+    const key = newKey();
+    const early = gate();
+    const before = counted('read before the change', early);
+    const older = cache.getOrLoad(key, 60, before.loader);
+    await eventually(() => (before.state.calls > 0 ? true : undefined)); // the older load is running
+    const hold = gate();
+    const after = counted('read after the change', hold);
+    const reloading = cache.reload(key, 60, after.loader);
+    const joined = cache.getOrLoad(key, 60, () => Promise.resolve('not loaded'));
+    hold.open();
+    expect(await reloading).toBe('read after the change');
+    expect(await joined).toBe('read after the change');
+    early.open();
+    expect(await older).toBe('read before the change');
+    expect(await cache.getIfCached(key, 60, after.loader)).toBe('read after the change');
+    expect(after.state.calls).toBe(1);
+  });
+
+  it('stores nothing when the key is deleted while it loads', async () => {
+    const key = newKey();
+    await cache.getOrLoad(key, 60, () => Promise.resolve('old'));
+    const hold = gate();
+    const source = counted('read before the change', hold);
+    const reloading = cache.reload(key, 60, source.loader);
+    await eventually(() => (source.state.calls > 0 ? true : undefined));
+    expect(await cache.invalidate(key)).toBe(true);
+    hold.open();
+    expect(await reloading).toBe('read before the change');
+    expect(await redis.cache.exists(key)).toBe(0);
+  });
+
+  it('deletes the key when its load fails, and gives the caller the error', async () => {
+    const key = newKey();
+    await cache.getOrLoad(key, 60, () => Promise.resolve('old'));
+    await expectRejection(
+      cache.reload(key, 60, () => Promise.reject(new Error('source down'))),
+      'source down',
+    );
+    expect(await redis.cache.exists(key)).toBe(0);
+  });
+
+  it('leaves the key to a later reload when an earlier one fails', async () => {
+    const key = newKey();
+    await cache.getOrLoad(key, 60, () => Promise.resolve('old'));
+    const hold = gate();
+    let started = false;
+    const failing = cache.reload(key, 60, async () => {
+      started = true;
+      await hold.promise;
+      throw new Error('source down');
+    });
+    await eventually(() => (started ? true : undefined));
+    expect(await cache.reload(key, 60, () => Promise.resolve('new'))).toBe('new');
+    hold.open();
+    await expectRejection(failing, 'source down');
+    expect(await cache.getIfCached(key, 60, () => Promise.resolve('unused'))).toBe('new');
+  });
+
+  it('refuses a TTL that is not a positive number and a key not built by CacheKeys', async () => {
+    const source = counted('v');
+    await expectRejection(cache.reload(newKey(), 0, source.loader), RangeError);
+    await expectRejection(cache.reload('other:infra:test:x' as CacheKey, 60, source.loader), RangeError);
+    expect(source.state.calls).toBe(0);
   });
 });
 

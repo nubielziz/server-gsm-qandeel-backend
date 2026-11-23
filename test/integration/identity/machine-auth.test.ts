@@ -460,7 +460,7 @@ describe('API keys on REST v1', () => {
     refusedAs(await get(undefined, ip), 401, 'UNAUTHORIZED');
   });
 
-  it('answers 429 before the lookup once the address used its unknown-key budget (decision 053)', async () => {
+  it('answers 429 without a lookup, to a valid key the cache does not hold too, once the address used its unknown-key budget (decision 053)', async () => {
     const ip = freshClientIp();
     const limiter = t.app.get(RateLimitService);
     await limiter.consume('ip', `api-key-failures:${ipRateLimitKey(parseIpAddress(ip))}`, 300);
@@ -468,7 +468,7 @@ describe('API keys on REST v1', () => {
     const known = await insertApiKey(t, db, clientId);
     const lookup = spyOn(t.app.get(ApiKeyDirectory), 'findByKey');
     try {
-      // Neither an unknown key nor a valid one costs a lookup from an address that used up its budget.
+      // Neither an unknown key nor a valid key the cache does not hold costs a lookup from an address that used up its budget.
       refusedAs(await get(`gsm_${t.app.get(TokenService).random(32)}`, ip), 429, 'RATE_LIMITED');
       refusedAs(await get(known.key, ip), 429, 'RATE_LIMITED');
       expect(lookup).not.toHaveBeenCalled();

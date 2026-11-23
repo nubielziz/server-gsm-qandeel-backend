@@ -85,10 +85,10 @@ its IPv4 address) on these routes (`publicLimiterFor`, decision 021):
 
 Unknown API keys are counted per client address by the API key guard itself (identity module), with the `ip` limiter under the key
 `api-key-failures:<address key>`, because REST v1 and Dhru have no per-IP stage here and an unknown key has no per-key limit; the guard peeks that budget
-before the key is looked up (decision 053), so an address that used it up costs no lookup. A known key is limited by its own `rate_limit_per_min` after every
+before the key is looked up (decision 053), so an address that used it up costs no database lookup (only a key whose view is cached is still served). A known key is limited by its own `rate_limit_per_min` after every
 other check (`api-key` limiter, key = key id); a bulk placement costs one point per item, at most the key's whole limit. The failed session lookups of each
 audience use the same limiter under `session-failures:<subject>:<address key>` (300 a minute), read before the lookup by the session authenticator and by the
-`upload-session` stage (decision 053).
+`upload-session` stage (decision 053); once it is used up only a session whose view is cached is still served.
 
 Not counted here: session-authenticated admin and portal routes without a large body (per-principal limits come after authentication), REST v1 and Dhru
 (a limit per API key), `/health`, `/metrics` (the health answer is memoised for 3 seconds instead, decision 053), the documentation. The numbers live in `limiters.ts` only. A

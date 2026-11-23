@@ -46,12 +46,14 @@ export interface ApiKeyCredentials {
  * key's per-minute limit (decision 021; the limit is counted only after every other check passed, so a refused call costs the
  * merchant nothing). Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because
  * REST v1 and Dhru have no per-IP stage in the pipeline and an unknown key has no per-key limit to hit. Decision 053: that budget is read
- * before the key is looked up, so an address that used it up costs no lookup; a bulk placement costs one point per item (`points`), at
- * most the key's whole limit, in the one `consume`, so the `RateLimit-*` headers stay true.
+ * before the key is looked up, so an address that used it up costs no database lookup: its keys are answered from the key cache alone,
+ * so a key in use there (its view is kept fresh by its calls) is still served, and a key the cache does not hold is refused `429`; a
+ * bulk placement costs one point per item (`points`), at most the key's whole limit, in the one `consume`, so the `RateLimit-*` headers
+ * stay true.
  *
- * Side effects: reads the key cache and, on a miss, `api_keys` and `clients`; counts points in the cache Redis; writes
- * `api_keys.last_used_at` at most once a minute; tells the caller the key's limit figures through `onRateLimit` (REST v1 sends
- * them as `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`).
+ * Side effects: reads the key cache and, on a miss while the address has budget left, `api_keys` and `clients`; counts points in the
+ * cache Redis; writes `api_keys.last_used_at` at most once a minute; tells the caller the key's limit figures through `onRateLimit`
+ * (REST v1 sends them as `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`).
  *
  * @see docs/decisions/018-auth-sessions-csrf.md
  */
@@ -74,7 +76,8 @@ export class ApiKeyAuthenticator {
    * @throws {AppError} `UNAUTHORIZED` (401: no, unknown, revoked or expired key, or a username that is not the key's),
    *   `ACCOUNT_SUSPENDED` (403), `ACCOUNT_PENDING_APPROVAL` (403: merchant not approved, B153), `FORBIDDEN` (403: the scope is missing),
    *   `IP_NOT_ALLOWED` (403),
-   *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address)
+   *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address and a key the cache does not
+   *   hold, or a username that is not the key's)
    */
   async authenticate(request: FastifyRequest, credentials: ApiKeyCredentials): Promise<ApiKeyPrincipal> {
     const { key, username, scope, surface, onRateLimit } = credentials;
@@ -83,10 +86,11 @@ export class ApiKeyAuthenticator {
 
     // Nothing was sent: refuse without a lookup and without counting (it costs us nothing).
     if (key === undefined) throw refuse('unauthenticated');
-    // Decision 053: an address that used up its unknown-key budget is answered without a lookup.
+    // Decision 053: an address that used up its unknown-key budget costs no database lookup; a key whose view is cached is still served.
     const budget = await this.limits.peek('ip', failureKey(address));
-    if (!budget.allowed) throw rateLimitedError(budget.retryAfterSeconds);
-    const view = await this.directory.findByKey(key);
+    const view = budget.allowed ? await this.directory.findByKey(key) : await this.directory.findCached(key);
+    if (!view && !budget.allowed) throw rateLimitedError(budget.retryAfterSeconds);
+    // A username that is not the key's is charged like an unknown key, also while the budget is used up (the charge answers 429 then).
     if (!view || (username !== undefined && !sameUsername(view.client.username, username))) {
       await this.chargeFailure(address);
       throw refuse('unauthenticated');
