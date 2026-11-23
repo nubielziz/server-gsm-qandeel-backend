@@ -83,13 +83,13 @@ export class MerchantAuthController {
    * Verifies the email address with the emailed token.
    *
    * @param body the token
-   * @param request the request
+   * @param request the request (a merchant session cookie on it is read)
    * @route POST /client/auth/verify-email
    */
   @Route(merchantVerifyEmail)
   @Header('Cache-Control', 'no-store')
   async verifyEmail(@Body() body: BodyOf<typeof merchantVerifyEmail>, @Req() request: FastifyRequest): Promise<void> {
-    await this.registration.verifyEmail(body.token, requestMetaOf(request));
+    await this.registration.verifyEmail(body.token, request, requestMetaOf(request));
   }
 
   /**

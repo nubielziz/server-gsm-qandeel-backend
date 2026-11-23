@@ -122,7 +122,11 @@ export const merchantVerifyEmail = defineRoute({
   key: 'POST /client/auth/verify-email',
   summary: 'Verify the email with the token',
   description:
-    'Marks the email verified. The status stays `pending` until staff approve the merchant, and the call signs nobody in.',
+    'Marks the email verified. The status stays `pending` until staff approve the merchant, and the call signs nobody in. The address and ' +
+    'the holder of the password prove the account together: when the request carries no full session of that merchant, the password ' +
+    'chosen before stops working, two-step sign-in is turned off, every session of the merchant ends and the address gets the ' +
+    'password-reset mail to choose a new one. ' +
+    'A full session of the merchant without its `X-CSRF-Token` is `403 CSRF_FAILED` and leaves the link usable.',
   tags: ['auth'],
   surface: 'client',
   access: 'public',

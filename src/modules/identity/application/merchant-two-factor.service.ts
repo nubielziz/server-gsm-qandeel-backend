@@ -158,16 +158,18 @@ function emailNotConfirmed(): AppError {
 }
 
 /**
- * Locks the merchant row and refuses an enrolment unless the email address is confirmed and 2FA is still off.
+ * Locks the merchant row and refuses an enrolment unless the merchant holds a password, the email address is confirmed and 2FA is
+ * still off.
  *
  * Why: decision 052. The state is read inside the transaction that writes the secret or the flag, under the row lock, so a change that
- * lands at the same time cannot slip between the check and the write.
+ * lands at the same time cannot slip between the check and the write. A merchant without a password has no signed-in holder: its
+ * sessions ended when the password did, so a session that is still in use enrols nothing.
  *
- * @throws {AppError} `UNAUTHORIZED` (401: the merchant is gone), `TWOFA_ALREADY_ENABLED` (409), `CONFLICT` (409)
+ * @throws {AppError} `UNAUTHORIZED` (401: the merchant is gone or holds no password), `TWOFA_ALREADY_ENABLED` (409), `CONFLICT` (409)
  */
 async function lockedForEnrolment(tx: DbExecutor, clientId: number): Promise<void> {
   const locked = await lockClientById(tx, clientId);
-  if (!locked) throw new AppError('UNAUTHORIZED');
+  if (!locked || locked.passwordHash === null) throw new AppError('UNAUTHORIZED');
   if (locked.twofaEnabled) throw alreadyEnabled();
   if (locked.emailVerifiedAt === null) throw emailNotConfirmed();
 }

@@ -51,8 +51,8 @@ const WRONG_CREDENTIALS = 'The email or password is not correct.';
  * case, each staying counted; a correct password takes back only its own count), then suspension, then a session: pending when a
  * new password or a code is still needed, active otherwise (the step logic
  * is `nextMerchantStep`; `startSession` holds everything after a proven password, for the smart sign-in of feature 24A to reuse). The
- * session opens only if the account is still as it was when the password was checked (`signInStillHolds`), otherwise the answer is the
- * same `401` as a wrong password. A
+ * session opens only if the account is still as it was when the password was checked (`signInStillHolds`) and its stored hash still holds
+ * the proven password (`stillProven`), otherwise the answer is the same `401` as a wrong password. A
  * merchant waiting for approval signs in like any other (B153); what it may then call is decided by the routes' `pendingMerchant` field.
  *
  * Side effects: reads and writes `clients` (the last sign-in time and address when a session becomes full, an upgraded password hash, the count of wrong
@@ -145,18 +145,24 @@ export class MerchantSignInService implements OnModuleInit {
    * which verifies the password itself, once, and calls this): the suspension refusal, ending the stale session, the step (`nextMerchantStep`), the session of
    * that step's stage, the hash upgrade of decision 007, and the last-sign-in record when the session is already full. The session is
    * opened in a transaction that reads the merchant again under its row lock and requires the account as it was when the password was
-   * checked (`signInStillHolds`): a reset, a password change, a switch-on of two-step sign-in or a suspension that committed in between
-   * ends the sign-in like a wrong password, and one that commits after it ends the new session with the others.
+   * checked (`signInStillHolds`) and a stored hash that still holds the proven password: the hash it was proven against, or a hash the
+   * same password verifies against again under the lock (decision 007's upgrade, written by a parallel sign-in of the same merchant;
+   * `stillProven`). A reset, a password change, a verification that ended the registration password, a switch-on of two-step sign-in or
+   * a suspension that committed in between ends the sign-in like a wrong password, and one that commits after it ends the new session
+   * with the others.
    *
-   * Side effects: ends the session of `staleToken`; inserts a `sessions` row; writes `clients.last_login_at` and `last_login_ip` when `next` is `done`,
-   * and `clients.password_hash` when an upgrade is due (only over the hash that was verified).
+   * Side effects: ends the session of `staleToken`; locks the `clients` row and, in the same transaction, inserts a `sessions` row, writes
+   * `clients.last_login_at` and `last_login_ip` when `next` is `done`, and `clients.password_hash` when an upgrade is due (only over the
+   * hash that was verified).
    *
    * @param client the merchant as it was read for the password check
    * @param meta the caller's address and user agent
    * @param staleToken the session cookie the request already carried, ended here so it cannot be fixated
-   * @param password the proven password, for the hash upgrade (none: no upgrade)
+   * @param password the proven password, for the hash upgrade and for a stored hash that differs from the one it was proven against
+   *   (none: no upgrade, and only that hash counts)
    * @returns the next step and the session
-   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account changed after the password was checked)
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the merchant is gone, or the account changed after the password
+   *   was checked, its password changed or ended included; no session is opened)
    */
   async startSession(
     client: Client,
@@ -176,7 +182,8 @@ export class MerchantSignInService implements OnModuleInit {
     return this.db.runInTransaction(async (work) => {
       // Lock order: the merchant row, then the new session (the writers that end sessions take the row first too).
       const current = await lockClientForSignIn(work.tx, client.id);
-      if (!current || !signInStillHolds(client, current)) {
+      // The state first; argon2 under the lock runs only for a hash that differs while no password was chosen since (an upgrade).
+      if (!current || !signInStillHolds(client, current) || !(await this.stillProven(current, client, password))) {
         this.logger.warn(`Merchant sign-in refused (the account changed during the sign-in) from ${meta.ip}`);
         throw new AppError('UNAUTHORIZED', { detail: WRONG_CREDENTIALS });
       }
@@ -196,6 +203,21 @@ export class MerchantSignInService implements OnModuleInit {
       if (next === 'done') await recordClientSignIn(work.tx, client.id, this.clock.now(), meta.ip);
       return { next, session };
     });
+  }
+
+  /**
+   * Whether the row read under the lock still holds the proven password: the same hash, or another hash of the same password.
+   *
+   * Why: a parallel sign-in may have upgraded the hash (decision 007) between this sign-in's check and its session; only the password
+   * itself shows that the new hash is the same password, so it is verified again here, under the lock (rare: the hash rarely differs).
+   * An ended password (no hash) and a temporary one past its 72 hours never count.
+   */
+  private async stillProven(locked: Client, proven: Client, password: string | undefined): Promise<boolean> {
+    if (locked.passwordHash === proven.passwordHash) return true;
+    if (locked.passwordHash === null || password === undefined) return false;
+    return (
+      (await this.hasher.verify(locked.passwordHash, password)) && !temporaryPasswordExpired(locked, this.clock.nowMs())
+    );
   }
 
   private assertNotSuspended(client: Client, meta: RequestMeta): void {

@@ -165,7 +165,8 @@ export class MerchantPasswordService {
    * @param principal the signed-in merchant
    * @param input the current and the new password
    * @throws {AppError} `RATE_LIMITED` (429), `VALIDATION_FAILED` (422 on `currentPassword`), `WEAK_PASSWORD` (422 on
-   *   `newPassword`), `UNAUTHORIZED` (401), `ACCOUNT_SUSPENDED` (403)
+   *   `newPassword`), `UNAUTHORIZED` (401: the merchant is gone or suspended, or its password changed or was ended since the current
+   *   one was checked; nothing is written), `ACCOUNT_SUSPENDED` (403)
    */
   async change(
     principal: MerchantPrincipal,
@@ -181,12 +182,16 @@ export class MerchantPasswordService {
       });
     }
     await this.limiter.resetPasswordChange(client.id);
+    // The current password proves the hash it was checked against, not the one the row holds at the write.
+    const expectedHash = client.passwordHash;
     const passwordHash = await this.acceptableHash(input.newPassword, client);
 
     const now = this.clock.now();
     await this.db.runInTransaction(async (work) => {
-      if (!(await saveClientPassword(work.tx, { id: client.id, passwordHash, now, verifyEmail: false }))) {
-        throw new AppError('UNAUTHORIZED');
+      if (
+        !(await saveClientPassword(work.tx, { id: client.id, passwordHash, now, verifyEmail: false, expectedHash }))
+      ) {
+        throw new AppError('UNAUTHORIZED', { detail: 'The account changed while this request ran. Sign in again.' });
       }
       // An old reset link must not be able to undo the change.
       await voidOpenClientTokens(work.tx, client.id, PASSWORD_LINK_PURPOSES, now);

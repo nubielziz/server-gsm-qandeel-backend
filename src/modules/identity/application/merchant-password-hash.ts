@@ -9,8 +9,9 @@ import type { Client } from '../db/schema';
  *
  * Why: decision 007: each stored hash carries its own parameters, and a sign-in is the only moment the clear password is known, so a
  * stronger cost reaches old hashes there. The hash is made before the session's transaction (argon2 takes tens of milliseconds); that
- * transaction writes it only while the stored hash is still the one the password was verified against (`replaceClientPasswordHash`).
- * An upgrade never fails the sign-in: a hashing error is logged and the old hash stays.
+ * transaction writes it only while the stored hash is still the one the password was verified against (`replaceClientPasswordHash`),
+ * so a password changed or ended since then stays as it is. An upgrade never fails the sign-in: a hashing error is logged and the old
+ * hash stays.
  *
  * @param hasher the password hasher
  * @param logger where a failed upgrade is reported (without the password)

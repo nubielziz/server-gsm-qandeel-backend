@@ -106,14 +106,15 @@ export async function insertClient(db: DbExecutor, row: NewClient): Promise<Clie
  * Replaces a stored password hash with one made at the current cost, while the stored hash is still the one that was verified.
  *
  * Why: decision 007 re-hashes a correct password when the configured cost went up; `password_changed_at` stays, since the
- * merchant did not change their password. The write is guarded by the verified hash, so a password chosen meanwhile is never replaced
- * by a hash of the one it replaced.
+ * merchant did not change their password. The write is guarded by the verified hash in the same statement, so a password chosen
+ * meanwhile is never replaced by a hash of the one it replaced, and a password ended meanwhile (a verification that ended the
+ * registration password) is never written back.
  *
  * @param db the database or a transaction
  * @param id the merchant id
  * @param passwordHash the new argon2id hash
  * @param verifiedHash the stored hash the password was verified against
- * @returns false when the stored hash is another one (nothing was written)
+ * @returns false when the stored hash is another one or none (nothing was written)
  */
 export async function replaceClientPasswordHash(
   db: DbExecutor,
@@ -147,6 +148,11 @@ export interface SaveClientPassword {
    * address staff set (`email_set_by_staff`) stays: the link went to that address.
    */
   readonly fromMailedLink?: boolean;
+  /**
+   * The hash the current password was checked against (an own change): the write lands only while the row still holds it, so a
+   * password changed or ended since that check is not replaced.
+   */
+  readonly expectedHash?: string;
 }
 
 /**
@@ -155,11 +161,12 @@ export interface SaveClientPassword {
  * Why: the reset, invite and change routes all end here. The write refuses a suspended merchant, so a suspension that lands
  * between the check and the write wins; an invite also fills `email_verified_at` when it is still empty; a link on a merchant whose
  * email is not verified also turns its two-factor sign-in off (`clearTwoFactor`, decision 052); a link also clears
- * `password_set_by_staff` (`fromMailedLink`).
+ * `password_set_by_staff` (`fromMailedLink`); an own change writes only over the hash its current password was checked against
+ * (`expectedHash`).
  *
  * @param db the database or a transaction
  * @param input the merchant, the hash and the time
- * @returns false when the merchant is gone or suspended (nothing was written)
+ * @returns false when the merchant is gone or suspended, or no longer holds `expectedHash` (nothing was written)
  */
 export async function saveClientPassword(db: DbExecutor, input: SaveClientPassword): Promise<boolean> {
   const rows = await db
@@ -180,7 +187,13 @@ export async function saveClientPassword(db: DbExecutor, input: SaveClientPasswo
           }
         : {}),
     })
-    .where(and(eq(clients.id, input.id), sql`${clients.status} <> 'suspended'`))
+    .where(
+      and(
+        eq(clients.id, input.id),
+        sql`${clients.status} <> 'suspended'`,
+        input.expectedHash === undefined ? undefined : eq(clients.passwordHash, input.expectedHash),
+      ),
+    )
     .returning({ id: clients.id });
   return rows.length > 0;
 }
@@ -222,18 +235,40 @@ export async function recordClientSignIn(db: DbExecutor, id: number, now: Date, 
 }
 
 /**
- * Marks the email verified.
+ * Marks the email verified and, when asked, stores no password and no second factor any more in the same write.
  *
- * Why: `POST /client/auth/verify-email` (B123); the first verification time stays when the link is used twice by two tabs.
+ * Why: `POST /client/auth/verify-email` (B123); the first verification time stays when the link is used twice by two tabs. The link
+ * proves the mailbox, not the holder of the password chosen before it: a verification without a full session of the merchant also
+ * ends that password (`voidPassword`, together with a forced change it may have carried) and the two-step sign-in its holder
+ * enrolled (the same rule as `clearTwoFactor` of a password link on an unproven mailbox, decision 052), so the password that signs
+ * in is chosen through a link mailed to the verified address and no second factor of the previous holder stays in front of it.
  *
  * @param db the database or a transaction
  * @param id the merchant id
  * @param now the time of verification
+ * @param options `voidPassword`: clear `password_hash` (no password signs in) and `must_change_password`, and turn two-factor sign-in
+ *   off (`twofa_enabled` false, `totp_secret_enc` and `totp_last_step` cleared)
  */
-export async function markClientEmailVerified(db: DbExecutor, id: number, now: Date): Promise<void> {
+export async function markClientEmailVerified(
+  db: DbExecutor,
+  id: number,
+  now: Date,
+  options: { readonly voidPassword?: boolean } = {},
+): Promise<void> {
   await db
     .update(clients)
-    .set({ emailVerifiedAt: sql`coalesce(${clients.emailVerifiedAt}, ${now})` })
+    .set({
+      emailVerifiedAt: sql`coalesce(${clients.emailVerifiedAt}, ${now})`,
+      ...(options.voidPassword
+        ? {
+            passwordHash: null,
+            mustChangePassword: false,
+            twofaEnabled: false,
+            totpSecretEnc: null,
+            totpLastStep: null,
+          }
+        : {}),
+    })
     .where(eq(clients.id, id));
 }
 

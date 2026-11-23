@@ -43,7 +43,8 @@ export interface MerchantCandidate {
    * @param meta the caller's address and user agent
    * @param staleToken the merchant session cookie the request carried, ended so it cannot be fixated
    * @returns the next step (`password`, `totp` or `done`) and the session
-   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account changed after the password was checked)
+   * @throws {AppError} `ACCOUNT_SUSPENDED` (403), `UNAUTHORIZED` (401: the account changed after the password was checked, its password
+   *   changed or ended since `verify` proved it included)
    * @throws {Error} when no password was proven with `verify` first
    */
   open(meta: RequestMeta, staleToken?: string): Promise<MerchantLoginResult>;
