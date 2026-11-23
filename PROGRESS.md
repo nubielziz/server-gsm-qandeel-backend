@@ -4,6 +4,16 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Waiting for the owner's review (2026-11-23): the branch `security/deep-financial-auth-fixes`.** A second pass over the money paths and
+over sign-in and permissions: 35 commits on top of `ef7f13d7` in the worktree `../backend-deep`, not merged into `main` and never pushed.
+The rules are in `docs/decisions/056-second-pass-money-and-access.md`; what waits for the owner's confirmation is B234 to B239 of
+`docs/contract/MISMATCHES.md`. Every change was built with a test that fails without it and was reviewed before its commit; the whole check
+passed on the branch at `b9f70334` (typecheck, lint, format and the generator checks; 725 test files, 9653 tests pass, 1 skip, 0 fail).
+Migrations `0056` to `0062` are on the dev database `gsm` (a dump was taken first, and they were rehearsed on a copy); the code on `main`
+runs against them. The console and the storefront were not changed. The full report, with what each frontend needs and the points left for
+the owner to decide, is outside the repositories: `/home/saifi/gsm-project/.security-audit/deep-financial-auth-fixes.md`. Next step: the
+owner reads the report, decides the open points and merges or drops the branch.
+
 **In progress (2026-11-22): the security fixes after the audit of 2026-11-20.** Status and next step: the section "Security fixes after the
 audit" below; the live state, briefs and reviews are outside the repositories (`/home/saifi/gsm-project/.security-audit/fix/`, read `STATE.md` first).
 
