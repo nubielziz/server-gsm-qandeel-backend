@@ -10,6 +10,7 @@ import { SESSION_COOKIE_NAMES } from '@src/modules/identity';
 import { MaintenanceService } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
+import { insertGateway, insertInvoiceRow, insertPendingPayment } from '../../support/billing';
 import { insertCategory, insertService } from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
@@ -21,8 +22,9 @@ import {
   multipartRequest,
   v1Client,
 } from '../../support/machine-orders';
-import { type OrdersWorld, ordersWorld, portalFor } from '../../support/orders';
+import { type OrdersWorld, insertOrderRow, ordersWorld, portalFor } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
+import { insertCustomer, insertSupportMessage, insertSupportTicket } from '../../support/support';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -237,6 +239,166 @@ describe('GET /v1/files/:id', () => {
     expect((await v1.get(`/v1/files/${result!.id}`)).statusCode).toBe(302);
     const writeOnly = await credentialsFor(t, db, world.merchant.id, { scopes: ['orders:write'] });
     expect((await v1Client(t, writeOnly.key).get(`/v1/files/${result!.id}`)).statusCode).toBe(403);
+  });
+
+  /** Stores a file row (no object) for an owner. */
+  async function insertFile(ownerType: string, ownerId: number, filename: string): Promise<number> {
+    const [row] = await world.db
+      .insert(s.files)
+      .values({
+        bucket: 'gsm-files-test',
+        key: `files/${crypto.randomUUID()}.bin`,
+        filename,
+        mime: 'application/octet-stream',
+        size: 10,
+        sha256: 'a'.repeat(64),
+        ownerType,
+        ownerId,
+      })
+      .returning({ id: s.files.id });
+    return row!.id;
+  }
+
+  /** A File service the merchant can order, so that a file id can be named as an order's input. */
+  async function insertFileService(): Promise<number> {
+    const category = await insertCategory(world.db, { name: 'Files', type: 'file' });
+    return insertService(world.db, category, {
+      type: 'file',
+      name: 'Firmware flash',
+      code: 'FILE-3',
+      basePrice: '3.0000',
+    });
+  }
+
+  /** The kinds of record, besides an order, that keep a merchant's document. */
+  const DOCUMENT_KINDS = ['identity document', 'payment receipt', 'ticket attachment', 'dispute evidence'] as const;
+
+  /** Makes a record of the given kind use a file the merchant owns, the way the portal, a customer or a payment would. */
+  async function useAsDocument(kind: (typeof DOCUMENT_KINDS)[number], fileId: number): Promise<void> {
+    const { db, merchant } = world;
+    const customer = await insertCustomer(db);
+    const invoice = await insertInvoiceRow(db, merchant.id);
+    const gatewayId = await insertGateway(t, db);
+    if (kind === 'identity document') {
+      await db.insert(s.kycSubmissions).values({ clientId: merchant.id, status: 'approved', fileIds: [fileId] });
+    } else if (kind === 'payment receipt') {
+      await insertPendingPayment(db, invoice, gatewayId, { receiptFileId: fileId });
+    } else if (kind === 'ticket attachment') {
+      const ticket = await insertSupportTicket(db, { requesterId: customer.id });
+      await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [fileId] });
+    } else {
+      const payment = await insertPendingPayment(db, invoice, gatewayId);
+      await db.insert(s.disputes).values({
+        paymentId: payment.id,
+        customerId: customer.id,
+        gatewayDisputeId: `dp_${fileId}`,
+        reasonCode: 'fraudulent',
+        amount: '10.0000',
+        currency: 'USD',
+        evidenceDueAt: new Date('2026-12-01T00:00:00.000Z'),
+        evidenceFileIds: [fileId],
+      });
+    }
+  }
+
+  it('opens the files of the merchant orders and uploads no record uses, and says 404 for a document another record uses', async () => {
+    const { db, merchant, auto } = world;
+    // What an order-reading key may open: an upload nothing uses yet, an order's input file, an order's result file.
+    const upload = await insertFile('client', merchant.id, 'unused.bin');
+    const input = await insertFile('client', merchant.id, 'input.bin');
+    const result = await insertFile('staff', 1, 'result.zip');
+    await insertOrderRow(db, {
+      clientId: merchant.id,
+      serviceId: auto.serviceId,
+      inputFileId: input,
+      imei: '358240051111110',
+    });
+    await insertOrderRow(db, {
+      clientId: merchant.id,
+      serviceId: auto.serviceId,
+      resultFileId: result,
+      imei: '358240051111111',
+    });
+    // What it may not open although the merchant owns it: a document that a KYC submission, a payment, a ticket or a dispute uses.
+    const identity = await insertFile('client', merchant.id, 'identity.jpg');
+    await db.insert(s.kycSubmissions).values({ clientId: merchant.id, fileIds: [identity] });
+    const receipt = await insertFile('client', merchant.id, 'receipt.pdf');
+    const invoice = await insertInvoiceRow(db, merchant.id);
+    const payment = await insertPendingPayment(db, invoice, await insertGateway(t, db), { receiptFileId: receipt });
+    const attachment = await insertFile('client', merchant.id, 'screenshot.png');
+    const customer = await insertCustomer(db);
+    const ticket = await insertSupportTicket(db, { requesterId: customer.id });
+    await insertSupportMessage(db, ticket.id, { authorType: 'customer', authorId: customer.id, fileIds: [attachment] });
+    const evidence = await insertFile('client', merchant.id, 'evidence.pdf');
+    await db.insert(s.disputes).values({
+      paymentId: payment.id,
+      customerId: customer.id,
+      gatewayDisputeId: 'dp_scope',
+      reasonCode: 'fraudulent',
+      amount: '10.0000',
+      currency: 'USD',
+      evidenceDueAt: new Date('2026-12-01T00:00:00.000Z'),
+      evidenceFileIds: [evidence],
+    });
+
+    const orderReader = v1Client(t, (await credentialsFor(t, db, merchant.id, { scopes: ['orders:read'] })).key);
+    for (const id of [upload, input, result]) expect((await orderReader.get(`/v1/files/${id}`)).statusCode).toBe(302);
+    for (const id of [identity, receipt, attachment, evidence]) {
+      const res = await orderReader.get(`/v1/files/${id}`);
+      expect(res.statusCode, `file ${id}`).toBe(404);
+      expect(body(res).code).toBe('NOT_FOUND');
+    }
+    // The same rule for a key that holds every scope: the scope is not what opens a document.
+    for (const id of [identity, receipt, attachment, evidence])
+      expect((await v1.get(`/v1/files/${id}`)).statusCode).toBe(404);
+
+    // The portal session keeps its reach: every file the merchant owns, and the files of its orders.
+    const portal = await portalFor(t, merchant.id);
+    for (const id of [upload, input, result, identity, receipt, attachment, evidence]) {
+      expect((await portal.get(`/client/files/${id}`)).statusCode, `file ${id}`).toBe(302);
+    }
+  });
+
+  it('says 404 for a document another record uses even when an order of the merchant names it as its input file', async () => {
+    const { db, merchant } = world;
+    const serviceId = await insertFileService();
+    const orderReader = v1Client(t, (await credentialsFor(t, db, merchant.id, { scopes: ['orders:read'] })).key);
+    const portal = await portalFor(t, merchant.id);
+    for (const kind of DOCUMENT_KINDS) {
+      const document = await insertFile('client', merchant.id, `${kind}.bin`);
+      await useAsDocument(kind, document);
+      // The merchant owns the file, so the order is placed: the order alone does not make it an order file for a key.
+      const placed = await v1.post('/v1/orders', { serviceId, fileId: document });
+      expect(placed.statusCode, kind).toBe(201);
+      expect(body(placed).inputFileId, kind).toBe(document);
+      // A key with every scope and a key that only reads orders are refused alike.
+      for (const key of [v1, orderReader]) {
+        const res = await key.get(`/v1/files/${document}`);
+        expect(res.statusCode, kind).toBe(404);
+        expect(body(res).code, kind).toBe('NOT_FOUND');
+      }
+      // The portal session keeps its reach.
+      expect((await portal.get(`/client/files/${document}`)).statusCode, kind).toBe(302);
+    }
+  });
+
+  it('stops opening an order input file for a key once a record of another kind starts to use it', async () => {
+    const { db, merchant } = world;
+    const serviceId = await insertFileService();
+    const portal = await portalFor(t, merchant.id);
+    for (const kind of DOCUMENT_KINDS) {
+      const stored = body(
+        await v1.upload('/v1/files', { name: `${kind}.bin`, type: 'application/octet-stream', data: bytes(kind) }),
+      );
+      expect((await v1.post('/v1/orders', { serviceId, fileId: stored.id })).statusCode, kind).toBe(201);
+      expect((await v1.get(`/v1/files/${stored.id}`)).statusCode, kind).toBe(302);
+      await useAsDocument(kind, stored.id);
+      const res = await v1.get(`/v1/files/${stored.id}`);
+      expect(res.statusCode, kind).toBe(404);
+      expect(body(res).code, kind).toBe('NOT_FOUND');
+      expect((await portal.get(`/client/files/${stored.id}`)).statusCode, kind).toBe(302);
+    }
+    expect(await db.select().from(s.orders)).toHaveLength(DOCUMENT_KINDS.length);
   });
 });
 

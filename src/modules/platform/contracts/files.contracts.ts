@@ -107,9 +107,10 @@ export const openV1File = defineRoute({
   summary: 'Download a file',
   description:
     'Redirects (`302`) to a presigned object-storage link that expires after 5 minutes (`Content-Disposition: attachment` with the ' +
-    "stored file name, `Cache-Control: no-store`). The file must be the merchant's own: an upload of its own, or the input or result " +
-    'file of one of its own orders. Anything else, an unknown id included, is `404` (never `403`, so ids cannot be probed). Scope ' +
-    '`orders:read`.',
+    "stored file name, `Cache-Control: no-store`). The file must be the input or result file of one of the merchant's own orders, " +
+    'or an upload of its own that no record uses. A file that a KYC submission, a payment receipt, a ticket, a dispute, an invoice or a data ' +
+    'export uses is `404` whatever else refers to it. Anything else, an unknown id included, is `404` (never `403`, so ids cannot be probed). ' +
+    'Scope `orders:read`.',
   tags: ['files'],
   surface: 'v1',
   access: 'api-key',

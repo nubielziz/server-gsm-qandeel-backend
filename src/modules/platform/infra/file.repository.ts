@@ -125,6 +125,28 @@ export async function ownsOrderFile(db: DbExecutor, clientId: number, fileId: nu
 }
 
 /**
+ * Tells whether a file is an upload of a merchant that no record uses yet.
+ *
+ * Why: REST v1 downloads a merchant's files for an order-reading key. An upload that nothing refers to yet is the merchant's own bytes
+ * (the key may have stored it); once a KYC submission, a payment, a ticket or a dispute refers to it, it is a document of that record
+ * and not an order file. "Nothing refers to it" is the one list of references, {@link unreferenced}.
+ *
+ * @param db the database or a transaction
+ * @param clientId the merchant who must own the file
+ * @param fileId the file id
+ * @returns true when the file is owned by the merchant and no record refers to it
+ */
+export async function isUnreferencedClientUpload(db: DbExecutor, clientId: number, fileId: number): Promise<boolean> {
+  const result = await db.execute(sql`
+    select 1 as found from files
+    where id = ${fileId} and owner_type = 'client' and owner_id = ${clientId}
+      and ${unreferenced('files')}
+    limit 1
+  `);
+  return result.rows.length > 0;
+}
+
+/**
  * Deletes a merchant's file row when nothing points at it, and says where the object was.
  *
  * Why: P4a (B166). A Dhru file order stores the upload before it places the order; when the placement is refused the file must not stay.

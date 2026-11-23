@@ -147,7 +147,7 @@ export class FilesController {
   }
 
   /**
-   * Redirects the merchant behind an API key to one of its own files.
+   * Redirects the merchant behind an API key to a file of its orders or an upload no record uses yet.
    *
    * @param params the file id
    * @param reply the reply, to set `Location`
@@ -158,7 +158,7 @@ export class FilesController {
     @Param() params: ParamsOf<typeof openV1File>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<void> {
-    const url = await this.files.linkForMerchant(callerOf('client'), params.id);
+    const url = await this.files.linkForKey(callerOf('client'), params.id);
     reply.header('location', url).header('cache-control', 'no-store');
   }
 }

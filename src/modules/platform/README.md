@@ -247,7 +247,9 @@ characters. The object goes to the files bucket under a key built here (`files/<
 row owned by the merchant (`owner_type client`) is written with the size and SHA-256; an object whose row could not be written is deleted
 again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the id is what a File service order takes as `fileId`, or a KYC
 submission or a receipt (features 8 and 17, B161, B163). `GET /v1/files/:id` (scope `orders:read`) redirects like the other downloads and
-is the merchant's own files only (`404` for anything else). No audit row for a merchant's upload (B121).
+opens less than the portal's `GET /client/files/:id` (which opens every file the merchant owns): only the input or result file of the merchant's own orders and an
+upload of its own that no record uses (`FileAccessService.linkForKey`). A file that a KYC submission, a payment receipt, a ticket, a dispute, an invoice or a data export
+uses is `404` for a key, whatever else refers to it; so is anything else, an unknown id included. No audit row for a merchant's upload (B121).
 
 **Quotas, the session precheck, the byte bound and the janitor (decision 053).** Every upload that a merchant or a customer makes is counted
 per owner over the `files` rows whose key starts with an upload area (`files/`, and `tickets-` for the customer), so a generated document never counts
