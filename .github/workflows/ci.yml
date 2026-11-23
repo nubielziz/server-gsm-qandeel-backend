@@ -1,0 +1,157 @@
+# Continuous integration (decision 057): what `bun run check` runs, spread over several machines.
+#   static  types, lint, format, the English-only guard, the generated documents, the migration drift check
+#   tests   the whole suite in shards (scripts/test-batches.sh, GSM_TEST_SHARD), each with its own services
+#   image   the production image builds and passes its import check
+# No job reads a secret, so a pull request from a fork runs exactly the same jobs. The production server deploys a commit of
+# main only after every job here succeeded for it (deploy/cd/auto-deploy.sh, docs/OPERATIONS.md section 8).
+# Actions are pinned to a commit; the comment names the release that commit is.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_VERSION: 1.4.4
+
+jobs:
+  static:
+    name: Types, lint and generated documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out the backend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: backend
+          persist-credentials: false
+      # The contract check reads the console's TypeScript, and reference/ is a link into the console's folder.
+      - name: Check out the console next to it
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nubielziz/server-gsm-qandeel-frontend-admin
+          path: frontend-admin
+          persist-credentials: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install the dependencies
+        run: bun install --frozen-lockfile
+      # The contract check runs the console's own TypeScript, so its packages must be there (none of their scripts run).
+      - name: Install Node for the console's packages
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-admin/package-lock.json
+      - name: Install the console's packages
+        working-directory: frontend-admin
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Types
+        run: bun run typecheck
+      - name: Lint
+        run: bun --bun eslint .
+      - name: Format
+        run: bun run format:check
+      - name: English only
+        run: bun run english:check
+      - name: Route manifest and slices
+        run: bun run routes:check
+      - name: Contract with the console
+        run: bun run contract:check
+      - name: OpenAPI documents
+        run: bun run docs:openapi:check
+      - name: Route coverage
+        run: bun run coverage:check
+      - name: Schema and migrations agree
+        run: bun run db:check
+
+  tests:
+    name: Tests, shard ${{ matrix.shard }} of 6
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out the backend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: backend
+          persist-credentials: false
+      # The contract check reads the console's TypeScript, and reference/ is a link into the console's folder.
+      - name: Check out the console next to it
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: nubielziz/server-gsm-qandeel-frontend-admin
+          path: frontend-admin
+          persist-credentials: false
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Install the dependencies
+        run: bun install --frozen-lockfile
+      # The contract check runs the console's own TypeScript, so its packages must be there (none of their scripts run).
+      - name: Install Node for the console's packages
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend-admin/package-lock.json
+      - name: Install the console's packages
+        working-directory: frontend-admin
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      # The development stack of compose.yaml. MinIO has no health check, and the job that makes the buckets ends by itself (Docker
+      # starts it again until MinIO answers), so they start apart and the step waits until that job has ended well.
+      - name: Start the services the tests use
+        run: |
+          docker compose up -d --wait postgres redis-queue redis-cache typesense mailpit prometheus
+          docker compose up -d minio
+          docker compose up -d minio-init
+          for attempt in $(seq 1 60); do
+            state=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' "$(docker compose ps -aq minio-init)")
+            [ "$state" = "exited 0" ] && exit 0
+            sleep 1
+          done
+          echo "The buckets were not made within a minute: $state"
+          docker compose logs minio minio-init
+          exit 1
+      - name: Run the shard
+        run: bash scripts/test-batches.sh
+        env:
+          GSM_TEST_SHARD: ${{ matrix.shard }}/6
+          GSM_TEST_RERUN: '1'
+      - name: Show the services' logs when the shard failed
+        if: failure()
+        run: docker compose logs --tail 80 postgres redis-queue redis-cache minio typesense
+
+  image:
+    name: Production image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the backend
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image and run its import check
+        run: docker build --target verify .
+      - name: Build the image the server runs
+        run: docker build -t gsm-backend:ci .

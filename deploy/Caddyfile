@@ -6,8 +6,8 @@
 #   FILES_HOST  signed file downloads only: reads of the files bucket that carry a signature go to MinIO, everything else is a 404
 #               (decision 055)
 # /metrics matches no route on any host. Caddy sets X-Forwarded-For itself (it drops a client-sent value), and the API trusts
-# exactly Caddy's and the site's fixed addresses (TRUST_PROXY=172.30.1.2,172.30.1.3, decision 055). Do not add `trusted_proxies`
-# unless a CDN is placed in front.
+# exactly Caddy's and the site's fixed addresses (TRUST_PROXY=172.30.1.2,172.30.1.3, decision 055). This file is the form with no CDN and
+# trusts no proxy; with a CDN in front, deploy/cd/edge-cdn.py writes the server's own copy from it (decision 058).
 # The console's and the shop's pages get the anti-framing, nosniff and referrer headers of decision 045; the API's answers keep the
 # API's own headers.
 # Every host removes the visitor-country header (GEOIP_COUNTRY_HEADER) before the API: this edge writes no country, so no visitor can

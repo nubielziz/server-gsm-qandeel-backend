@@ -215,7 +215,12 @@ is not on this machine. It also checks that Postgres, both Redis servers and the
 
 ## CI
 
-There is no hosted CI file yet (the hosting is not decided); any CI system can run `scripts/ci.sh`. It needs Bun, Docker
+GitHub Actions runs the checks on every push to `main` and on every pull request (`.github/workflows/ci.yml`, decision 057): the
+steps of `bun run check` in one job, the tests in six shards (`GSM_TEST_SHARD` of `scripts/test-batches.sh`) and a build of the
+production image. The production server deploys a commit of `main` by itself once those checks succeeded for it
+(`deploy/cd/auto-deploy.sh`, [docs/OPERATIONS.md](docs/OPERATIONS.md) section 8).
+
+On one machine, or in another CI system, `scripts/ci.sh` runs the same checks in one go. It needs Bun, Docker
 (or `CI_SKIP_SERVICES=1` with the services provided elsewhere) and the frontend checkout next to this repo
 (`FRONTEND_DIR`, default `../frontend-admin`: `contract:check` reads its TypeScript). It runs
 `bun install --frozen-lockfile`, starts the Docker services that are not running yet (`docker compose up -d --wait`,

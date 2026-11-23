@@ -1,0 +1,31 @@
+# Settings of deploy/cd/auto-deploy.sh. Copy to /etc/gsm-deploy.conf (root, mode 600) and fill it. Shell syntax; no secret belongs here.
+
+# The folder that holds the three checkouts: backend, frontend-admin and storefront.
+ROOT=/opt/gsm
+
+# Where the commits and their checks are read from.
+GITHUB_OWNER=example
+REPO_BACKEND=backend
+REPO_CONSOLE=frontend-admin
+REPO_SHOP=storefront
+BRANCH=main
+
+# The shop's build values (storefront/docs/DEPLOY.md). The site key is the public half of the Turnstile widget.
+SHOP_SITE_URL=https://shop.example.com
+SHOP_BUILD_API_ORIGIN=https://shop.example.com
+SHOP_API_PUBLIC_URL=https://api.example.com
+SHOP_TURNSTILE_SITE_KEY=
+SHOP_TIME_ZONE=UTC
+
+# With a CDN in front of Caddy (docs/OPERATIONS.md section 1): the header the CDN names the visitor in, its address ranges, the
+# server's own Caddyfile (written by edge-cdn.py at every backend deploy) and the compose file that mounts it. Leave CDN_HEADER
+# empty on a server with no CDN.
+CDN_HEADER=
+CDN_RANGES=/opt/gsm/backend/deploy/cd/cloudflare-ips.txt
+EDGE_CADDYFILE=/opt/gsm/server/Caddyfile
+COMPOSE_OVERRIDE=
+
+# Optional: where state and the dumps taken before a migration are kept, and how long a deploy waits for healthy containers.
+# STATE=/var/lib/gsm-deploy
+# DUMPS=/var/backups/gsm
+# HEALTH_WAIT=240

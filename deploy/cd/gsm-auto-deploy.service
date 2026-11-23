@@ -1,0 +1,12 @@
+# Copy to /etc/systemd/system/ with the timer and enable the timer (docs/OPERATIONS.md section 8).
+[Unit]
+Description=GSM: deploy the newest commit that passed its checks
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/gsm-auto-deploy run
+# A build may take several minutes; the next timer run waits for this one.
+TimeoutStartSec=45min

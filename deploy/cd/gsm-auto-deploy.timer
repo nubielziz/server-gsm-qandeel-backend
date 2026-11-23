@@ -1,0 +1,11 @@
+# Every three minutes; a run that finds nothing new costs three `git fetch` calls and no request to GitHub's API.
+[Unit]
+Description=GSM: look for a commit to deploy
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=3min
+RandomizedDelaySec=20s
+
+[Install]
+WantedBy=timers.target

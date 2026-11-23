@@ -1,0 +1,21 @@
+# Copy to /etc/systemd/system/ and enable (docs/OPERATIONS.md section 1). It runs before Docker starts, which keeps the rules it
+# finds in DOCKER-USER, so the web ports are never published without the limit. A failed run is tried again, three times in a
+# minute at most: after that the unit has failed and Docker starts without it, so a broken list never keeps the site down
+# (`systemctl status gsm-origin-firewall` says why). The argument of ExecStart is the ranges file: give the path of your checkout.
+[Unit]
+Description=GSM: web ports open to the CDN only (DOCKER-USER)
+Wants=network-online.target
+After=network-online.target
+Before=docker.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/gsm-origin-firewall /opt/gsm/backend/deploy/cd/cloudflare-ips.txt
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

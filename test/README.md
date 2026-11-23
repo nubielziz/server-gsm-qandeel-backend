@@ -1,7 +1,9 @@
 # Tests
 
 Every test lives under `test/` (decisions 014 and 043); `src/` holds production code only, because the image copies it
-whole. `bun run test` runs every file under `test/` in batches (`scripts/test-batches.sh`, one `bun test` process per batch);
+whole. `bun run test` runs every file under `test/` in batches (`scripts/test-batches.sh`, one `bun test` process per batch; the
+hosted checks spread the batches over several machines with `GSM_TEST_SHARD=k/n` and run a failed batch once more with
+`GSM_TEST_RERUN=1`);
 `bun run test:unit` runs `test/unit` alone and needs no Docker. The global preload (`test/setup.ts`) only sets `NODE_ENV=test`
 and loads `reflect-metadata`; it never touches a database.
 

@@ -59,7 +59,7 @@ by Caddy. `data` is internal (no way out, no way in): the API, the worker, `migr
 `files` is internal and joins Caddy to MinIO for the signed file links. `monitoring` is internal and joins Prometheus to the API and the worker.
 `egress` carries the worker and the backups to the internet (suppliers, payment gateways, the mail provider, the exchange-rate provider, the
 offsite bucket). Caddy is `172.30.1.2` and the site `172.30.1.3`: the only addresses `TRUST_PROXY` names, so no other container can choose the
-client address the API sees. Never add a service to `edge` that does not serve browsers, and keep `TRUST_PROXY` to those two addresses: it warns at every boot when it holds a range or a hop count (with a CDN in front of Caddy, whose published ranges are added to it, that warning is expected). Caddy has no
+client address the API sees. Never add a service to `edge` that does not serve browsers, and keep `TRUST_PROXY` to those two addresses: it warns at every boot when it holds a range or a hop count (a CDN in front of Caddy does not change it: "With a CDN in front", below). Caddy has no
 per-address connection cap; a host firewall can add one on ports 80 and 443 (a limit on the number of connections per source address, for
 example with nftables), tested from a second address before it is relied on. The API's own per-address limits stay in force either way, and
 Caddy cuts a client that is slow to send its headers (10 s) or that stalls an upload (30 s).
@@ -75,14 +75,46 @@ Caddy, which removes that header from every request on all three hosts (the line
 at the top of each host block), so no value a visitor sends ever reaches the API. With the setting on but the Caddyfile left as it is,
 `ip_country` stays empty and the boot log names no gap: the query of step 5 is the check.
 
-With a CDN in front:
+With a CDN in front (decision 058):
 1. Set `GEOIP_COUNTRY_HEADER` in `deploy/.env` to the header the CDN writes (Cloudflare: `CF-IPCountry`).
-2. Let only the CDN reach ports 80 and 443 (the firewall of the host).
-3. In `deploy/Caddyfile` add the CDN's address ranges as `trusted_proxies static <ranges>` in the global options, and in the shop host's
-   block replace the `request_header` line by a matcher `@not_cdn not remote_ip <ranges>` and the line
-   `request_header @not_cdn -{$GEOIP_COUNTRY_HEADER}` (the CDN form replaces the plain removal on that host; the other two hosts keep it).
-4. Add the same ranges to `TRUST_PROXY`, so the API sees the visitor's address and not the CDN's.
-5. `gsmc up -d caddy api`, open a checkout from the shop, then:
+2. Write the server's own Caddyfile with `deploy/cd/edge-cdn.py` and mount it in place of the repository's (from the repository root; the
+   folder `../server` belongs to this server and to no repository):
+
+   ```bash
+   mkdir -p ../server
+   python3 deploy/cd/edge-cdn.py --ranges deploy/cd/cloudflare-ips.txt --header CF-Connecting-IP > ../server/Caddyfile
+   printf 'services:\n  caddy:\n    volumes:\n      - %s/Caddyfile:/etc/caddy/Caddyfile:ro\n' "$(cd ../server && pwd)" > ../server/compose.edge.yaml
+   ```
+
+   and give the `gsmc` shortcut a second file: `-f deploy/compose.prod.yaml -f ../server/compose.edge.yaml`. The copy trusts the CDN's
+   published ranges and reads the visitor's address from the one header the CDN writes itself (`--header`; the two values above are
+   Cloudflare's, another CDN has its own header and list). It writes the forwarded headers of the API and the site itself: exactly
+   that address, and the host and the scheme of the request as Caddy received it. So **`TRUST_PROXY` stays the two container
+   addresses: never add the CDN's ranges to it.** A forwarded-address list is not read at all: a visitor can send one, and a CDN only
+   adds to it. On the shop host the copy keeps the visitor-country header only on requests from the CDN's addresses; the
+   other hosts remove it as before. The repository's `deploy/Caddyfile` stays the form with no CDN. Write the copy again after every
+   change of that file or of the list, then `gsmc exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile` (the
+   automatic deploys of section 8 do both).
+3. Let only the CDN reach ports 80 and 443. Docker publishes Caddy's ports with rules of its own, which a host firewall such as `ufw`
+   does not see, so the limit goes into Docker's `DOCKER-USER` chain. `deploy/cd/origin-firewall.sh <ranges file>` writes it, and its
+   unit runs the script before Docker starts, so the ports are never published without the limit:
+
+   ```bash
+   install -m 0750 deploy/cd/origin-firewall.sh /usr/local/sbin/gsm-origin-firewall
+   cp deploy/cd/gsm-origin-firewall.service /etc/systemd/system/      # then set the path of the ranges file in its ExecStart line
+   systemctl daemon-reload && systemctl enable --now gsm-origin-firewall.service
+   ```
+
+   The origin is reached over IPv4 only: the script closes the web ports over IPv6, so publish no AAAA record for the server (the CDN
+   serves IPv6 visitors itself), and give the web ports no rule of their own in the host firewall. Check from a network that is not
+   the CDN's: a request to the server's own address must time out, and the site must still answer on its names.
+4. Certificates: Caddy still gets and renews them by itself, because the CDN passes the HTTP challenge on. That works while the CDN
+   does not turn plain HTTP into HTTPS on its side, so switch such a redirect on only after the first certificates exist, and set the
+   CDN to check the origin's certificate from then on.
+5. `gsmc up -d caddy api`. Check that the API sees the visitor and not the CDN: sign in to the console and read your own address in
+   the sessions list. Then, from the server itself, `curl -H 'CF-Connecting-IP: <your address>' https://<ADMIN_HOST>/admin/auth/me`
+   must be answered for the server's address, not for the one in the header (with the console restricted to your address: 403).
+6. Open a checkout from the shop, then:
    `gsmc exec postgres psql -U gsm -d gsm -c "select id, ip_country, created_at from checkout_sessions order by id desc limit 3;"`
    shows your country.
 
@@ -95,7 +127,8 @@ With a CDN in front:
    cp .env.production.example .env.production
    mkdir -p deploy/secrets
    openssl rand -hex 32          # run once for each of CSRF_SECRET, TOKEN_PEPPER, LOOKUP_HASH_KEY, METRICS_TOKEN and, in deploy/.env, TYPESENSE_BOOTSTRAP_KEY, TYPESENSE_INDEXER_KEY, TYPESENSE_SEARCH_KEY
-   openssl rand -hex 24          # run once for each password of deploy/.env (POSTGRES_PASSWORD, REDIS_QUEUE_PASSWORD, REDIS_CACHE_PASSWORD, MINIO_ROOT_PASSWORD, MINIO_APP_PASSWORD, MINIO_BACKUP_PASSWORD) and for the password in DATABASE_URL of .env.production (the application's role)
+   openssl rand -hex 24          # run once for each of POSTGRES_PASSWORD, REDIS_QUEUE_PASSWORD and REDIS_CACHE_PASSWORD of deploy/.env and for the password in DATABASE_URL of .env.production (the application's role)
+   openssl rand -hex 20          # run once for each of MINIO_ROOT_PASSWORD, MINIO_APP_PASSWORD and MINIO_BACKUP_PASSWORD: MinIO refuses a user's password longer than 40 characters
    echo "k1:$(openssl rand -base64 32)"   # the whole line is the value of ENCRYPTION_KEYS
    ```
 
@@ -184,7 +217,9 @@ data in it is fake.
 
 ## 3. Upgrades and rollback
 
-Migrations are additive by rule (a new release's schema works with the previous release's code), so the order below is safe.
+Migrations are additive by rule (a new release's schema works with the previous release's code), so the order below is safe. The
+automatic deploys of section 8 run exactly these steps by themselves for such a release; before a release that is not additive, put
+them on hold (`gsm-auto-deploy hold`).
 **One release is not: release 30 (English only, decision 039)** drops columns the previous code reads and deletes content in
 other languages after an export. It has its own order (below, "Release 30"); never run the old API on its migrated database.
 
@@ -841,6 +876,9 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] SPF, DKIM and DMARC records are published for it (the provider shows the exact records).
 - [ ] `MAIL_SMTP_URL` and `MAIL_FROM` are set in `.env.production`. In production mail goes over TLS only: `smtps://`, or `smtp://` on a port that offers STARTTLS (a server that
       offers none cannot be used: every send fails and is retried).
+- [ ] The server can reach the mail port. Many hosts close the outgoing ports 25, 465 and 587; use the other port your provider offers
+      then (Resend: `smtps://` on 2465). Try the login from the worker before the first real mail:
+      `gsmc exec worker bun -e "import n from 'nodemailer'; await n.createTransport(process.env.MAIL_SMTP_URL).verify(); console.log('ok')"`.
 - [ ] A test mail reaches an address at another provider (use a password reset of a test account) and does not land in spam.
 
 **DNS and TLS**
@@ -901,3 +939,67 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 3. Make it apply at once (otherwise within a few minutes):
    `set -a; . deploy/.env; set +a; gsmc exec -e REDISCLI_AUTH="$REDIS_CACHE_PASSWORD" redis-cache redis-cli DEL gsm:production:identity:ip-rules:active gsm:production:platform:settings:all`
 4. Sign in, check the access settings, and note what you changed: these steps write no audit row.
+
+## 8. Continuous integration and automatic deploys
+
+**Checks on GitHub** (decision 057). `.github/workflows/ci.yml` runs on every push to `main` and on every pull request, and is
+`bun run check` spread over several machines: one job for the types, the lint, the format, the English-only guard and the generated
+documents; the tests in six shards, each with its own services from `compose.yaml` (`GSM_TEST_SHARD=k/6` of
+`scripts/test-batches.sh`; a batch that fails runs once more on its own, `GSM_TEST_RERUN=1`, and counts as failed only when it fails
+again); and a build of the production image with its import check. The jobs check the console out next to the backend, because the
+contract check reads its TypeScript and `reference/` is a link into it. No job reads a secret, so a pull request from a fork runs the
+same jobs. The console and the website have a workflow of their own in their repositories. To see a failure, open the commit on GitHub;
+to run the same thing on one machine: `scripts/ci.sh`.
+
+**Deploys by the server itself.** `deploy/cd/auto-deploy.sh` runs on the server from a systemd timer, every three minutes. For each of
+the three checkouts (`backend`, `frontend-admin`, `storefront`, side by side under one folder) it fetches `main` and deploys the newest
+commit when all of this holds:
+
+- every workflow run of that commit on GitHub has finished and succeeded;
+- the commit continues the history of the commit that runs now (a rewritten `main` is never deployed by itself);
+- the checkout has no change of its own in a tracked file, and no hold is set.
+
+Nothing reaches the server from outside for this: the server asks GitHub, GitHub never calls the server, and no key of the server is
+stored at GitHub. A commit that changes nothing that runs (documents, tests, the workflows) is recorded without a build.
+
+What a deploy does:
+
+| Part | Steps |
+| --- | --- |
+| backend | checks the commit out; writes `GIT_SHA` and `APP_VERSION` into `deploy/.env`; keeps the image the API runs as `:previous`; builds; with a CDN, writes the server's new Caddyfile beside the old one and checks it (section 1); when the commit adds a migration file, dumps the database to `/var/backups/gsm/` first (the ten newest stay) and runs the offsite backup of section 4 when it is set up; runs `migrate`; `up -d`; puts the new Caddyfile in place and tells Caddy (with no CDN: starts Caddy again when `deploy/Caddyfile` changed); waits for the API and the worker to be healthy; installs its own newer copy and reads the origin firewall's list again |
+| console | checks out, keeps `:previous`, builds, replaces the container, asks it for its page |
+| shop | checks out, keeps `:previous`, builds with the values of the settings file (the build reads the public catalog, so the API must be up), replaces the container, waits for it to be healthy |
+
+When the new containers do not become healthy, the checkout, the version line and the previous image are put back and the old
+containers start again; the database stays migrated, which the additive rule of section 3 allows. The failed commit is not tried again
+until a newer commit arrives or you run `retry`. A commit whose message stops the workflows (`[skip ci]`) has no run and waits until a
+later commit has one.
+
+```bash
+gsm-auto-deploy status            # what runs, what is newest on main, what GitHub says about it
+gsm-auto-deploy hold "why"        # stop the automatic deploys (before a release that is not additive, or work by hand)
+gsm-auto-deploy resume
+gsm-auto-deploy retry backend     # after a failed deploy and a look at its log
+gsm-auto-deploy force backend     # deploy the newest fetched commit without asking GitHub for its checks (its API does not answer)
+journalctl -u gsm-auto-deploy -n 50          # what the timer's runs said
+ls /var/lib/gsm-deploy/log/                  # one log per deploy
+```
+
+**Install** (once, as root, from the backend checkout). The three checkouts are clones of their repositories with the remote `origin`,
+side by side under one folder, for example `/opt/gsm/backend`, `/opt/gsm/frontend-admin` and `/opt/gsm/storefront`; the commands of the
+other sections then run from `/opt/gsm/backend`, the cron line of section 4 included.
+
+```bash
+install -m 0750 deploy/cd/auto-deploy.sh /usr/local/sbin/gsm-auto-deploy
+install -m 0600 deploy/cd/auto-deploy.conf.example /etc/gsm-deploy.conf      # then fill it: the folder, the repositories, the shop's build values
+cp deploy/cd/gsm-auto-deploy.service deploy/cd/gsm-auto-deploy.timer /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now gsm-auto-deploy.timer
+gsm-auto-deploy status
+```
+
+It needs `git`, `docker`, `curl` and `python3` on the host. The server's own files (`deploy/.env`, `.env.production`,
+`deploy/secrets/`) are not tracked, so they never count as a change of the checkout.
+
+**What it does not do.** It never rolls a migration back. It does not replace the nightly backup: the dump before a migration is on the
+same disk as the database. A release with an order of its own (section 3) is done by hand, with the deploys on hold. And it asks GitHub
+without a key, which allows 60 questions an hour: while a commit waits for its checks it asks every five minutes per part.
