@@ -266,6 +266,20 @@ describe('deploy/compose.prod.yaml', () => {
     }
   });
 
+  it("mounts the server's edge folder read-only in Caddy: the folder and never the file, so the closed edge is the presence of one file", () => {
+    const volumes = service('caddy').volumes ?? [];
+    // Relative to this file, `../../edge` is the folder `edge` beside the checkouts (<ROOT>/edge, where `gsm-edge-gate` writes).
+    expect(volumes).toContain('../../edge:/etc/caddy/edge:ro');
+    expect(volumes.filter((volume) => volume.includes('/etc/caddy/edge'))).toEqual(['../../edge:/etc/caddy/edge:ro']);
+    // A file mounted by name would be made into a folder by Docker when it is absent, and an absent file is the open edge.
+    expect(volumes.some((volume) => volume.includes('closed.caddy'))).toBe(false);
+    // Nothing else of the stack sees the folder.
+    const others = Object.entries(compose.services)
+      .filter(([name]) => name !== 'caddy')
+      .flatMap(([, definition]) => definition.volumes ?? []);
+    expect(others.some((volume) => volume.includes('edge'))).toBe(false);
+  });
+
   it('gives the worker more time than its 25 s drain, and the API, worker and migrate one image', () => {
     expect(service('worker').stop_grace_period).toBe('30s');
     expect(service('worker').command).toEqual(['bun', 'src/worker.ts']);
@@ -444,6 +458,40 @@ describe('deploy/Caddyfile', () => {
       .filter((line) => !line.trimStart().startsWith('#'))
       .join('\n');
     expect(active).not.toContain('trusted_proxies');
+  });
+
+  // The closed edge (docs/OPERATIONS.md, "The closed edge"): one snippet that reads one optional file of the mounted folder.
+  const activeLines = (text: string): string[] =>
+    text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+
+  it('imports the edge gate first on every public host, so its answer comes before any route and any proxy', () => {
+    const hosts = [...caddyfile.matchAll(/^\{\$([A-Z_]+)\} \{$/gm)].map((match) => match[1] ?? '');
+    expect(hosts.sort()).toEqual(['ADMIN_HOST', 'API_HOST', 'FILES_HOST', 'SHOP_HOST']);
+    for (const host of hosts) {
+      const text = block(host);
+      // The first line of the block that is not a comment, and it is the only import of the gate.
+      expect(activeLines(text)[1], host).toBe('import edge_gate');
+      expect(text.match(/import edge_gate/g), host).toHaveLength(1);
+      // The gate's answer is the first `handle` of the host, so no other handle can take the request before it.
+      expect(text.indexOf('import edge_gate'), host).toBeLessThan(text.indexOf('import common'));
+      expect(text.indexOf('import edge_gate'), host).toBeLessThan(text.indexOf('handle'));
+    }
+    expect(caddyfile.match(/^\s*import edge_gate$/gm)).toHaveLength(hosts.length);
+  });
+
+  it('defines the edge gate as one optional glob of the mounted folder: no file, no gate', () => {
+    const start = caddyfile.indexOf('(edge_gate) {');
+    expect(start).toBeGreaterThan(-1);
+    const snippet = caddyfile.slice(start, caddyfile.indexOf('\n}\n', start) + 2);
+    // Caddy refuses to import a plain name that is missing, and allows a glob that matches nothing; the one wildcard it allows is `*`.
+    expect(activeLines(snippet)).toEqual(['(edge_gate) {', 'import /etc/caddy/edge/closed.caddy*', '}']);
+    // The glob names the folder the compose file mounts in Caddy's container.
+    expect(service('caddy').volumes).toContain('../../edge:/etc/caddy/edge:ro');
+    // The snippet itself writes no answer: it exists only while the server's file does.
+    expect(snippet).not.toMatch(/respond|reverse_proxy|handle/);
   });
 
   it('answers 404 on the API host except for the machine surfaces', () => {

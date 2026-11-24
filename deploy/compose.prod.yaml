@@ -57,6 +57,10 @@ services:
       GEOIP_COUNTRY_HEADER: ${GEOIP_COUNTRY_HEADER:-X-Visitor-Country}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The closed edge (docs/OPERATIONS.md, "The closed edge"): the server's folder `edge`, beside the checkouts (relative to this file,
+      # `../../edge` is `<ROOT>/edge`). The host's `gsm-edge-gate` writes the one file it holds. The folder is mounted, never the file: a
+      # file that is not there yet would be made into a folder by Docker, and the gate is closed by the file's presence.
+      - ../../edge:/etc/caddy/edge:ro
       - caddy-data:/data
       - caddy-config:/config
     # A live event stream (decision 037) is one open descriptor in the API and two in Caddy (browser side and API side).

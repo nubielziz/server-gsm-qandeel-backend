@@ -14,6 +14,8 @@
 # choose the one the API reads (decision 050).
 # Every host writes the same access log (decision 054): the token part of the shop's link addresses, the Telegram webhook path, link
 # tokens, searches and IMEIs in the query, and credential headers are not written.
+# Every host imports the edge gate first (see (edge_gate) below): while the server holds the operator's closing file, only the operator's
+# address reaches any host.
 {
 	email {$ACME_EMAIL}
 	# Decision 055: a client that is slow to send its headers or that stalls an upload is cut; the live streams write at least every 15 s.
@@ -25,6 +27,19 @@
 			idle 2m
 		}
 	}
+}
+
+# The edge gate (docs/OPERATIONS.md, "The closed edge"). Every host imports it before anything else. It reads one optional file, which
+# the server's folder `edge` holds and the compose file mounts read-only at /etc/caddy/edge. While the file exists it names one operator
+# address, and every request whose client address is any other (with a CDN in front, the address its header names: edge-cdn.py keeps
+# this import in the server's copy) is answered 503 with a problem+json body, before any route and any proxy. `gsm-edge-gate close
+# <address>` writes the file and `gsm-edge-gate open` removes it; both check this file and tell Caddy. With no file the glob below matches
+# nothing, which Caddy allows (a warning at load time, no error), and the gate does nothing. It is a glob because Caddy refuses an
+# import of a plain name that is missing; the only wildcard it allows is `*`, so the folder must hold no other name that starts with
+# `closed.caddy` (the script refuses to go on when it does). Certificate renewals are answered before any route, so they go on while
+# the edge is closed.
+(edge_gate) {
+	import /etc/caddy/edge/closed.caddy*
 }
 
 (common) {
@@ -130,6 +145,7 @@
 }
 
 {$SHOP_HOST} {
+	import edge_gate
 	import common
 	import access_log
 	# Decision 050: removed at the top of the host, before any route, so it holds for the requests that go straight to the API and for
@@ -146,6 +162,7 @@
 }
 
 {$ADMIN_HOST} {
+	import edge_gate
 	import common
 	import access_log
 	# Decision 050: see the shop host.
@@ -161,6 +178,7 @@
 }
 
 {$API_HOST} {
+	import edge_gate
 	import common
 	import access_log
 	# Decision 050: see the shop host.
@@ -182,6 +200,7 @@
 # it was sent, after its percent escapes are decoded (`vars_regexp`): a path with a `.` or `..` segment is not passed on. The answers
 # are attachments, and the policy below keeps any content from running on this host.
 {$FILES_HOST} {
+	import edge_gate
 	import common
 	import access_log
 	@signed_read {

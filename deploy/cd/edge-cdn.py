@@ -10,8 +10,13 @@ Reads the repository's deploy/Caddyfile, which is the form for a server with no 
      TRUST_PROXY stays the two container addresses, with or without a CDN.
   3. The shop host keeps the visitor-country header only on requests that come from the CDN's addresses.
 
-The script prints nothing and exits 1 when deploy/Caddyfile no longer has the lines it rewrites: change both together
-(test/tooling/deploy-cd.test.ts runs it against the committed file).
+The closed edge (docs/OPERATIONS.md, "The closed edge") needs no change of its own: every host of deploy/Caddyfile starts with
+`import edge_gate`, whose matcher reads the client address, and with the two global options above that is the address the CDN's
+header names (a request from any other peer is judged by its own address). The script only checks that the import is still on
+every host, in its input and in its output, so a copy without the gate is never written.
+
+The script prints nothing and exits 1 when deploy/Caddyfile no longer has the lines it rewrites or the import of the gate: change
+both together (test/tooling/deploy-cd.test.ts runs it against the committed file).
 
 Usage: edge-cdn.py --ranges <file> --header <name> [--input deploy/Caddyfile] > Caddyfile
 The ranges file holds one CIDR per line; empty lines and lines that start with # are skipped.
@@ -24,11 +29,20 @@ import sys
 TIMEOUTS = "\t\ttimeouts {\n\t\t\tread_header 10s\n\t\t\tread_body_idle 30s\n\t\t\twrite_idle 1m\n\t\t\tidle 2m\n\t\t}\n"
 COUNTRY = "\trequest_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}\n"
 UPSTREAMS = {"api:3000": 3, "site:3000": 1}
+HOSTS = re.compile(r"^\{\$[A-Z_]+\} \{$", re.M)
+GATED_HOSTS = re.compile(r"^\{\$[A-Z_]+\} \{\n\timport edge_gate\n", re.M)
 
 
 def fail(message):
     sys.stderr.write("edge-cdn.py: " + message + "\n")
     sys.exit(1)
+
+
+def check_gate(text, where):
+    """Every host block must open with the import of the edge gate, and the snippet must be defined."""
+    hosts = len(HOSTS.findall(text))
+    if hosts == 0 or len(GATED_HOSTS.findall(text)) != hosts or "\n(edge_gate) {\n" not in text:
+        fail("every host block of %s must start with 'import edge_gate', and the (edge_gate) snippet must be defined" % where)
 
 
 def read_ranges(path):
@@ -60,6 +74,7 @@ def main():
         text = handle.read()
     if "trusted_proxies static" in text or "client_ip_headers" in text:
         fail(args.input + " already trusts a proxy: it must be the repository's file")
+    check_gate(text, args.input)
 
     if text.count(TIMEOUTS) != 1:
         fail("the timeouts block of the global options was not found once in " + args.input)
@@ -97,6 +112,7 @@ def main():
         + "\trequest_header @not_cdn -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}\n"
         + text[at + len(COUNTRY):]
     )
+    check_gate(text, "the copy for the CDN")
     sys.stdout.write(text)
 
 

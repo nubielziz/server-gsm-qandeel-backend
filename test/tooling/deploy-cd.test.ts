@@ -2,11 +2,12 @@
 // deploys a commit on the server, the Caddyfile written for a server behind a CDN, and the list of the CDN's addresses. Nothing is
 // deployed: `curl` is a stub, and the commits are in a repository made for the test. Why it matters: these files decide what reaches
 // production and whose address the API believes, and nothing else runs them before the server does.
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'bun:test';
+import { PROBLEM_CONTENT_TYPE } from '@src/common/errors/problem';
 
 const ROOT = join(import.meta.dir, '../..');
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8');
@@ -199,12 +200,73 @@ describe('deploy/cd/edge-cdn.py', () => {
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain("expected 1 plain 'reverse_proxy site:3000' lines");
   });
+
+  it('keeps the import of the edge gate first on every host, and writes no copy of a file that lost it (the closed edge)', async () => {
+    const out = (await edge(usual)).stdout;
+    expect(out.match(/^\{\$[A-Z_]+\} \{$/gm)).toHaveLength(4);
+    expect(out.match(/^\{\$[A-Z_]+\} \{\n\timport edge_gate\n/gm)).toHaveLength(4);
+    // The snippet is carried over as it is. Its matcher reads the client address, which this copy takes from the CDN's header.
+    expect(out).toContain('(edge_gate) {\n\timport /etc/caddy/edge/closed.caddy*\n}\n');
+    expect(out).toMatch(/\tclient_ip_headers CF-Connecting-IP\n/);
+    const dir = await tempDir();
+    const original = read('deploy/Caddyfile');
+    const cases: [string, string][] = [
+      ['an import removed from one host', original.replace('{$API_HOST} {\n\timport edge_gate\n', '{$API_HOST} {\n')],
+      [
+        'an import that is not the first line',
+        original.replace(
+          '{$SHOP_HOST} {\n\timport edge_gate\n\timport common\n',
+          '{$SHOP_HOST} {\n\timport common\n\timport edge_gate\n',
+        ),
+      ],
+      ['the snippet removed', original.replace('(edge_gate) {', '(edge_gate_gone) {')],
+    ];
+    for (const [name, text] of cases) {
+      expect(text, name).not.toBe(original);
+      await writeFile(join(dir, 'Caddyfile'), text);
+      const result = await edge([...usual, '--input', join(dir, 'Caddyfile')]);
+      expect(result.code, name).toBe(1);
+      expect(result.stdout, name).toBe('');
+      expect(result.stderr, name).toContain("must start with 'import edge_gate'");
+      // The input is named: the failure is found before the copy is built.
+      expect(result.stderr, name).toContain(join(dir, 'Caddyfile'));
+    }
+  });
 });
 
 describe('deploy/cd shell scripts', () => {
   it('parse', async () => {
     expect((await run(['bash', '-n', 'deploy/cd/auto-deploy.sh'])).code).toBe(0);
+    expect((await run(['bash', '-n', 'deploy/cd/edge-gate.sh'])).code).toBe(0);
     expect((await run(['sh', '-n', 'deploy/cd/origin-firewall.sh'])).code).toBe(0);
+  });
+
+  it('installs the edge gate from the repository on every server, and refreshes it when it changed (the closed edge)', () => {
+    const script = read('deploy/cd/auto-deploy.sh');
+    const start = script.indexOf('install_self() {');
+    const body = script.slice(start, script.indexOf('\n}\n', start));
+    expect(body).toContain('if [ -f "$source/edge-gate.sh" ]; then');
+    expect(body).toContain(
+      'cmp -s "$source/edge-gate.sh" /usr/local/sbin/gsm-edge-gate || install -m 0750 "$source/edge-gate.sh" /usr/local/sbin/gsm-edge-gate || true',
+    );
+    // Unlike the backup script, no earlier install is needed: a release that needs the gate finds it there.
+    expect(body).not.toContain('[ -e /usr/local/sbin/gsm-edge-gate ]');
+    // `install` keeps the mode of the checkout's file, so it must be executable there.
+    expect(statSync(join(ROOT, 'deploy/cd/edge-gate.sh')).mode & 0o111).not.toBe(0);
+  });
+
+  it('writes the file the Caddyfile reads: the folder the compose file mounts, and a name the Caddyfile glob matches', () => {
+    const script = read('deploy/cd/edge-gate.sh');
+    expect(script).toContain('SEEN_DIR=/etc/caddy/edge');
+    expect(script).toContain('GATE_FILE=$EDGE_DIR/closed.caddy');
+    expect(script).toContain('EDGE_DIR=${EDGE_DIR:-$ROOT/edge}');
+    expect(read('deploy/compose.prod.yaml')).toContain('- ../../edge:/etc/caddy/edge:ro');
+    const glob = /^\s*import (\/etc\/caddy\/edge\/\S+\*)$/m.exec(read('deploy/Caddyfile'))?.[1] ?? '';
+    const prefix = glob.slice(0, -1);
+    expect('/etc/caddy/edge/closed.caddy'.startsWith(prefix)).toBe(true);
+    // The temporary name the script writes first is never read by Caddy.
+    expect('/etc/caddy/edge/.closed.caddy.new'.startsWith(prefix)).toBe(false);
+    expect(script).toContain('local temporary=$EDGE_DIR/.closed.caddy.new');
   });
 
   it('the origin firewall names the web ports and nothing else, and matches only packets that open a connection from outside', () => {
@@ -482,5 +544,299 @@ describe('deploy/cd/auto-deploy.sh', () => {
     expect(held.stdout).toContain('on hold: ');
     expect((await run(['bash', 'deploy/cd/auto-deploy.sh', 'resume'], { env })).code).toBe(0);
     expect(await Bun.file(join(state, 'hold')).exists()).toBe(false);
+  });
+});
+
+describe('deploy/cd/edge-gate.sh', () => {
+  /**
+   * A stand-in for docker: it answers only "docker compose ... exec -T caddy <command>", from files in the test's folder, and writes
+   * each command to the file "calls". The folder "edge" of the same test folder is what Caddy's container sees at /etc/caddy/edge.
+   */
+  const STUB = [
+    '#!/usr/bin/bash',
+    'dir=${0%/bin/docker}',
+    'args=("$@")',
+    'for i in "${!args[@]}"; do',
+    '  if [ "${args[$i]}" = exec ]; then shift "$i"; shift 3; break; fi',
+    'done',
+    'echo "$*" >> "$dir/calls"',
+    'case "$1 $2" in',
+    '  "test -d") [ ! -e "$dir/no-mount" ] ;;',
+    '  "test -f" | "test -e") [ -e "$dir/edge/closed.caddy" ] ;;',
+    '  "grep -c")',
+    '    case "$*" in',
+    '      *import*) cat "$dir/gated" 2>/dev/null || echo 4 ;;',
+    '      *) cat "$dir/hosts" 2>/dev/null || echo 4 ;;',
+    '    esac',
+    '    ;;',
+    '  "caddy validate") if [ -e "$dir/validate-fails" ]; then echo "Error: invalid"; exit 1; fi ;;',
+    '  "caddy reload")',
+    '    if [ -e "$dir/reload-fails" ]; then echo "Error: reload"; exit 1; fi',
+    '    if [ -e "$dir/reload-ignored" ]; then exit 0; fi',
+    '    if [ -e "$dir/edge/closed.caddy" ]; then echo 4 > "$dir/running"; else echo 0 > "$dir/running"; fi',
+    '    ;;',
+    '  "sh -c")',
+    '    if [ -e "$dir/no-admin" ]; then exit 1; fi',
+    '    cat "$dir/running" 2>/dev/null || echo 0',
+    '    ;;',
+    'esac',
+    '',
+  ].join('\n');
+
+  /** A server of its own: settings file, a folder for the gate, and the stand-in for docker first in the path. */
+  async function rig() {
+    const dir = await tempDir();
+    const bin = join(dir, 'bin');
+    await mkdir(bin);
+    for (const tool of ['bash', 'python3', 'cat', 'rm', 'cp', 'mv', 'mkdir', 'date', 'sed', 'chmod', 'mktemp']) {
+      await symlink(`/usr/bin/${tool}`, join(bin, tool)).catch(() => undefined);
+    }
+    await writeFile(join(bin, 'docker'), STUB);
+    await chmod(join(bin, 'docker'), 0o755);
+    await mkdir(join(dir, 'root', 'backend'), { recursive: true });
+    const edge = join(dir, 'edge');
+    await mkdir(edge);
+    await writeFile(join(dir, 'deploy.conf'), `ROOT=${join(dir, 'root')}\nEDGE_DIR=${edge}\n`);
+    const env = { PATH: bin, HOME: tmpdir(), GSM_DEPLOY_CONF: join(dir, 'deploy.conf') };
+    return {
+      dir,
+      edge,
+      closed: join(edge, 'closed.caddy'),
+      gate: (...args: string[]) => run(['/usr/bin/bash', 'deploy/cd/edge-gate.sh', ...args], { env }),
+      calls: async () =>
+        (await readFile(join(dir, 'calls'), 'utf8').catch(() => '')).split('\n').filter((line) => line !== ''),
+      set: (name: string, content = '') => writeFile(join(dir, name), content),
+      files: () => readdir(edge),
+    };
+  }
+
+  it('refuses a missing or malformed address, an unknown command and extra words, before it touches the folder or Caddy', async () => {
+    const server = await rig();
+    const cases: string[][] = [
+      [],
+      ['fly'],
+      ['close'],
+      ['close', ''],
+      ['close', 'not-an-address'],
+      ['close', 'example.com'],
+      ['close', '203.0.113'],
+      ['close', '203.0.113.7/32'],
+      ['close', '10.0.0.0/8'],
+      ['close', '203.0.113.7 198.51.100.1'],
+      ['close', '203.0.113.7', '198.51.100.1'],
+      ['close', '0.0.0.0'],
+      ['close', '::'],
+      ['close', '224.0.0.1'],
+      ['close', 'fe80::1%eth0'],
+      ['close', '::ffff:203.0.113.7'],
+      ['close', '203.0.113.7\nrespond 200'],
+      ['close', '203.0.113.7}'],
+      ['open', 'now'],
+      ['status', 'now'],
+    ];
+    for (const args of cases) {
+      const result = await server.gate(...args);
+      expect(result.code, JSON.stringify(args)).toBe(2);
+      expect(result.stdout, JSON.stringify(args)).not.toContain('closed:');
+    }
+    expect(await server.calls()).toEqual([]);
+    expect(await server.files()).toEqual([]);
+  });
+
+  it('closes: writes one file that names the operator address and the problem+json answer, has Caddy check it, then load it, then reads what runs', async () => {
+    const server = await rig();
+    const result = await server.gate('close', '203.0.113.7');
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain('closed: all 4 public hosts answer 503 to every address but 203.0.113.7');
+    const seen = await server.calls();
+    const at = (prefix: string): number => seen.findIndex((call) => call.startsWith(prefix));
+    const order = ['grep -c', 'test -f /etc/caddy/edge/closed.caddy', 'caddy validate', 'caddy reload', 'sh -c'].map(
+      at,
+    );
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // No temporary file is left in the folder Caddy reads.
+    expect(await server.files()).toEqual(['closed.caddy']);
+
+    const text = await readFile(server.closed, 'utf8');
+    const lines = text.split('\n').filter((line) => line !== '' && !line.startsWith('#'));
+    // The client address (which a CDN copy takes from the CDN's header), never the connection's.
+    expect(lines[0]).toBe('@edge_closed not client_ip 203.0.113.7');
+    expect(text).not.toContain('remote_ip');
+    expect(lines[1]).toBe('handle @edge_closed {');
+    expect(lines.at(-1)).toBe('}');
+    expect(lines).toContain(`\theader Content-Type "${PROBLEM_CONTENT_TYPE}"`);
+    expect(lines).toContain('\theader Cache-Control "no-store"');
+    const body = /\trespond `(\{.*\})` 503$/m.exec(text)?.[1] ?? '';
+    const problem = JSON.parse(body.replace('{http.request.uuid}', 'a-request-id')) as Record<string, unknown>;
+    expect(problem).toMatchObject({ type: 'about:blank', status: 503, code: 'EDGE_CLOSED', requestId: 'a-request-id' });
+    expect(typeof problem.title).toBe('string');
+    expect(typeof problem.detail).toBe('string');
+    // The members of the API's own problem document, and nothing else.
+    expect(Object.keys(problem).sort()).toEqual(['code', 'detail', 'requestId', 'status', 'title', 'type']);
+
+    const status = await server.gate('status');
+    expect(status.code, status.stderr).toBe(0);
+    expect(status.stdout).toContain('the folder: closed to every address but 203.0.113.7');
+    expect(status.stdout).toContain('Caddy runs: closed on 4 hosts');
+  });
+
+  it('writes an IPv6 address in its short form, and replaces the operator address when closed again', async () => {
+    const server = await rig();
+    expect((await server.gate('close', '2001:DB8:0:0:0:0:0:1')).code).toBe(0);
+    expect(await readFile(server.closed, 'utf8')).toContain('\n@edge_closed not client_ip 2001:db8::1\n');
+    expect((await server.gate('close', '203.0.113.7')).code).toBe(0);
+    const text = await readFile(server.closed, 'utf8');
+    expect(text.match(/not client_ip/g)).toHaveLength(1);
+    expect(text).toContain('not client_ip 203.0.113.7\n');
+    expect(await server.files()).toEqual(['closed.caddy']);
+  });
+
+  it('opens: removes the file and tells Caddy, also when the file was already gone', async () => {
+    const server = await rig();
+    await server.gate('close', '203.0.113.7');
+    const opened = await server.gate('open');
+    expect(opened.code, opened.stderr).toBe(0);
+    expect(opened.stdout).toContain('open: every address reaches the public hosts');
+    expect(await server.files()).toEqual([]);
+    expect((await server.gate('status')).stdout).toContain('Caddy runs: open');
+
+    // A file removed by hand leaves Caddy running the closed form: the status shows it, and "open" puts it right.
+    await server.gate('close', '203.0.113.7');
+    await rm(server.closed);
+    const odd = await server.gate('status');
+    expect(odd.stdout).toContain('the folder: open');
+    expect(odd.stdout).toContain('Caddy runs: closed on 4 hosts');
+    const reloads = (await server.calls()).filter((call) => call.startsWith('caddy reload')).length;
+    expect((await server.gate('open')).code).toBe(0);
+    expect((await server.calls()).filter((call) => call.startsWith('caddy reload')).length).toBe(reloads + 1);
+    expect((await server.gate('status')).stdout).toContain('Caddy runs: open');
+  });
+
+  it('leaves the folder as it was when Caddy refuses the Caddyfile or the load, closing or opening', async () => {
+    // Closing for the first time: no file is left, and a refused check never gets as far as the load.
+    let server = await rig();
+    await server.set('validate-fails');
+    let result = await server.gate('close', '203.0.113.7');
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('nothing was loaded and the folder is as it was');
+    expect(await server.files()).toEqual([]);
+    expect((await server.calls()).some((call) => call.startsWith('caddy reload'))).toBe(false);
+
+    server = await rig();
+    await server.set('reload-fails');
+    result = await server.gate('close', '203.0.113.7');
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('it keeps what it ran');
+    expect(await server.files()).toEqual([]);
+
+    // Closed for one address, a change refused: the first file stays, byte for byte.
+    server = await rig();
+    await server.gate('close', '203.0.113.7');
+    const before = await readFile(server.closed, 'utf8');
+    await server.set('validate-fails');
+    result = await server.gate('close', '198.51.100.1');
+    expect(result.code).toBe(1);
+    expect(await readFile(server.closed, 'utf8')).toBe(before);
+    result = await server.gate('open');
+    expect(result.code).toBe(1);
+    expect(await readFile(server.closed, 'utf8')).toBe(before);
+    await rm(join(server.dir, 'validate-fails'));
+    await server.set('reload-fails');
+    result = await server.gate('open');
+    expect(result.code).toBe(1);
+    expect(await readFile(server.closed, 'utf8')).toBe(before);
+    expect(await server.files()).toEqual(['closed.caddy']);
+  });
+
+  it('refuses when Caddy does not mount the folder or runs a Caddyfile that lacks the gate on a host, and says nothing was changed', async () => {
+    let server = await rig();
+    await server.set('no-mount');
+    for (const args of [['close', '203.0.113.7'], ['open']]) {
+      const result = await server.gate(...args);
+      expect(result.code, args.join(' ')).toBe(1);
+      expect(result.stderr).toContain('does not mount the folder /etc/caddy/edge');
+    }
+    expect(await server.files()).toEqual([]);
+
+    for (const [hosts, gated] of [
+      ['4', '3'],
+      ['4', '0'],
+      ['0', '0'],
+    ] as const) {
+      server = await rig();
+      await server.set('hosts', hosts);
+      await server.set('gated', gated);
+      const result = await server.gate('close', '203.0.113.7');
+      expect(result.code, `${gated} of ${hosts}`).toBe(1);
+      expect(result.stderr).toContain(`does not import the gate on every host (${gated} of ${hosts})`);
+      expect(await server.files()).toEqual([]);
+      // Neither the check nor the load was asked for.
+      expect((await server.calls()).some((call) => call.startsWith('caddy '))).toBe(false);
+    }
+  });
+
+  it('refuses while the folder holds another file that starts with the name Caddy reads, and never reads a hidden temporary name as one', async () => {
+    const server = await rig();
+    const stray = join(server.edge, 'closed.caddy.bak');
+    await writeFile(stray, '');
+    for (const args of [['close', '203.0.113.7'], ['open'], ['status']]) {
+      const result = await server.gate(...args);
+      expect(result.code, args.join(' ')).toBe(1);
+      expect(result.stderr).toContain('would be read by Caddy as well');
+    }
+    expect(await server.calls()).toEqual([]);
+    await rm(stray);
+    // A temporary name left by an interrupted run starts with a dot: Caddy's glob does not match it, and the next run replaces it.
+    await writeFile(join(server.edge, '.closed.caddy.new'), 'left over');
+    expect((await server.gate('close', '203.0.113.7')).code).toBe(0);
+    expect(await server.files()).toEqual(['closed.caddy']);
+  });
+
+  it('fails, and says so, when Caddy loads its Caddyfile but does not run the gate on every host, or cannot be asked', async () => {
+    let server = await rig();
+    await server.set('reload-ignored');
+    let result = await server.gate('close', '203.0.113.7');
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('the gate runs on 0 hosts, not 4');
+
+    server = await rig();
+    await server.set('no-admin');
+    result = await server.gate('close', '203.0.113.7');
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('its running configuration cannot be read');
+    const status = await server.gate('status');
+    expect(status.code).toBe(0);
+    expect(status.stdout).toContain('Caddy: its running configuration cannot be read');
+  });
+
+  it('status says what the folder holds and what Caddy runs, and refuses a file that names no single address', async () => {
+    const server = await rig();
+    const open = await server.gate('status');
+    expect(open.code, open.stderr).toBe(0);
+    expect(open.stdout).toContain('the folder: open');
+    expect(open.stdout).toContain('Caddy runs: open');
+    await writeFile(server.closed, '# nothing here\n@edge_closed not client_ip 10.0.0.0/8\n');
+    const bad = await server.gate('status');
+    expect(bad.code).toBe(1);
+    expect(bad.stderr).toContain('does not name one address');
+    await writeFile(server.closed, 'garbage\n');
+    expect((await server.gate('status')).code).toBe(1);
+  });
+
+  it('needs its settings file and a ROOT in it', async () => {
+    const dir = await tempDir();
+    const env = { PATH: '/usr/bin:/bin', HOME: tmpdir() };
+    const missing = await run(['bash', 'deploy/cd/edge-gate.sh', 'status'], {
+      env: { ...env, GSM_DEPLOY_CONF: join(dir, 'none.conf') },
+    });
+    expect(missing.code).toBe(2);
+    expect(missing.stderr).toContain('cannot read');
+    await writeFile(join(dir, 'empty.conf'), '# nothing\n');
+    const empty = await run(['bash', 'deploy/cd/edge-gate.sh', 'status'], {
+      env: { ...env, GSM_DEPLOY_CONF: join(dir, 'empty.conf') },
+    });
+    expect(empty.code).toBe(2);
+    expect(empty.stderr).toContain('set ROOT');
   });
 });

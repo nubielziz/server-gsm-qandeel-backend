@@ -118,6 +118,47 @@ With a CDN in front (decision 058):
    `gsmc exec postgres psql -U gsm -d gsm -c "select id, ip_country, created_at from checkout_sessions order by id desc limit 3;"`
    shows your country.
 
+### The closed edge (`gsm-edge-gate`)
+
+A release that changes the database is tried on the real hosts by one person before anybody else can reach them. For that the edge can be
+closed: while it is, every public host (`SHOP_HOST`, `ADMIN_HOST`, `API_HOST`, `FILES_HOST`) answers 503 with a short problem+json body
+(`code` `EDGE_CLOSED`) to every client address but one, the operator's, before any route and any proxy. Nothing else changes: the
+operator's address reaches the hosts exactly as when the edge is open.
+
+How it works. Every host of `deploy/Caddyfile` starts with `import edge_gate`. The snippet reads one optional file, `closed.caddy` in
+the server's folder `edge` (`<ROOT>/edge`, beside the checkouts; `deploy/compose.prod.yaml` mounts the folder read-only at
+`/etc/caddy/edge`). With no file the snippet does nothing, and Caddy logs a warning at every load that the glob matched no file (that
+is expected). With the file, it names one address, and any other client address is refused. The address is the client address Caddy
+works out: with a CDN in front (section 1 above), the one the CDN's header names, taken only from requests that come from the CDN's
+published ranges (`deploy/cd/edge-cdn.py` keeps the import in the server's own Caddyfile and stops when a host lost it), so a visitor
+cannot choose it; without a CDN, the address of the connection. Caddy renews certificates before any route, so renewals go on while
+the edge is closed.
+
+```bash
+gsm-edge-gate close <address>   # the operator's own public address, IPv4 or IPv6: one address, no range
+gsm-edge-gate open
+gsm-edge-gate status            # what the folder says, and on how many hosts Caddy runs the closed answer
+```
+
+`close` refuses a missing or malformed address (a range, a name, an unspecified, multicast, zone or IPv4-mapped address) with exit status
+2, and refuses to go on when the folder holds another file whose name starts with `closed.caddy` (Caddy would read it too) or when the
+Caddyfile that Caddy runs does not import the gate on every host (deploy the backend first). Then it writes the file, asks the running
+Caddy to check its Caddyfile with the file in place (`caddy validate`), tells Caddy to load it (`caddy reload`), and reads Caddy's running
+configuration to see that every host holds the gate. A check or a load that fails puts the file back as it was and exits with status 1:
+the folder always says what Caddy runs. `open` removes the file and does the same the other way round; it tells Caddy even when the file
+was already gone. Closing again with another address replaces the first.
+
+While the edge is closed, the payment gateways' webhooks and any outside monitor get 503 as well; gateways retry, so keep the edge
+closed for minutes, not hours. Give your own address as the hosts see it, not the server's: from the operator's network read it from
+the sessions list of the console, or from a page that shows your address; an IPv6 visitor reaches a CDN with an IPv6 address.
+
+Install and settings. The deployer installs the script as `/usr/local/sbin/gsm-edge-gate` at the end of every backend deploy (section 8).
+Before the first such deploy, from the repository root: `install -m 0750 deploy/cd/edge-gate.sh /usr/local/sbin/gsm-edge-gate`. It reads
+`/etc/gsm-deploy.conf` like the deployer (`ROOT`, and `COMPOSE_OVERRIDE` when the server has one); `EDGE_DIR` there names the folder when
+it is not `<ROOT>/edge`, and then the mount of the folder in the compose file must change with it. Try it once before a release depends
+on it: close with your own address, check that your address reaches the hosts and that another network (a phone off Wi-Fi) gets 503
+on each, open, and check again.
+
 ## 2. First deploy
 
 1. **Make the secrets** (keep them out of git and out of chat; two offline copies, section 5):
