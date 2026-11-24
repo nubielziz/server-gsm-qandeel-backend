@@ -1,6 +1,6 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
- "frontend": "../worktrees/acc-console",
+ "frontend": "../frontend-admin",
  "count": 312,
  "endpoints": [
   {
