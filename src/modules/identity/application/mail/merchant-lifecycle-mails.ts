@@ -1,6 +1,5 @@
 // MerchantLifecycleMails: the transactional emails staff actions send to a merchant (suspension, reactivation, security
-// notice; feature 20) and the notice of an API key the merchant made in the portal. Each is a `notifications` row plus a
-// `notification.send` outbox event written in the caller's transaction.
+// notice; feature 20). Each is a `notifications` row plus a `notification.send` outbox event written in the caller's transaction.
 import { Inject, Injectable } from '@nestjs/common';
 import { APP_CONFIG, type AppConfig } from '../../../../config';
 import type { TransactionContext } from '../../../../infra/db';
@@ -9,7 +8,6 @@ import type { RankKind } from '../../ports/rank-kind';
 import type { Client } from '../../db/schema';
 import { accountAreaUrl } from '../../domain/public-links';
 import {
-  MERCHANT_PORTAL_API_KEY_CREATED_EVENT,
   MERCHANT_REACTIVATED_EVENT,
   MERCHANT_SECURITY_NOTICE_EVENT,
   MERCHANT_SUSPENDED_EVENT,
@@ -33,14 +31,6 @@ export const SECURITY_NOTICE_PHRASES: Readonly<Record<SecurityNoticeKind, string
   email_changed:
     'the email address of your account was changed, so this address no longer receives the emails of your account',
 };
-
-/**
- * The sentence of the notice of a key the merchant made in the portal (`{{change}}` of `merchant.portal_api_key_created`).
- *
- * Why: the notice of a staff action opens with "Our support team made this change", which is not true of a key the merchant made; this
- * notice says where the key was made, in neutral words, and its template says what to do. A fixed sentence, like the others (decision 039).
- */
-export const PORTAL_API_KEY_NOTICE_PHRASE = "A new API key was created in your account's portal.";
 
 /**
  * The sentence of a retail rank's notice where it differs from {@link SECURITY_NOTICE_PHRASES}: the temporary password also ended every
@@ -67,7 +57,7 @@ type Recipient = Pick<Client, 'id' | 'name'> & { readonly rankKind?: RankKind };
  *
  * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff suspend or reactivate the account, or
  * change something security-relevant (a temporary password, a 2FA reset, a staff change of an API key's addresses or limit, a new email
- * address), and when an API key is created (by staff: the security notice; by the merchant in the portal: its own notice). All are transactional: always sent, whatever the
+ * address), and when staff create an API key (the security notice; merchants no longer create keys, decision 067). All are transactional: always sent, whatever the
  * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
  * mail does not carry the staff reason (it is an internal note).
  *
@@ -146,23 +136,6 @@ export class MerchantLifecycleMails {
       { merchantName: client.name, change: SECURITY_NOTICE_PHRASES[kind] },
       options.to,
     );
-  }
-
-  /**
-   * `merchant.portal_api_key_created`: the merchant created an API key in the portal.
-   *
-   * Why: the merchant learns of the key in neutral words, without being told that the support team acted, and what to do about a key it
-   * did not make. The notice of a key staff made stays `securityNotice(…, 'api_key_created')`.
-   *
-   * @param work the caller's transaction
-   * @param client the merchant
-   * @returns once the notification and its outbox event are written
-   */
-  portalApiKeyCreated(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
-    return this.send(work, MERCHANT_PORTAL_API_KEY_CREATED_EVENT, client, {
-      merchantName: client.name,
-      change: PORTAL_API_KEY_NOTICE_PHRASE,
-    });
   }
 
   private async send(

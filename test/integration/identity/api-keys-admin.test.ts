@@ -111,13 +111,13 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(refusal(await useKey(low.body.secret))).toContain('Too many requests');
   });
 
-  it('shows createdByStaff in the admin list and in the merchant portal, and false for a key the merchant made', async () => {
+  it('shows createdByStaff in the admin list and in the merchant portal, and false for a key the merchant made before decision 067', async () => {
     const api = await staff();
     const clientId = await insertMerchant(db);
     await api.post(`/admin/clients/${clientId}/api-keys`, BODY);
     const portal: PortalClient = await portalFor(t, clientId);
-    const own = await portal.call('POST', '/client/api-keys', { name: 'Mine' });
-    expect(own.body.key.createdByStaff).toBe(false);
+    // A key a merchant made itself, before merchants stopped making keys: `created_by` is null.
+    await insertApiKey(t, db, clientId, { name: 'Mine', createdBy: null });
 
     const admin = (await api.get(`/admin/clients/${clientId}/api-keys`)).body as {
       name: string;
@@ -175,6 +175,11 @@ describe('POST /admin/clients/:id/api-keys', () => {
       expect(mail.text).not.toContain(first.body.secret);
     }
     expect(mails.find((mail) => mail.text.startsWith('Hi Cedar Phones,'))).toBeDefined();
+    // The notice of a key staff made names the support team, in the one fixed sentence.
+    expect(mails.find((mail) => mail.text.startsWith('Hi Zain Mobile Hub,'))!.text).toBe(
+      'Hi Zain Mobile Hub,\n\nOur support team made this change to your account: a new API key was created for your account.\n\n' +
+        'If you did not ask for it, reply to this email or contact our support team at once.',
+    );
   });
 
   it('refuses a suspended or a blocked merchant with 409 NOT_ACTIVE and an unknown one with 404, writing nothing', async () => {
@@ -224,14 +229,13 @@ describe('POST /admin/clients/:id/api-keys', () => {
     }
   });
 
-  it('refuses the eleventh live key with 422 on name, and a staff and a merchant creation in parallel at nine keys make exactly one more', async () => {
+  it('refuses the eleventh live key with 422 on name, and two staff creations in parallel at nine keys make exactly one more', async () => {
     const api = await staff();
     const clientId = await insertMerchant(db);
     for (let index = 0; index < 9; index++) await insertApiKey(t, db, clientId, { name: `K${index}` });
-    const portal = await portalFor(t, clientId);
     const answers = await Promise.all([
-      api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'Staff' }),
-      portal.call('POST', '/client/api-keys', { name: 'Merchant' }),
+      api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'First' }),
+      api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'Second' }),
     ]);
     expect(answers.map((answer) => answer.status).sort()).toEqual([201, 422]);
     expect(await keyRows()).toHaveLength(10);
@@ -271,17 +275,6 @@ describe('POST /admin/clients/:id/api-keys', () => {
 
     const owner = await staff();
     expect((await owner.post(`/admin/clients/${clientId}/api-keys`, BODY)).status).toBe(201);
-  });
-
-  it("the merchant's own POST /client/api-keys keeps created_by null and mails the notice of a key made in the portal", async () => {
-    const clientId = await insertMerchant(db);
-    const portal = await portalFor(t, clientId);
-    const res = await portal.call('POST', '/client/api-keys', { name: 'Mine' });
-    expect(res.status).toBe(201);
-    expect((await keyRows())[0]).toMatchObject({ createdBy: null, rateLimitPerMin: 60 });
-    expect((await notificationRows(db)).map((row) => [row.event, row.recipientId])).toEqual([
-      ['merchant.portal_api_key_created', clientId],
-    ]);
   });
 });
 

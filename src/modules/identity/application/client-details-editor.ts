@@ -35,9 +35,9 @@ import { MerchantLifecycleMails } from './mail/merchant-lifecycle-mails';
  * verification, sends a new verification (or the invitation while there is no password) to the new address, ends every session and sends a
  * security notice to the address before the change (decision 047, `clients:security`); a guest row keeps nothing to end or send, and its
  * old links die with the old address; a name change keeps the sessions. `email_set_by_staff` (decision 046, `emailMarkAfterEdit`) says that the
- * address was last set by a staff member who is not an Owner and that no Owner has confirmed it since; while it is set, the account's portal
- * sessions create no API key (`MachineCredentialHold`). An Owner's edit that carries the stored address clears a set mark and does nothing
- * else to the email.
+ * address was last set by a staff member who is not an Owner and that no Owner has confirmed it since; nothing reads it since decision 067
+ * (merchants no longer create API keys), and it is still written. An Owner's edit that carries the stored address clears a set mark and
+ * does nothing else to the email.
  *
  * Side effects: writes `clients` (`email_set_by_staff` and the derived `currency` included), `auth_tokens`, `outbox_events` (the verification
  * or invitation mail, ids only), `sessions`, a `notifications` row with its outbox event (the security notice, to the previous address) and

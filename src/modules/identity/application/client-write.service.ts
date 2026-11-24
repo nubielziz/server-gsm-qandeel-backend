@@ -280,7 +280,7 @@ export class ClientWriteService {
             ? {}
             : {
                 passwordHash: facts.passwordHash,
-                // Until the person chooses a password from a mailed link, the account's sessions hand out no API key (decision 046).
+                // Marks a password staff set; a password chosen from a mailed link clears it (nothing reads it since decision 067).
                 mustChangePassword: true,
                 passwordChangedAt: now,
                 passwordSetByStaff: true,

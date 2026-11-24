@@ -1,4 +1,4 @@
-// Drizzle queries of the API key routes on `api_keys` (identity module): a merchant's own list, the admin's list, the one
+// Drizzle queries of the API key routes on `api_keys` (identity module): a merchant's own (read-only) list, the admin's list, the one
 // row a change locks, and the writes. The guards' lookup by key hash is `security/machine/api-keys/api-key.repository.ts`.
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { type DbExecutor, type ListColumns, listOrderBy } from '../../../infra/db';
@@ -166,8 +166,8 @@ export async function revokeKeyRow(db: DbExecutor, id: number, now: Date): Promi
  * Revokes every key of an account that is not revoked yet.
  *
  * Why: an account that leaves the merchant kind (a rank change) or is erased keeps no key, and a later change back never restores one
- * (decision 064). The caller holds the account row; this function never takes the advisory lock `api-keys:<accountId>` (the two key
- * creations take it before the row, so taking it after would invite a cycle).
+ * (decision 064). The caller holds the account row; this function never takes the advisory lock `api-keys:<accountId>` (a key
+ * creation takes it before the row, so taking it after would invite a cycle).
  *
  * Side effects: sets `api_keys.revoked_at` and `updated_at`; a key that was revoked earlier keeps its own time.
  *
@@ -195,29 +195,4 @@ export async function revokeLiveKeysOfClient(db: DbExecutor, clientId: number, n
 export async function accountNameOf(db: DbExecutor, clientId: number): Promise<string | undefined> {
   const [row] = await db.select({ name: clients.name }).from(clients).where(eq(clients.id, clientId)).limit(1);
   return row?.name;
-}
-
-/** The two marks of an account that stop it handing out machine credentials: a password or an email address that staff set. */
-export interface MachineHoldFlags {
-  readonly passwordSetByStaff: boolean;
-  readonly emailSetByStaff: boolean;
-}
-
-/**
- * Reads the two holds on an account's machine credentials.
- *
- * Why: `MachineCredentialHold` judges them on the account itself, never on the session's cached copy (decision 018); the caller has the
- * account row locked, so the read is the state its decision is made on.
- *
- * @param db the database or a transaction
- * @param clientId the account id
- * @returns the flags, or `undefined` when there is no such account
- */
-export async function machineHoldOf(db: DbExecutor, clientId: number): Promise<MachineHoldFlags | undefined> {
-  const [row] = await db
-    .select({ passwordSetByStaff: clients.passwordSetByStaff, emailSetByStaff: clients.emailSetByStaff })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .limit(1);
-  return row;
 }

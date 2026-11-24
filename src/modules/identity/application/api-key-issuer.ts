@@ -1,5 +1,5 @@
-// ApiKeyIssuer: the one place that locks the owner of a new API key, checks and stores it, shared by the merchant's own creation
-// (POST /client/api-keys) and the staff's (POST /admin/clients/:id/api-keys, feature 20).
+// ApiKeyIssuer: the one place that locks the owner of a new API key, checks and stores it, for the staff's creation
+// (POST /admin/clients/:id/api-keys, feature 20; since decision 067 the only one: merchants no longer create keys).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
@@ -19,9 +19,9 @@ export interface IssueApiKeyInput {
   /** ISO time in the future, or `undefined` for a key that never expires. */
   readonly expiresAt: string | undefined;
   readonly rateLimitPerMin: number;
-  /** The staff member who creates the key; null for a key the merchant makes. */
-  readonly createdBy: number | null;
-  /** The sentence of the `422` on `name` when the merchant already holds {@link MAX_LIVE_KEYS} live keys (it differs by caller). */
+  /** The staff member who creates the key (`api_keys.created_by`; it is null only on a key a merchant made before decision 067). */
+  readonly createdBy: number;
+  /** The sentence of the `422` on `name` when the merchant already holds {@link MAX_LIVE_KEYS} live keys. */
   readonly limitMessage: string;
 }
 
@@ -34,8 +34,8 @@ export interface IssuedApiKey {
 /**
  * Locks the owner of a new API key, checks it and stores it.
  *
- * Why: B155, feature 20 (R5) and decision 064: the merchant and staff create keys under the same rules (valid addresses, an expiry
- * in the future, at most 10 live keys per account, decision 019 for the secret), so the rules live once. Only the keyed hash of the
+ * Why: B155, feature 20 (R5) and decisions 064 and 067: staff create keys under one set of rules (valid addresses, an expiry
+ * in the future, at most 10 live keys per account, decision 019 for the secret), kept in one place. Only the keyed hash of the
  * key and its first 8 characters are stored; the clear key is returned to the caller, which hands it to the person once. The two locks of
  * a creation are taken in one place and in one order (`lockOwner`): the advisory lock `api-keys:<accountId>` first, then the account row
  * `FOR UPDATE`. A rank change or an erasure holds the account row and revokes the keys without that advisory lock, so a creation that

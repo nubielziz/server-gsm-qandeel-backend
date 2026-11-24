@@ -4,6 +4,14 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**API keys are made by staff (2026-11-24, decision 067): merged, released with the shop's read-only page.** The owner decided merchants no
+longer create, change or revoke their API keys: `POST /client/api-keys`, `PATCH /client/api-keys/:id` and `DELETE /client/api-keys/:id` are
+retired (listed in `test/contract/retired.ts`, a merchant session gets 404); `GET /client/api-keys` stays, read only. Staff routes are
+unchanged (an Owner creates, staff change limits and revoke). `MachineCredentialHold` and the portal key notice's sender are gone; the
+columns `password_set_by_staff`/`email_set_by_staff` stay, written but unread; old merchant-made keys keep working. No migration.
+**Checks:** typecheck, lint, format, English, routes, contract, OpenAPI, coverage and `db:check`; the 16 touched test files (473 pass) and the
+identity mail and notification-event unit specs. The whole suite was not run locally. The shop's side is its decision 005; push the backend first.
+
 **One Name per custom field (2026-11-24, decision 065): built, all tests pass, generated documents rebuilt; not released.** A custom
 field of a service has one Name (`service_fields.supplier_key`, `name` on the admin wire: never empty, unique in its service ignoring letter
 case, exactly what a supplier receives in `CUSTOMFIELD`), a hidden key the server makes from the Name and never changes (order answers stay

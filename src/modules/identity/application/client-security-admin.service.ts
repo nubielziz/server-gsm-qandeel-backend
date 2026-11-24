@@ -47,8 +47,9 @@ function notFound(): AppError {
  *
  * A temporary password ends every session of the account (the old password may be known to someone else), works for 72 hours and lifts the
  * failed-sign-in lock of the account's email (decision 052); it and a 2FA reset open a
- * code step closed after repeated wrong authenticator codes (`CodeStepLock`). It also sets `password_set_by_staff`: until the person chooses a
- * password from a link mailed to its address, its portal sessions create no API key (`MachineCredentialHold`, decision 046).
+ * code step closed after repeated wrong authenticator codes (`CodeStepLock`). It also sets the mark `password_set_by_staff`, which a password
+ * chosen from a link mailed to the account's address clears. Nothing reads the mark since decision 067 (merchants no longer create API keys);
+ * it stays, and is still written, until the accounts model's migration drops it.
  *
  * Side effects: writes `clients`, `auth_tokens`, `sessions`, `outbox_events`, `notifications` and `audit_logs`; ending sessions drops their cached
  * views after the commit; a temporary password deletes the sign-in lock key of the email after the commit; the link and verification mails
@@ -118,7 +119,7 @@ export class ClientSecurityAdminService {
           tokenId: issued.tokenId,
         });
       } else {
-        // Until the person chooses a password from a mailed link, its sessions hand out no API key (decision 046).
+        // The mark of a password staff set: a password chosen from a mailed link clears it (nothing reads it since decision 067).
         await updateClientRow(work.tx, id, {
           passwordHash,
           mustChangePassword: true,

@@ -1,15 +1,13 @@
-// Integration tests of the API key routes (feature 7b, stage 7; decision 064): the own keys of an account of a merchant rank under
-// /client/api-keys (MISMATCHES B155) and the staff's view, creation and revocation (GET and POST /admin/clients/:id/api-keys, DELETE
-// /admin/api-keys/:id), on the real application with real Postgres and Redis. A created key is used on the Dhru endpoint to prove that a
-// change or a revocation applies at once. A retail account holds no key: both creations refuse it from the locked account row, and a
-// rank change revokes every live key.
+// Integration tests of the API key routes (feature 7b, stage 7; decisions 064 and 067): the merchant's read-only list under
+// /client/api-keys (MISMATCHES B155), the 404 of its three retired write routes, and the staff's view, creation and revocation (GET and POST
+// /admin/clients/:id/api-keys, DELETE /admin/api-keys/:id), on the real application with real Postgres and Redis. A key is used on the Dhru
+// endpoint to prove that a revocation applies at once. A retail account holds no key: staff's creation refuses it from the locked account
+// row, and a rank change revokes every live key.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { desc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
 import { ApiKeyDirectory } from '@src/modules/identity';
-import { MerchantApiKeyService } from '@src/modules/identity/application/merchant-api-key.service';
-import type { AccountPrincipal } from '@src/modules/identity/ports/account-principal';
 import { type TestApp, createTestApp } from '../../support/app';
 import { adminWith } from '../../support/admin-api';
 import { makeAccount } from '../../support/accounts';
@@ -18,7 +16,6 @@ import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertApiKey } from '../../support/machine-auth';
 import { type PortalClient, portalFor } from '../../support/portal-orders';
-import { rejectionOf } from '../../support/rejection';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -65,186 +62,27 @@ const works = (res: { json: () => { SUCCESS?: unknown } }): boolean => res.json(
 const refusal = (res: { json: () => { ERROR?: Array<{ MESSAGE: string }> } }): string | undefined =>
   res.json().ERROR?.[0]?.MESSAGE;
 
-describe('POST /client/api-keys', () => {
-  it('creates a key, shows the full key once and stores only its hash and prefix', async () => {
-    const m = await merchant();
-    const res = await m.call('POST', '/client/api-keys', {
-      name: '  Production server ',
-      allowedIps: ['203.0.113.55', '198.51.100.0/24'],
-    });
-    expect(res.status).toBe(201);
-    expect(res.res.headers['cache-control']).toBe('no-store');
-    const { key, secret } = res.body;
-    expect(secret).toMatch(/^gsm_[A-Za-z0-9_-]{43}$/);
-    expect(key).toMatchObject({
-      clientId: m.clientId,
-      name: 'Production server',
-      prefix: secret.slice(0, 8),
-      allowedIps: ['203.0.113.55', '198.51.100.0/24'],
-      rateLimitPerMin: 60,
-      lastUsedAt: null,
-      lastUsedIp: '',
-      expiresAt: null,
-      revokedAt: null,
-    });
-    expect(JSON.stringify(key)).not.toContain(secret);
-    // A key carries no scope: every key is a Dhru credential.
-    expect(key).not.toHaveProperty('scopes');
-
-    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, key.id));
-    expect(row?.keyHash).toBe(t.app.get(TokenService).hash(secret));
-    expect(row?.keyHash).not.toBe(secret);
-    expect(row?.allowedIps).toEqual(['203.0.113.55/32', '198.51.100.0/24']);
-    expect(row?.prefix).toBe(secret.slice(0, 8));
+describe('GET /client/api-keys', () => {
+  it('refuses a retail account with 403 RANK_NOT_ALLOWED and shows no key', async () => {
+    const retail = await portalFor(t, (await makeAccount(t, { rank: 'retail' })).id);
+    await insertApiKey(t, db, (await makeAccount(t, { rank: 'merchant' })).id);
+    const res = await retail.call('GET', '/client/api-keys');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('RANK_NOT_ALLOWED');
   });
 
-  it('writes no audit row (merchant routes are not audited, B121)', async () => {
-    const m = await merchant();
-    await m.call('POST', '/client/api-keys', { name: 'A' });
-    expect(await db.select().from(s.auditLogs)).toEqual([]);
-  });
-
-  it('gives a key that works at once on the Dhru endpoint', async () => {
-    const m = await merchant();
-    const { secret } = (await m.call('POST', '/client/api-keys', { name: 'A' })).body;
-    expect(works(await useKey(secret))).toBe(true);
-  });
-
-  it('ignores a scopes list in the body (older clients still send one) and sends none back', async () => {
-    const m = await merchant();
-    const res = await m.call('POST', '/client/api-keys', { name: 'A', scopes: ['dhru'] });
-    expect(res.status).toBe(201);
-    expect(res.body.key).not.toHaveProperty('scopes');
-    expect(works(await useKey(res.body.secret))).toBe(true);
-    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, res.body.key.id));
-    expect(row?.scopes).toEqual([]);
-  });
-
-  it('stores an expiry that the guard honours', async () => {
-    const m = await merchant();
-    const expiresAt = new Date(clock.nowMs() + DAY).toISOString();
-    const { secret, key } = (await m.call('POST', '/client/api-keys', { name: 'A', expiresAt })).body;
-    expect(key.expiresAt).toBe(expiresAt);
-    expect(works(await useKey(secret))).toBe(true);
-    clock.advance(2 * DAY);
-    expect(refusal(await useKey(secret))).toBe('Authentication Failed');
-  });
-
-  it('refuses invalid input with 422 on the field', async () => {
-    const m = await merchant();
-    const fields = async (payload: unknown) => {
-      const res = await m.call('POST', '/client/api-keys', payload);
-      expect(res.status).toBe(422);
-      expect(res.body.code).toBe('VALIDATION_FAILED');
-      return res.body.errors.map((error: { field: string }) => error.field);
-    };
-    expect(await fields({ name: '   ' })).toContain('name');
-    expect(await fields({ name: 'x'.repeat(61) })).toContain('name');
-    expect(await fields({ name: 'A', allowedIps: ['203.0.113.5', 'nope', '203.0.113.5/24'] })).toEqual([
-      'allowedIps.1',
-      'allowedIps.2',
-    ]);
-    expect(await fields({ name: 'A', allowedIps: Array.from({ length: 21 }, (_, i) => `203.0.113.${i}`) })).toContain(
-      'allowedIps',
-    );
-    expect(await fields({ name: 'A', expiresAt: new Date(clock.nowMs() - 1000).toISOString() })).toEqual(['expiresAt']);
-    expect(await fields({ name: 'A', expiresAt: 'tomorrow' })).toContain('expiresAt');
-    expect(await db.select().from(s.apiKeys)).toEqual([]);
-  });
-
-  it('refuses the 11th live key with 422 on name, but a revoked or expired key does not count', async () => {
-    const m = await merchant();
-    for (let index = 0; index < 8; index++) {
-      expect((await m.call('POST', '/client/api-keys', { name: `K${index}` })).status).toBe(201);
-    }
-    await insertApiKey(t, db, m.clientId, { revokedAt: clock.now() });
-    await insertApiKey(t, db, m.clientId, { expiresAt: new Date(clock.nowMs() - 1000) });
-    expect((await m.call('POST', '/client/api-keys', { name: 'K8' })).status).toBe(201);
-    expect((await m.call('POST', '/client/api-keys', { name: 'K9' })).status).toBe(201);
-    const eleventh = await m.call('POST', '/client/api-keys', { name: 'K10' });
-    expect(eleventh.status).toBe(422);
-    expect(eleventh.body.errors).toEqual([
-      { field: 'name', code: 'invalid', message: 'You already have 10 active keys; revoke one first.' },
-    ]);
-  });
-
-  it('never holds more than 10 live keys when requests arrive together', async () => {
-    const m = await merchant();
-    const answers = await Promise.all(
-      Array.from({ length: 14 }, (_, index) => m.call('POST', '/client/api-keys', { name: `K${index}` })),
-    );
-    expect(answers.filter((answer) => answer.status === 201)).toHaveLength(10);
-    expect(answers.filter((answer) => answer.status === 422)).toHaveLength(4);
-    expect(await db.select().from(s.apiKeys)).toHaveLength(10);
-  });
-
-  it('needs a session, a CSRF token and an active merchant', async () => {
-    const m = await merchant();
-    const payload = { name: 'A' };
-    expect((await m.withoutCsrf('POST', '/client/api-keys', payload)).status).toBe(403);
-    expect((await m.withoutCsrf('POST', '/client/api-keys', payload)).body.code).toBe('CSRF_FAILED');
-    const anonymous = await t.app.inject({ method: 'POST', url: '/client/api-keys', payload });
+  it('needs a session and an active merchant', async () => {
+    const anonymous = await t.app.inject({ method: 'GET', url: '/client/api-keys' });
     expect(anonymous.statusCode).toBe(401);
     for (const status of ['suspended', 'blocked'] as const) {
-      const refused = await (await merchant({ status })).call('POST', '/client/api-keys', payload);
+      const refused = await (await merchant({ status })).call('GET', '/client/api-keys');
       expect(refused.status, status).toBe(403);
       expect(refused.body.code, status).toBe('ACCOUNT_SUSPENDED');
     }
     const staff = await adminWith(t, ['*']);
-    expect((await staff.post('/client/api-keys', payload)).status).toBe(401);
-    expect(await db.select().from(s.apiKeys)).toEqual([]);
+    expect((await staff.get('/client/api-keys')).status).toBe(401);
   });
 
-  it('refuses a retail account with 403 RANK_NOT_ALLOWED on every own key route and stores nothing', async () => {
-    const retail = await portalFor(t, (await makeAccount(t, { rank: 'retail' })).id);
-    const merchantKey = await insertApiKey(t, db, (await makeAccount(t, { rank: 'merchant' })).id);
-    for (const [method, url, payload] of [
-      ['GET', '/client/api-keys', undefined],
-      ['POST', '/client/api-keys', { name: 'A' }],
-      ['PATCH', `/client/api-keys/${merchantKey.id}`, { name: 'x' }],
-      ['DELETE', `/client/api-keys/${merchantKey.id}`, undefined],
-    ] as const) {
-      const res = await retail.call(method, url, payload);
-      expect(res.status, `${method} ${url}`).toBe(403);
-      expect(res.body.code, `${method} ${url}`).toBe('RANK_NOT_ALLOWED');
-    }
-    expect(await db.select().from(s.apiKeys)).toHaveLength(1);
-  });
-
-  it('refuses a retail account from the locked account row even when the gate let the request through (a stale session view)', async () => {
-    const retail = await makeAccount(t, { rank: 'retail' });
-    const service = t.app.get(MerchantApiKeyService, { strict: false });
-    // A principal as the gate would have built it a minute ago, when the account still held a merchant rank.
-    const stale = {
-      kind: 'account',
-      accountId: retail.id,
-      clientId: retail.id,
-      rank: { id: retail.groupId, kind: 'merchant' },
-      stage: 'active',
-      ip: '127.0.0.1',
-      session: { tokenHash: 'unused' },
-    } as unknown as AccountPrincipal;
-    expect(await rejectionOf(service.create(stale, { name: 'A' }))).toMatchObject({
-      code: 'RANK_NOT_ALLOWED',
-      status: 403,
-    });
-    expect(await db.select().from(s.apiKeys)).toEqual([]);
-    // The erased and the missing account sign the caller out, never a rank answer.
-    await db
-      .update(s.clients)
-      .set({ status: 'anonymized', anonymizedAt: clock.now() })
-      .where(eq(s.clients.id, retail.id));
-    expect(await rejectionOf(service.create(stale, { name: 'A' }))).toMatchObject({
-      code: 'UNAUTHORIZED',
-      status: 401,
-    });
-    expect(await rejectionOf(service.create({ ...stale, accountId: 999_999 }, { name: 'A' }))).toMatchObject({
-      code: 'UNAUTHORIZED',
-    });
-  });
-});
-
-describe('GET /client/api-keys', () => {
   it('lists live keys first, then revoked ones, newest first, with the exact total', async () => {
     const m = await merchant();
     const first = await insertApiKey(t, db, m.clientId, { name: 'first' });
@@ -289,89 +127,24 @@ describe('GET /client/api-keys', () => {
   });
 });
 
-describe('PATCH /client/api-keys/:id', () => {
-  it('renames a key and keeps the rest', async () => {
+describe('the retired write routes of the merchant portal (decision 067)', () => {
+  it('answers 404 to a merchant session on POST, PATCH and DELETE, writes no key row and changes none', async () => {
     const m = await merchant();
-    const { id } = await insertApiKey(t, db, m.clientId, { name: 'old' });
-    const res = await m.call('PATCH', `/client/api-keys/${id}`, { name: ' new name ' });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ id, name: 'new name' });
-    expect(res.body).not.toHaveProperty('scopes');
-    expect(await m.call('PATCH', `/client/api-keys/${id}`, {})).toMatchObject({ status: 200 });
-  });
-
-  it('changes the allowed addresses and applies them on the next call, not after the cache minute', async () => {
-    const m = await merchant();
-    const { secret } = (await m.call('POST', '/client/api-keys', { name: 'A' })).body;
-    const id = (await db.select().from(s.apiKeys).orderBy(desc(s.apiKeys.id)))[0]!.id;
-    expect(works(await useKey(secret, '198.51.100.9'))).toBe(true);
-    const res = await m.call('PATCH', `/client/api-keys/${id}`, { allowedIps: ['203.0.113.55'] });
-    expect(res.body.allowedIps).toEqual(['203.0.113.55']);
-    expect(refusal(await useKey(secret, '198.51.100.9'))).toContain('allowed for this API key');
-    expect(works(await useKey(secret, '203.0.113.55'))).toBe(true);
-    expect((await m.call('PATCH', `/client/api-keys/${id}`, { allowedIps: [] })).body.allowedIps).toEqual([]);
-    expect(works(await useKey(secret, '198.51.100.9'))).toBe(true);
-  });
-
-  it('refuses bad addresses and names on their field, and a revoked key with 409', async () => {
-    const m = await merchant();
-    const { id } = await insertApiKey(t, db, m.clientId);
-    const badIp = await m.call('PATCH', `/client/api-keys/${id}`, { allowedIps: ['203.0.113.55', 'nope'] });
-    expect(badIp.status).toBe(422);
-    expect(badIp.body.errors.map((error: { field: string }) => error.field)).toEqual(['allowedIps.1']);
-    const badName = await m.call('PATCH', `/client/api-keys/${id}`, { name: '' });
-    expect(badName.body.errors.map((error: { field: string }) => error.field)).toEqual(['name']);
-    const gone = await insertApiKey(t, db, m.clientId, { revokedAt: clock.now() });
-    const refused = await m.call('PATCH', `/client/api-keys/${gone.id}`, { name: 'x' });
-    expect(refused.status).toBe(409);
-    expect(refused.body).toMatchObject({ code: 'INVALID_TRANSITION', detail: 'This key is revoked.' });
-  });
-
-  it("answers 404 for another merchant's key and an unknown one", async () => {
-    const mine = await merchant();
-    const other = await merchant();
-    const theirs = await insertApiKey(t, db, other.clientId, { name: 'theirs' });
-    expect((await mine.call('PATCH', `/client/api-keys/${theirs.id}`, { name: 'mine now' })).status).toBe(404);
-    expect((await mine.call('PATCH', '/client/api-keys/999999', { name: 'x' })).status).toBe(404);
-    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, theirs.id));
-    expect(row?.name).toBe('theirs');
-  });
-});
-
-describe('DELETE /client/api-keys/:id', () => {
-  it('revokes the key: it stops working on the next call, and a second delete is 204 too', async () => {
-    const m = await merchant();
-    const { secret } = (await m.call('POST', '/client/api-keys', { name: 'A' })).body;
-    const id = (await db.select().from(s.apiKeys))[0]!.id;
-    expect(works(await useKey(secret))).toBe(true);
-    const res = await m.call('DELETE', `/client/api-keys/${id}`);
-    expect(res.status).toBe(204);
-    expect(res.body).toBeUndefined();
-    expect(refusal(await useKey(secret))).toBe('Authentication Failed');
-    const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id));
-    expect(row?.revokedAt?.toISOString()).toBe(clock.now().toISOString());
-    clock.advance(DAY);
-    expect((await m.call('DELETE', `/client/api-keys/${id}`)).status).toBe(204);
-    const [again] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id));
-    expect(again?.revokedAt?.toISOString()).toBe(row?.revokedAt?.toISOString());
-  });
-
-  it("answers 404 for another merchant's key and an unknown one, and leaves the key alone", async () => {
-    const mine = await merchant();
-    const other = await merchant();
-    const theirs = await insertApiKey(t, db, other.clientId);
-    expect((await mine.call('DELETE', `/client/api-keys/${theirs.id}`)).status).toBe(404);
-    expect((await mine.call('DELETE', '/client/api-keys/999999')).status).toBe(404);
-    expect(works(await useKey(theirs.key))).toBe(true);
-  });
-
-  it('lets a merchant keep using the portal after revoking, and shows the revoked key last in the list', async () => {
-    const m = await merchant();
-    const a = await insertApiKey(t, db, m.clientId, { name: 'a' });
-    await insertApiKey(t, db, m.clientId, { name: 'b' });
-    await m.call('DELETE', `/client/api-keys/${a.id}`);
-    const list = await m.call('GET', '/client/api-keys');
-    expect(list.body.map((row: { name: string }) => row.name)).toEqual(['b', 'a']);
+    const own = await insertApiKey(t, db, m.clientId, { name: 'made before' });
+    const before = await db.select().from(s.apiKeys);
+    for (const [method, url, payload] of [
+      ['POST', '/client/api-keys', { name: 'A' }],
+      ['PATCH', `/client/api-keys/${own.id}`, { name: 'renamed' }],
+      ['DELETE', `/client/api-keys/${own.id}`, undefined],
+    ] as const) {
+      const res = await m.call(method, url, payload);
+      expect(res.status, `${method} ${url}`).toBe(404);
+      expect(res.body.code, `${method} ${url}`).toBe('NOT_FOUND');
+    }
+    // No key was written, renamed or revoked, and the key made before keeps working until staff revoke it.
+    expect(await db.select().from(s.apiKeys)).toEqual(before);
+    expect(works(await useKey(own.key))).toBe(true);
+    expect((await m.call('GET', '/client/api-keys')).status).toBe(200);
   });
 });
 

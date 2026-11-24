@@ -8,7 +8,7 @@ import type { Transaction } from '../../../infra/db';
  * and an erasure revoke every live key in their own transaction, and a later change back never restores one.
  *
  * The implementation runs while the caller already holds the account row, so it updates the live key rows directly and never takes the
- * advisory lock `api-keys:<accountId>` that the two key creations take before the row (the one named exception to the lock order).
+ * advisory lock `api-keys:<accountId>` that a key creation takes before the row (the one named exception to the lock order).
  *
  * Side effects (of the implementation): updates `api_keys.revoked_at`; the caller invalidates the cached key views after the commit.
  */

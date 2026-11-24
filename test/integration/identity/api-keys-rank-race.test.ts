@@ -1,8 +1,9 @@
-// Integration tests of the race between an API key creation and a rank change that leaves the merchant kind (decision 064): both
-// creations take the advisory lock `api-keys:<accountId>` first and then the account row `FOR UPDATE`, and refuse from that
-// locked read; the rank change holds the row and revokes the keys without the advisory lock. So a creation that waits behind the rank
-// change reads the new rank and refuses, no live key is left on the account, and no cycle of locks can form. Two connections: one plays the
-// rank change (its transaction holds the row, as the money module's rank change does), the other is the HTTP creation.
+// Integration tests of the race between an API key creation and a rank change that leaves the merchant kind (decisions 064 and 067): the
+// creation (staff's, the only one since merchants no longer make keys) takes the advisory lock `api-keys:<accountId>` first and then the
+// account row `FOR UPDATE`, and refuses from that locked read; the rank change holds the row and revokes the keys without the advisory
+// lock. So a creation that waits behind the rank change reads the new rank and refuses, no live key is left on the account, and no cycle
+// of locks can form. Two connections: one plays the rank change (its transaction holds the row, as the money module's rank change does),
+// the other is the HTTP creation.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import type { Pool } from 'pg';
@@ -16,7 +17,6 @@ import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
 import { insertApiKey } from '../../support/machine-auth';
-import { portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -94,31 +94,6 @@ function rankChange(accountId: number): {
 }
 
 describe('a key creation that waits behind a rank change to retail', () => {
-  it("the merchant's own creation refuses from its locked read (403 RANK_NOT_ALLOWED) and no live key is left", async () => {
-    const id = await insertMerchant(db);
-    const m = await portalFor(t, id);
-    const old = await insertApiKey(t, db, id, { name: 'old' });
-    const change = rankChange(id);
-    try {
-      await change.holding;
-      // The request passes the gate on the merchant rank it still sees, takes the key lock and waits for the account row.
-      const creation = m.call('POST', '/client/api-keys', { name: 'racer' });
-      await waitsOn('%from "clients"%for update%');
-      change.proceed();
-      // The change finishes while the creation holds `api-keys:<id>`: its revoke never asks for that lock, so nothing deadlocks.
-      expect(await change.done).toBe(1);
-      const answer = await creation;
-      expect(answer.status).toBe(403);
-      expect(answer.body.code).toBe('RANK_NOT_ALLOWED');
-    } finally {
-      change.proceed();
-      await change.done.catch(() => undefined);
-    }
-    expect(await liveKeysOf(id)).toBe(0);
-    const rows = await db.select().from(s.apiKeys).where(eq(s.apiKeys.clientId, id));
-    expect(rows.map((row) => row.id)).toEqual([old.id]);
-  });
-
   it("staff's creation refuses from its locked read (409 CONFLICT) and no live key is left", async () => {
     const owner = await adminWith(t, ['*']);
     const id = await insertMerchant(db);
@@ -141,25 +116,23 @@ describe('a key creation that waits behind a rank change to retail', () => {
     expect(await db.select().from(s.auditLogs)).toEqual([]);
   });
 
-  it('with no rank change in flight both creations succeed (the control of the two cases above)', async () => {
+  it('with no rank change in flight the creation succeeds (the control of the case above)', async () => {
     const owner = await adminWith(t, ['*']);
     const id = await insertMerchant(db);
-    const m = await portalFor(t, id);
-    expect((await m.call('POST', '/client/api-keys', { name: 'own' })).status).toBe(201);
     expect((await owner.post(`/admin/clients/${id}/api-keys`, { name: 'staff' })).status).toBe(201);
-    expect(await liveKeysOf(id)).toBe(2);
+    expect(await liveKeysOf(id)).toBe(1);
   });
 });
 
 describe('the order of the locks', () => {
   it('a creation takes the advisory lock before the account row: while it waits for the key lock, the row is free', async () => {
+    const owner = await adminWith(t, ['*']);
     const id = await insertMerchant(db);
-    const m = await portalFor(t, id);
     const holder = await pool.connect();
     try {
       await holder.query('begin');
       await holder.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [`api-keys:${id}`]);
-      const creation = m.call('POST', '/client/api-keys', { name: 'queued' });
+      const creation = owner.post(`/admin/clients/${id}/api-keys`, { name: 'queued' });
       await waitsOn('%pg_advisory_xact_lock%');
       // The creation holds nothing yet: the account row can be taken at once (a rank change would not have to wait for it).
       const probe = await pool.connect();

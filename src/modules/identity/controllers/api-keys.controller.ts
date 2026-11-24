@@ -1,5 +1,6 @@
-// HTTP controllers of the API key routes (map domain A, stage 7): the own keys of an account of a merchant rank under /client/api-keys
-// (B155) and the staff's view and revocation under /admin. Thin; the rules live in MerchantApiKeyService and ApiKeyAdminService.
+// HTTP controllers of the API key routes (map domain A, stage 7): the read-only list of the own keys of an account of a merchant rank
+// under /client/api-keys (B155, decision 067) and the staff's view, creation, limits and revocation under /admin. Thin; the rules live in
+// MerchantApiKeyService and ApiKeyAdminService.
 import { Body, Controller, Header, Param, Query } from '@nestjs/common';
 import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { ApiKeyAdminService } from '../application/api-key-admin.service';
@@ -9,25 +10,20 @@ import {
   adminListClientApiKeys,
   adminRevokeApiKey,
   adminUpdateApiKey,
-  portalCreateApiKey,
   portalListApiKeys,
-  portalRevokeApiKey,
-  portalUpdateApiKey,
 } from '../contracts/api-keys.contracts';
 import { type AccountPrincipal, CurrentAccount } from '../ports/account-principal';
 import { CurrentStaff } from '../security/access-state';
 import type { StaffPrincipal } from '../security/principal';
 
 /**
- * The merchant portal's API key routes.
+ * The merchant portal's API key route: a read-only list.
  *
- * Why: B155. A merchant manages the keys its integration uses. The answer that carries the full key says
- * `Cache-Control: no-store`.
+ * Why: B155 and decision 067. A merchant sees the keys its integration uses (the prefix, the allowed addresses, the last use); it no
+ * longer creates, changes or revokes them: staff make every key in the console, so `POST /client/api-keys`,
+ * `PATCH /client/api-keys/:id` and `DELETE /client/api-keys/:id` have no handler and answer `404`.
  *
  * @route GET /client/api-keys
- * @route POST /client/api-keys
- * @route PATCH /client/api-keys/:id
- * @route DELETE /client/api-keys/:id
  */
 @Controller()
 export class MerchantApiKeysController {
@@ -47,57 +43,6 @@ export class MerchantApiKeysController {
     @Query() query: QueryOf<typeof portalListApiKeys>,
   ): Promise<ResultOf<typeof portalListApiKeys>> {
     return this.keys.list(merchant, { offset: query.range.start, limit: query.range.limit, sort: query.sort });
-  }
-
-  /**
-   * Creates a key and answers the full key once.
-   *
-   * @param merchant the signed-in merchant
-   * @param body the name, allowed addresses and expiry
-   * @returns the key and its secret
-   * @route POST /client/api-keys
-   */
-  @Route(portalCreateApiKey)
-  @Header('Cache-Control', 'no-store')
-  create(
-    @CurrentAccount() merchant: AccountPrincipal,
-    @Body() body: BodyOf<typeof portalCreateApiKey>,
-  ): Promise<ResultOf<typeof portalCreateApiKey>> {
-    return this.keys.create(merchant, body);
-  }
-
-  /**
-   * Renames a key or changes its allowed addresses.
-   *
-   * @param merchant the signed-in merchant
-   * @param params the key id
-   * @param body the fields to change
-   * @returns the key after the change
-   * @route PATCH /client/api-keys/:id
-   */
-  @Route(portalUpdateApiKey)
-  update(
-    @CurrentAccount() merchant: AccountPrincipal,
-    @Param() params: ParamsOf<typeof portalUpdateApiKey>,
-    @Body() body: BodyOf<typeof portalUpdateApiKey>,
-  ): Promise<ResultOf<typeof portalUpdateApiKey>> {
-    return this.keys.update(merchant, params.id, body);
-  }
-
-  /**
-   * Revokes a key.
-   *
-   * @param merchant the signed-in merchant
-   * @param params the key id
-   * @returns nothing: the route answers 204
-   * @route DELETE /client/api-keys/:id
-   */
-  @Route(portalRevokeApiKey)
-  revoke(
-    @CurrentAccount() merchant: AccountPrincipal,
-    @Param() params: ParamsOf<typeof portalRevokeApiKey>,
-  ): Promise<void> {
-    return this.keys.revoke(merchant, params.id);
   }
 }
 

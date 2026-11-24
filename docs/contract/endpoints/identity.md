@@ -179,16 +179,19 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /client/api-keys
 
 - **Map**: New API key, shown once, with allowed IPs. (مفتاح جديد يظهر مرة وحدة، مع IPs مسموحة) · merchant-session · stage 7 · tables api_keys
+- **Retired** (decision 067): Merchants no longer create, change or revoke their own API keys: staff make and manage every key in the console. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## PATCH /client/api-keys/:id
 
 - **Map**: Rename a key or change its allowed IPs. (الاسم والـ IPs) · merchant-session · stage 7 · tables api_keys
+- **Retired** (decision 067): Merchants no longer create, change or revoke their own API keys: staff make and manage every key in the console. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## DELETE /client/api-keys/:id
 
 - **Map**: Revoke a key. (إلغاء مفتاح) · merchant-session · stage 7 · tables api_keys
+- **Retired** (decision 067): Merchants no longer create, change or revoke their own API keys: staff make and manage every key in the console. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /admin/auth/login

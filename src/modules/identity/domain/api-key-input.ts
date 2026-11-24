@@ -1,13 +1,13 @@
-// Pure rules of the merchant's own API keys (routes /client/api-keys, B155): how the allowed addresses are checked and written, how a new
+// Pure rules of the API keys of an account (staff's routes under /admin and the read of /client/api-keys, B155, decision 067): how the allowed addresses are checked and written, how a new
 // key looks and how a stored key reads on the wire. No I/O.
 import { type FieldError } from '../../../common/errors';
 import { cidrToWire, normaliseCidr } from './ip-rule-input';
 
-/** A merchant may hold at most this many keys that are neither revoked nor expired. */
+/** An account may hold at most this many keys that are neither revoked nor expired. */
 export const MAX_LIVE_KEYS = 10;
 /** A key may list at most this many allowed addresses or ranges. */
 export const MAX_ALLOWED_IPS = 20;
-/** The per-minute limit every key a merchant creates starts with; only staff change it (B155). */
+/** The per-minute limit a key starts with unless staff set another; only staff create keys and change the limit (B155, decision 067). */
 export const DEFAULT_RATE_LIMIT_PER_MIN = 60;
 /**
  * The per-minute limit staff may give a key when they create or edit it (feature 20, R5 and R6).
@@ -124,7 +124,7 @@ export interface ApiKeyColumns {
   readonly expiresAt: Date | null;
   readonly revokedAt: Date | null;
   readonly createdAt: Date;
-  /** The staff member who created the key; null for a key the merchant made. */
+  /** The staff member who created the key; null for a key the merchant made before decision 067. */
   readonly createdBy: number | null;
 }
 

@@ -84,7 +84,7 @@ purpose, tables, routes, jobs, events, cache keys, permissions and scenarios.
 - **One lock order for the money paths of an account:** the account row (`FOR UPDATE` by the rank change, status writers, the guest claim and
   erasure; `FOR KEY SHARE` by every path that reads the rank kind to move money), then the rows of the path (order, invoice, payment, dispute),
   then the advisory locks (`topup:<accountId>`, `upload-quota:account:<id>`, fingerprint and stock locks), then the ledger accounts `FOR UPDATE`
-  in id order. The one named exception is `api-keys:<accountId>`, taken before the account row by both key creations. Staff adjustments take
+  in id order. The one named exception is `api-keys:<accountId>`, taken before the account row by a key creation (staff's, decision 067). Staff adjustments take
   `wallet-adjust:staff:<staffId>` first.
 - The expand migration is assembled (`scripts/accounts-merge`), the old customer tables are frozen until the contract release, and the old
   customer routes answer 410 `ROUTE_RETIRED`; `docs/OPERATIONS.md` holds the release order.

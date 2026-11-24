@@ -284,7 +284,6 @@ describe('the real routes of the two families', () => {
       ['GET', '/client/wallet'],
       ['GET', '/client/notifications'],
       ['POST', '/client/orders'],
-      ['POST', '/client/api-keys'],
     ] as const) {
       const res = await t.app.inject({ method, url, headers: method === 'GET' ? headers : mutationHeaders });
       expect(res.statusCode, `${method} ${url}`).toBe(403);

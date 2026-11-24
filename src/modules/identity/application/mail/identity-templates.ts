@@ -30,7 +30,8 @@ const staff = (event: string, subject: string, body: string): DefaultTemplate =>
  * The events of {@link IDENTITY_DEFAULT_TEMPLATES} that no migration installed.
  *
  * Why: the notice of an API key the merchant made in the portal came after migration 0025. It is a security email, so it is always sent
- * from this shipped text (decision 047) while no stored template exists; staff who want other words add a template for the event.
+ * from this shipped text (decision 047) while no stored template exists; staff who want other words add a template for the event. Nothing
+ * writes this notice since decision 067 (merchants no longer create keys); the event stays registered so a notification written before still reads and sends.
  * `identityTemplatesSql()` leaves these out, so a test database holds the rows production holds.
  */
 export const IDENTITY_SHIPPED_TEXT_ONLY: readonly string[] = ['merchant.portal_api_key_created'];

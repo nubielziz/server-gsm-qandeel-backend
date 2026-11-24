@@ -112,7 +112,7 @@ account (`/store/v1/me*`: orders, password, currency, data export and deletion),
 | Orders | `GET /client/orders`, `/:id`, cancel, verify, CSV export |
 | Wallet and statement | `GET /client/wallet`, `/wallet/statement` |
 | Top-ups and invoices (bank transfer receipt upload) | `/client/invoices*`, `GET /client/payment-methods` |
-| API keys and the Dhru connection details | `/client/api-keys*` |
+| API keys (a read-only list: staff make and manage every key, decision 067) and the Dhru connection details | `GET /client/api-keys` |
 | Security: password, 2FA | `/client/security/*` |
 | Profile and notification preferences | `PATCH /client/profile`, `/client/notification-preferences` |
 | Sign-in pieces | `/client/auth/*` (2FA step, verify email, forgot and reset password, sign out, me) |

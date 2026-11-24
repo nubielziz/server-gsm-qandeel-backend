@@ -1,4 +1,5 @@
-// Routes of the map that the backend retired on purpose (docs/decisions/061-merchant-verification-retired.md and 062-retired-features.md). The map is read-only
+// Routes of the map that the backend retired on purpose (docs/decisions/061-merchant-verification-retired.md, 062-retired-features.md and
+// 067-api-keys-made-by-staff.md). The map is read-only
 // and still has their rows, so they stay in the route manifest, but no contract is built for them and no console function may call them.
 // Read by route-parity.test.ts, lib/manifest-parity.ts and scripts/build-coverage.mjs; proved by test/tooling/retired-routes.test.ts.
 // pending.ts keeps its own meaning (routes still owed) and stays empty: a retired route is never owed.
@@ -28,6 +29,8 @@ const SURVEY_RETIRED =
   'The satisfaction survey of a ticket was retired: customers are no longer asked to rate a resolved ticket.';
 const DEVICE_SESSIONS_RETIRED =
   "The merchant's list of signed-in devices was retired: a merchant signs out of every device at once, and staff end every session of a merchant.";
+const API_KEY_WRITES_RETIRED =
+  'Merchants no longer create, change or revoke their own API keys: staff make and manage every key in the console.';
 
 /**
  * Manifest keys (`METHOD /path`) of map rows that are deliberately not built, each with its decision and reason.
@@ -94,4 +97,7 @@ export const RETIRED: Readonly<Record<string, RetiredRoute>> = {
   'POST /store/v1/tickets/:token/csat': { decision: '062', reason: SURVEY_RETIRED },
   'GET /client/sessions': { decision: '062', reason: DEVICE_SESSIONS_RETIRED },
   'DELETE /client/sessions/:id': { decision: '062', reason: DEVICE_SESSIONS_RETIRED },
+  'POST /client/api-keys': { decision: '067', reason: API_KEY_WRITES_RETIRED },
+  'PATCH /client/api-keys/:id': { decision: '067', reason: API_KEY_WRITES_RETIRED },
+  'DELETE /client/api-keys/:id': { decision: '067', reason: API_KEY_WRITES_RETIRED },
 };

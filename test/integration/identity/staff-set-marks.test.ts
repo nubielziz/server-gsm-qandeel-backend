@@ -1,22 +1,17 @@
-// Integration tests of the hold that a password set by staff puts on a merchant's machine credentials (decision 046: a key that spends a
-// merchant's money is made by the merchant or by an Owner). While the account's password is one staff set, a portal session does not
-// create API keys; the rest of the portal works. A password chosen from a link mailed to
-// the merchant's address lifts the hold. A change of the email address by a staff member who is not an Owner puts on the same hold, and a
-// link mailed to the new address (an address staff chose) does not lift it; an Owner's change of the address sets none, and an Owner's
-// details edit that carries the stored address lifts it. A
-// key made in the portal sends the merchant a notice that says so; a key staff made keeps the notice that names the support team.
+// Integration tests of the two marks staff leave on an account (decision 046; read by nobody since decision 067): `password_set_by_staff`
+// is set by a staff temporary password and cleared only by a password chosen from a link mailed to the account's address, and
+// `email_set_by_staff` is set by a change of the email address by a staff member who is not an Owner and cleared by an Owner (a change of the
+// address, or a details edit that carries the stored one). The marks held back the merchant's own creation of API keys; merchants make no key
+// any more, but the marks are still written and cleared as before until the accounts model drops them. The notice of the retired portal key
+// event is kept registered with its shipped text: a notification written before still sends.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
-import { schema as s } from '@src/infra/db';
+import { DbService, schema as s } from '@src/infra/db';
 // The identity barrel loads before the editor's own file: that file reaches the money barrel, whose module loads the identity module
 // files that import the editor, so a process that starts with the editor's file meets the class before it exists.
 import '@src/modules/identity';
 import { ClientDetailsEditor } from '@src/modules/identity/application/client-details-editor';
-import {
-  STAFF_SET_EMAIL_HOLD,
-  STAFF_SET_PASSWORD_HOLD,
-} from '@src/modules/identity/application/machine-credential-hold';
-import { SECURITY_NOTICE_PHRASES } from '@src/modules/identity/application/mail/merchant-lifecycle-mails';
+import { NotificationService } from '@src/modules/platform';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -68,8 +63,6 @@ beforeEach(async () => {
   captureEmailedLinks(t);
 });
 
-const KEY = { name: 'Integration' };
-
 /** Sets a temporary password through the staff route and signs in with it to a full portal session. */
 async function signedInWithStaffPassword(merchant: { id: number; email: string }): Promise<MerchantPortal> {
   const security = await adminWith(t, ['clients:security']);
@@ -96,46 +89,52 @@ async function resetFromMailedLink(email: string, password: string): Promise<voi
   expect((await owner.reset(link!.token, password)).statusCode).toBe(204);
 }
 
-describe('machine credentials while the password is one staff set', () => {
-  it('refuses API keys with 403 until a password is set from a mailed link', async () => {
+describe('the mark of a password staff set', () => {
+  it('is set by a temporary password, kept by the forced change and by a change on the security page, and cleared by a password from a mailed link', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const { db } = await testDb();
     const portal = await signedInWithStaffPassword(merchant);
+    expect(await clientRow(merchant.id)).toMatchObject({ passwordSetByStaff: true, mustChangePassword: false });
 
-    const key = await portal.call('POST', '/client/api-keys', KEY);
-    expect(key.statusCode).toBe(403);
-    const problem = key.json<{ code: string; detail: string }>();
-    expect(problem.code).toBe('FORBIDDEN');
-    expect(problem.detail).toContain('Forgot password');
-    // The sentence names what the hold covers.
-    expect(problem.detail).toBe(STAFF_SET_PASSWORD_HOLD);
-    expect(problem.detail).toEndWith('before you create API keys.');
-    expect(await db.select().from(s.apiKeys)).toEqual([]);
-
-    // The rest of the portal works in that session.
+    // The rest of the portal works in that session, and a change on the security page is not a mailed link: the mark stays.
     expect((await portal.me()).statusCode).toBe(200);
-    expect((await portal.call('GET', '/client/api-keys')).statusCode).toBe(200);
-
-    // A change on the security page is not a mailed link: the hold stays.
     expect((await portal.changePassword('chosen-after-temporary-31', 'changed-on-security-page-47')).statusCode).toBe(
       204,
     );
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
+    expect((await clientRow(merchant.id)).passwordSetByStaff).toBe(true);
 
-    // A password set from the link mailed to the merchant's address lifts it.
+    // A password set from the link mailed to the merchant's address clears it, and ends the sessions open under it.
     clock.advance(60_000);
     await resetFromMailedLink(merchant.email, 'owner-chose-from-link-58');
+    expect((await clientRow(merchant.id)).passwordSetByStaff).toBe(false);
     expect((await portal.me()).statusCode).toBe(401);
     const owner = new MerchantPortal(t, freshClientIp());
     expect((await owner.login(merchant.email, 'owner-chose-from-link-58')).json()).toEqual({ next: 'done' });
-    expect((await owner.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
   });
 
-  it('leaves a merchant that never had a staff-set password free to create a key', async () => {
+  it('is never set for a merchant that chose its own password', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
+    expect(await clientRow(merchant.id)).toMatchObject({ passwordSetByStaff: false, emailSetByStaff: false });
+  });
+
+  it('is cleared by a password set from an invitation mailed to the merchant', async () => {
+    // The mark is written directly: an invitation is a mailed link like a reset, and both clear it the same way.
+    const merchant = await makeMerchant(t, { noPassword: true, passwordSetByStaff: true });
+    const security = await adminWith(t, ['clients:security']);
+    expect((await security.post(`/admin/clients/${merchant.id}/password`, { mode: 'reset_link' })).body).toEqual({
+      link: 'invite',
+    });
+    mailbox(t).reset();
+    await runMerchantMailJob(t, 'invited');
+    const token = tokenIn(mailbox(t).sent.at(-1)!.text);
+    expect((await new MerchantPortal(t, freshClientIp()).reset(token, 'chosen-from-invitation-64')).statusCode).toBe(
+      204,
+    );
+    expect((await clientRow(merchant.id)).passwordSetByStaff).toBe(false);
+
+    const portal = new MerchantPortal(t, freshClientIp());
+    expect((await portal.login(merchant.email, 'chosen-from-invitation-64')).json()).toEqual({ next: 'done' });
   });
 });
 
@@ -145,39 +144,26 @@ async function staffChangesEmail(merchantId: number, email: string): Promise<voi
   expect((await support.patch(`/admin/clients/${merchantId}`, { email })).status).toBe(200);
 }
 
-describe('machine credentials after staff changed the email address', () => {
-  it('refuses API keys with 403, and a password set from a link to the new address does not lift it', async () => {
+describe('the mark of an email address staff changed', () => {
+  it('is set by a staff member who is not an Owner, and a password set from a link to the new address does not clear it', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
+    expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
     clock.advance(60_000);
     await resetFromMailedLink('desk-inbox@example.com', 'chosen-from-new-address-62');
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login('desk-inbox@example.com', 'chosen-from-new-address-62')).json()).toEqual({
       next: 'done',
     });
-
-    const key = await portal.call('POST', '/client/api-keys', KEY);
-    expect(key.statusCode).toBe(403);
-    expect(key.json<{ code: string; detail: string }>()).toMatchObject({
-      code: 'FORBIDDEN',
-      detail: STAFF_SET_EMAIL_HOLD,
-    });
-    expect(STAFF_SET_EMAIL_HOLD).toEndWith('before you create API keys.');
-    const { db } = await testDb();
-    expect(await db.select().from(s.apiKeys)).toEqual([]);
     expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
     // The rest of the portal works in that session.
     expect((await portal.me()).statusCode).toBe(200);
-    expect((await portal.call('GET', '/client/api-keys')).statusCode).toBe(200);
-
-    // An Owner still makes a key for the merchant from the console (decision 046).
-    const owner = await adminWith(t, ['*']);
-    expect((await owner.post(`/admin/clients/${merchant.id}/api-keys`, KEY)).status).toBe(201);
   });
 
-  it('keeps the hold of a temporary password after a reset by link to an address staff set', async () => {
+  it('stays after a reset by link to an address staff set, while the mark of the staff password is cleared by that link', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const first = await signedInWithStaffPassword(merchant);
+    expect((await clientRow(merchant.id)).passwordSetByStaff).toBe(true);
     await staffChangesEmail(merchant.id, 'second-inbox@example.com');
     expect((await first.me()).statusCode).toBe(401);
     clock.advance(60_000);
@@ -186,8 +172,6 @@ describe('machine credentials after staff changed the email address', () => {
     expect((await portal.login('second-inbox@example.com', 'chosen-from-new-address-63')).json()).toEqual({
       next: 'done',
     });
-
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
     expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
   });
 });
@@ -241,14 +225,12 @@ async function accountTrail(merchantId: number) {
   };
 }
 
-describe('the hold of an email address and an Owner', () => {
-  it('is lifted when an Owner sends the details form with the stored address, which changes nothing else of the email', async () => {
+describe('the mark of an email address and an Owner', () => {
+  it('is cleared when an Owner sends the details form with the stored address, which changes nothing else of the email', async () => {
     const merchant = await formMerchant();
     await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
     const portal = await signedIn('desk-inbox@example.com');
-    const refused = await portal.call('POST', '/client/api-keys', KEY);
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json<{ detail: string }>().detail).toBe(STAFF_SET_EMAIL_HOLD);
+    expect((await clientRow(merchant.id)).emailSetByStaff).toBe(true);
 
     const before = await accountTrail(merchant.id);
     const links = emailedLinks().length;
@@ -279,24 +261,19 @@ describe('the hold of an email address and an Owner', () => {
     expect(emailedLinks()).toHaveLength(links);
     expect(limiter).not.toHaveBeenCalled();
     expect((await portal.me()).statusCode).toBe(200);
-
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
   });
 
   it('stays after the same form from a staff member who is not an Owner, and after an Owner edit without the email', async () => {
     const merchant = await formMerchant();
     await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
-    const portal = await signedIn('desk-inbox@example.com');
 
     const support = await adminWith(t, ['clients:read', 'clients:update', 'clients:security']);
     expect((await support.patch(`/admin/clients/${merchant.id}`, await detailsForm(merchant.id))).status).toBe(200);
     expect((await clientRow(merchant.id)).emailSetByStaff).toBe(true);
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
 
     const owner = await adminWith(t, ['*']);
     expect((await owner.patch(`/admin/clients/${merchant.id}`, { phone: '+962 79 555' })).status).toBe(200);
     expect(await clientRow(merchant.id)).toMatchObject({ phone: '+962 79 555', emailSetByStaff: true });
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
   });
 
   it('is not set by an Owner change of the address, which still ends the sessions, voids the links and tells the old address', async () => {
@@ -325,9 +302,6 @@ describe('the hold of an email address and an Owner', () => {
     const notices = notifications.filter((row) => row.event === 'merchant.security_notice');
     expect(notices).toHaveLength(1);
     expect(notices[0]!.payload).toMatchObject({ to: merchant.email });
-
-    const portal = await signedIn('owner-typed@example.com');
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
   });
 
   it('is cleared by an Owner change of an address a staff member who is not an Owner set', async () => {
@@ -340,48 +314,27 @@ describe('the hold of an email address and an Owner', () => {
       200,
     );
     expect((await clientRow(merchant.id)).emailSetByStaff).toBe(false);
-    const portal = await signedIn('merchant-own@example.com');
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
   });
 });
 
-describe('the hold of a password staff set and the invitation link', () => {
-  it('is lifted by a password set from an invitation mailed to the merchant', async () => {
-    // The mark is written directly: an invitation is a mailed link like a reset, and both end the hold the same way.
-    const merchant = await makeMerchant(t, { noPassword: true, passwordSetByStaff: true });
-    const security = await adminWith(t, ['clients:security']);
-    expect((await security.post(`/admin/clients/${merchant.id}/password`, { mode: 'reset_link' })).body).toEqual({
-      link: 'invite',
-    });
-    mailbox(t).reset();
-    await runMerchantMailJob(t, 'invited');
-    const token = tokenIn(mailbox(t).sent.at(-1)!.text);
-    expect((await new MerchantPortal(t, freshClientIp()).reset(token, 'chosen-from-invitation-64')).statusCode).toBe(
-      204,
-    );
-    expect((await clientRow(merchant.id)).passwordSetByStaff).toBe(false);
-
-    const portal = new MerchantPortal(t, freshClientIp());
-    expect((await portal.login(merchant.email, 'chosen-from-invitation-64')).json()).toEqual({ next: 'done' });
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-  });
-});
-
-describe('the notice of a new API key', () => {
+describe('the notice of the retired event merchant.portal_api_key_created', () => {
   beforeEach(() => {
     mailbox(t).reset();
   });
 
-  it('says that a key made in the portal was made in the portal, and names no action of the support team', async () => {
+  it('is still registered with its shipped text, so a notification written before decision 067 still sends and says it was made in the portal', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const portal = new MerchantPortal(t, freshClientIp());
-    expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
-    expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-
+    // Nothing in the code writes this notice any more: the row stands for one written before merchants stopped making keys.
+    await t.app.get(DbService).runInTransaction((work) =>
+      t.app.get(NotificationService, { strict: false }).enqueue(work, {
+        event: 'merchant.portal_api_key_created',
+        recipient: { type: 'account', id: merchant.id },
+        channel: 'email',
+        variables: { merchantName: 'Test Merchant', change: "A new API key was created in your account's portal." },
+      }),
+    );
     const { db } = await testDb();
-    const rows = await notificationRows(db);
-    expect(rows.map((row) => row.event)).toEqual(['merchant.portal_api_key_created']);
-    expect(rows[0]).toMatchObject({ recipientType: 'account', recipientId: merchant.id, channel: 'email' });
+    expect((await notificationRows(db)).map((row) => row.event)).toEqual(['merchant.portal_api_key_created']);
 
     // The stored templates of the test database are the ones the migrations installed: this event has none, so the shipped text is sent.
     await sendAllQueued(t);
@@ -393,31 +346,5 @@ describe('the notice of a new API key', () => {
         'If you did not create it, revoke it in the portal and change your password.',
     );
     expect(sent[0]!.text).not.toContain('support');
-  });
-
-  it('keeps the text that names the support team in the notice of a key staff made', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const owner = await adminWith(t, ['*']);
-    expect((await owner.post(`/admin/clients/${merchant.id}/api-keys`, KEY)).status).toBe(201);
-
-    const { db } = await testDb();
-    const rows = await notificationRows(db);
-    expect(rows.map((row) => row.event)).toEqual(['merchant.security_notice']);
-    expect(JSON.stringify(rows[0]!.payload)).toContain(SECURITY_NOTICE_PHRASES.api_key_created);
-    await sendAllQueued(t);
-    expect(mailbox(t).sent).toHaveLength(1);
-    expect(mailbox(t).sent[0]!.text).toBe(
-      'Hi Test Merchant,\n\nOur support team made this change to your account: a new API key was created for your account.\n\n' +
-        'If you did not ask for it, reply to this email or contact our support team at once.',
-    );
-  });
-
-  it('sends nothing when the key is refused', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const portal = new MerchantPortal(t, freshClientIp());
-    expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
-    expect((await portal.call('POST', '/client/api-keys', { name: 'Bad', allowedIps: ['nope'] })).statusCode).toBe(422);
-    const { db } = await testDb();
-    expect(await notificationRows(db)).toEqual([]);
   });
 });

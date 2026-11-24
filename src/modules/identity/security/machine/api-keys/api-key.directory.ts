@@ -59,7 +59,7 @@ const KEY_SHAPE = /^[\x21-\x7e]{16,256}$/;
  * ranks table); the features that change a key or an account call `invalidate` / `invalidateClient` after their commit, so a revoke, a
  * suspension or a move to the retail rank applies on the next request. A cached view is used only when it belongs to the presented key
  * (decision 055). `revokeLiveKeysOf` is the seam the rank change and the erasure use (`ApiKeyRevocation`): it never takes the advisory
- * lock `api-keys:<accountId>`, because both key creations take that lock before the account row and the caller already holds the row.
+ * lock `api-keys:<accountId>`, because a key creation takes that lock before the account row and the caller already holds the row.
  *
  * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}:v2` (an invalidation is retried
  * and reported when Redis fails, decision 055); writes `api_keys.last_used_at` / `last_used_ip`; `revokeLiveKeysOf` writes

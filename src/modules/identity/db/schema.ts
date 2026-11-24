@@ -301,13 +301,15 @@ export const clients = pgTable(
     mustChangePassword: boolean().notNull().default(false),
     /**
      * true from the moment staff set a temporary password until the merchant chooses a password from a link mailed to its address
-     * (reset or invitation); while true, a portal session creates no API key (decision 046)
+     * (reset or invitation). It held back the merchant's own creation of API keys (decision 046); since decision 067 merchants create no key,
+     * nothing reads it, and it stays, written as before, until the accounts model's migration drops it
      */
     passwordSetByStaff: boolean().notNull().default(false),
     /**
      * true from the moment a staff member who is not an Owner changes the merchant's email address until an Owner changes it or sends it
-     * unchanged in a details edit; a password from a link does not clear it (the link goes to the address staff chose); while true, a
-     * portal session creates no API key (decision 046)
+     * unchanged in a details edit; a password from a link does not clear it (the link goes to the address staff chose). It held back the
+     * merchant's own creation of API keys (decision 046); since decision 067 nothing reads it, and it stays, written as before, until the
+     * accounts model's migration drops it
      */
     emailSetByStaff: boolean().notNull().default(false),
     /** written when a session of the merchant becomes fully signed in (feature 20) */
@@ -524,7 +526,7 @@ export const apiKeys = pgTable(
     lastUsedIp: text(),
     expiresAt: timestampTz(),
     revokedAt: timestampTz(),
-    /** the staff member who created the key for the merchant; null for a key the merchant made (feature 20) */
+    /** the staff member who created the key for the merchant; null for a key the merchant made before decision 067 (feature 20) */
     createdBy: fk((): AnyPgColumn => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

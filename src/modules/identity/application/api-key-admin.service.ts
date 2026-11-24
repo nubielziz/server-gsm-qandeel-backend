@@ -89,7 +89,7 @@ export class ApiKeyAdminService {
   /**
    * Creates a key for an active account of a merchant rank and returns it once.
    *
-   * Why: the two locks come first and in the one order, like the merchant's own creation (the advisory lock `api-keys:<accountId>`, then
+   * Why: the two locks come first and in the one order (the advisory lock `api-keys:<accountId>`, then
    * the account row `FOR UPDATE`, decision 064): a rank change to retail that holds the row makes this creation wait, and the locked read
    * then shows the retail rank and refuses, so no live key is left on a retail account.
    *
@@ -103,12 +103,11 @@ export class ApiKeyAdminService {
    *   (10 live keys already)
    */
   async create(caller: StaffPrincipal, clientId: number, input: CreateClientApiKeyInput): Promise<CreatedClientApiKey> {
-    // Decision 046: a key that spends a merchant's money is made by the merchant, or by an Owner.
+    // Decision 046 and 067: a key that spends a merchant's money is made by an Owner, and by nobody else.
     requireOwner(caller, 'Only an owner can create an API key for a merchant.');
     return this.db.runInTransaction(async (work) => {
       // Lock order (the one named exception of the lock order, decision 064): the key lock first, then the account row, both taken by the
-      // issuer. The merchant's own creation takes them in the same order; the rank change and the erasure hold the row and revoke the keys
-      // without the key lock, so no cycle can form.
+      // issuer; the rank change and the erasure hold the row and revoke the keys without the key lock, so no cycle can form.
       const account = await this.issuer.lockOwner(work.tx, clientId);
       if (!account) throw new AppError('NOT_FOUND', { detail: 'No account has this id.' });
       if (account.rankKind !== 'merchant') {

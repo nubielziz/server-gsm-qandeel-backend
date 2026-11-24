@@ -103,8 +103,8 @@ export interface SaveClientPassword {
    */
   readonly clearTwoFactor?: boolean;
   /**
-   * The password comes from a link mailed to the account's address (reset or invitation): it ends the hold that a password set by staff
-   * puts on machine credentials (`password_set_by_staff`, decision 046). A change on the security page does not. The hold of an email
+   * The password comes from a link mailed to the account's address (reset or invitation): it clears the mark `password_set_by_staff` (a
+   * staff temporary password; nothing reads it since decision 067). A change on the security page does not. The mark of an email
    * address staff set (`email_set_by_staff`) stays: the link went to that address.
    */
   readonly fromMailedLink?: boolean;

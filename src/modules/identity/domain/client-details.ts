@@ -165,8 +165,9 @@ export interface EmailMarkEdit {
 /**
  * The value of `clients.email_set_by_staff` after a details edit, or `undefined` when the edit leaves it as it is.
  *
- * Why: decision 046 keeps the creation of an API key of an account by staff for Owners. The mark means that the address was last set
- * by a staff member who is not an Owner and that no Owner has confirmed it since (`MachineCredentialHold`). An email change sets it
+ * Why: decision 046 kept the creation of an API key of an account by staff for Owners. The mark means that the address was last set
+ * by a staff member who is not an Owner and that no Owner has confirmed it since. Nothing reads it since decision 067 (merchants no longer
+ * create API keys); it is still written until the accounts model drops it. An email change sets it
  * when the caller is not an Owner and clears it when the caller is an Owner. An Owner's edit that carries the stored address (the
  * console sends the whole form) confirms the address and clears a set mark. Any other edit leaves it.
  *

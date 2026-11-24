@@ -8,7 +8,10 @@ export const MERCHANT_SUSPENDED_EVENT = 'merchant.suspended';
 export const MERCHANT_REACTIVATED_EVENT = 'merchant.reactivated';
 /** Staff changed something security-relevant on the merchant's account (temporary password, 2FA reset, API key, email change). */
 export const MERCHANT_SECURITY_NOTICE_EVENT = 'merchant.security_notice';
-/** The merchant created an API key in the portal: the notice says so, and does not name the support team. */
+/**
+ * The merchant created an API key in the portal: the notice says so, and does not name the support team. Nothing sends it since decision 067
+ * (merchants no longer create keys); it stays registered with its shipped text so notifications written before still read and send.
+ */
 export const MERCHANT_PORTAL_API_KEY_CREATED_EVENT = 'merchant.portal_api_key_created';
 /** A staff member was invited to the console: the link where they choose a password. */
 export const STAFF_INVITED_EVENT = 'staff.invited';
@@ -77,7 +80,7 @@ export const IDENTITY_MAIL_EVENTS: readonly NotificationEventDefinition[] = [
     key: MERCHANT_PORTAL_API_KEY_CREATED_EVENT,
     label: 'API key created in the portal',
     description:
-      'The merchant created an API key in the portal: tells the merchant, in case it was not them. A key staff create sends the security change by support instead.',
+      'No longer sent: merchants do not create API keys since decision 067. It stays so that notices written before still read. A key staff create sends the security change by support.',
     variables: ['merchantName', 'change'],
     sample: { change: "A new API key was created in your account's portal." },
     security: true,

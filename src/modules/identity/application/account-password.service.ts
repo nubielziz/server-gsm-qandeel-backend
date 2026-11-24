@@ -49,8 +49,8 @@ const INVITATION_SPENT = ['invite', 'reset', 'verify_email'] as const satisfies 
  * (change). A password from a link ends the email's shop sign-in lock and the count of wrong authenticator codes (a closed code step
  * opens, `CodeStepLock`) and, when the email was never verified, turns two-step sign-in off (the link proves the mailbox); an own or
  * forced change leaves both running, because a password chosen without the emailed link proves no mailbox. Only a password from a link
- * ends the hold that a password set by staff puts on API keys (`password_set_by_staff`, `MachineCredentialHold`), and not the hold of an
- * email address staff set. A wrong current password is `422` on its field, never `401`, which would sign the caller out; an account
+ * clears the mark `password_set_by_staff` (a staff temporary password; nothing reads it since decision 067), and it leaves `email_set_by_staff`
+ * as it is. A wrong current password is `422` on its field, never `401`, which would sign the caller out; an account
  * without a password is told to choose one first with `409`.
  *
  * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event of the reset mail (rolled back for an email that

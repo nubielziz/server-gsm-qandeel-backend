@@ -469,7 +469,7 @@ merchant rows, `0012_customer_mail_templates.sql` the customer mails' rows, `001
 
 **Link emails and security emails** (decision 047). Three flags of the registry's event definitions: `secretLink` (the `link` placeholder is a one-time credential: the 3 merchant
 link mails, the 4 customer account mails, the 2 staff link mails, the customer `support.reply` and `support.ticket_received`),
-`security` (the account link mails and the security notices, `merchant.security_notice`, `merchant.portal_api_key_created` (the notice of a key the merchant made in the portal; its shipped text has no stored row) and the new `customer.security_notice`; a security event must be transactional) and
+`security` (the account link mails and the security notices, `merchant.security_notice`, `merchant.portal_api_key_created` (the notice of a key the merchant made in the portal, which nothing sends since decision 067; its shipped text has no stored row and stays registered so notifications written before still read) and the new `customer.security_notice`; a security event must be transactional) and
 `namedAddress` (a row of `merchant.security_notice` and `customer.security_notice` names the address it goes to, `NotificationInput.to`, kept in the payload as `to`: the notice of an email change goes to the address before
 the change; `enqueue` refuses `to` for any other event and `sendNow` refuses it always). The pure `linkTemplateProblems` (`template-rules.ts`) keeps a link template's `{{link}}` inside the message:
 on its own in the text (at the start, or after a space, a tab or a line break) or as the whole double-quoted `href` of one link with a text, never in the subject, no other web address
