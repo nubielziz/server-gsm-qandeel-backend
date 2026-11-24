@@ -418,17 +418,51 @@ describe('GET /admin/orders?pastSla=true: the one age-only predicate (B92)', () 
 });
 
 describe('GET /admin/orders/:id and /events', () => {
-  it('shows one order like a list row, and answers 404 for an unknown id', async () => {
+  it('shows one order like a list row plus its answers, and answers 404 for an unknown id', async () => {
     const { db, merchant, auto } = world;
     const order = await insertOrderRow(db, { accountId: merchant.id, serviceId: auto.serviceId });
     const list = (await staff.get('/admin/orders')).body[0];
     const one = await staff.get(`/admin/orders/${order.id}`);
     expect(one.status).toBe(200);
-    expect(one.body).toEqual(list);
+    expect(one.body).toEqual({ ...list, answers: [] });
+    expect(list).not.toHaveProperty('answers');
     const missing = await staff.get('/admin/orders/999999');
     expect(missing.status).toBe(404);
     expect(missing.body).toMatchObject({ code: 'NOT_FOUND' });
     expect((await staff.get('/admin/orders/abc')).status).toBe(422);
+  });
+
+  it('answers with the custom field values under the labels of the service fields, a deleted field under its key (decision 065)', async () => {
+    const { db, merchant, server } = world;
+    // `username` (label Username, sort 1) comes with the world; `region` is added after it, `notes` first by form order.
+    await db.insert(s.serviceFields).values([
+      { serviceId: server.serviceId, key: 'region', label: 'Server region', supplierKey: 'Region', sort: 2 },
+      { serviceId: server.serviceId, key: 'notes', label: 'Notes', supplierKey: 'Notes', sort: 0 },
+    ]);
+    const order = await insertOrderRow(db, {
+      accountId: merchant.id,
+      serviceId: server.serviceId,
+      type: 'server',
+      imei: 'amir92',
+      inputs: { region: 'EU', old_field: 'kept', username: 'amir92', notes: '  ' },
+    });
+    const one = await staff.get(`/admin/orders/${order.id}`);
+    expect(one.status).toBe(200);
+    // Form order first (an empty value is left out), then what no field has any more, under its own key.
+    expect(one.body.answers).toEqual([
+      { key: 'username', label: 'Username', value: 'amir92' },
+      { key: 'region', label: 'Server region', value: 'EU' },
+      { key: 'old_field', label: 'old_field', value: 'kept' },
+    ]);
+    // The stored values still sit under their keys.
+    expect(one.body.inputs).toEqual({ region: 'EU', old_field: 'kept', username: 'amir92', notes: '  ' });
+    // A label changed later reads as it is now.
+    await db.update(s.serviceFields).set({ label: 'Region of the server' }).where(eq(s.serviceFields.key, 'region'));
+    expect((await staff.get(`/admin/orders/${order.id}`)).body.answers[1]).toEqual({
+      key: 'region',
+      label: 'Region of the server',
+      value: 'EU',
+    });
   });
 
   it('still reads an order stored with the retired source admin, and sends no client note field', async () => {

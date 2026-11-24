@@ -160,6 +160,26 @@ describe('GET /client/orders/:id', () => {
     expect((await eventsOf(db, id)).length).toBeGreaterThan(order.events.length);
   });
 
+  it('lists the custom field answers with the labels of the service fields, a deleted field under its key (decision 065)', async () => {
+    const { db, merchant, server } = world;
+    const placed = await (
+      await portalFor(t, merchant.id)
+    ).post('/client/orders', { serviceId: server.serviceId, inputs: { username: 'amir92' } });
+    expect(placed.statusCode).toBe(201);
+    const id = json(placed).orders[0].id as number;
+    // The list row carries no answers: they belong to the order's own page.
+    expect(Object.keys(json(await (await portalFor(t, merchant.id)).get('/client/orders'))[0])).not.toContain(
+      'answers',
+    );
+    const first = json(await (await portalFor(t, merchant.id)).get(`/client/orders/${id}`));
+    expect(first.answers).toEqual([{ key: 'username', label: 'Username', value: 'amir92' }]);
+    expect(first.inputs).toEqual({ username: 'amir92' });
+    // The field is deleted after the order: its answer stays, under its key.
+    await db.delete(s.serviceFields).where(eq(s.serviceFields.serviceId, server.serviceId));
+    const later = json(await (await portalFor(t, merchant.id)).get(`/client/orders/${id}`));
+    expect(later.answers).toEqual([{ key: 'username', label: 'username', value: 'amir92' }]);
+  });
+
   it("answers 404 for another merchant's order and for an unknown one, never 403", async () => {
     const { other, auto } = world;
     const id = await place(auto.serviceId, IMEIS[0], other.id);

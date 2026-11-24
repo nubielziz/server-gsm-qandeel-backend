@@ -174,7 +174,7 @@ const PlaceOrderParams = z.object({
     .string()
     .optional()
     .describe(
-      'The main input: the IMEI, else the value of the field whose supplier key is `IMEI` (decision 042), else the first required ' +
+      'The main input: the IMEI, else the value of the field flagged as the main input (decisions 042 and 065), else the first required ' +
         'field. Left out when the order has none.',
     ),
   QNT: z.number().int().min(1).describe('The quantity.'),

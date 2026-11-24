@@ -436,9 +436,14 @@ describe('POST /store/v1/checkout-sessions', () => {
     });
     await db.insert(s.serviceGroupPrices).values({ serviceId: server, groupId: world.groups.retail, price: '12.0000' });
     await insertListing(db, server, { slug: 'server-credits', publicTitle: 'Server credits' });
-    await db
-      .insert(s.serviceFields)
-      .values({ serviceId: server, key: 'username', label: 'Username', required: true, sort: 1 });
+    await db.insert(s.serviceFields).values({
+      serviceId: server,
+      key: 'username',
+      label: 'Username',
+      supplierKey: 'username',
+      required: true,
+      sort: 1,
+    });
 
     const missing = await open({ serviceId: server, email: 'sam@mail.example', country: 'GB' });
     expect(missing.statusCode).toBe(422);

@@ -47,6 +47,21 @@ const OrderResult = z.object({
     .describe('The result file: `GET /admin/files/:id` (staff) or `GET /client/files/:id` (merchant).'),
 });
 
+/**
+ * One custom field answer of an order, for a person to read (decision 065).
+ *
+ * Why: `inputs` is keyed by the hidden field keys; the order screens show the label of the field and the value that was given.
+ */
+export const OrderAnswerSchema = z.object({
+  key: z.string().describe("The field's key, the key of this answer in `inputs`."),
+  label: z
+    .string()
+    .describe(
+      'The label of the field as it is now; the key itself when the service has no such field any more (it was deleted).',
+    ),
+  value: z.string().describe('The value that was given, as text.'),
+});
+
 /** The order as the admin console reads it (`GET /admin/orders` and `GET /admin/orders/:id`). */
 export const StaffOrderSchema = z.object({
   id: zId.describe('The order id, also the Dhru REFERENCEID.'),

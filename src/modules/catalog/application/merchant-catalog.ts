@@ -51,14 +51,17 @@ export class MerchantCatalog {
    * @param db the database or a transaction
    * @param merchant the merchant and its group
    * @param query the parsed list request
+   * @param filter `ids`: when given, only these services (the visibility rule still applies: an id that is unknown, archived, off or
+   *   hidden from the merchant's group is absent from the page and the total)
    * @returns the page of entries and the exact total
    */
   async page(
     db: DbExecutor,
     merchant: CatalogMerchant,
-    query: ParsedListQuery<CatalogSort>,
+    query: ParsedListQuery<CatalogSort, unknown>,
+    filter: { readonly ids?: readonly number[] | undefined } = {},
   ): Promise<{ entries: CatalogEntry[]; total: number }> {
-    const { rows, total } = await pageVisibleServices(db, merchant.groupId, query);
+    const { rows, total } = await pageVisibleServices(db, merchant.groupId, query, filter.ids);
     return { entries: await this.priced(db, merchant, rows), total };
   }
 

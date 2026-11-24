@@ -477,6 +477,13 @@
       "when": 1795492360644,
       "tag": "0067_account_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1795526139226,
+      "tag": "0068_field_names",
+      "breakpoints": true
     }
   ]
 }

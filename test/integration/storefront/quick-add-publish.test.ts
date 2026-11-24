@@ -1041,7 +1041,10 @@ describe('the category an import makes (plan 31 section 3.5)', () => {
     const rawName = 'Legacy &amp; Reports';
     const oldCategory = await insertCategory(db, { name: rawName });
     const serviceId = await insertService(db, oldCategory, { name: 'Old report' });
-    const field = mainInputField({ label: 'Serial Number', minLength: 1, maxLength: null }, new Set());
+    const field = mainInputField(
+      { label: 'Serial Number', minLength: 1, maxLength: null },
+      { keys: new Set(), names: new Set() },
+    );
 
     const adopted = await t.app
       .get(DbService)

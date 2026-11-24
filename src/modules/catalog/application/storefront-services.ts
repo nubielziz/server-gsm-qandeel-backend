@@ -70,6 +70,8 @@ export interface SellableField {
   readonly regex: string;
   /** The form order (with `id` as the tie-break); the checkout picks the main input by it. */
   readonly sort: number;
+  /** The field is the service's main input: its value travels as the IMEI parameter (decision 065). */
+  readonly isMainInput: boolean;
 }
 
 /**
@@ -255,6 +257,7 @@ export class StorefrontServices {
       options: row.options,
       required: row.required,
       regex: row.regex,
+      isMainInput: row.isMainInput,
     }));
   }
 }

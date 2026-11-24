@@ -12,7 +12,6 @@
 import { type SQL, and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere, schema as s } from '../../../infra/db';
-import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 import type { ServiceListing } from '../db/schema';
 
 /** A listing with the service, category and retail group facts the console row and the lock rule need. */
@@ -165,7 +164,7 @@ export interface PublishServiceFacts extends ServiceFacts {
   /** `service_categories.is_active`: a listing of a service in a switched-off category is on and invisible. */
   readonly categoryActive: boolean;
   /**
-   * The service has a field that is the supplier's main box (`isMainInputKey(resolvedSupplierKey(field))`, decision 042). A
+   * The service has a field flagged as the main input (`service_fields.is_main_input`, decision 065; the supplier's main box of decision 042). A
    * `server` service with one is named as `imei`, so it keeps its carrier and device brand (plan 31, correction 1).
    */
   readonly hasMainInput: boolean;
@@ -214,15 +213,11 @@ export async function publishFactsOf(
   const fields = await db
     .select({
       serviceId: s.serviceFields.serviceId,
-      key: s.serviceFields.key,
-      supplierKey: s.serviceFields.supplierKey,
+      isMainInput: s.serviceFields.isMainInput,
     })
     .from(s.serviceFields)
     .where(inArray(s.serviceFields.serviceId, ids));
-  // The dispatcher's rule, in code (not SQL), so it can never drift from `isMainInputKey` and `resolvedSupplierKey`.
-  const withMainInput = new Set(
-    fields.filter((field) => isMainInputKey(resolvedSupplierKey(field))).map((field) => field.serviceId),
-  );
+  const withMainInput = new Set(fields.filter((field) => field.isMainInput).map((field) => field.serviceId));
   return new Map(
     rows.map((row) => [
       row.serviceId,

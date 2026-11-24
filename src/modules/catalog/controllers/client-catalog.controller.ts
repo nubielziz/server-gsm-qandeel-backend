@@ -1,6 +1,6 @@
 // HTTP controller of the merchant catalog (map domain B, /client/services and /client/prices/export, stage 4). Thin: the
 // rules live in ClientCatalogService.
-import { Controller, Param, Query, Res } from '@nestjs/common';
+import { Controller, Header, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { type ParamsOf, type QueryOf, type ResultOf, Route } from '../../../common/contract';
 import { type AccountPrincipal, CurrentAccount } from '../../identity';
@@ -12,7 +12,9 @@ import { exportClientPrices, listClientServices, showClientService } from '../co
  *
  * Why: the merchant portal lists what the merchant may order at its own prices, draws the order form from one service's field
  * schema and exports the price list. The routes are for accounts of a merchant rank: the rank gate answers 403 `RANK_NOT_ALLOWED` to
- * any other (decision 064), and the service checks the rank once more.
+ * any other (decision 064), and the service checks the rank once more. The list and the show answer `Cache-Control: private, no-store`:
+ * they carry the merchant's own prices, and the shop reads them in the browser through its own host (decision 066), so no shared cache
+ * and no browser cache may keep them.
  *
  * @route GET /client/services
  * @route GET /client/services/:id
@@ -31,6 +33,7 @@ export class ClientCatalogController {
    * @route GET /client/services
    */
   @Route(listClientServices)
+  @Header('Cache-Control', 'private, no-store')
   list(
     @CurrentAccount() account: AccountPrincipal,
     @Query() query: QueryOf<typeof listClientServices>,
@@ -47,6 +50,7 @@ export class ClientCatalogController {
    * @route GET /client/services/:id
    */
   @Route(showClientService)
+  @Header('Cache-Control', 'private, no-store')
   show(
     @CurrentAccount() account: AccountPrincipal,
     @Param() params: ParamsOf<typeof showClientService>,

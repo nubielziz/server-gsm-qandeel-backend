@@ -37,7 +37,8 @@ field of `Requires.Custom` with `"required": "on"` (635 of that supplier's 637 f
 - **One rule says which field is the supplier's main box**: a value's supplier key is the link's `field_map[key]`, else the
   field's `supplierKey`, else the field's `key`; it is the main box when that resolves to `IMEI`, compared without case. The
   dispatcher sends that value as the `IMEI` parameter, never inside `CUSTOMFIELD`; an IMEI order's own IMEI comes first.
-  This also holds for a `server` service staff gave such a field before this decision.
+  This also holds for a `server` service staff gave such a field before this decision. (Replaced by decision 065: the main box is
+  the field flagged `is_main_input`, its Name is what a supplier receives, and no rule reads the text `IMEI` of a field.)
 - **Services made before this are adopted on the supplier's next sync**, in the sync's transaction: an `imei` service that
   is not archived, has no main-box field yet and has exactly one active link, pointing at such a supplier service, becomes a
   `server` service: the `server` category of the same name (created with the old one's switch and groups when missing, reused

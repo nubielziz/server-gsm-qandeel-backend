@@ -111,7 +111,10 @@ export async function linkedServicesOf(
 /** A custom field of a service, for the mapping to the supplier's field names. */
 export interface ServiceFieldMap {
   readonly key: string;
+  /** The field's Name (decision 065): what a supplier receives in CUSTOMFIELD. */
   readonly supplierKey: string;
+  /** The field is the service's main input: its value travels as the IMEI parameter (decision 065). */
+  readonly isMainInput: boolean;
 }
 
 /**
@@ -119,11 +122,15 @@ export interface ServiceFieldMap {
  *
  * @param db the database or a transaction
  * @param serviceId the service
- * @returns each field's key and the supplier's name for it (empty when none was set)
+ * @returns each field's key, its Name and its main-input flag, in form order
  */
 export async function serviceFieldMaps(db: DbExecutor, serviceId: number): Promise<ServiceFieldMap[]> {
   return db
-    .select({ key: s.serviceFields.key, supplierKey: s.serviceFields.supplierKey })
+    .select({
+      key: s.serviceFields.key,
+      supplierKey: s.serviceFields.supplierKey,
+      isMainInput: s.serviceFields.isMainInput,
+    })
     .from(s.serviceFields)
     .where(eq(s.serviceFields.serviceId, serviceId))
     .orderBy(asc(s.serviceFields.sort), asc(s.serviceFields.id));
@@ -140,8 +147,8 @@ export interface AlignmentCandidate {
   readonly customFields: unknown[];
   /** The one active link's `field_map` (the service's field key to the supplier's name). */
   readonly fieldMap: Record<string, unknown>;
-  /** The service's fields in order: their keys, supplier keys and whether they are required. */
-  readonly fields: Array<{ key: string; supplierKey: string; required: boolean }>;
+  /** The service's fields in order: their keys, Names, whether they are required and whether each is the main input. */
+  readonly fields: Array<{ key: string; supplierKey: string; required: boolean; isMainInput: boolean }>;
 }
 
 /**
@@ -170,8 +177,8 @@ export async function alignmentCandidates(
       customFields: s.supplierServices.customFields,
       fieldMap: s.serviceSupplierLinks.fieldMap,
       fields: sql<
-        Array<{ key: string; supplierKey: string; required: boolean }>
-      >`coalesce((select json_agg(json_build_object('key', f.key, 'supplierKey', f.supplier_key, 'required', f.required) order by f.sort, f.id) from ${s.serviceFields} f where f.service_id = ${s.services.id}), '[]'::json)`,
+        Array<{ key: string; supplierKey: string; required: boolean; isMainInput: boolean }>
+      >`coalesce((select json_agg(json_build_object('key', f.key, 'supplierKey', f.supplier_key, 'required', f.required, 'isMainInput', f.is_main_input) order by f.sort, f.id) from ${s.serviceFields} f where f.service_id = ${s.services.id}), '[]'::json)`,
     })
     .from(s.serviceSupplierLinks)
     .innerJoin(s.supplierServices, eq(s.supplierServices.id, s.serviceSupplierLinks.supplierServiceId))

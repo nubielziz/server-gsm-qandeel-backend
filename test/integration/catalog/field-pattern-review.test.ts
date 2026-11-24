@@ -59,7 +59,9 @@ async function serviceWith(fields: ReadonlyArray<readonly [string, string]>): Pr
   const serviceId = await insertService(db, categoryId);
   await db
     .insert(s.serviceFields)
-    .values(fields.map(([key, regex], index) => ({ serviceId, key, label: key, regex, sort: index })));
+    .values(
+      fields.map(([key, regex], index) => ({ serviceId, key, label: key, supplierKey: key, regex, sort: index })),
+    );
   return serviceId;
 }
 
@@ -132,7 +134,7 @@ describe('FieldPatternReview.run', () => {
               required: false,
               options: [],
               regex: '^[0-9]+$',
-              supplierKey: '',
+              name: 'D',
             },
           ],
         });

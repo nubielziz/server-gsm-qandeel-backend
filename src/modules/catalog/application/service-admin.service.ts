@@ -112,12 +112,14 @@ export interface PublishFailureView {
 /** A custom field as the console reads it. */
 export interface FieldView {
   readonly key: string;
+  /** The field's Name: what a supplier receives in CUSTOMFIELD (stored in `service_fields.supplier_key`, decision 065). */
+  readonly name: string;
   readonly label: string;
   readonly fieldType: ServiceFieldType;
   readonly required: boolean;
   readonly options: string[];
   readonly regex: string;
-  readonly supplierKey: string;
+  readonly isMainInput: boolean;
 }
 
 /** An option list entry as the console reads it. */
@@ -189,14 +191,16 @@ export const toFieldView = (field: {
   options: string[];
   regex: string;
   supplierKey: string;
+  isMainInput: boolean;
 }): FieldView => ({
   key: field.key,
+  name: field.supplierKey,
   label: field.label,
   fieldType: field.fieldType,
   required: field.required,
   options: field.options,
   regex: field.regex,
-  supplierKey: field.supplierKey,
+  isMainInput: field.isMainInput,
 });
 
 /**

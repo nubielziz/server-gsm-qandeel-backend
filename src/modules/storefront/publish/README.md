@@ -77,7 +77,7 @@ claims with a guarded update, so a request that arrives after staff moved the ru
    apply, a resume and a close that succeeds; only a run that fails writes over it.
 3. The rows, in batches of 500; a copied row arrives with what it keeps.
 4. Detection in memory over the whole run (`nameAll`, `assignSlugs`): the cut of a title and the uniqueness of titles and slugs need every
-   title. A service whose type is `imei`, or that has a field that is the supplier's main box (`isMainInputKey(resolvedSupplierKey(field))`),
+   title. A service whose type is `imei`, or that has a field flagged as the main input (`service_fields.is_main_input`),
    is named by the IMEI rules, so a `server` service made by decision 042 keeps its carrier and device brand.
 5. Evaluation on the facts of now (`evaluateItem`, `decidePrice` with the row's cost as the cost of now, so `cost_moved` never arises in a
    draft); one `UPDATE ... FROM (VALUES ...)` per 200 rows; a guarded heartbeat after every batch and page.

@@ -100,8 +100,9 @@ function merchantAtRetailDoor(): AppError {
  * clock. Decision 050: while the shop has a tax window in force, a country without one is refused as the customer profile refuses it; a
  * signed-in buyer is not matched by a blocklist entry limited to guest checkouts; and the visitor's country the proxy header reported is
  * kept on the session. While a country has a regional tax window in force, the checkout must name a region that has one (any case); the
- * region is the buyer's own statement, like the country. A service field keyed `imei` is judged (pattern and required) on the typed IMEI, never on a
- * value sent under `inputs.imei`, and what is stored under that key is the typed IMEI, as on the other order surfaces.
+ * region is the buyer's own statement, like the country. The service's main-input field (the one flagged `isMainInput`, whatever its key, decision 065)
+ * is judged (pattern and required) on the typed IMEI, never on a value sent under its key, its problems are reported on `imei`, and what is stored
+ * under that key is the typed IMEI, as on the other order surfaces.
  *
  * Side effects: one transaction: may insert a guest row of `clients` (through `AccountDirectory`) when the email is new, holds the signed-in
  * account's row `FOR KEY SHARE`, and inserts one `checkout_sessions` row (with `account_id` and `ip_country`).
@@ -178,13 +179,15 @@ export class CheckoutSessionService {
       const quantityIssue = quantityProblem(quantity, service);
       if (quantityIssue !== undefined)
         problems.push({ field: 'quantity', code: 'invalid_quantity', message: quantityIssue });
-      // A service may define a field keyed `imei` (it carries the pattern the supplier wants): it receives the IMEI itself. The typed IMEI
-      // is the value stored encrypted and sent to the supplier, so it is the one the pattern judges and the one that satisfies a required
-      // field: a value under `inputs.imei` never stands in for it.
+      // A service may define a main-input field (decision 065: flagged `isMainInput`, whatever its key; it carries the pattern the supplier
+      // wants): it receives the IMEI itself. The typed IMEI is the value stored encrypted and sent to the supplier, so it is the one the pattern
+      // judges and the one that satisfies a required field: a value under that field's key never stands in for it. The shop draws no box
+      // for that field, so its problems are shown on `imei`, where the checkout shows the IMEI's.
       const typedInputs = request.inputs ?? {};
-      const hasImeiField = fields.some((field) => field.key === 'imei');
-      const fieldInputs = imei !== undefined && hasImeiField ? { ...typedInputs, imei } : typedInputs;
-      problems.push(...inputProblems(fields.map(placementField), fieldInputs));
+      const box = fields.find((field) => field.isMainInput);
+      const fieldInputs = imei !== undefined && box ? { ...typedInputs, [box.key]: imei } : typedInputs;
+      const onImei = imei !== undefined && box ? { [box.key]: 'imei' } : {};
+      problems.push(...inputProblems(fields.map(placementField), fieldInputs, onImei));
       if (problems.length > 0) throw new AppError('VALIDATION_FAILED', { errors: problems });
 
       // RULES risk 5: a blocklisted email, email domain or IMEI cannot open a checkout. It gets the answer a blocked account gets, so the
@@ -211,7 +214,9 @@ export class CheckoutSessionService {
         imeiEnc: imei === undefined ? null : this.encryption.encrypt(imei, CHECKOUT_IMEI_AAD),
         // What is stored under that key is the typed IMEI too, so the order never shows two different IMEIs.
         inputs:
-          imei !== undefined && hasImeiField && 'imei' in typedInputs ? { ...typedInputs, imei } : { ...typedInputs },
+          imei !== undefined && box && Object.hasOwn(typedInputs, box.key)
+            ? { ...typedInputs, [box.key]: imei }
+            : { ...typedInputs },
         quantity,
         currency: context.currency.code,
         fxRate: context.fxRate,
@@ -356,12 +361,19 @@ export class CheckoutSessionService {
   }
 }
 
-/** A service field as the shared placement rules read it. */
+/**
+ * A service field as the shared placement rules read it.
+ *
+ * The shop answers by key and never learns a field's Name (it is what a supplier receives), so the key stands in for it: the rules that
+ * judge a checkout do not read the Name.
+ */
 function placementField(field: SellableField) {
   return {
     id: field.id,
     sort: field.sort,
     key: field.key,
+    name: field.key,
+    isMainInput: field.isMainInput,
     label: field.label,
     fieldType: field.fieldType,
     options: field.options,

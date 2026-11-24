@@ -314,7 +314,7 @@ describe('the choice of the supplier (user rule 9, B117 (6))', () => {
 });
 
 describe('what is sent', () => {
-  it("maps the custom fields to the supplier's names (the field's supplier key, the link's field map first) and sends the quantity", async () => {
+  it("maps the custom fields to the supplier's names (the link's field map first, else the field's Name) and sends the quantity", async () => {
     await freshRoute();
     const { db } = world;
     const serverCategory = world.server.serviceId;

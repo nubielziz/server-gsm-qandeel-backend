@@ -614,14 +614,16 @@ describe('the prepare job', () => {
     });
   });
 
-  it('a server service with a main-box field is named by the IMEI rules, and one without by the server rules', async () => {
+  it('a server service with a main-input field is named by the IMEI rules, and one without by the server rules', async () => {
     const w = await world();
     await makeRule();
     const serverCategory = await insertCategory(db, { name: 'Carrier unlock', type: 'server' });
     const named = 'Unlock AT&T USA Apple iPhone Clean';
     const boxed = await service(w, { categoryId: serverCategory, name: named, values: { type: 'server' } });
     const plain = await service(w, { categoryId: serverCategory, name: `${named} Plain`, values: { type: 'server' } });
-    await db.insert(s.serviceFields).values({ serviceId: boxed, key: 'imei', label: 'IMEI', supplierKey: 'IMEI' });
+    await db
+      .insert(s.serviceFields)
+      .values({ serviceId: boxed, key: 'imei', label: 'IMEI', supplierKey: 'IMEI', isMainInput: true });
     await db.insert(s.serviceFields).values({ serviceId: plain, key: 'note', label: 'Note', supplierKey: 'Memo' });
     const real = await service(w, { name: `${named} Real` });
 
@@ -632,8 +634,15 @@ describe('the prepare job', () => {
     const without = await itemOf(id, plain);
     expect(without.carrier).toBe('');
     expect(without.brand).not.toBe('Apple');
-    // The field's own key counts when its supplier key is empty.
-    await db.update(s.serviceFields).set({ supplierKey: '', key: 'IMEI' }).where(eq(s.serviceFields.serviceId, plain));
+    // The flag decides, not the text: a field that is only named IMEI is not the main input ...
+    await db
+      .update(s.serviceFields)
+      .set({ supplierKey: 'IMEI', key: 'imei' })
+      .where(eq(s.serviceFields.serviceId, plain));
+    const onlyNamed = await prepared({ scope: { kind: 'all' } });
+    expect((await itemOf(onlyNamed, plain)).carrier).toBe('');
+    // ... and a flagged field is, whatever its Name.
+    await db.update(s.serviceFields).set({ isMainInput: true }).where(eq(s.serviceFields.serviceId, plain));
     const later = await prepared({ scope: { kind: 'all' } });
     expect((await itemOf(later, plain)).carrier).toBe('AT&T');
   });

@@ -5893,7 +5893,7 @@
    "key": "GET /admin/files/:id",
    "fn": "orderFileUrl",
    "file": "src/features/orders/api/orders.ts",
-   "line": 64,
+   "line": 65,
    "params": [
     {
      "name": "fileId",
@@ -9770,7 +9770,7 @@
    "key": "GET /admin/orders/:id",
    "fn": "getOrder",
    "file": "src/features/orders/api/orders.ts",
-   "line": 35,
+   "line": 36,
    "params": [
     {
      "name": "id",
@@ -9802,7 +9802,7 @@
      }
     }
    ],
-   "returnsText": "Order",
+   "returnsText": "OrderDetail",
    "returns": {
     "object": {
      "id": {
@@ -10003,6 +10003,21 @@
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
+     },
+     "answers": {
+      "array": {
+       "object": {
+        "key": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string"
+        },
+        "value": {
+         "type": "string"
+        }
+       }
+      }
      }
     }
    }
@@ -10011,7 +10026,7 @@
    "key": "GET /admin/orders/:id/events",
    "fn": "listOrderEvents",
    "file": "src/features/orders/api/orders.ts",
-   "line": 45,
+   "line": 46,
    "params": [
     {
      "name": "id",
@@ -10110,7 +10125,7 @@
    "key": "GET /admin/orders/export",
    "fn": "exportOrders",
    "file": "src/features/orders/api/orders.ts",
-   "line": 55,
+   "line": 56,
    "params": [
     {
      "name": "query",
@@ -16743,24 +16758,13 @@
      "fields": {
       "array": {
        "object": {
-        "label": {
-         "type": "string"
-        },
         "key": {
          "type": "string"
         },
-        "options": {
-         "array": {
-          "type": "string"
-         }
-        },
-        "required": {
-         "type": "boolean"
-        },
-        "regex": {
+        "name": {
          "type": "string"
         },
-        "supplierKey": {
+        "label": {
          "type": "string"
         },
         "fieldType": {
@@ -16770,6 +16774,20 @@
           "select",
           "textarea"
          ]
+        },
+        "required": {
+         "type": "boolean"
+        },
+        "options": {
+         "array": {
+          "type": "string"
+         }
+        },
+        "regex": {
+         "type": "string"
+        },
+        "isMainInput": {
+         "type": "boolean"
         }
        }
       }
@@ -43235,25 +43253,16 @@
        "fields": {
         "array": {
          "object": {
-          "label": {
-           "type": "string"
-          },
           "key": {
+           "type": "string",
+           "optional": true
+          },
+          "name": {
            "type": "string"
           },
-          "options": {
-           "array": {
-            "type": "string"
-           }
-          },
-          "required": {
-           "type": "boolean"
-          },
-          "regex": {
-           "type": "string"
-          },
-          "supplierKey": {
-           "type": "string"
+          "label": {
+           "type": "string",
+           "optional": true
           },
           "fieldType": {
            "enum": [
@@ -43262,6 +43271,21 @@
             "select",
             "textarea"
            ]
+          },
+          "required": {
+           "type": "boolean"
+          },
+          "options": {
+           "array": {
+            "type": "string"
+           }
+          },
+          "regex": {
+           "type": "string"
+          },
+          "isMainInput": {
+           "type": "boolean",
+           "optional": true
           }
          }
         }
@@ -43294,24 +43318,13 @@
    "returns": {
     "array": {
      "object": {
-      "label": {
-       "type": "string"
-      },
       "key": {
        "type": "string"
       },
-      "options": {
-       "array": {
-        "type": "string"
-       }
-      },
-      "required": {
-       "type": "boolean"
-      },
-      "regex": {
+      "name": {
        "type": "string"
       },
-      "supplierKey": {
+      "label": {
        "type": "string"
       },
       "fieldType": {
@@ -43321,6 +43334,20 @@
         "select",
         "textarea"
        ]
+      },
+      "required": {
+       "type": "boolean"
+      },
+      "options": {
+       "array": {
+        "type": "string"
+       }
+      },
+      "regex": {
+       "type": "string"
+      },
+      "isMainInput": {
+       "type": "boolean"
       }
      }
     }

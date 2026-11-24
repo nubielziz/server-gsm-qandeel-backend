@@ -7,7 +7,7 @@ import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
 import { IdempotencyHeaders } from './idempotency-headers';
-import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS } from './shared';
+import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS, OrderAnswerSchema } from './shared';
 
 /** The most IMEIs one bulk order may hold (the same limit as a Dhru bulk call). */
 export const MAX_BULK_IMEIS = 100;
@@ -198,17 +198,22 @@ export const showClientOrder = defineRoute({
   summary: 'One of my orders',
   description:
     'The order with its timeline: the lines the merchant may see (placement, hold, acceptance, completion, rejection, release, refund, ' +
-    "reopen, verification), never a note, a supplier line, a risk line or the settlement. Another account's order, and the account's own " +
-    'store order, are `404`.',
+    'reopen, verification), never a note, a supplier line, a risk line or the settlement. `answers` lists the custom field values of the ' +
+    'order as `{ key, label, value }` (decision 065): the label of each field of the service that has a value, then stored keys the ' +
+    "service has no field for any more (label = the key). Another account's order, and the account's own store order, are `404`.",
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',
   params: z.object({ id: zIdParam }),
-  success: { status: 200, schema: MerchantOrderSchema.extend({ events: z.array(MerchantEventSchema) }) },
+  success: {
+    status: 200,
+    schema: MerchantOrderSchema.extend({ answers: z.array(OrderAnswerSchema), events: z.array(MerchantEventSchema) }),
+  },
   errors: ['UNAUTHORIZED', 'NOT_FOUND', 'VALIDATION_FAILED'],
   examples: {
     response: {
       ...ORDER_EXAMPLE,
+      answers: [{ key: 'username', label: 'Username', value: 'amir92' }],
       events: [{ id: 1, type: 'created', message: 'Order received via Portal', createdAt: '2026-10-02T06:23:25.000Z' }],
     },
   },

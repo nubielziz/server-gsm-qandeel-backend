@@ -182,7 +182,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /admin/files/:id
 
 - **Map**: Download a file through a signed link. (تحميل ملف برابط موقّع) · staff-permission `files:read` · stage 5 · tables files
-- **Frontend**: `orderFileUrl` (src/features/orders/api/orders.ts:64) · params `fileId: number` · returns `string` · success 302
+- **Frontend**: `orderFileUrl` (src/features/orders/api/orders.ts:65) · params `fileId: number` · returns `string` · success 302
 - **Request**: Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`).
 - **Response**: 302 with Location = short-lived presigned object-storage URL (Content-Disposition attachment; filename from files.filename). Any error is rendered raw in the new tab, so keep `detail` readable. Proposal: audit-log the access (files hold personal data).
 - **Errors**: 401 UNAUTHORIZED (no or expired staff session); 403 FORBIDDEN (staff lacks files:read); 404 NOT_FOUND (file id unknown)

@@ -4,7 +4,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
+import { fieldNameKey } from '../../../common/field-names';
 import type { DbExecutor } from '../../../infra/db';
 import {
   type ServiceFieldType,
@@ -60,7 +60,10 @@ export interface ImportedServiceInput {
     readonly fieldType: ServiceFieldType;
     readonly options: string[];
     readonly required: boolean;
+    /** The field's Name (decision 065): what the supplier receives in CUSTOMFIELD; unique in the service ignoring letter case. */
     readonly supplierKey: string;
+    /** The field is the supplier's main box: its value travels as the Dhru `IMEI` parameter (decision 065). At most one per service. */
+    readonly isMainInput: boolean;
     /** The pattern a value must match, `''` for none (the supplier's main box has one: decision 042). */
     readonly regex: string;
   }>;
@@ -82,14 +85,17 @@ export interface GroupCategory {
   readonly name: string;
 }
 
-/** The supplier's main box to put first on an IMEI service (decision 042): a required text field sent to the supplier as `IMEI`. */
+/** The supplier's main box to put first on an IMEI service (decisions 042 and 065): a required text field flagged as the main input. */
 export interface AdoptedField {
   readonly key: string;
   readonly label: string;
   readonly fieldType: ServiceFieldType;
   readonly options: string[];
   readonly required: boolean;
+  /** The field's Name: never sent (the box travels as `IMEI`), but unique in the service ignoring letter case. */
   readonly supplierKey: string;
+  /** True for the box (what `mainInputField` makes); `adoptMainInput` always writes the field as the service's main input. */
+  readonly isMainInput: boolean;
   readonly regex: string;
 }
 
@@ -182,6 +188,7 @@ export class ServiceImporter {
           required: field.required,
           regex: field.regex,
           supplierKey: field.supplierKey,
+          isMainInput: field.isMainInput,
         })),
       );
     }
@@ -253,8 +260,8 @@ export class ServiceImporter {
    *
    * @param tx the sync's transaction
    * @param input the service and the field to put first
-   * @returns what changed, or `null` when the service is not adoptable any more (archived, not `imei`, already has a field whose
-   *   supplier key, or key when that is empty, is `IMEI` in any case, or already has a field with that key): nothing is written then
+   * @returns what changed, or `null` when the service is not adoptable any more (archived, not `imei`, already has a main-input field,
+   *   or already has a field with that key or that Name, ignoring letter case): nothing is written then
    */
   async adoptMainInput(
     tx: DbExecutor,
@@ -263,9 +270,12 @@ export class ServiceImporter {
     const service = await lockLiveService(tx, input.serviceId);
     if (!service || service.type !== 'imei') return null;
     const fields = await listFieldRows(tx, service.id);
-    // The dispatcher's rule (`resolvedSupplierKey`): a field whose supplier key, or key when that is empty, is `IMEI` is already the box.
-    if (fields.some((field) => isMainInputKey(resolvedSupplierKey(field)))) return null;
+    // Decision 065: the box is the field flagged as the main input; a key or a Name (ignoring case) that is taken cannot be written
+    // (the unique indexes would refuse it), so the service is left alone and the next sync reads it again.
+    if (fields.some((field) => field.isMainInput)) return null;
     if (fields.some((field) => field.key === input.field.key)) return null;
+    const wantedName = fieldNameKey(input.field.supplierKey);
+    if (fields.some((field) => fieldNameKey(field.supplierKey) === wantedName)) return null;
 
     const [current] = await tx
       .select({
@@ -295,6 +305,7 @@ export class ServiceImporter {
       required: input.field.required,
       regex: input.field.regex,
       supplierKey: input.field.supplierKey,
+      isMainInput: true,
     });
     // The shop's search holds the category and the type's form (feature 29), as after a staff edit.
     await this.signals.servicesChanged(tx, [service.id], 'service');

@@ -7,7 +7,11 @@ import { defineDhruAction } from '../../../common/dhru';
 /** One custom input of a service as the Dhru list describes it. */
 const DhruCustomField = z.object({
   type: z.string().describe('`serviceimei`, `serviceserver` or `serviceremote`.'),
-  fieldname: z.string().describe('The field key: the name `CUSTOMFIELD` takes.'),
+  fieldname: z
+    .string()
+    .describe(
+      'The field name: what `CUSTOMFIELD` takes, matched without regard to letter case. The field key is still accepted.',
+    ),
   fieldtype: z.enum(['text', 'textarea', 'dropdown']),
   description: z.string().describe('The label.'),
   fieldoptions: z.string().describe('The choices of a dropdown, comma separated; `""` otherwise.'),

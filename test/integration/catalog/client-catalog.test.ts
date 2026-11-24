@@ -361,7 +361,7 @@ describe('the listed-price memory (user rule 9)', () => {
 });
 
 describe('GET /client/services/:id', () => {
-  it('shows the service at the merchant price with the order-form fields and options, without supplier names', async () => {
+  it('shows the service at the merchant price with the order-form fields and options, without supplier names and the main input', async () => {
     const { db, erbil, serviceId } = await world();
     await db.insert(s.serviceFields).values([
       {
@@ -372,9 +372,11 @@ describe('GET /client/services/:id', () => {
         required: true,
         regex: '^[0-9]{15}$',
         supplierKey: 'IMEI',
+        isMainInput: true,
         sort: 0,
       },
       { serviceId, key: 'note', label: 'Note', fieldType: 'select', options: ['a', 'b'], supplierKey: 'NOTE', sort: 1 },
+      { serviceId, key: 'serial', label: 'Serial', fieldType: 'text', required: true, supplierKey: 'Serial', sort: 2 },
     ]);
     await db
       .insert(s.serviceOptions)
@@ -386,16 +388,38 @@ describe('GET /client/services/:id', () => {
       id: serviceId,
       code: 'IMEI-ATT-USA',
       price: '16.9300',
+      // The IMEI of an IMEI service is the order form's own box: its flagged field is not asked for again.
       fields: [
-        { key: 'imei', label: 'IMEI', fieldType: 'text', required: true, options: [], regex: '^[0-9]{15}$' },
         { key: 'note', label: 'Note', fieldType: 'select', required: false, options: ['a', 'b'], regex: '' },
+        { key: 'serial', label: 'Serial', fieldType: 'text', required: true, options: [], regex: '' },
       ],
       options: [{ list: 'model', value: 'iphone15', label: 'iPhone 15' }],
     });
     const body = res.json();
-    expect(body.fields[0]).not.toHaveProperty('supplierKey');
+    for (const field of body.fields) {
+      expect(field).not.toHaveProperty('supplierKey');
+      expect(field).not.toHaveProperty('name');
+      expect(field).not.toHaveProperty('isMainInput');
+    }
     expect(body.options[0]).not.toHaveProperty('supplierValue');
     expect((await listedRows()).map((row) => row.price)).toEqual(['16.9300']);
+  });
+
+  it('keeps the flagged field of a server service, which has no IMEI box of its own', async () => {
+    const { db, erbil } = await world();
+    const serverCategory = await insertCategory(db, { name: 'Servers', type: 'server' });
+    const serverId = await insertService(db, serverCategory, {
+      type: 'server',
+      name: 'Server tool',
+      code: 'SRV-TOOL-1',
+    });
+    await db.insert(s.serviceFields).values([
+      { serviceId: serverId, key: 'device', label: 'Device', supplierKey: 'Device', isMainInput: true, sort: 0 },
+      { serviceId: serverId, key: 'user', label: 'User', supplierKey: 'User', sort: 1 },
+    ]);
+    const res = await (await as(erbil)).get(`/client/services/${serverId}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().fields.map((field: { key: string }) => field.key)).toEqual(['device', 'user']);
   });
 
   it('answers 404 for an unknown, archived, disabled or hidden service', async () => {

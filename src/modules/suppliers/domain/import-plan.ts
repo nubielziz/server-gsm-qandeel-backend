@@ -1,6 +1,13 @@
 // The rules of the supplier import (resolutions orders-suppliers-10, catalog-9, decision 042): what a picked supplier service becomes in our
 // catalog, how its custom fields map to ours and what the item costs. Pure (the suggested price needs the catalog's default minimum profit: the use case computes it).
-import { MAIN_INPUT_SUPPLIER_KEY, resolvedSupplierKey } from '../../../common/dhru';
+import { supplierFieldName } from '../../../common/dhru';
+import {
+  fieldKeyBase,
+  fieldNameKey,
+  freeFieldKey,
+  freeFieldName,
+  imeiNamedFieldIndex,
+} from '../../../common/field-names';
 import { Money } from '../../../common/money';
 import { linkUnitCost } from './link-selection';
 import { type SupplierMainInput, supplierMainInput } from './supplier-main-input';
@@ -86,12 +93,16 @@ export function importableType(supplierType: string): ImportableType | undefined
 
 /** A custom field to create on an imported service. */
 export interface ImportedField {
+  /** The hidden key, made from the supplier's field name (`fieldKeyBase`, unique in the service). */
   readonly key: string;
   readonly label: string;
   readonly fieldType: 'text' | 'number' | 'select' | 'textarea';
   readonly options: string[];
   readonly required: boolean;
+  /** The field's Name (decision 065): what the supplier receives in CUSTOMFIELD, unique in the service ignoring letter case. */
   readonly supplierKey: string;
+  /** The field is the supplier's main box: its value travels as the Dhru `IMEI` parameter, never in CUSTOMFIELD. */
+  readonly isMainInput: boolean;
   readonly sort: number;
   /** The pattern a value must match; `''` for none (a field of `Requires.Custom` has none). */
   readonly regex: string;
@@ -101,45 +112,34 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
 }
 
-/** A field key from a name: lower snake case, at most 60 characters, `field` when nothing is left. */
-function keyBase(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 60) || 'field'
-  );
-}
-
-/** The first of `base`, `base_2`, `base_3`, ... that `used` does not hold. */
-function freeKey(base: string, used: ReadonlySet<string>): string {
-  let key = base;
-  for (let n = 2; used.has(key); n += 1) key = `${base}_${n}`;
-  return key;
-}
-
 /**
  * The service field of a supplier's main box.
  *
- * Why: decision 042: the box becomes the first required text field of a `server` service with the supplier key `IMEI`, so every channel
- * draws and checks it like any field and the dispatcher sends it as `IMEI`. Its pattern is `^.{min,max}$` from the lengths when the
- * supplier gives a maximum, else none; the supplier's own `regex` is never copied (staff can type one on the field).
+ * Why: decisions 042 and 065: the box becomes the first required text field of a `server` service with `isMainInput` set, so every channel
+ * draws and checks it like any field and the dispatcher sends its value as `IMEI`. Its Name is the box's own name from the supplier
+ * (its label); the Name is never sent, so on a clash with another field of the service the box takes the number (`Name 2`) and the
+ * supplier's field keeps its name. Its pattern is `^.{min,max}$` from the lengths when the supplier gives a maximum, else none; the
+ * supplier's own `regex` is never copied (staff can type one on the field).
  *
  * @param main the box as {@link supplierMainInput} reads it
- * @param usedKeys the keys the service's other fields hold (the key gets `_2`, `_3`, ... on a clash)
+ * @param used what the service's other fields hold: their keys (the key gets `_2`, `_3`, ... on a clash) and the `fieldNameKey` forms of
+ *   their Names (the Name gets ` 2`, ` 3`, ... on a clash)
  * @returns the field, with `sort` 0
  */
-export function mainInputField(main: SupplierMainInput, usedKeys: ReadonlySet<string>): ImportedField {
+export function mainInputField(
+  main: SupplierMainInput,
+  used: { readonly keys: ReadonlySet<string>; readonly names: ReadonlySet<string> },
+): ImportedField {
   // Only a pattern we build from the lengths: the supplier's own `regex` is untrusted (decision 042, review of feature 33).
   const regex = main.maxLength !== null ? `^.{${main.minLength},${main.maxLength}}$` : '';
   return {
-    key: freeKey(keyBase(main.label), usedKeys),
+    key: freeFieldKey(fieldKeyBase(main.label), used.keys),
     label: main.label,
     fieldType: 'text',
     options: [],
     required: true,
-    supplierKey: MAIN_INPUT_SUPPLIER_KEY,
+    supplierKey: freeFieldName(main.label, used.names),
+    isMainInput: true,
     sort: 0,
     regex,
   };
@@ -166,8 +166,10 @@ export function isSupplierFlagOn(value: unknown): boolean {
 /**
  * Turns the supplier's `Requires.Custom` list into our service fields.
  *
- * Why: orders-suppliers-10 and feature 33: fields come from the supplier's custom fields, `supplier_key` is the supplier's field name.
- * The key is the field name in lower snake case (unique within the service: a repeat gets `_2`, `_3`, ...), the type follows the
+ * Why: orders-suppliers-10, feature 33 and decision 065: fields come from the supplier's custom fields, and the field's Name
+ * (`supplier_key`) is the supplier's field name as the supplier spells it; two names that differ only in letter case cannot both be
+ * a Name in one service, so the later one gets ` 2` (`Name 2`, `Name 3`, ...). The label is the supplier's description, else the Name.
+ * The hidden key is the field name in lower snake case (unique within the service: a repeat gets `_2`, `_3`, ...), the type follows the
  * supplier's `fieldtype` (`dropdown`, `select` and `radio` become `select` with the `fieldoptions` as options, `number`/`numeric` and
  * `textarea` are kept, anything else is `text`), `required` is {@link isSupplierFlagOn}, and a field the supplier marks `adminonly`
  * (its own staff fill it, not the buyer) is left out. The supplier's `regexpr` is never used (decision 042: untrusted).
@@ -176,15 +178,18 @@ export function isSupplierFlagOn(value: unknown): boolean {
  * @returns the fields to create, in the supplier's order
  */
 export function importedFields(customFields: readonly unknown[]): ImportedField[] {
-  const used = new Set<string>();
+  const usedKeys = new Set<string>();
+  const usedNames = new Set<string>();
   const fields: ImportedField[] = [];
   for (const entry of customFields) {
     if (typeof entry !== 'object' || entry === null) continue;
     const field = entry as Record<string, unknown>;
     const name = text(field.fieldname);
     if (name === '' || isSupplierFlagOn(field.adminonly)) continue;
-    const key = freeKey(keyBase(name), used);
-    used.add(key);
+    const key = freeFieldKey(fieldKeyBase(name), usedKeys);
+    usedKeys.add(key);
+    const fieldName = freeFieldName(name, usedNames);
+    usedNames.add(fieldNameKey(fieldName));
     const rawType = text(field.fieldtype).toLowerCase();
     const fieldType =
       rawType === 'dropdown' || rawType === 'select' || rawType === 'radio'
@@ -203,11 +208,12 @@ export function importedFields(customFields: readonly unknown[]): ImportedField[
         : [];
     fields.push({
       key,
-      label: text(field.description) || name,
+      label: text(field.description) || fieldName,
       fieldType,
       options,
       required: isSupplierFlagOn(field.required),
-      supplierKey: name,
+      supplierKey: fieldName,
+      isMainInput: false,
       sort: fields.length,
       regex: '',
     });
@@ -218,17 +224,21 @@ export function importedFields(customFields: readonly unknown[]): ImportedField[
 /** A service field as {@link fieldsToRequire} reads it. */
 export interface RequirableField {
   readonly key: string;
+  /** The field's Name (decision 065). */
   readonly supplierKey: string;
   readonly required: boolean;
+  /** The main box is not a custom field of the supplier, so it is never matched. */
+  readonly isMainInput: boolean;
 }
 
 /**
  * The fields of a service made before feature 33 that its supplier requires but that the import made optional.
  *
  * Why: feature 33 (second review round): every `"required": "on"` field was imported as optional, so buyers could leave out what the
- * supplier demands. A field matches a supplier field when its supplier name (`resolvedSupplierKey`: the link's field map, else the
- * supplier key, else the key) equals that field's `fieldname`, exactly first, then without case and with spaces trimmed. Only optional
- * fields are listed: a field is never made optional here. A supplier field marked `adminonly` is not the buyer's.
+ * supplier demands. A field matches a supplier field when its supplier name (`supplierFieldName`: the link's field map, else the
+ * Name) equals that field's `fieldname`, exactly first, then without case and with spaces trimmed. Only optional fields are listed:
+ * a field is never made optional here, and the main-input field (the supplier's main box, not a custom field) is never listed. A
+ * supplier field marked `adminonly` is not the buyer's.
  *
  * @param fields the service's fields
  * @param fieldMap the one active link's `field_map`
@@ -252,8 +262,8 @@ export function fieldsToRequire(
   const loose = new Set(demanded.map((name) => name.trim().toLowerCase()));
   return fields
     .filter((field) => {
-      if (field.required) return false;
-      const name = resolvedSupplierKey(field, fieldMap[field.key]);
+      if (field.required || field.isMainInput) return false;
+      const name = supplierFieldName(field, fieldMap[field.key]);
       return exact.has(name) || loose.has(name.trim().toLowerCase());
     })
     .map((field) => field.key);
@@ -271,7 +281,9 @@ export interface ImportShape {
  * Why: decision 042: our `imei` type means a real 15-digit IMEI everywhere, so an IMEI service whose main box asks for something else
  * (`CUSTOM`, read by {@link supplierMainInput}) becomes a `server` service whose first field is that box, followed by the fields of
  * `Requires.Custom`. Every reader of the catalog type of a supplier service (the import, the preview, the quick add) asks this.
- * A `server`, `remote` or `file` supplier service is never changed by `CUSTOM`.
+ * A `server`, `remote` or `file` supplier service is never changed by `CUSTOM`. Decision 065: a service that stays `imei` takes the
+ * first field whose Name is IMEI in any letter case as its main input ({@link imeiNamedFieldIndex}): it is the IMEI itself, so no form
+ * draws a second IMEI box for it and its value is never sent in CUSTOMFIELD.
  *
  * @param row the supplier service: its type name, its `Requires.Custom` list and its stored entry
  * @returns the catalog type and the fields to create
@@ -284,8 +296,15 @@ export function importShape(row: {
   const type = importableType(row.type);
   const others = importedFields(row.customFields);
   const main = type === 'imei' ? supplierMainInput(row.raw) : null;
-  if (main === null) return { type, fields: others };
-  const field = mainInputField(main, new Set(others.map((other) => other.key)));
+  if (main === null) {
+    const named = type === 'imei' ? imeiNamedFieldIndex(others) : -1;
+    if (named < 0) return { type, fields: others };
+    return { type, fields: others.map((other, index) => (index === named ? { ...other, isMainInput: true } : other)) };
+  }
+  const field = mainInputField(main, {
+    keys: new Set(others.map((other) => other.key)),
+    names: new Set(others.map((other) => fieldNameKey(other.supplierKey))),
+  });
   return { type: 'server', fields: [field, ...others.map((other, index) => ({ ...other, sort: index + 1 }))] };
 }
 

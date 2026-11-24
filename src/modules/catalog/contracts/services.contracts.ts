@@ -149,13 +149,29 @@ const ServiceRow = z.object({
 
 /** One custom field of a service (Dhru `Requires.Custom`). */
 const FieldRow = z.object({
-  key: z.string(),
-  label: z.string(),
+  key: z
+    .string()
+    .describe(
+      'The hidden identifier the server made from the name when the field was created. It never changes; the order forms send ' +
+        'their answers under it.',
+    ),
+  name: z
+    .string()
+    .describe(
+      'The field name: never empty, unique in the service ignoring letter case, and exactly what a supplier receives in ' +
+        '`CUSTOMFIELD`.',
+    ),
+  label: z.string().describe('The text buyers read.'),
   fieldType: z.enum(SERVICE_FIELD_TYPES),
   required: z.boolean(),
   options: z.array(z.string()).describe('The choices of a `select` field.'),
   regex: z.string().describe('`""` when there is no pattern. A pattern is in the supported form of decision 051.'),
-  supplierKey: z.string().describe('The field name the supplier expects; `""` when none.'),
+  isMainInput: z
+    .boolean()
+    .describe(
+      "The field is the service's main input: its value travels as the IMEI parameter, never inside `CUSTOMFIELD`. At most one " +
+        'field of a service.',
+    ),
 });
 
 /** One entry of a model, network or MEP list. */
@@ -227,12 +243,13 @@ const SERVICE_EXAMPLE = {
 } as const;
 const FIELD_EXAMPLE = {
   key: 'imei',
+  name: 'IMEI',
   label: 'IMEI',
   fieldType: 'text',
   required: true,
   options: [],
   regex: '^[0-9]{15}$',
-  supplierKey: 'IMEI',
+  isMainInput: true,
 } as const;
 const OPTION_EXAMPLE = { list: 'model', value: 'iphone15', label: 'iPhone 15', supplierValue: '' } as const;
 
@@ -461,10 +478,17 @@ export const replaceServiceFields = defineRoute({
   key: 'PUT /admin/services/:id/fields',
   summary: 'Replace the custom fields of a service',
   description:
-    'The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A key that is empty or ' +
-    'repeated, an empty label, an unknown field type or a pattern outside the supported form (decision 051: literals, classes, the escapes ' +
-    '`\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work ' +
-    'of a 500-character value) is `422` on `fields.N.<name>`. An unknown or archived service is `404`.',
+    'The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A row may carry the `key` ' +
+    'of a field the service has (that is how a saved field is recognised and keeps its key for ever); a row without a key is a new ' +
+    'field and the server makes its key from the name (lower snake case, `_2`, `_3` on a clash, `field` when nothing is left). ' +
+    'The name is what a supplier receives in `CUSTOMFIELD`. `label` left out keeps the saved label of an existing field, an empty ' +
+    'label stores the name, and a new field without a label gets the name. `isMainInput` left out keeps the saved value of an ' +
+    'existing field and is `false` for a new one. On an IMEI service a list that leaves no field as the main input makes the first ' +
+    'field named IMEI (any letter case) the main input. An unknown field type, an empty name or a pattern outside the supported form ' +
+    '(decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to ' +
+    '500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`; so are an ' +
+    'unknown or repeated key (`fields.N.key`), a name that an earlier field already has, ignoring letter case ' +
+    '(`fields.N.name`), and a second main input (`fields.N.isMainInput`). An unknown or archived service is `404`.',
   tags: ['services'],
   surface: 'admin',
   access: 'staff-permission',
@@ -474,20 +498,42 @@ export const replaceServiceFields = defineRoute({
     fields: z
       .array(
         z.object({
-          key: z.string().trim().min(1, 'Enter a key.').max(60, 'Use at most 60 characters.'),
-          label: z.string().trim().min(1, 'Enter a label.').max(120, 'Use at most 120 characters.'),
+          key: z
+            .string()
+            .trim()
+            .min(1, 'Enter a key.')
+            .max(60, 'Use at most 60 characters.')
+            .optional()
+            .describe('The key of a saved field; left out for a new field.'),
+          name: z.string().trim().min(1, 'Enter a name.').max(120, 'Use at most 120 characters.'),
+          label: z.string().trim().max(120, 'Use at most 120 characters.').optional(),
           fieldType: z.enum(SERVICE_FIELD_TYPES, 'Choose a type.'),
           required: z.boolean(),
           options: z.array(z.string().trim().min(1).max(200)).max(500),
           regex: z.string().max(500, 'Use at most 500 characters.'),
-          supplierKey: z.string().trim().max(120, 'Use at most 120 characters.'),
+          isMainInput: z.boolean().optional(),
         }),
       )
       .max(100, 'A service can have at most 100 custom fields.'),
   }),
   success: { status: 200, schema: z.array(FieldRow) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { request: { fields: [FIELD_EXAMPLE] }, response: [FIELD_EXAMPLE] },
+  examples: {
+    request: {
+      fields: [
+        {
+          name: 'IMEI',
+          label: 'IMEI',
+          fieldType: 'text',
+          required: true,
+          options: [],
+          regex: '^[0-9]{15}$',
+          isMainInput: true,
+        },
+      ],
+    },
+    response: [FIELD_EXAMPLE],
+  },
 });
 
 /** `PUT /admin/services/:id/options`: replace the model, network and MEP lists. */

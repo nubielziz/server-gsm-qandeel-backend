@@ -844,7 +844,14 @@ describe("the supplier's services and the import", () => {
     expect(link).toMatchObject({ priority: 1, isActive: true, supplierServiceId: remoteByRemoteId.get('a2') });
     const fields = await world.db.select().from(s.serviceFields).where(eq(s.serviceFields.serviceId, server!.id));
     expect(fields).toMatchObject([
-      { key: 'account_user', label: 'Account name', fieldType: 'text', required: true, supplierKey: 'Account User' },
+      {
+        key: 'account_user',
+        label: 'Account name',
+        fieldType: 'text',
+        required: true,
+        supplierKey: 'Account User',
+        isMainInput: false,
+      },
     ]);
     expect((await auditOfEntity('supplier', supplierId)).at(-1)).toMatchObject({ action: 'imported services from' });
     // Imported again: both match now.

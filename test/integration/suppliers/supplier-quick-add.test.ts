@@ -474,7 +474,9 @@ describe('the run of a quick add by groups', () => {
     expect(byId.get(third!.service.categoryId)).toMatchObject({ name: 'Imported', type: 'server' });
 
     const fields = await db.select().from(s.serviceFields).where(eq(s.serviceFields.serviceId, first!.service.id));
-    expect(fields).toMatchObject([{ key: 'account_user', supplierKey: 'Account User', required: true }]);
+    expect(fields).toMatchObject([
+      { key: 'account_user', label: 'Account name', supplierKey: 'Account User', isMainInput: false, required: true },
+    ]);
 
     // Not touched: the imported one keeps its cost, and the unavailable, unsupported and other-group ones get nothing.
     const [kept] = await db.select().from(s.services).where(eq(s.services.id, existing));

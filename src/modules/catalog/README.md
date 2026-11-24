@@ -4,7 +4,8 @@ Map domain B. What is for sale and at what price: client groups, categories, ser
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 066 the `ids` read of the merchant catalog. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -55,7 +56,15 @@ feature 6.
   storefront tables are built in `foreign-reads.repository.ts`. `shopBlocked` repeats the first checks of the storefront's publish
   rule, and a test compares the two over every combination.
 - **Fields and options** (`service-parts.service.ts`): replace-all in one transaction under a lock on the service row, `422` on
-  the later duplicate's dotted path. A field's `regex` follows the supported form of decision 051 (`src/common/field-pattern.ts`,
+  the later duplicate's dotted path. A field has a hidden key (`service_fields.key`: made by the server from the Name when the field is
+  created, `freeFieldKey(fieldKeyBase(name))` in `src/common/field-names.ts`, never changed; the order forms answer under it) and a Name
+  (`service_fields.supplier_key`, on the wire `name`: unique in the service ignoring letter case, what a supplier receives in
+  `CUSTOMFIELD`; decision 065). A row of the PUT carries the `key` of a saved field or none for a new one; an unknown or repeated key is
+  `422` on `fields.N.key`, a repeated Name on `fields.N.name`, a second main input on `fields.N.isMainInput` (`fieldListProblems`); a
+  label or flag that the row leaves out keeps the saved value, an empty label stores the Name (`plannedFieldRows`); on an IMEI service a list
+  that leaves no field flagged flags the first field named IMEI in any letter case (`imeiNamedFieldIndex`), the import's rule. The audit
+  row names each field before and after by key, Name, label, `required` and the flag. A Name that the
+  database's `lower()` repeats but the code did not is answered `422` on `fields.N.name` as well (`laterRepeatedNameIndexes`). A field's `regex` follows the supported form of decision 051 (`src/common/field-pattern.ts`,
   `fieldPatternProblem`: literals, classes, the escapes `\d \w \s` and their capitals, groups that neither repeat nor nest, counts up to
   500, `^` and `$` at the ends, and a bound on the work of a 500-character value); a pattern outside it is refused at save with `422` on
   `fields.N.regex` and the reason's sentence (`FIELD_PATTERN_MESSAGES`). The order check runs only a pattern in that form
@@ -117,11 +126,20 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
 - **Merchant catalog** (`merchant-catalog.ts`, `client-catalog.service.ts`, `infra/merchant-catalog.repository.ts`): the live,
   `active` services in an active category open to the merchant's group, at the merchant's price; cost, floor and supplier names are
   never sent. `MerchantCatalog` (`page`, `find`, `all`) is the public piece the Dhru list (7a) reuses. Shapes: B159.
+  **`GET /client/services?ids=`** (decision 066, B286): the shop shows a merchant its own prices on its normal pages and reads those of the
+  services on a page in one call. `ids` is one comma-separated value of at most 100 service ids, each a positive whole number
+  (`contracts/merchant-catalog.contracts.ts`; an empty value or piece, a bad piece, a repeated key or 101 ids is `422` on `ids`; a repeated id
+  counts once). The answer is the list's rows, order and `x-total-count` for those of them the merchant may see: an id that is unknown,
+  archived, off or hidden from its group is absent, as it is from the list. The page range still applies (default 25 rows: send `_end=100`
+  with up to 100 ids). The rows answered are recorded as listed prices exactly as the list records them (`ClientCatalogService.list`), so
+  price protection holds. `MerchantCatalog.page` and `pageVisibleServices` take the optional ids next to the visibility rule; the list without
+  `ids`, the single read and the export are unchanged, and so are the money paths and the retail checkout's refusal of a merchant.
 - **Merchant machine surface** (`merchant-api-catalog.ts`, feature 7a): the Dhru `imeiservicelist`, which the service binds to the
   `DhruGateway` at start. Visibility, prices and the quantity rules are the portal's (B159). The Dhru `LIST` is grouped by category (`GROUPNAME`, `GROUPTYPE` IMEI, SERVER or REMOTE; two categories with one name
   keep unique group keys by adding the type), `SERVICES` by service id with the keys of decision 026 (`SERVICEID`, `SERVICETYPE`,
   `SERVICENAME`, `CREDIT`, `INFO`, `TIME`, `QNT`, `QNTOPTIONS`, `MINQNT`, `MAXQNT`, the twelve `Requires.*` flags and `Requires.Custom`
-  built from the service's fields; an IMEI service's own `imei` field is not repeated there). File services are not in the Dhru list.
+  built from the service's fields: `fieldname` is the field's Name and `description` its label; an IMEI service's main-input field is not
+  repeated there, and neither in the portal's `GET /client/services/:id` nor on the shop's service page). File services are not in the Dhru list.
   Every list records the prices it showed (`ListedPrices.record`, user rule 9). Nothing is cached: a price list is never the truth for a
   charge (the order path prices again) and staleness would show an old price after a change.
 - **Merchant switches** (feature 7a): `POST /admin/services` and `PATCH /admin/services/:id` accept the optional `allowCancel`,
@@ -157,12 +175,15 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   get their clean names from `CategoryNameCleanup` (see "Jobs and schedules"), which leaves a name another category of the type holds.
   `decodeEntities` and the two character patterns live in `src/common/text.ts` (the storefront search re-exports `decodeEntities`).
   Feature 33 (decision 042): a field of `ImportedServiceInput.fields` carries its `regex` (the supplier's main box gets `^.{min,max}$`
-  from its lengths, never the supplier's own pattern; the `Requires.Custom` fields `''`), which `create` stores. `ServiceImporter.adoptMainInput(tx, { serviceId, field })` is the supplier
+  from its lengths, never the supplier's own pattern; the `Requires.Custom` fields `''`), which `create` stores. Decision 065: a field
+  also carries its Name (`supplierKey`: the supplier's field name as the supplier spells it, the box's own name for the box, made unique
+  in the service ignoring letter case by the suppliers module), the hidden key the suppliers module made from that Name, and
+  `isMainInput` (set on the box only); `create` stores them as given. `ServiceImporter.adoptMainInput(tx, { serviceId, field })` is the supplier
   sync's adoption of an IMEI service made before the decision whose supplier's main box is not an IMEI: under the service's row lock it
-  re-checks the service (live, `imei`, no field whose supplier key, or key when that is empty, is `IMEI` in any case: the
-  dispatcher's rule in `src/common/dhru/main-input-key.ts`; the new key free; else it answers `null` and writes nothing), moves it
+  re-checks the service (live, `imei`, no field flagged as the main input, the new key free and the new Name free ignoring letter case,
+  so the unique indexes are never hit; else it answers `null` and writes nothing), moves it
   to type `server` and the `server` category of the same name (an existing one, found ignoring case, is reused as it is with its own
-  switch and groups; only a category created for the move copies the old one's switch and groups; locked `FOR SHARE` as a staff edit locks it), puts the field first (the others' `sort` moves up by one, their keys stay) and,
+  switch and groups; only a category created for the move copies the old one's switch and groups; locked `FOR SHARE` as a staff edit locks it), puts the field first, flagged as the main input (the others' `sort` moves up by one, their keys stay) and,
   like `PATCH /admin/services/:id`, writes `catalog.services_changed` (reason `service`). Price, cost, status, quantities, SLA, links
   and listing stay. The caller moves the catalog price version after the commit and writes the audit row (`adopted the supplier's
   input`). `ServiceImporter.requireFields(tx, { serviceId, keys })` (feature 33, second review round) is the sync's repair of the
@@ -401,7 +422,7 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 | Route | Access | What it does | Stage |
 |---|---|---|---|
 | `GET /client/prices/export` | merchant-session | My price list as CSV. | 4 |
-| `GET /client/services` | merchant-session | Catalog at my prices, grouped by category. | 4 |
+| `GET /client/services` | merchant-session | Catalog at my prices, grouped by category; `ids` reads named services (decision 066). | 4 |
 | `GET /client/services/:id` | merchant-session | Field schema for the dynamic order form. | 4 |
 
 ### Dhru Fusion API (1)

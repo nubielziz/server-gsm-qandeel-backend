@@ -1,35 +1,19 @@
-// The one rule for "this service field is the supplier's main box" (decision 042, feature 33): a value whose supplier key resolves to
-// `IMEI` travels as the Dhru `IMEI` parameter, never inside CUSTOMFIELD. Pure; shared by the supplier dispatch and the catalog's adoption.
-
-/** The Dhru parameter the supplier's main box travels in, and the supplier key that marks a field as that box (compared without case). */
-export const MAIN_INPUT_SUPPLIER_KEY = 'IMEI';
+// The name a service field travels under towards a supplier (decisions 042 and 065). Since decision 065 a field's Name is its supplier
+// name and the main box is a flag on the field (`service_fields.is_main_input`): no rule reads the text `IMEI` of a field. Pure;
+// shared by the supplier dispatch, the import and the sync.
 
 /**
- * The supplier's name for one service field.
+ * The name a service field is sent to a supplier under in CUSTOMFIELD.
  *
- * Why: the dispatch sends a field's value under this name: the link's `field_map[key]` when it has text, else the field's own
- * `supplier_key`, else the field's `key` (orders-suppliers-10, decision 042).
+ * Why: decision 065: a field has one Name (`service_fields.supplier_key`, never empty); the dispatch sends a value under the link's
+ * `field_map[key]` when it has text (the place for a second supplier that spells a name differently), else under the Name. The
+ * supplier import and the sync's `fieldsToRequire` match a supplier's field names against the same name.
  *
- * @param field the field's key and supplier key
- * @param mapped the link's `field_map` value for the key, if any (any type: a value that is not text is ignored)
+ * @param field the field's Name
+ * @param mapped the link's `field_map` value for the field's key, if any (any type: a value that is not text is ignored)
  * @returns the name the supplier is sent
  */
-export function resolvedSupplierKey(
-  field: { readonly key: string; readonly supplierKey: string },
-  mapped?: unknown,
-): string {
+export function supplierFieldName(field: { readonly supplierKey: string }, mapped?: unknown): string {
   if (typeof mapped === 'string' && mapped !== '') return mapped;
-  return field.supplierKey !== '' ? field.supplierKey : field.key;
-}
-
-/**
- * Tells whether a resolved supplier key names the supplier's main box.
- *
- * Why: decision 042: the dispatcher sends such a value as `IMEI`, and the sync's adoption leaves a service that already has one alone.
- *
- * @param supplierKey a name from {@link resolvedSupplierKey}
- * @returns true for `IMEI` in any case, spaces around it ignored
- */
-export function isMainInputKey(supplierKey: string): boolean {
-  return supplierKey.trim().toUpperCase() === MAIN_INPUT_SUPPLIER_KEY;
+  return field.supplierKey;
 }

@@ -28,6 +28,38 @@ export const CatalogRow = z.object({
     .describe('The quantities offered when the service sells fixed packs; empty otherwise.'),
 });
 
+/** The most service ids one `GET /client/services` request may name in `ids`. */
+export const CLIENT_SERVICE_IDS_LIMIT = 100;
+
+/**
+ * The `ids` parameter of `GET /client/services`: a comma-separated list of service ids, at most {@link CLIENT_SERVICE_IDS_LIMIT}.
+ *
+ * Why: the shop shows a merchant its own prices on the normal pages and asks for the services visible on one page in a single call,
+ * without reading the whole catalog (decision 066).
+ *
+ * Each piece must be a positive whole number written without spaces; an empty value, an empty piece, a repeated key and a longer list are
+ * refused with the usual `422 VALIDATION_FAILED` on `ids`. A repeated id counts once.
+ */
+const ServiceIdList = z
+  .string('Send the ids as one comma-separated value, such as ids=5,9,12.')
+  .transform((text, ctx) => {
+    const pieces = text.split(',');
+    if (pieces.length > CLIENT_SERVICE_IDS_LIMIT) {
+      ctx.addIssue({ code: 'custom', message: `Send at most ${CLIENT_SERVICE_IDS_LIMIT} ids.` });
+      return z.NEVER;
+    }
+    const ids: number[] = [];
+    for (const piece of pieces) {
+      const id = zIdParam.safeParse(piece);
+      if (!id.success) {
+        ctx.addIssue({ code: 'custom', message: 'Must be comma-separated service ids: positive whole numbers.' });
+        return z.NEVER;
+      }
+      ids.push(id.data);
+    }
+    return [...new Set(ids)];
+  });
+
 /** One custom input of the order form. The name the supplier expects is not sent. */
 export const CatalogField = z.object({
   key: z.string(),
@@ -66,7 +98,11 @@ export const listClientServices = defineRoute({
     'after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose ' +
     "allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: " +
     'category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and ' +
-    "category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9), so a request that " +
+    'category; `ids` (comma-separated service ids, at most 100, each a positive whole number) keeps only those services, in the same ' +
+    "rows: an id that is unknown, archived, off or hidden from the merchant's group is simply absent, and a bad value is `422` on " +
+    '`ids`. The page range applies as for every list (default 25 rows), so send `_end=100` with up to 100 ids to read them all in ' +
+    "one call; `x-total-count` counts the services found among them. Every price shown is remembered as the merchant's listed price " +
+    '(price protection, user rule 9), a request with `ids` included, so a request that ' +
     'the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of ' +
     "the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, " +
     'are answered.',
@@ -85,6 +121,12 @@ export const listClientServices = defineRoute({
       categoryId: { type: 'id', ops: ['eq'] },
     },
     search: ['name', 'code', 'category.name'],
+    extra: {
+      ids: ServiceIdList.optional().describe(
+        'Comma-separated service ids (at most 100, each a positive whole number): only these services, when the merchant may see them. ' +
+          'Combines with the other filters; the page range still applies.',
+      ),
+    },
   }),
   success: { status: 200, schema: CatalogRow },
   errors: ['UNAUTHORIZED', 'VALIDATION_FAILED', 'CSRF_FAILED'],
@@ -96,7 +138,8 @@ export const showClientService = defineRoute({
   key: 'GET /client/services/:id',
   summary: 'One service of my catalog',
   description:
-    'The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. A service ' +
+    'The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. On an IMEI ' +
+    'service the main-input field is left out: the order form takes the IMEI in its own box. A service ' +
     'the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the ' +
     'listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, ' +
     "without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server " +
@@ -114,7 +157,16 @@ export const showClientService = defineRoute({
   examples: {
     response: {
       ...ROW_EXAMPLE,
-      fields: [{ key: 'imei', label: 'IMEI', fieldType: 'text', required: true, options: [], regex: '^[0-9]{15}$' }],
+      fields: [
+        {
+          key: 'carrier_account',
+          label: 'Carrier account',
+          fieldType: 'text',
+          required: false,
+          options: [],
+          regex: '',
+        },
+      ],
       options: [{ list: 'model', value: 'iphone15', label: 'iPhone 15' }],
     },
   },

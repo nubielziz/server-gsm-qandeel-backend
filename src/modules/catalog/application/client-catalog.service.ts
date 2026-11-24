@@ -96,16 +96,17 @@ export class ClientCatalogService {
    * Lists a page of the merchant's catalog.
    *
    * @param clientId the signed-in merchant (an account id)
-   * @param query the parsed list request
+   * @param query the parsed list request; its extra `ids` keeps only those services (decision 066): an id that is unknown or not
+   *   sellable to the merchant is absent from the page and the total
    * @returns the page of services at the merchant's prices and the exact total
    * @throws {AppError} `UNAUTHORIZED` (401) when the account no longer exists; `RANK_NOT_ALLOWED` (403) for a retail rank
    */
   async list(
     clientId: number,
-    query: ParsedListQuery<CatalogSort>,
+    query: ParsedListQuery<CatalogSort, { readonly ids?: readonly number[] | undefined }>,
   ): Promise<{ rows: ClientServiceView[]; total: number }> {
     const merchant = await this.merchantFor(clientId);
-    const { entries, total } = await this.catalog.page(this.db.db, merchant, query);
+    const { entries, total } = await this.catalog.page(this.db.db, merchant, query, { ids: query.extra.ids });
     await this.remember(clientId, entries);
     return { rows: entries.map(toClientServiceView), total };
   }
@@ -130,15 +131,18 @@ export class ClientCatalogService {
     await this.remember(clientId, [entry]);
     return {
       ...toClientServiceView(entry),
-      // The supplier's field names and values are internal: the merchant sees what its own order form needs.
-      fields: fields.map((field) => ({
-        key: field.key,
-        label: field.label,
-        fieldType: field.fieldType,
-        required: field.required,
-        options: field.options,
-        regex: field.regex,
-      })),
+      // The supplier's field names and values are internal: the merchant sees what its own order form needs. The main input of an IMEI
+      // service is the IMEI the form already asks for in its own box (decision 065).
+      fields: fields
+        .filter((field) => !(entry.service.type === 'imei' && field.isMainInput))
+        .map((field) => ({
+          key: field.key,
+          label: field.label,
+          fieldType: field.fieldType,
+          required: field.required,
+          options: field.options,
+          regex: field.regex,
+        })),
       options: options.map((option) => ({ list: option.list, value: option.value, label: option.label })),
     };
   }

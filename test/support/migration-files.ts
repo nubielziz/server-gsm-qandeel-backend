@@ -16,6 +16,9 @@ export const ACCOUNTS_EXPAND_SUFFIX = '_accounts_expand.sql';
 /** The end of the file name of the stored-roles migration of the same release. */
 export const ACCOUNT_PERMISSIONS_SUFFIX = '_account_permissions.sql';
 
+/** The end of the file name of the migration that makes a field's Name its supplier key and adds the main-input flag (decision 065). */
+export const FIELD_NAMES_SUFFIX = '_field_names.sql';
+
 /**
  * The file name of the migration that ends with a suffix.
  *

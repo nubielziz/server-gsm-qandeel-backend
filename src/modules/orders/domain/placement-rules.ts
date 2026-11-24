@@ -11,6 +11,8 @@ export type PlacedOrderSource = Exclude<OrderSource, 'admin'>;
 
 /** A custom field of a service as placement validates it. */
 export interface PlacementField extends MainInputField {
+  /** The field's Name (decision 065): unique in its service ignoring case, what a Dhru caller sends in CUSTOMFIELD. */
+  readonly name: string;
   readonly label: string;
   readonly fieldType: 'text' | 'number' | 'select' | 'textarea';
   readonly options: readonly string[];
@@ -91,13 +93,18 @@ export function quantityProblem(quantity: number, rules: QuantityRules): string 
  * has a value, a `select` value is one of its options, a `number` is a number, a pattern matches (patterns outside the supported
  * form of decision 051 are not run), and no value is longer than 500 characters. A key the service does not define is refused, so a typo is not silently dropped.
  *
+ * Decision 065: on an IMEI service the main-input field is judged on the typed IMEI and no form draws it, so the caller names the path
+ * its problems are shown on (the item's IMEI path) in `paths`.
+ *
  * @param fields the service's custom fields
  * @param inputs the values by field key
- * @returns one field error per problem (`field` is `inputs.<key>`), empty when everything fits
+ * @param paths the path to report a field's problems on, by field key, in place of `inputs.<key>`
+ * @returns one field error per problem (`field` is `inputs.<key>` unless `paths` names another), empty when everything fits
  */
 export function inputProblems(
   fields: readonly PlacementField[],
   inputs: Readonly<Record<string, string>>,
+  paths: Readonly<Record<string, string>> = {},
 ): FieldError[] {
   const problems: FieldError[] = [];
   const known = new Map(fields.map((field) => [field.key, field]));
@@ -109,7 +116,7 @@ export function inputProblems(
   for (const field of fields) {
     const raw = inputs[field.key];
     const value = raw?.trim() ?? '';
-    const at = `inputs.${field.key}`;
+    const at = Object.hasOwn(paths, field.key) ? paths[field.key]! : `inputs.${field.key}`;
     if (value === '') {
       if (field.required) problems.push({ field: at, code: 'required', message: `${field.label} is required.` });
       continue;

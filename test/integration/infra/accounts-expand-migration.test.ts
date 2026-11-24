@@ -8,9 +8,12 @@ import { migrateDatabase } from '@src/infra/db/migrate';
 import { type FixtureIds, loadFixture } from '../../support/legacy-shapes';
 import {
   ACCOUNTS_EXPAND_SUFFIX,
+  ACCOUNT_PERMISSIONS_SUFFIX,
   ScratchDatabases,
   appliedCount,
+  journalEntries,
   migrateUntil,
+  migrationTag,
   poolOn,
 } from '../../support/migration-files';
 
@@ -127,7 +130,16 @@ describe('the realistic fixture, approved variant', () => {
   });
 
   it('applies the expand migration and the stored-roles migration, and a second run applies nothing', async () => {
-    expect(await appliedCount(pool)).toBe(before.migrations + 2);
+    // The database was held right before the expand migration, so the run applies it, the stored-roles migration right after it, and
+    // every later migration of the folder: the count follows the journal instead of assuming none comes after the two.
+    const tags = journalEntries().map((entry) => entry.tag);
+    const pending = tags.slice(tags.indexOf(migrationTag(ACCOUNTS_EXPAND_SUFFIX)));
+    expect(pending.slice(0, 2)).toEqual([
+      migrationTag(ACCOUNTS_EXPAND_SUFFIX),
+      migrationTag(ACCOUNT_PERMISSIONS_SUFFIX),
+    ]);
+    expect(before.migrations).toBe(tags.length - pending.length);
+    expect(await appliedCount(pool)).toBe(before.migrations + pending.length);
     expect(await migrateDatabase(url)).toBe(0);
   });
 

@@ -105,7 +105,9 @@ const ServicePageSchema = ServiceCardSchema.extend({
     max: z.number().int(),
     options: z.array(z.number().int()).describe('Fixed packs; empty means any quantity from min to max.'),
   }),
-  fields: z.array(FieldSchema).describe('What the order form asks for besides the IMEI.'),
+  fields: z
+    .array(FieldSchema)
+    .describe('What the order form asks for besides the IMEI. On an IMEI service the main-input field is left out.'),
   faqs: z.array(z.object({ question: z.string(), answerMd: z.string() })),
 });
 

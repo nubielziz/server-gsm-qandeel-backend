@@ -563,7 +563,10 @@ describe('a service that moved while the rules did not (plan correction 3)', () 
 describe('a service the supplier sync adopts (plan correction 3, the real adoption)', () => {
   const SERVER_50 = { scope: 'type', serviceType: 'server', percent: '50', rounding: 'cent' } as const;
   const adopt = (serviceId: number) => {
-    const field = mainInputField({ label: 'Serial Number', minLength: 1, maxLength: null }, new Set());
+    const field = mainInputField(
+      { label: 'Serial Number', minLength: 1, maxLength: null },
+      { keys: new Set(), names: new Set() },
+    );
     return t.app
       .get(DbService)
       .runInTransaction(({ tx }) =>
@@ -634,7 +637,10 @@ describe('a service the supplier sync adopts (plan correction 3, the real adopti
   it('moves the time inside the transaction of the adoption: a sync that fails leaves it', async () => {
     const { service } = await ruleEditedAfterThePrice();
     const before = (await followOf(service.id))!.appliedAt;
-    const field = mainInputField({ label: 'Serial Number', minLength: 1, maxLength: null }, new Set());
+    const field = mainInputField(
+      { label: 'Serial Number', minLength: 1, maxLength: null },
+      { keys: new Set(), names: new Set() },
+    );
     const failed = t.app.get(DbService).runInTransaction(async ({ tx }) => {
       await t.app.get(ServiceImporter, { strict: false }).adoptMainInput(tx, { serviceId: service.id, field });
       throw new Error('the sync failed');

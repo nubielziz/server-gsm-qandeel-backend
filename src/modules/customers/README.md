@@ -20,7 +20,7 @@ Built (feature 14a, storefront-checkout): the checkout, 3 of the 13 storefront r
   utm? }`. In one transaction: the policy `guestCheckout` (off answers `401 UNAUTHORIZED` "Sign in to check out." to a guest; a
   signed-in account is not a guest, see **Who the buyer is** below); the service must be one the shop sells, lists
   (a switched-on `service_listings` row) and has priced (`StorefrontQuotes`, else `422` on `serviceId`; a `file` service cannot be ordered online yet); the quantity and the
-  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; a field keyed `imei` is judged on the typed IMEI, which also satisfies it when it is required, and what is stored under that key is the typed IMEI); an IMEI service needs a
+  order fields are checked with the orders module's placement rules (`quantityProblem`, `inputProblems`; the service's main-input field, the one flagged `isMainInput` whatever its key (decision 065), is judged on the typed IMEI, which also satisfies it when it is required, its problems are reported on `imei`, and what is stored under that key is the typed IMEI); an IMEI service needs a
   valid IMEI (`INVALID_IMEI`, stored as `imei_enc`, context `checkout_sessions.imei_enc`, never returned: the answer shows the last
   four digits). The buyer is an account row (see **Who the buyer is** below); the typed email is trimmed and lower-cased. A failed open rolls
   everything back (no guest row is left behind). The session stores USD `net_amount`, `tax_rate`, `tax_amount`, `gross_amount`

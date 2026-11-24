@@ -1120,7 +1120,10 @@ describe('ListingPublisher: the supplier links (supplyStates)', () => {
 describe('ListingPublisher: a service adopted into server since the preview (feature 33)', () => {
   /** What the supplier sync does to the service (decision 042): the real adoption of the supplier's main box. */
   const adopt = async (serviceId: number) => {
-    const field = mainInputField({ label: 'Serial Number', minLength: 1, maxLength: null }, new Set());
+    const field = mainInputField(
+      { label: 'Serial Number', minLength: 1, maxLength: null },
+      { keys: new Set(), names: new Set() },
+    );
     const adopted = await t.app
       .get(DbService)
       .runInTransaction(({ tx }) => t.app.get(ServiceImporter).adoptMainInput(tx, { serviceId, field }));

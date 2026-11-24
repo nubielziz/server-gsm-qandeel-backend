@@ -2,7 +2,7 @@
 // success, reject and timeout): send one order to its supplier exactly once and record what the supplier answered.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
+import { supplierFieldName } from '../../../common/dhru';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { DbService } from '../../../infra/db';
@@ -76,7 +76,7 @@ export class SupplierBusyError extends Error {
  * run that finds a claim of an earlier release (`pending` with `sent_at` set) does not send again: it moves the order to
  * `needs_attention`. A storefront order whose payment is disputed, charged back or refunded in full is not sent either: it is stopped in
  * `needs_attention` with the reason before any claim. The supplier's main box travels as `IMEI`: the IMEI of an IMEI order, else the value
- * of the field whose supplier key is `IMEI` (decision 042).
+ * of the field flagged as the main input (decisions 042 and 065).
  *
  * Side effects: one `supplier_api_logs` row per call (an error log line and an error report when it cannot be written), the claim
  * (`orders.sent_at`, `dispatching`, supplier columns, a `dispatch` event), the result (`sent` or `needs_attention` with its event,
@@ -330,8 +330,8 @@ export class SupplierDispatch {
   }
 
   /**
-   * What `placeimeiorder` is sent: the main input (the IMEI of an IMEI order, else the value of the field whose supplier key is `IMEI`)
-   * and the other custom fields under the supplier's own names.
+   * What `placeimeiorder` is sent: the main input (the IMEI of an IMEI order, else the value of the field flagged as the main input)
+   * and the other custom fields under the supplier's own names (the link's field map, else the field's Name).
    */
   private async placeInput(
     order: Order,
@@ -340,22 +340,20 @@ export class SupplierDispatch {
   ): Promise<PlaceOrderInput> {
     const maps = await serviceFieldMaps(this.db.db, order.serviceId);
     const customFields: Record<string, string> = {};
-    // Decision 042: a value whose supplier key is `IMEI` (any case, after the link's field map) is the supplier's main box: it travels
-    // as the `IMEI` parameter, never inside CUSTOMFIELD. With several, the first by the service's field order wins.
+    // Decisions 042 and 065: the value of the field flagged as the main input is the supplier's main box: it travels as the `IMEI`
+    // parameter, never inside CUSTOMFIELD. The flag decides, not a name: a field the supplier itself names IMEI is an ordinary field and
+    // travels in CUSTOMFIELD. With several flagged (the database allows one), the first by the service's field order wins.
     let main: { rank: number; value: string } | null = null;
     for (const [key, value] of Object.entries(order.inputs)) {
       if (typeof value !== 'string' || value.trim() === '') continue;
-      const supplierKey = resolvedSupplierKey(
-        maps.find((field) => field.key === key) ?? { key, supplierKey: '' },
-        fieldMap[key],
-      );
-      if (isMainInputKey(supplierKey)) {
-        const found = maps.findIndex((field) => field.key === key);
-        const rank = found === -1 ? maps.length : found;
+      const rank = maps.findIndex((field) => field.key === key);
+      const field = rank === -1 ? undefined : maps[rank]!;
+      if (field?.isMainInput === true) {
         if (main === null || rank < main.rank) main = { rank, value: value.trim() };
         continue;
       }
-      customFields[supplierKey] = value;
+      // A stored key that no field has any more (the field was deleted) keeps its own name, as before.
+      customFields[supplierFieldName(field ?? { supplierKey: key }, fieldMap[key])] = value;
     }
     const ownImei = order.type === 'imei' && order.imei !== null && order.imei !== '' ? order.imei : null;
     return {

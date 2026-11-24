@@ -35,7 +35,8 @@ const received = (orderId: number) => ({ MESSAGE: 'Order received' as const, REF
  * order again.", "Not enough credits"). Dhru has no idempotency field: a repeated placement is stopped by the service's duplicate rule
  * (`DUPLICATE_ORDER`). A bulk call places each item on its own (the gateway answers per item). A merchant reads its own orders only.
  * An IMEI service is placed with `placeimeiorder` and a File service with `placefileorder`: the wrong action is refused with a message that
- * names the right one.
+ * names the right one. Decision 065: CUSTOMFIELD carries the values by field Name (what `imeiservicelist` shows as `fieldname`; trimmed, any
+ * letter case), and a field's hidden key is accepted too; `OrderPlacement` reads them (`inputsByFieldName`), and a field sent twice is refused.
  *
  * Side effects: the writes of `OrderPlacement.place` per placement; `placefileorder` stores the file first (object storage and `files`) and
  * removes it again when the placement fails; it binds its six actions to the Dhru gateway at start. No audit row (machine calls of a merchant write none, B121).

@@ -1,6 +1,6 @@
 // Integration tests of the replace-all lists of a service (feature 4a): PUT /admin/services/:id/fields and /options.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { FIELD_PATTERN_MESSAGES } from '@src/common/field-pattern';
 import { schema as s } from '@src/infra/db';
 import { type AdminApi, adminWith } from '../../support/admin-api';
@@ -32,16 +32,36 @@ afterAll(async () => {
 
 const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
 
-const field = (key: string, extra: Record<string, unknown> = {}) => ({
-  key,
-  label: key.toUpperCase(),
+/** A field row of the PUT body: a Name and the plain defaults; pass `key` for a saved field. */
+const field = (name: string, extra: Record<string, unknown> = {}) => ({
+  name,
   fieldType: 'text',
   required: false,
   options: [],
   regex: '',
-  supplierKey: '',
   ...extra,
 });
+/** What the route answers for a field with the plain defaults. */
+const saved = (key: string, name: string, extra: Record<string, unknown> = {}) => ({
+  key,
+  name,
+  label: name,
+  fieldType: 'text',
+  required: false,
+  options: [],
+  regex: '',
+  isMainInput: false,
+  ...extra,
+});
+const putFields = (fields: unknown[]) => admin.put(`/admin/services/${serviceId}/fields`, { fields });
+const storedFields = async () =>
+  (await testDb()).db
+    .select()
+    .from(s.serviceFields)
+    .where(eq(s.serviceFields.serviceId, serviceId))
+    .orderBy(s.serviceFields.sort);
+const errorFields = (res: { body: { errors: Array<{ field: string }> } }) => res.body.errors.map((e) => e.field);
+
 const option = (list: string, value: string, extra: Record<string, unknown> = {}) => ({
   list,
   value,
@@ -52,51 +72,24 @@ const option = (list: string, value: string, extra: Record<string, unknown> = {}
 
 describe('PUT /admin/services/:id/fields', () => {
   it('replaces the list in order, deletes what is left out, answers the saved list and audits it', async () => {
-    const first = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [
-        field('imei', { required: true, regex: '^[0-9]{15}$', supplierKey: 'IMEI' }),
-        field('carrier', { fieldType: 'select', options: ['att', 'tmo'] }),
-      ],
-    });
+    const first = await putFields([
+      field('IMEI', { required: true, regex: '^[0-9]{15}$', isMainInput: true }),
+      field('Carrier', { label: 'Carrier name', fieldType: 'select', options: ['att', 'tmo'] }),
+    ]);
     expect(first.status).toBe(200);
     expect(first.body).toEqual([
-      {
-        key: 'imei',
-        label: 'IMEI',
-        fieldType: 'text',
-        required: true,
-        options: [],
-        regex: '^[0-9]{15}$',
-        supplierKey: 'IMEI',
-      },
-      {
-        key: 'carrier',
-        label: 'CARRIER',
-        fieldType: 'select',
-        required: false,
-        options: ['att', 'tmo'],
-        regex: '',
-        supplierKey: '',
-      },
+      saved('imei', 'IMEI', { required: true, regex: '^[0-9]{15}$', isMainInput: true }),
+      saved('carrier', 'Carrier', { label: 'Carrier name', fieldType: 'select', options: ['att', 'tmo'] }),
     ]);
-    const second = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('note', { fieldType: 'textarea' }), field('imei')],
-    });
+    const second = await putFields([field('Note', { fieldType: 'textarea' }), field('IMEI', { key: 'imei' })]);
+    expect(second.status).toBe(200);
     expect(second.body.map((f: { key: string }) => f.key)).toEqual(['note', 'imei']);
-    const { db } = await testDb();
-    const rows = await db
-      .select()
-      .from(s.serviceFields)
-      .where(eq(s.serviceFields.serviceId, serviceId))
-      .orderBy(s.serviceFields.sort);
-    expect(rows.map((r) => [r.key, r.sort])).toEqual([
-      ['note', 0],
-      ['imei', 1],
+    const rows = await storedFields();
+    expect(rows.map((r) => [r.key, r.supplierKey, r.sort])).toEqual([
+      ['note', 'Note', 0],
+      ['imei', 'IMEI', 1],
     ]);
-    expect((await admin.get(`/admin/services/${serviceId}`)).body.fields.map((f: { key: string }) => f.key)).toEqual([
-      'note',
-      'imei',
-    ]);
+    expect((await admin.get(`/admin/services/${serviceId}`)).body.fields).toEqual(second.body);
 
     const audits = await auditRows();
     expect(audits[1]).toMatchObject({
@@ -105,76 +98,215 @@ describe('PUT /admin/services/:id/fields', () => {
       entityId: serviceId,
       entityLabel: 'AT&T Unlock',
     });
-    expect(audits[1]!.before).toEqual({ fields: ['imei', 'carrier'] });
-    expect(audits[1]!.after).toEqual({ fields: ['note', 'imei'] });
+    // Each field by key, Name, label, required and the main-input flag: what a supplier and a buyer see, and what travels as the IMEI.
+    expect(audits[1]!.before).toEqual({
+      fields: [
+        { key: 'imei', name: 'IMEI', label: 'IMEI', required: true, isMainInput: true },
+        { key: 'carrier', name: 'Carrier', label: 'Carrier name', required: false, isMainInput: false },
+      ],
+    });
+    expect(audits[1]!.after).toEqual({
+      fields: [
+        { key: 'note', name: 'Note', label: 'Note', required: false, isMainInput: false },
+        { key: 'imei', name: 'IMEI', label: 'IMEI', required: false, isMainInput: true },
+      ],
+    });
   });
 
   it('clears the list with an empty one', async () => {
-    await admin.put(`/admin/services/${serviceId}/fields`, { fields: [field('a')] });
-    const res = await admin.put(`/admin/services/${serviceId}/fields`, { fields: [] });
+    await putFields([field('A')]);
+    const res = await putFields([]);
     expect(res.body).toEqual([]);
     expect(await (await testDb()).db.select().from(s.serviceFields)).toEqual([]);
   });
 
-  it('names the later occurrence of a repeated key and every other problem on its dotted path', async () => {
-    const dup = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('a'), field('b'), field('a')],
-    });
-    expect(dup.status).toBe(422);
-    expect(dup.body.errors).toEqual([
+  it('makes the key of a new field from its Name, with a number on a clash and field when nothing is left', async () => {
+    const res = await putFields([
+      field('User-Name'),
+      field('User Name'),
+      field(' Serial No. '),
+      field('###'),
+      field('***'),
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.body.map((f: { key: string; name: string }) => [f.key, f.name])).toEqual([
+      ['user_name', 'User-Name'],
+      ['user_name_2', 'User Name'],
+      ['serial_no', 'Serial No.'],
+      ['field', '###'],
+      ['field_2', '***'],
+    ]);
+  });
+
+  it('keeps the key of a saved field when its Name changes, and its label, flag and answer when the row leaves them out', async () => {
+    await putFields([
+      field('IMEI', { label: 'Phone IMEI', isMainInput: true }),
+      field('Account', { label: 'Account name' }),
+    ]);
+    const res = await putFields([field('IMEI number', { key: 'imei' }), field('Account user', { key: 'account' })]);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      saved('imei', 'IMEI number', { label: 'Phone IMEI', isMainInput: true }),
+      saved('account', 'Account user', { label: 'Account name' }),
+    ]);
+  });
+
+  it('stores the Name for an empty label, the typed label otherwise, and turns the flag off when it is sent false', async () => {
+    await putFields([
+      field('Serial', { label: 'Phone serial', isMainInput: true }),
+      field('Account', { label: 'Account' }),
+    ]);
+    const res = await putFields([
+      field('Serial', { key: 'serial', label: '', isMainInput: false }),
+      field('Account', { key: 'account', label: ' Your account ' }),
+      field('Note', { label: '  ' }),
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      saved('serial', 'Serial'),
+      saved('account', 'Account', { label: 'Your account' }),
+      saved('note', 'Note'),
+    ]);
+  });
+
+  it('flags the first field named IMEI in any letter case on an IMEI service when the save leaves none flagged', async () => {
+    const res = await putFields([field('Model'), field(' imei '), field('IMEI 2')]);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      saved('model', 'Model'),
+      saved('imei', 'imei', { isMainInput: true }),
+      saved('imei_2', 'IMEI 2'),
+    ]);
+    // Turning the flag off on that field leaves it on: on an IMEI service it is the IMEI.
+    const off = await putFields([field('IMEI', { key: 'imei', isMainInput: false })]);
+    expect(off.body).toEqual([saved('imei', 'IMEI', { label: 'imei', isMainInput: true })]);
+    // Another field that is flagged keeps the flag.
+    const other = await putFields([
+      field('Serial', { isMainInput: true }),
+      field('IMEI', { key: 'imei', isMainInput: false }),
+    ]);
+    expect(other.body.map((f: { key: string; isMainInput: boolean }) => [f.key, f.isMainInput])).toEqual([
+      ['serial', true],
+      ['imei', false],
+    ]);
+  });
+
+  it('flags no field by its Name on a service of another type', async () => {
+    const { db } = await testDb();
+    const server = await insertService(db, await insertCategory(db, { type: 'server' }), { type: 'server' });
+    const res = await admin.put(`/admin/services/${server}/fields`, { fields: [field('IMEI'), field('Model')] });
+    expect(res.status).toBe(200);
+    expect(res.body.map((f: { isMainInput: boolean }) => f.isMainInput)).toEqual([false, false]);
+  });
+
+  it('does not hand the key of a deleted field to a new field in the same save', async () => {
+    await putFields([field('Account')]);
+    const res = await putFields([field('Account'), field('Other')]);
+    expect(res.body.map((f: { key: string }) => f.key)).toEqual(['account_2', 'other']);
+  });
+
+  it('refuses an unknown key and a repeated key on fields.N.key, and stores nothing', async () => {
+    await putFields([field('A'), field('B')]);
+    const unknown = await putFields([field('A', { key: 'a' }), field('X', { key: 'x' })]);
+    expect(unknown.status).toBe(422);
+    expect(unknown.body.errors).toEqual([
+      expect.objectContaining({ field: 'fields.1.key', message: 'This field no longer exists. Reload the page.' }),
+    ]);
+    const repeated = await putFields([field('A', { key: 'a' }), field('B', { key: 'b' }), field('C', { key: 'a' })]);
+    expect(repeated.status).toBe(422);
+    expect(repeated.body.errors).toEqual([
       expect.objectContaining({ field: 'fields.2.key', message: 'The key a is used twice.' }),
     ]);
+    expect((await storedFields()).map((r) => r.key)).toEqual(['a', 'b']);
+  });
 
-    const bad = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [
-        field(' ', {}),
-        field('b', { label: '  ' }),
-        field('c', { fieldType: 'date' }),
-        field('d', { regex: '([0-9' }),
-      ],
-    });
+  it('refuses a Name that an earlier field has, ignoring letter case, on the later row', async () => {
+    const res = await putFields([field('Email'), field('Phone'), field('email')]);
+    expect(res.status).toBe(422);
+    expect(res.body.errors).toEqual([
+      expect.objectContaining({ field: 'fields.2.name', message: 'The name email is used by an earlier field.' }),
+    ]);
+    expect(await storedFields()).toEqual([]);
+  });
+
+  it('answers a repeated Name on the database fallback when the code and Postgres fold a letter differently', async () => {
+    const { db } = await testDb();
+    const folded = await db.execute<{ same: boolean }>(sql`select lower('\u0130') = 'i' as same`);
+    // The dotted capital I folds to a plain i in a UTF-8 locale of Postgres and to two characters in JavaScript; in the C locale
+    // nothing folds and the code has the last word, so there is nothing to see.
+    if (!folded.rows[0]?.same) return;
+    const res = await putFields([field('i'), field('Other'), field('\u0130')]);
+    expect(res.status).toBe(422);
+    expect(res.body.errors).toEqual([expect.objectContaining({ field: 'fields.2.name' })]);
+    expect(await storedFields()).toEqual([]);
+  });
+
+  it('refuses a second main input on fields.N.isMainInput, also one that a saved field has and the row leaves unsaid', async () => {
+    const two = await putFields([field('A', { isMainInput: true }), field('B'), field('C', { isMainInput: true })]);
+    expect(two.status).toBe(422);
+    expect(errorFields(two)).toEqual(['fields.2.isMainInput']);
+    await putFields([field('IMEI', { isMainInput: true }), field('Serial')]);
+    const kept = await putFields([
+      field('IMEI', { key: 'imei' }),
+      field('Serial', { key: 'serial', isMainInput: true }),
+    ]);
+    expect(kept.status).toBe(422);
+    expect(errorFields(kept)).toEqual(['fields.1.isMainInput']);
+    const moved = await putFields([
+      field('IMEI', { key: 'imei', isMainInput: false }),
+      field('Serial', { key: 'serial', isMainInput: true }),
+    ]);
+    expect(moved.status).toBe(200);
+    expect(moved.body.map((f: { isMainInput: boolean }) => f.isMainInput)).toEqual([false, true]);
+  });
+
+  it('names every other problem on its dotted path', async () => {
+    const bad = await putFields([
+      field(' ', {}),
+      field('B', { label: 'x'.repeat(121) }),
+      field('C', { fieldType: 'date' }),
+      field('D', { key: ' ' }),
+      { fieldType: 'text', required: false, options: [], regex: '' },
+    ]);
     expect(bad.status).toBe(422);
-    expect(bad.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
-      'fields.0.key',
-      'fields.0.label',
+    expect(errorFields(bad).sort()).toEqual([
+      'fields.0.name',
       'fields.1.label',
       'fields.2.fieldType',
+      'fields.3.key',
+      'fields.4.name',
     ]);
-    const pattern = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('d', { regex: '([0-9' })],
-    });
+    const pattern = await putFields([field('D', { regex: '([0-9' })]);
     expect(pattern.body.errors).toEqual([expect.objectContaining({ field: 'fields.0.regex' })]);
     // Nothing was changed by the refused calls.
     expect(await (await testDb()).db.select().from(s.serviceFields)).toEqual([]);
   });
 
   it('refuses a pattern outside the supported form with its reason, and saves one inside it', async () => {
-    const nested = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('d', { regex: '^(a+)+$' })],
-    });
+    const nested = await putFields([field('D', { regex: '^(a+)+$' })]);
     expect(nested.status).toBe(422);
     expect(nested.body.errors).toEqual([
       expect.objectContaining({ field: 'fields.0.regex', message: FIELD_PATTERN_MESSAGES.nested }),
     ]);
-    const complex = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('ok'), field('d', { regex: '\\d+\\d+$' })],
-    });
+    const complex = await putFields([field('ok'), field('D', { regex: '\\d+\\d+$' })]);
     expect(complex.body.errors).toEqual([
       expect.objectContaining({ field: 'fields.1.regex', message: FIELD_PATTERN_MESSAGES.too_complex }),
     ]);
     // Nothing was stored by the refused calls.
     expect(await (await testDb()).db.select().from(s.serviceFields)).toEqual([]);
 
-    const saved = await admin.put(`/admin/services/${serviceId}/fields`, {
-      fields: [field('d', { regex: '^[A-Z]{2}\\d{4}$' })],
-    });
-    expect(saved.status).toBe(200);
-    expect(saved.body[0]).toMatchObject({ key: 'd', regex: '^[A-Z]{2}\\d{4}$' });
+    const ok = await putFields([field('D', { regex: '^[A-Z]{2}\\d{4}$' })]);
+    expect(ok.status).toBe(200);
+    expect(ok.body[0]).toMatchObject({ key: 'd', regex: '^[A-Z]{2}\\d{4}$' });
   });
 
-  it('trims keys, so a key repeated after trimming is a duplicate', async () => {
-    const res = await admin.put(`/admin/services/${serviceId}/fields`, { fields: [field('a'), field(' a ')] });
-    expect(res.body.errors[0]).toMatchObject({ field: 'fields.1.key' });
+  it('trims Names and keys, so a Name repeated after trimming is a duplicate', async () => {
+    const res = await putFields([field('a'), field(' a ')]);
+    expect(res.body.errors[0]).toMatchObject({ field: 'fields.1.name' });
+    await putFields([field('a')]);
+    const key = await putFields([field('a', { key: ' a ' })]);
+    expect(key.status).toBe(200);
+    expect(key.body[0]).toMatchObject({ key: 'a', name: 'a' });
   });
 
   it('answers 404 for an unknown service and needs catalog:update', async () => {
@@ -185,18 +317,14 @@ describe('PUT /admin/services/:id/fields', () => {
 
   it('serialises two saves of the same service: the last one wins and no row is lost or doubled', async () => {
     const results = await Promise.all([
-      admin.put(`/admin/services/${serviceId}/fields`, { fields: [field('a'), field('b')] }),
-      admin.put(`/admin/services/${serviceId}/fields`, { fields: [field('b'), field('c'), field('d')] }),
+      putFields([field('A'), field('B')]),
+      putFields([field('B'), field('C'), field('D')]),
     ]);
     expect(results.map((r) => r.status)).toEqual([200, 200]);
-    const rows = await (
-      await testDb()
-    ).db
-      .select()
-      .from(s.serviceFields)
-      .where(eq(s.serviceFields.serviceId, serviceId));
+    const rows = await storedFields();
     expect(rows.length === 2 || rows.length === 3).toBe(true);
     expect(new Set(rows.map((r) => r.key)).size).toBe(rows.length);
+    expect(new Set(rows.map((r) => r.supplierKey.toLowerCase())).size).toBe(rows.length);
   });
 });
 

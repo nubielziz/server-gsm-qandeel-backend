@@ -65,10 +65,11 @@ function requiresOf(service: Service, fields: readonly ServiceField[]): Record<s
   }
   out['Requires.Custom'] = fields
     // The IMEI of an IMEI service is the order's own input (`IMEI`), not a custom field a client has to draw again.
-    .filter((field) => !(service.type === 'imei' && field.key === 'imei'))
+    .filter((field) => !(service.type === 'imei' && field.isMainInput))
     .map((field) => ({
       type: `service${service.type}`,
-      fieldname: field.key,
+      // The field's Name: what `CUSTOMFIELD` takes (an incoming order also accepts the hidden key, decision 065).
+      fieldname: field.supplierKey,
       fieldtype: DHRU_FIELD_TYPES[field.fieldType],
       description: field.label,
       fieldoptions: field.fieldType === 'select' ? field.options.join(',') : '',

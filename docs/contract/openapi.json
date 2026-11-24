@@ -93257,7 +93257,7 @@
     },
     "/admin/orders/{id}": {
       "get": {
-        "description": "One order in the shape of a list row. Read after every action and for deep links. Never cached.",
+        "description": "One order in the shape of a list row, plus `answers`: the custom field values the buyer gave as `{ key, label, value }` (decision 065), the service's fields in form order that have a value, then stored keys the service has no field for any more (label = the key). Read after every action and for deep links. Never cached.",
         "operationId": "getAdminOrdersById",
         "parameters": [
           {
@@ -93700,6 +93700,32 @@
                         }
                       ],
                       "description": "Set for a completed and for a rejected order; `null` while open."
+                    },
+                    "answers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "description": "The field's key, the key of this answer in `inputs`."
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "The label of the field as it is now; the key itself when the service has no such field any more (it was deleted)."
+                          },
+                          "value": {
+                            "type": "string",
+                            "description": "The value that was given, as text."
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -93731,7 +93757,8 @@
                     "inputFileId",
                     "adminNote",
                     "sentAt",
-                    "completedAt"
+                    "completedAt",
+                    "answers"
                   ],
                   "additionalProperties": false
                 },
@@ -93797,7 +93824,14 @@
                   "inputFileId": null,
                   "adminNote": null,
                   "sentAt": "2026-10-02T06:23:28.000Z",
-                  "completedAt": "2026-10-02T07:01:10.000Z"
+                  "completedAt": "2026-10-02T07:01:10.000Z",
+                  "answers": [
+                    {
+                      "key": "username",
+                      "label": "Username",
+                      "value": "amir92"
+                    }
+                  ]
                 }
               }
             },
@@ -160688,10 +160722,16 @@
                         "type": "object",
                         "properties": {
                           "key": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The hidden identifier the server made from the name when the field was created. It never changes; the order forms send their answers under it."
+                          },
+                          "name": {
+                            "type": "string",
+                            "description": "The field name: never empty, unique in the service ignoring letter case, and exactly what a supplier receives in `CUSTOMFIELD`."
                           },
                           "label": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The text buyers read."
                           },
                           "fieldType": {
                             "type": "string",
@@ -160716,19 +160756,20 @@
                             "type": "string",
                             "description": "`\"\"` when there is no pattern. A pattern is in the supported form of decision 051."
                           },
-                          "supplierKey": {
-                            "type": "string",
-                            "description": "The field name the supplier expects; `\"\"` when none."
+                          "isMainInput": {
+                            "type": "boolean",
+                            "description": "The field is the service's main input: its value travels as the IMEI parameter, never inside `CUSTOMFIELD`. At most one field of a service."
                           }
                         },
                         "required": [
                           "key",
+                          "name",
                           "label",
                           "fieldType",
                           "required",
                           "options",
                           "regex",
-                          "supplierKey"
+                          "isMainInput"
                         ],
                         "additionalProperties": false
                       }
@@ -160925,12 +160966,13 @@
                   "fields": [
                     {
                       "key": "imei",
+                      "name": "IMEI",
                       "label": "IMEI",
                       "fieldType": "text",
                       "required": true,
                       "options": [],
                       "regex": "^[0-9]{15}$",
-                      "supplierKey": "IMEI"
+                      "isMainInput": true
                     }
                   ],
                   "options": [
@@ -162656,7 +162698,7 @@
     },
     "/admin/services/{id}/fields": {
       "put": {
-        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A key that is empty or repeated, an empty label, an unknown field type or a pattern outside the supported form (decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`. An unknown or archived service is `404`.",
+        "description": "The whole list in order (the index is the sort order); a field left out is deleted. One transaction. A row may carry the `key` of a field the service has (that is how a saved field is recognised and keeps its key for ever); a row without a key is a new field and the server makes its key from the name (lower snake case, `_2`, `_3` on a clash, `field` when nothing is left). The name is what a supplier receives in `CUSTOMFIELD`. `label` left out keeps the saved label of an existing field, an empty label stores the name, and a new field without a label gets the name. `isMainInput` left out keeps the saved value of an existing field and is `false` for a new one. On an IMEI service a list that leaves no field as the main input makes the first field named IMEI (any letter case) the main input. An unknown field type, an empty name or a pattern outside the supported form (decision 051: literals, classes, the escapes `\\d \\w \\s` and their capitals, groups that neither repeat nor nest, counts up to 500, `^` and `$` at the ends, and a bound on the work of a 500-character value) is `422` on `fields.N.<name>`; so are an unknown or repeated key (`fields.N.key`), a name that an earlier field already has, ignoring letter case (`fields.N.name`), and a second main input (`fields.N.isMainInput`). An unknown or archived service is `404`.",
         "operationId": "putAdminServicesByIdFields",
         "parameters": [
           {
@@ -162686,13 +162728,18 @@
                       "type": "object",
                       "properties": {
                         "key": {
+                          "description": "The key of a saved field; left out for a new field.",
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 60
                         },
-                        "label": {
+                        "name": {
                           "type": "string",
                           "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "label": {
+                          "type": "string",
                           "maxLength": 120
                         },
                         "fieldType": {
@@ -162720,19 +162767,16 @@
                           "type": "string",
                           "maxLength": 500
                         },
-                        "supplierKey": {
-                          "type": "string",
-                          "maxLength": 120
+                        "isMainInput": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
-                        "key",
-                        "label",
+                        "name",
                         "fieldType",
                         "required",
                         "options",
-                        "regex",
-                        "supplierKey"
+                        "regex"
                       ]
                     }
                   }
@@ -162746,13 +162790,13 @@
                   "value": {
                     "fields": [
                       {
-                        "key": "imei",
+                        "name": "IMEI",
                         "label": "IMEI",
                         "fieldType": "text",
                         "required": true,
                         "options": [],
                         "regex": "^[0-9]{15}$",
-                        "supplierKey": "IMEI"
+                        "isMainInput": true
                       }
                     ]
                   }
@@ -162772,10 +162816,16 @@
                     "type": "object",
                     "properties": {
                       "key": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The hidden identifier the server made from the name when the field was created. It never changes; the order forms send their answers under it."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "The field name: never empty, unique in the service ignoring letter case, and exactly what a supplier receives in `CUSTOMFIELD`."
                       },
                       "label": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The text buyers read."
                       },
                       "fieldType": {
                         "type": "string",
@@ -162800,19 +162850,20 @@
                         "type": "string",
                         "description": "`\"\"` when there is no pattern. A pattern is in the supported form of decision 051."
                       },
-                      "supplierKey": {
-                        "type": "string",
-                        "description": "The field name the supplier expects; `\"\"` when none."
+                      "isMainInput": {
+                        "type": "boolean",
+                        "description": "The field is the service's main input: its value travels as the IMEI parameter, never inside `CUSTOMFIELD`. At most one field of a service."
                       }
                     },
                     "required": [
                       "key",
+                      "name",
                       "label",
                       "fieldType",
                       "required",
                       "options",
                       "regex",
-                      "supplierKey"
+                      "isMainInput"
                     ],
                     "additionalProperties": false
                   }
@@ -162820,12 +162871,13 @@
                 "example": [
                   {
                     "key": "imei",
+                    "name": "IMEI",
                     "label": "IMEI",
                     "fieldType": "text",
                     "required": true,
                     "options": [],
                     "regex": "^[0-9]{15}$",
-                    "supplierKey": "IMEI"
+                    "isMainInput": true
                   }
                 ]
               }
@@ -205991,7 +206043,7 @@
                                           },
                                           "fieldname": {
                                             "type": "string",
-                                            "description": "The field key: the name `CUSTOMFIELD` takes."
+                                            "description": "The field name: what `CUSTOMFIELD` takes, matched without regard to letter case. The field key is still accepted."
                                           },
                                           "fieldtype": {
                                             "type": "string",
@@ -222785,7 +222837,7 @@
     },
     "/client/orders/{id}": {
       "get": {
-        "description": "The order with its timeline: the lines the merchant may see (placement, hold, acceptance, completion, rejection, release, refund, reopen, verification), never a note, a supplier line, a risk line or the settlement. Another account's order, and the account's own store order, are `404`.",
+        "description": "The order with its timeline: the lines the merchant may see (placement, hold, acceptance, completion, rejection, release, refund, reopen, verification), never a note, a supplier line, a risk line or the settlement. `answers` lists the custom field values of the order as `{ key, label, value }` (decision 065): the label of each field of the service that has a value, then stored keys the service has no field for any more (label = the key). Another account's order, and the account's own store order, are `404`.",
         "operationId": "getClientOrdersById",
         "parameters": [
           {
@@ -223014,6 +223066,32 @@
                         }
                       ]
                     },
+                    "answers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "description": "The field's key, the key of this answer in `inputs`."
+                          },
+                          "label": {
+                            "type": "string",
+                            "description": "The label of the field as it is now; the key itself when the service has no such field any more (it was deleted)."
+                          },
+                          "value": {
+                            "type": "string",
+                            "description": "The value that was given, as text."
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
                     "events": {
                       "type": "array",
                       "items": {
@@ -223097,6 +223175,7 @@
                     "canVerify",
                     "createdAt",
                     "completedAt",
+                    "answers",
                     "events"
                   ],
                   "additionalProperties": false
@@ -223127,6 +223206,13 @@
                   "canVerify": false,
                   "createdAt": "2026-10-02T06:23:25.000Z",
                   "completedAt": "2026-10-02T07:01:10.000Z",
+                  "answers": [
+                    {
+                      "key": "username",
+                      "label": "Username",
+                      "value": "amir92"
+                    }
+                  ],
                   "events": [
                     {
                       "id": 1,
@@ -228228,7 +228314,7 @@
     },
     "/client/services": {
       "get": {
-        "description": "The services the signed-in merchant may order, at the price it pays (client price, else group price, else the base price after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and category. Every price shown is remembered as the merchant's listed price (price protection, user rule 9), so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
+        "description": "The services the signed-in merchant may order, at the price it pays (client price, else group price, else the base price after the pricing rule, the group discount, rounding and the floor). Live and `active` services in an active category whose allowed groups are empty or include the merchant's group; archived and disabled services are never listed. Default order: category order, then name, so the client can group by `category`. Filters: `type`, `categoryId`; `q` searches name, code and category; `ids` (comma-separated service ids, at most 100, each a positive whole number) keeps only those services, in the same rows: an id that is unknown, archived, off or hidden from the merchant's group is simply absent, and a bad value is `422` on `ids`. The page range applies as for every list (default 25 rows), so send `_end=100` with up to 100 ids to read them all in one call; `x-total-count` counts the services found among them. Every price shown is remembered as the merchant's listed price (price protection, user rule 9), a request with `ids` included, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
         "operationId": "getClientServices",
         "parameters": [
           {
@@ -228334,6 +228420,16 @@
             },
             "style": "form",
             "explode": true
+          },
+          {
+            "name": "ids",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated service ids (at most 100, each a positive whole number): only these services, when the merchant may see them. Combines with the other filters; the page range still applies.",
+            "schema": {
+              "description": "Comma-separated service ids (at most 100, each a positive whole number): only these services, when the merchant may see them. Combines with the other filters; the page range still applies.",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -228793,7 +228889,7 @@
     },
     "/client/services/{id}": {
       "get": {
-        "description": "The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. A service the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
+        "description": "The catalog row plus the custom `fields` in order and the model, network and MEP `options` the order form needs. On an IMEI service the main-input field is left out: the order form takes the IMEI in its own box. A service the merchant may not see (unknown, archived, off, or hidden from its group) is `404`. The price shown is remembered as the listed price, so a request that the browser marks as started by another site (`Sec-Fetch-Site: cross-site` or `same-site`, without an `Origin` that is one of the shop's origins) is `403 CSRF_FAILED` and remembers nothing; the portal's own server calls, which carry neither header, are answered.",
         "operationId": "getClientServicesById",
         "parameters": [
           {
@@ -229017,12 +229113,12 @@
                   "qtyOptions": [],
                   "fields": [
                     {
-                      "key": "imei",
-                      "label": "IMEI",
+                      "key": "carrier_account",
+                      "label": "Carrier account",
                       "fieldType": "text",
-                      "required": true,
+                      "required": false,
                       "options": [],
-                      "regex": "^[0-9]{15}$"
+                      "regex": ""
                     }
                   ],
                   "options": [
@@ -260680,7 +260776,7 @@
                         ],
                         "additionalProperties": false
                       },
-                      "description": "What the order form asks for besides the IMEI."
+                      "description": "What the order form asks for besides the IMEI. On an IMEI service the main-input field is left out."
                     },
                     "faqs": {
                       "type": "array",
@@ -265630,7 +265726,7 @@
             "description": "The supplier's service id (`supplier_services.remote_id`)."
           },
           "IMEI": {
-            "description": "The main input: the IMEI, else the value of the field whose supplier key is `IMEI` (decision 042), else the first required field. Left out when the order has none.",
+            "description": "The main input: the IMEI, else the value of the field flagged as the main input (decisions 042 and 065), else the first required field. Left out when the order has none.",
             "type": "string"
           },
           "QNT": {

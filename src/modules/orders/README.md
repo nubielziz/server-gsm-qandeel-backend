@@ -4,7 +4,7 @@ Map domain D. One order engine for both doors, the merchant doors (balance hold 
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41), 064 one account type. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 024 ledger, 025 order state machine, 026 Dhru compatibility, 051 field patterns and the bulk reply's lines (feature 41), 064 one account type, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -79,8 +79,20 @@ the one `POST /api/index.php` transport route.
   to the outbox; no dispatch row. A short stock takes nothing and the order goes the usual way. A delivered code stays sold
   after a reopen or a refund. Not built yet: reserving codes for a held storefront order (sold on completion, back to stock on
   a rejection before delivery), with 14a and 18.
-- **Main input** (`domain/main-input.ts`, orders-suppliers-2): `orders.imei` holds the IMEI (type `imei`), the first required
-  custom field by sort (server, remote) or the first field's value or the file name (file). The wire sends `''` for none.
+- **Main input** (`domain/main-input.ts`, orders-suppliers-2): `orders.imei` holds the IMEI (type `imei`); otherwise the value of the
+  field flagged as the main input when it has one (decision 065: what the dispatch sends as `IMEI`, so the duplicate check of `block_open`
+  names it too), else the first required custom field by sort (server, remote) or the first field's value or the file name (file). The
+  wire sends `''` for none.
+- **The main-input field and the field Name** (decision 065). A service's field flagged `is_main_input` (at most one) is the IMEI itself on
+  an IMEI service: placement (the portal, Dhru and the shop's checkout) judges its pattern and its `required` on the typed IMEI, never on a
+  value sent under its key, reports its problems on the item's IMEI path (`imei`, `imeis.N`, Dhru's `IMEI`; `inputProblems` takes the
+  path), and stores the typed IMEI under that key when the buyer sent the key; a field that is only keyed `imei` is an ordinary field. A Dhru caller names its `CUSTOMFIELD` values by field **Name** (what `imeiservicelist` shows as `fieldname`): `inputsByFieldName`
+  (`domain/field-inputs.ts`) matches a name to a Name exactly (the `supplier_key` column), then to a key exactly, then to a Name trimmed and
+  without regard to case, and keeps a name that matches nothing as sent (so `inputProblems` answers `unknown_field`); a field sent twice is `422`
+  `duplicate_field` on `inputs.<later name>`. `orders.inputs` stays keyed by the hidden key, whoever placed the order.
+- **Answers** (`domain/order-answers.ts`). `GET /admin/orders/:id` and `GET /client/orders/:id` add `answers: [{ key, label, value }]`:
+  the service's fields in form order that have a value under their label as it is now, then stored keys no field has any more, under
+  their own key as the label. The list routes do not carry it.
 - **Money** (`application/order-ledger.ts`): placement holds (`order`: wallet to hold); a reply settles (`complete`: hold to
   revenue, plus supplier prepaid to cost of goods only when the order has a supplier **and** a supplier reference, and only if no
   earlier settlement booked the cost of the supplier's current acceptance: B17, a new send the supplier accepted after a reopen
@@ -154,7 +166,7 @@ are ISO with milliseconds, ids are numbers, lists are simple-rest with `x-total-
 - The merchant's order: `{ id, status, imei, quantity, inputs, unitPrice, totalPrice, currency, service: {id, name, type}, source,
   result: {code, comment, fileId}, verificationStatus, inputFileId, canCancel, canVerify, createdAt, completedAt }`.
   Never cost, supplier, supplier reference, notes, queue, dispatch state, pricing snapshot or risk. `GET /client/orders/:id` adds
-  `events: [{id, type, message, createdAt}]`, only the types `created`, `hold`, `accepted`, `completed`, `rejected`, `release`,
+  `answers: [{key, label, value}]` (decision 065) and `events: [{id, type, message, createdAt}]`, only the types `created`, `hold`, `accepted`, `completed`, `rejected`, `release`,
   `refund`, `reopened` and `verification` (never a note, a supplier line or the settlement, which shows the cost).
 - `POST /client/orders` (`201 { orders: [order] }`): body `{ serviceId, imei? | imeis? (1-100), quantity?, inputs?, fileId? }`.
   `imeis` places one order per IMEI of the same service, **all or none** in one transaction (the first refusal, including
@@ -221,7 +233,7 @@ hours, 0 = no window) through `POST|PATCH /admin/services` (feature 7a, catalog 
   and a 22-character `public_token` are set instead of a merchant, a `paid` line follows `created`, an automatic service is queued for dispatch, a manual one waits in the manual queue, and codes in stock are delivered at once (claim, sell and `b2c_deliver`). The risk hold of feature 18 plugs in at `placementDispatchState({ held })`.
   The state machine has one more action, `refundApproved` (an open storefront order in any queue, held or reopened included, becomes `rejected`, money `b2c_refund`), used when staff approve a refund of an order that was not delivered. `OrderLedger` posts the `b2c_refund` move through the money module's `B2cRefunds`
   (what is left on the payment and its VAT share, a `processing` refund row and its gateway job, or the approved refund's own journal when `refundId` is given); `StorefrontOrderPortImpl` fills money's port slot so the refund routes can cancel an order and add refund and dispute lines to the timeline without importing orders. A rejection the system decides (the actor is a supplier or the system) reads the storefront policy `autoRefundFailed` (`StorefrontPolicies`): off, `OrderLedger` asks `B2cRefunds` for `mode: 'request'`, which opens a refund request for staff and posts nothing, and the timeline says `Refund of $X is waiting for staff to approve`; a rejection a person decides always refunds. `OrderTransitions.apply` also writes the storefront customer's `order.completed` / `order.failed` email (money's `StorefrontMails`) in the transition's transaction. A staff reject that gives a storefront payment back also needs `refunds:approve`, checked through `TransitionRequest.authorize` after the machine's decision; the verification decision `refund` also needs `orders:reopen` (decision 046). Decision 048: when the payment is disputed or charged back with the card network, a rejection (staff or supplier) and a risk refund open a refund request instead (`MoveOutcome.disputed`), no mail is sent, and the timeline says `Refund of $X is waiting for staff: the buyer disputed this payment with the card network, so nothing was sent back` (a risk refund's line `Risk review: refund waits for staff`). One order per checkout session is a database rule: the unique index `orders_checkout_session_uq` (a full index, so it also serves the foreign key; NULLs stay distinct; migration `payments_integrity`, which first checks the data and names the sessions that break it).
-  Feature 33 (decision 042): a checkout opened while its service took an IMEI and paid after the supplier sync made it a `server` service keeps the buyer's value: `carriedImeiInputs` (`domain/main-input.ts`) puts the IMEI under the first field (form order) whose supplier key, or key when that is empty, is `IMEI` (`src/common/dhru/main-input-key.ts`, the dispatcher's rule) when that field has no value, so `orders.imei` holds it and the dispatch sends it as `IMEI`. The merchant paths (portal, Dhru) place at once against the current type and refuse an IMEI for a non-IMEI service (`422`, `not_applicable` on the IMEI field), so nothing is lost there.
+  Feature 33 (decision 042): a checkout opened while its service took an IMEI and paid after the supplier sync made it a `server` service keeps the buyer's value: `carriedImeiInputs` (`domain/main-input.ts`) puts the IMEI under the first field (form order) flagged as the main input (decision 065; the dispatcher's rule too) when that field has no value, so `orders.imei` holds it and the dispatch sends it as `IMEI`. The merchant paths (portal, Dhru) place at once against the current type and refuse an IMEI for a non-IMEI service (`422`, `not_applicable` on the IMEI field), so nothing is lost there.
   `OrderReceiptService` serves `GET /store/v1/orders/:token/receipt`: the paid tax receipt invoice of the order as a PDF (`PdfRenderer`, decision 030), drawn once by the `receipt.render` job the capture queues, stored, and served as those stored bytes every time (the money module's `OrderReceipts`; a missing copy is made by the first download; `404` for an unknown token or an order with no receipt).
 
 ### Staff reads and the export (decision 047)

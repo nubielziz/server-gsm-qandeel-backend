@@ -59,6 +59,8 @@ describe('inputProblems', () => {
   const field = (overrides: Partial<PlacementField>): PlacementField => ({
     id: 1,
     key: 'username',
+    name: 'Username',
+    isMainInput: false,
     label: 'Username',
     required: true,
     sort: 1,
@@ -92,6 +94,16 @@ describe('inputProblems', () => {
       ['inputs.extra', 'unknown_field'],
     ]);
     expect(inputProblems([field({ regex: '(' })], { username: 'a' })).toEqual([]);
+  });
+
+  it('reports the problems of a field on the path the caller names for it, and the others on inputs.<key>', () => {
+    const box = field({ key: 'serial', label: 'Serial', regex: '^35[0-9]{13}$' });
+    const other = field({ key: 'note', label: 'Note' });
+    const problems = inputProblems([box, other], { serial: '86' }, { serial: 'imeis.2' });
+    expect(problems.map((p) => [p.field, p.code])).toEqual([
+      ['imeis.2', 'invalid_format'],
+      ['inputs.note', 'required'],
+    ]);
   });
 
   it('answers at once for a nested repeat and a long hard value: the field has no pattern', () => {

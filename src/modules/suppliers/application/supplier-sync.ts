@@ -3,7 +3,7 @@
 // waits for the job) both run `run`; a sync is one transaction and safe to repeat (resolution orders-suppliers-6, user rule 9).
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
+import { fieldNameKey } from '../../../common/field-names';
 import { DbService, type DbExecutor, type TransactionContext, pgErrorInfo } from '../../../infra/db';
 import { CatalogPriceVersion, ServiceImporter, recomputeEffectiveCost } from '../../catalog';
 import { AuditService } from '../../platform';
@@ -43,17 +43,15 @@ export interface SyncResult {
 }
 
 /**
- * Whether the sync may adopt a candidate's main box: it is an `imei` service, its supplier service has a main box, and neither a field
- * (its supplier key, or its key when that is empty) nor the link's field map already names the box `IMEI` (decision 042; the
- * dispatcher's rule, `resolvedSupplierKey`).
+ * Whether the sync may adopt a candidate's main box: it is an `imei` service, its supplier service has a main box, and none of its
+ * fields is already the main input (decisions 042 and 065: the flag `isMainInput` marks the box; the link's field map does not).
  *
  * @param row the candidate as `alignmentCandidates` reads it
  * @returns true when the service should become a server service with the supplier's box first
  */
 export function adoptable(row: AlignmentCandidate): boolean {
   if (row.type !== 'imei' || supplierMainInput(row.raw) === null) return false;
-  if (row.fields.some((field) => isMainInputKey(resolvedSupplierKey(field)))) return false;
-  return !Object.values(row.fieldMap).some((mapped) => typeof mapped === 'string' && isMainInputKey(mapped));
+  return !row.fields.some((field) => field.isMainInput);
 }
 
 /** The audit phrase of an adopted service (`<actor> <action> <entityLabel>`, the system as the actor). */
@@ -355,7 +353,10 @@ export class SupplierSync {
       let touched = false;
       const main = adoptable(row) ? supplierMainInput(row.raw) : null;
       if (main !== null) {
-        const field = mainInputField(main, new Set(row.fields.map((existing) => existing.key)));
+        const field = mainInputField(main, {
+          keys: new Set(row.fields.map((existing) => existing.key)),
+          names: new Set(row.fields.map((existing) => fieldNameKey(existing.supplierKey))),
+        });
         const done = await this.importer.adoptMainInput(tx, { serviceId: row.serviceId, field });
         if (done !== null) {
           touched = true;
@@ -369,7 +370,7 @@ export class SupplierSync {
             after: {
               type: done.after.type,
               categoryId: done.after.categoryId,
-              field: { key: field.key, label: field.label, supplierKey: field.supplierKey },
+              field: { key: field.key, name: field.supplierKey, label: field.label },
             },
           });
         }

@@ -107,12 +107,13 @@ describe.skipIf(!frontendPresent)('the catalog seed', () => {
     expect((await admin.get('/admin/services/15')).body.fields).toEqual([
       {
         key: 'account',
+        name: 'user',
         label: 'Z3X account',
         fieldType: 'text',
         required: true,
         options: [],
         regex: '',
-        supplierKey: 'user',
+        isMainInput: false,
       },
     ]);
     // The demo's pricing (feature 4b): three client prices, the Carrier unlock promo and the resolver on top of them.

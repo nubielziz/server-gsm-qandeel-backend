@@ -23,6 +23,7 @@ import { AccountWallets } from '../../money';
 import { SettingsReader } from '../../platform';
 import type { Order } from '../db/schema';
 import { PLACEMENT_REFUSAL_DETAILS, placementRefusal } from '../domain/buyer-rules';
+import { inputsByFieldName } from '../domain/field-inputs';
 import { mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
 import {
@@ -57,7 +58,7 @@ import { OrderOutbox } from './order-outbox';
 export interface PlacementItem {
   /** The IMEI as typed (type `imei`). */
   readonly imei?: string | undefined;
-  /** Custom field values by field key. */
+  /** Custom field values by field key (by field Name, or key, for a Dhru order: decision 065). */
   readonly inputs: Readonly<Record<string, string>>;
   /** Where the problems of this item are named in the request (`imei`, `imeis.2`): the console maps them onto form fields. */
   readonly imeiField: string;
@@ -149,6 +150,7 @@ export class OrderPlacement {
 
     const fields = (await serviceFieldsOf(tx, service.id)).map((row): PlacementField => ({
       ...row,
+      name: row.supplierKey,
       options: row.options,
     }));
     const quantity = request.quantity ?? service.minQty;
@@ -327,7 +329,12 @@ export class OrderPlacement {
       problems.push({ field: 'fileId', code: 'required', message: 'Upload the file this service needs.' });
     }
     const prepared = request.items.map((item) => {
-      const inputs = Object.fromEntries(Object.entries(item.inputs).map(([key, value]) => [key, value.trim()]));
+      const trimmed = Object.fromEntries(Object.entries(item.inputs).map(([key, value]) => [key, value.trim()]));
+      // Decision 065: a Dhru caller names its values by field Name (the list shows Names); they are read as keys before anything is judged.
+      // The portal and the shop already send keys.
+      const named = request.source === 'dhru' ? inputsByFieldName(fields, trimmed) : { inputs: trimmed, problems: [] };
+      problems.push(...named.problems);
+      const { inputs } = named;
       let imei: string | undefined;
       if (service.type === 'imei') {
         const typed = item.imei?.trim() ?? '';
@@ -350,15 +357,22 @@ export class OrderPlacement {
           message: 'This service does not take an IMEI.',
         });
       }
-      // A service may define a field keyed `imei` (it carries the pattern the supplier wants): it receives the IMEI itself. The typed
-      // IMEI is the value stored in `orders.imei` and sent to the supplier, so it is the one the pattern judges: a value under
-      // `inputs.imei` never stands in for it.
-      const hasImeiField = fields.some((field) => field.key === 'imei');
-      const fieldInputs = imei !== undefined && hasImeiField ? { ...inputs, imei } : inputs;
-      problems.push(...inputProblems(fields, fieldInputs));
+      // A service may define a main-input field (decision 065: the field flagged `isMainInput`, whatever its key; it carries the pattern the
+      // supplier wants): it receives the IMEI itself. The typed IMEI is the value stored in `orders.imei` and sent to the supplier, so it
+      // is the one the pattern judges: a value under that field's key never stands in for it. On an IMEI service no form draws that field,
+      // so its problems are shown on the item's IMEI path; a missing IMEI is already refused there.
+      const box = fields.find((field) => field.isMainInput);
+      const fieldInputs = imei !== undefined && box ? { ...inputs, [box.key]: imei } : inputs;
+      const onImei = service.type === 'imei' && box ? { [box.key]: item.imeiField } : {};
+      const fieldProblems = inputProblems(fields, fieldInputs, onImei);
+      problems.push(
+        ...(service.type === 'imei' && imei === undefined
+          ? fieldProblems.filter((problem) => problem.field !== item.imeiField)
+          : fieldProblems),
+      );
       // What is stored under that key is the typed IMEI too, so the order never shows two different IMEIs.
       const stored = { ...inputs };
-      if (imei !== undefined && hasImeiField && 'imei' in stored) stored.imei = imei;
+      if (imei !== undefined && box && Object.hasOwn(stored, box.key)) stored[box.key] = imei;
       return {
         mainInput: mainInputOf({ type: service.type, imei, inputs: fieldInputs, fields, fileName }),
         inputs: stored,

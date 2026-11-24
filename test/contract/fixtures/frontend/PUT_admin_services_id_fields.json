@@ -5,7 +5,8 @@
   },
   "body": [
     {
-      "key": "HARVEST-1",
+      "key": "harvest_sample",
+      "name": "Harvest sample",
       "label": "Harvest sample",
       "fieldType": "number",
       "required": false,
@@ -13,7 +14,7 @@
         "Harvest sample text."
       ],
       "regex": "Harvest sample text.",
-      "supplierKey": "HARVEST-1"
+      "isMainInput": false
     }
   ]
 }

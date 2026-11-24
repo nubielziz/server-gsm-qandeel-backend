@@ -331,14 +331,26 @@ describe('GET /store/v1/services/:slug', () => {
         seoDescription: 'D',
       })
       .where(eq(s.serviceListings.id, world.icloud.listingId));
-    await db.insert(s.serviceFields).values({
-      serviceId: world.icloud.serviceId,
-      key: 'note',
-      label: 'Note',
-      required: false,
-      sort: 1,
-      supplierKey: 'secret_supplier_key',
-    });
+    await db.insert(s.serviceFields).values([
+      // The main input of an IMEI service is the IMEI the order form asks for in its own box.
+      {
+        serviceId: world.icloud.serviceId,
+        key: 'imei',
+        label: 'IMEI',
+        required: true,
+        sort: 0,
+        supplierKey: 'secret_main_input_name',
+        isMainInput: true,
+      },
+      {
+        serviceId: world.icloud.serviceId,
+        key: 'note',
+        label: 'Note',
+        required: false,
+        sort: 1,
+        supplierKey: 'secret_supplier_key',
+      },
+    ]);
     await db.insert(s.helpArticles).values([
       {
         category: 'Orders',
@@ -367,6 +379,29 @@ describe('GET /store/v1/services/:slug', () => {
     expect(page.faqs).toEqual([{ question: 'How fast?', answerMd: 'Two minutes.' }]);
     expect(page.price.gross).toBe('3.8400');
     expect(JSON.stringify(page)).not.toContain('secret_supplier_key');
+    expect(JSON.stringify(page)).not.toContain('secret_main_input_name');
+  });
+
+  it('leaves the main-input field out of an IMEI service page only', async () => {
+    const { db } = await testDb();
+    const world = await storefrontWorld(db);
+    const credits = await insertCategory(db, { name: 'Credits', type: 'server' });
+    const serverId = await insertService(db, credits, { type: 'server', name: 'Server credit', slaMinutes: 30 });
+    await db
+      .insert(s.serviceGroupPrices)
+      .values({ serviceId: serverId, groupId: world.groups.retail, price: '4.0000' });
+    const server = { serviceId: serverId, slug: 'server-credit' };
+    await insertListing(db, serverId, { slug: server.slug, publicTitle: 'Server credit' });
+    await db.insert(s.serviceFields).values([
+      { serviceId: world.icloud.serviceId, key: 'serial', label: 'Serial', supplierKey: 'Serial', isMainInput: true },
+      { serviceId: world.icloud.serviceId, key: 'imei', label: 'IMEI', supplierKey: 'IMEI', sort: 1 },
+      { serviceId: server.serviceId, key: 'device', label: 'Device', supplierKey: 'Device', isMainInput: true },
+    ]);
+    // The flag decides, not the key or the text of the Name: the field named IMEI that is not the main input stays.
+    const imei = body(await get(`/store/v1/services/${world.icloud.slug}`));
+    expect(imei.fields.map((field: { key: string }) => field.key)).toEqual(['imei']);
+    const serverPage = body(await get(`/store/v1/services/${server.slug}`));
+    expect(serverPage.fields.map((field: { key: string }) => field.key)).toEqual(['device']);
   });
 
   it('answers 404 for an unknown slug, a page that is off and a service that cannot be sold', async () => {

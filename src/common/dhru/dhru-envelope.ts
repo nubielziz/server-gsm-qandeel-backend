@@ -95,16 +95,18 @@ export function readParameters(raw: unknown): Record<string, unknown> {
 }
 
 /**
- * Reads the `CUSTOMFIELD` parameter: the values of a service's custom fields by field key.
+ * Reads the `CUSTOMFIELD` parameter: the values of a service's custom fields, by field Name (the key of an old caller is accepted too).
  *
  * Why: decision 026: it is again base64 JSON inside `parameters`; an object is accepted as it is. Numbers and booleans become text
- * (the order stores text); `null` and empty values are left out; a nested value is not a field value.
+ * (the order stores text); `null` and empty values are left out; a nested value is not a field value. Decision 065: the names are the
+ * `fieldname` of `imeiservicelist`, the fields' Names; placement matches them to fields (Name first, trimmed and without regard to case,
+ * then the key), so this function keeps them as sent.
  *
  * Decision 053: a key or a text that holds the character U+0000 or an unpaired surrogate refuses the item (Postgres refuses them in text
  * or JSON); it is judged here because the value arrives encoded and never passes the validation guard.
  *
  * @param raw the parameter
- * @returns the values by key, as text
+ * @returns the values by name as sent, as text
  * @throws {AppError} `VALIDATION_FAILED` ("Invalid custom fields") when the value is not an object of simple values or holds U+0000 or an
  *   unpaired surrogate
  */

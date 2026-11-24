@@ -27,14 +27,14 @@ export interface DraftDetected {
 }
 
 /**
- * Which naming rules a service gets: `imei` when its type is `imei` or it has a field that is the supplier's main box, else its type.
+ * Which naming rules a service gets: `imei` when its type is `imei` or it has a field flagged as the main input, else its type.
  *
  * Why: plan 31, correction 1 after the merge: decision 042 makes an IMEI supplier service whose main box is not an IMEI a catalog
  * `server` service (352 of the owner's 880), and such a service must keep its carrier and device brand, so it is named by the IMEI
  * rules. The naming code does not change; only the type it is given does.
  *
  * @param type the catalog service type
- * @param hasMainInput the service has a main-box field (`isMainInputKey(resolvedSupplierKey(field))`)
+ * @param hasMainInput the service has a field flagged as the main input (`service_fields.is_main_input`, decision 065)
  * @returns the type the naming reads
  */
 export function namingTypeOf(type: string, hasMainInput: boolean): PublishServiceType {

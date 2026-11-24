@@ -1,7 +1,7 @@
 // Drizzle queries of the merchant catalog: the live, active services in an active category that a merchant group may see,
 // ordered by category position, then the service's own position, then name (decision 063). Archived and disabled services are
 // never listed (RESOLUTIONS catalog-3, RULES services 10).
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import { type Service, serviceCategories, services } from '../db/schema';
@@ -59,14 +59,21 @@ const select = (db: DbExecutor) =>
  * @param db the database or a transaction
  * @param groupId the merchant's group
  * @param query the parsed list request (type and category filters, search, sort, range)
+ * @param ids when given, only these services (the visibility rule still applies, so an id that is unknown or hidden is absent)
  * @returns the page and the exact total
  */
 export async function pageVisibleServices(
   db: DbExecutor,
   groupId: number,
-  query: ParsedListQuery<'category' | 'name' | 'type' | 'id'>,
+  query: ParsedListQuery<'category' | 'name' | 'type' | 'id', unknown>,
+  ids?: readonly number[],
 ): Promise<{ rows: VisibleServiceRow[]; total: number }> {
-  const where = listWhere(query, COLUMNS, visibleTo(groupId));
+  const where = listWhere(
+    query,
+    COLUMNS,
+    visibleTo(groupId),
+    ids === undefined ? undefined : inArray(services.id, [...ids]),
+  );
   const [rows, [count]] = await Promise.all([
     select(db)
       .where(where)

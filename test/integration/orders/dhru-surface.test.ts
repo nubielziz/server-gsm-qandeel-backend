@@ -310,6 +310,64 @@ describe('placeimeiorder', () => {
     expect(messageOf(typo)).toBe('This service has no such field.');
   });
 
+  it('reads CUSTOMFIELD by field Name in any letter case, and by the field key when no Name matches (decision 065)', async () => {
+    const { db } = await testDb();
+    // The field the world gives the service has the key and the Name `username`; this one has a hidden key that differs from its Name.
+    await db.insert(s.serviceFields).values({
+      serviceId: world.server.serviceId,
+      key: 'account_id',
+      label: 'Account',
+      supplierKey: 'Account ID',
+      sort: 2,
+    });
+    const byName = await dhru.call('placeimeiorder', {
+      ID: world.server.serviceId,
+      CUSTOMFIELD: { USERNAME: 'ahmad77', ' account id ': 'A-1' },
+    });
+    expect(byName.SUCCESS).toBeDefined();
+    expect(await orderRow(db, Number(byName.SUCCESS[0].REFERENCEID))).toMatchObject({
+      imei: 'ahmad77',
+      inputs: { username: 'ahmad77', account_id: 'A-1' },
+    });
+    // A panel that kept the old `fieldname` (the key) still places.
+    const byKey = await dhru.call('placeimeiorder', {
+      ID: world.server.serviceId,
+      CUSTOMFIELD: { username: 'sami88', account_id: 'A-2' },
+    });
+    expect(await orderRow(db, Number(byKey.SUCCESS[0].REFERENCEID))).toMatchObject({
+      inputs: { username: 'sami88', account_id: 'A-2' },
+    });
+    // The label is neither a Name nor a key: a name that matches neither is still unknown.
+    const unknown = await dhru.call('placeimeiorder', {
+      ID: world.server.serviceId,
+      CUSTOMFIELD: { username: 'x', Account: 'A-3' },
+    });
+    expect(messageOf(unknown)).toBe('This service has no such field.');
+  });
+
+  it('refuses a field sent twice, by Name and by key or in two letter cases, and places nothing (decision 065)', async () => {
+    const { db } = await testDb();
+    await db.insert(s.serviceFields).values({
+      serviceId: world.server.serviceId,
+      key: 'account_id',
+      label: 'Account',
+      supplierKey: 'Account ID',
+      sort: 2,
+    });
+    const twice = await dhru.call('placeimeiorder', {
+      ID: world.server.serviceId,
+      CUSTOMFIELD: { username: 'ahmad77', 'Account ID': 'A-1', account_id: 'A-2' },
+    });
+    expect(messageOf(twice)).toBe('Account was sent twice.');
+    const cases = await dhru.call('placeimeiorder', {
+      ID: world.server.serviceId,
+      CUSTOMFIELD: { username: 'ahmad77', Username: 'other' },
+    });
+    expect(messageOf(cases)).toBe('Username was sent twice.');
+    expect(await db.select().from(s.orders)).toHaveLength(0);
+    expect(await walletOf(db, world.merchant.id)).toEqual({ wallet: '100.0000', hold: '0.0000' });
+  });
+
   it('refuses in the envelope: an invalid IMEI, an unknown or a disabled service, a missing parameter', async () => {
     const { db } = await testDb();
     expect(messageOf(await place(world.auto.serviceId, '123456789012345'))).toContain('IMEI is not valid');

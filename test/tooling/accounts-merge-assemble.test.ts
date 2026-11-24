@@ -1,7 +1,7 @@
 // The assembler of the expand migration of one account type (backend decision 064; scripts/accounts-merge/assemble.ts): the committed
 // migration is exactly what assembling it again gives, its generated statements are the ones drizzle-kit generates from the schema (as a
-// set, in a temporary copy of drizzle/, the method of scripts/db-check.ts), its phases come in order between their markers, and a
-// generated statement the phase map does not name stops the script without writing anything.
+// set, in a temporary copy of drizzle/, the method of scripts/db-check.ts, less what the later migrations hold), its phases come in order
+// between their markers, and a generated statement the phase map does not name stops the script without writing anything.
 import { describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +23,26 @@ setDefaultTimeout(180_000);
 
 const committed = migrationSql(ACCOUNTS_EXPAND_SUFFIX);
 const { map, phaseFiles } = readRelease('expand');
+
+/**
+ * The statements of the migrations committed after the expand migration, without their comment lines: a schema change made later (the
+ * field names of decision 065, for example) is generated from today's schema too, but it belongs to its own migration.
+ */
+function laterStatements(): Set<string> {
+  const entries = journalEntries();
+  const first = entries.findIndex((entry) => `${entry.tag}.sql` === migrationFileName(ACCOUNTS_EXPAND_SUFFIX));
+  return new Set(
+    entries.slice(first + 1).flatMap((entry) =>
+      chunksOf(readFileSync(join(ROOT, 'drizzle', `${entry.tag}.sql`), 'utf8')).map((chunk) =>
+        chunk
+          .split('\n')
+          .filter((line) => !line.trimStart().startsWith('--'))
+          .join('\n')
+          .trim(),
+      ),
+    ),
+  );
+}
 
 /** The statements drizzle-kit generates now for the expand migration, in a temporary copy of drizzle/ without it and the files after it. */
 async function freshGeneration(): Promise<string[]> {
@@ -81,7 +101,8 @@ describe('the committed expand migration', () => {
   });
 
   it('holds, as a set, the statements drizzle-kit generates from the schema today', async () => {
-    const fresh = await freshGeneration();
+    const later = laterStatements();
+    const fresh = (await freshGeneration()).filter((statement) => !later.has(statement));
     expect([...generatedStatementsOf(committed, map)].sort()).toEqual([...fresh].sort());
   });
 

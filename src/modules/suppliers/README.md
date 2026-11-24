@@ -4,7 +4,7 @@ Map domain C. The suppliers we buy from (the orders it moves belong to an accoun
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042 real Dhru Fusion suppliers (feature 33), 020 queues and outbox, 019 credential encryption, 021 rate limiting, 025 order state machine, 031 clock, 051 supplier keys, answers and field patterns, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
@@ -162,26 +162,33 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
   for another engine (PHP's `\A`, `[[:alnum:]]`) and match nothing, or backtrack without end on every order check; staff can type a
   pattern on the field later. `isalpha`, `bulk` and `custominfo` are not used either.
 - `importShape(row)` (`domain/import-plan.ts`) is what a supplier service becomes: an `imei` one with a main box is a `server` service whose
-  first field is the box (`mainInputField`: required text, supplier key `IMEI`, the key in lower snake case and unique, the regex
-  `^.{min,max}$` from the lengths when the supplier gives a maximum, else none), followed by the `Requires.Custom` fields; anything else is `importableType` and
-  `importedFields` as before. The import, the preview (its `type` tag says `SERVER` then) and the quick add read the type from it.
-- One rule says which field is the supplier's main box (`src/common/dhru/main-input-key.ts`): its supplier name resolves as the link's
-  `field_map[key]`, else the field's `supplier_key`, else its `key` (`resolvedSupplierKey`), and the box is the one that resolves to
-  `IMEI` in any case (`isMainInputKey`). The dispatch sends that value as the `IMEI` parameter when the order has no IMEI of its own
-  (the first such field by the service's field order wins), never inside `CUSTOMFIELD`; `orders.imei` already holds it (the first
-  required field). **This also changes existing services:** a `server` service with a field whose supplier key (or key, or link map
-  value) is `IMEI` is sent that value as the `IMEI` parameter from now on, no longer inside `CUSTOMFIELD`.
+  first field is the box (`mainInputField`: required text with `isMainInput` set, its Name the box's own name from the supplier, the key in
+  lower snake case and unique, the regex `^.{min,max}$` from the lengths when the supplier gives a maximum, else none), followed by the
+  `Requires.Custom` fields; anything else is `importableType` and `importedFields`. The import, the preview (its `type` tag says `SERVER`
+  then) and the quick add read the type from it.
+- **Names (decision 065).** A field has one Name (`service_fields.supplier_key`, never empty, unique in its service ignoring letter case)
+  and a hidden key. `importedFields` writes the Name as the supplier spells it, the key made from it (`fieldKeyBase`, `_2`, `_3` on a
+  clash), the label from the supplier's description (else the Name) and `isMainInput` false; `importShape` flags the box, or, on a service
+  that stays `imei`, the first field named IMEI in any letter case (`imeiNamedFieldIndex`), so no form draws a second IMEI box. Two supplier names that differ only in
+  letter case cannot both be a Name: the later one gets ` 2` (`Name 2`, `Name 3`, ...; `freeFieldName`). The box's Name is never sent, so
+  on a clash with another field the box takes the number and the supplier's field keeps its name.
+- The supplier's main box is the field flagged `isMainInput` (decision 065; at most one per service). The dispatch sends its value as the
+  `IMEI` parameter when the order has no IMEI of its own, never inside `CUSTOMFIELD`; `orders.imei` already holds it (`mainInputOf` takes
+  the flagged field first). Every other value travels in `CUSTOMFIELD` under `supplierFieldName` (`src/common/dhru/main-input-key.ts`): the link's
+  `field_map[key]` when it has text, else the field's Name; a stored key that no field has any more keeps its own key as the name. A
+  field that its supplier itself names `IMEI` but is not flagged is an ordinary field and travels in `CUSTOMFIELD`.
 - A shop checkout opened while a service took an IMEI and paid after an adoption keeps the buyer's value: the store placement puts it
   under the main box field (`carriedImeiInputs`, orders module) when that field has no value of its own.
 - **Adoption on sync.** In the sync's transaction, after the services are stored: every live `imei` service whose only active link (in
-  all; inactive links do not count) points at a service of this supplier with a main box is adopted, by service id, unless a field
-  (by supplier key, or key when that is empty) or that link's `field_map` already names `IMEI` (the same rule, `adoptable`). The
+  all; inactive links do not count) points at a service of this supplier with a main box is adopted, by service id, unless a field is
+  already the main input (`isMainInput`; `adoptable`). `adoptMainInput` also leaves a service alone when its key or its Name (ignoring
+  letter case) is taken, so the unique indexes are never hit. The
   candidates are locked in id order (some may already be locked by the effective cost recompute, in no fixed order) and read again. The catalog's `ServiceImporter.adoptMainInput` makes it a `server` service in the
   `server` category of the same name (an existing one is reused as it is, with its own switch and groups; only a category created for
   the move copies the old one's switch and groups) and puts the box first; price,
   cost, status, quantities, SLA, links and listing stay. Each adoption writes the search index's `catalog.services_changed` event and
   one audit row (`adopted the supplier's input`, entity `service`, the system as the actor, `before { type, categoryId }`, `after
-  { type, categoryId, field { key, label, supplierKey } }`); the catalog price version moves after the commit.
+  { type, categoryId, field { key, name, label } }`); the catalog price version moves after the commit.
 - **Required fields (feature 33, second review round).** A Dhru Fusion site describes a `Requires.Custom` field as `{ type, fieldname,
   fieldtype, description, fieldoptions, required, regexpr, adminonly }` and writes a set flag as `"on"` (an unset one as `""`).
   `isSupplierFlagOn` (`domain/import-plan.ts`) reads a flag: `true`, `1`, or text that is `on`, `1`, `yes`, `true`, `required` or `y`
@@ -189,9 +196,9 @@ parameter; `Requires.Custom` lists the other fields. Our `imei` type keeps its m
   from `fieldoptions`) and leaves out a field marked `adminonly` (the supplier's own staff fill it). `regexpr` is never used (decision
   042: untrusted).
 - **Repair on sync.** In the same step and under the same guards as the adoption (live; the only active link in all points at this
-  supplier; any type), `fieldsToRequire` lists the service's optional fields whose supplier name (`resolvedSupplierKey`: the link's
-  `field_map`, else the supplier key, else the key) is the `fieldname` of a field the supplier requires (exactly, then without case
-  and spaces) and not `adminonly`; the catalog's `ServiceImporter.requireFields` sets only their `required` (label, type, options,
+  supplier; any type), `fieldsToRequire` lists the service's optional fields (never the main-input field) whose supplier name
+  (`supplierFieldName`: the link's `field_map`, else the Name) is the `fieldname` of a field the supplier requires (exactly, then without
+  case and spaces) and not `adminonly`; the catalog's `ServiceImporter.requireFields` sets only their `required` (label, type, options,
   pattern, sort and key stay), like a staff save of the fields (nothing for the shop or the search index, no price version). One audit
   row per changed service (`made the supplier's required fields required`, entity `service`, the system, `before { optionalFields }`,
   `after { requiredFields }`). A service adopted in the same sync has its other fields checked after the adoption. **A field is never

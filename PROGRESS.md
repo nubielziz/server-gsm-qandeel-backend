@@ -4,6 +4,23 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**One Name per custom field (2026-11-24, decision 065): built, all tests pass, generated documents rebuilt; not released.** A custom
+field of a service has one Name (`service_fields.supplier_key`, `name` on the admin wire: never empty, unique in its service ignoring letter
+case, exactly what a supplier receives in `CUSTOMFIELD`), a hidden key the server makes from the Name and never changes (order answers stay
+stored under it), and the new flag `service_fields.is_main_input` in place of "supplier key `IMEI` means the main box"; the dispatch decides
+the main input by the flag only (on an IMEI service with no flagged field, the import and the fields route flag the field named IMEI).
+`PUT /admin/services/:id/fields` recognises a saved field by its key and refuses an unknown key, a repeated Name and a second main input; the
+supplier import writes the supplier's own spelling as the Name; our Dhru list publishes the Name as `fieldname` and an incoming
+`CUSTOMFIELD` is matched by exact Name, then by key, then by Name ignoring letter case; the order details carry `answers` (label and
+value); the portal and the shop no longer draw a second IMEI box, and the problems of that field are reported on the IMEI. `orders.imei`
+takes the flagged field's value first, as the dispatch sends it. Spec entries B276 to B279. **Checks:** typecheck, lint, format, the English check, `db:check` (69 migrations), the route, coverage and
+contract-document checks, and every test passes; the OpenAPI documents, the console contract extraction, the harvested fixtures and the
+contract pages are rebuilt. **Release:** by hand, by the "Release" section of decision 065: one migration, `0068_field_names` (data steps,
+then a not-empty check and two unique indexes), alone, with the deployer on hold and the worker and the API stopped (stop both, deploy,
+start); a failed start is repaired forward or by restoring the dump, never by putting the old image back on the migrated data. The backend
+and the console go out together (the fields body needs `name`); merchants who synchronise our Dhru service list are told first
+(`fieldname` becomes the Name). **Open:** the field map of a supplier link, for a second supplier that spells a field name differently.
+
 **One account type (2026-11-24, decision 064): merged, not released.** Merchants and customers are one account type, told apart by a
 rank (a client group; only the merchant kind is a merchant): one accounts table, one stored type word and one buyer column, one sign-in and
 one session with a default-deny rank gate, one live wallet per account, and one Owner-only route that changes a rank. Migrations 0066

@@ -416,14 +416,27 @@ export const serviceFields = pgTable(
     required: boolean().notNull().default(false),
     regex: text().notNull().default(''),
     sort: integer().notNull().default(0),
-    /** the field name the supplier expects */
-    supplierKey: text().notNull().default(''),
+    /**
+     * The field's Name (decision 065): never empty, unique in its service ignoring case, and what a supplier receives in
+     * CUSTOMFIELD. The SQL column keeps the map's name.
+     */
+    supplierKey: text().notNull(),
+    /**
+     * The field is the service's main input (decision 065): its value travels as the IMEI parameter, never in CUSTOMFIELD. At most
+     * one per service. A column beyond the map (migration 0068).
+     */
+    isMainInput: boolean().notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique('service_fields_key_uq').on(t.serviceId, t.key),
+    uniqueIndex('service_fields_name_uq').on(t.serviceId, lower(t.supplierKey)),
+    uniqueIndex('service_fields_main_input_uq')
+      .on(t.serviceId)
+      .where(sql`${t.isMainInput}`),
     check('service_fields_field_type_check', inList(t.fieldType, SERVICE_FIELD_TYPES)),
+    check('service_fields_supplier_key_check', sql`btrim(${t.supplierKey}) <> ''`),
   ],
 );
 

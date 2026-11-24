@@ -168,6 +168,53 @@ describe('unique keys', () => {
       'payments_amount_check',
     );
   });
+
+  it('give every service field a Name, unique in its service ignoring case, and at most one main input (decision 065)', async () => {
+    const { db } = await testDb();
+    const { serviceId } = await insertOrderParents(db);
+    const field = { serviceId, label: 'Field' };
+    await db.insert(s.serviceFields).values([
+      { ...field, key: 'email', supplierKey: 'Email' },
+      { ...field, key: 'serial', supplierKey: 'Serial', isMainInput: true },
+    ]);
+
+    expect(
+      (await pgErrorOf(db.insert(s.serviceFields).values({ ...field, key: 'a', supplierKey: '' }))).constraint,
+    ).toBe('service_fields_supplier_key_check');
+    expect(
+      (await pgErrorOf(db.insert(s.serviceFields).values({ ...field, key: 'b', supplierKey: '   ' }))).constraint,
+    ).toBe('service_fields_supplier_key_check');
+    expect(
+      (await pgErrorOf(db.insert(s.serviceFields).values({ ...field, key: 'email_2', supplierKey: 'email' })))
+        .constraint,
+    ).toBe('service_fields_name_uq');
+    expect(
+      (
+        await pgErrorOf(
+          db.insert(s.serviceFields).values({ ...field, key: 'imei', supplierKey: 'IMEI', isMainInput: true }),
+        )
+      ).constraint,
+    ).toBe('service_fields_main_input_uq');
+
+    // Another service may use the same Name and have its own main input.
+    const [other] = await db
+      .insert(s.services)
+      .values({
+        categoryId: (await db.select({ id: s.serviceCategories.id }).from(s.serviceCategories))[0]!.id,
+        type: 'imei',
+        name: 'Other',
+        fulfillment: 'auto',
+        basePrice: '5.0000',
+        code: 'IMEI-OTHER',
+        slaMinutes: 60,
+      })
+      .returning({ id: s.services.id });
+    await db.insert(s.serviceFields).values([
+      { ...field, serviceId: other!.id, key: 'email', supplierKey: 'EMAIL' },
+      { ...field, serviceId: other!.id, key: 'serial', supplierKey: 'Serial', isMainInput: true },
+    ]);
+    expect(await db.$count(s.serviceFields)).toBe(4);
+  });
 });
 
 describe('enumerations', () => {
@@ -199,7 +246,9 @@ describe('ids and foreign keys', () => {
     const { db } = await testDb();
     const parents = await insertOrderParents(db);
     await insertOrder(db, parents);
-    await db.insert(s.serviceFields).values({ serviceId: parents.serviceId, key: 'imei', label: 'IMEI' });
+    await db
+      .insert(s.serviceFields)
+      .values({ serviceId: parents.serviceId, key: 'imei', label: 'IMEI', supplierKey: 'IMEI' });
     const used = await pgErrorOf(db.delete(s.services));
     expect(used.code).toBe('23001'); // restrict_violation: ON DELETE RESTRICT
 

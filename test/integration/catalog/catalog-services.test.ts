@@ -239,7 +239,7 @@ describe('GET /admin/services/:id', () => {
     const category = await insertCategory(db);
     const id = await insertAtt(category);
     await db.insert(s.serviceFields).values([
-      { serviceId: id, key: 'b', label: 'B', sort: 1 },
+      { serviceId: id, key: 'b', label: 'B', sort: 1, supplierKey: 'b' },
       {
         serviceId: id,
         key: 'a',
@@ -264,15 +264,26 @@ describe('GET /admin/services/:id', () => {
     expect(res.body.fields).toEqual([
       {
         key: 'a',
+        name: 'user',
         label: 'A',
         fieldType: 'select',
         required: true,
         options: ['x', 'y'],
         regex: '',
-        supplierKey: 'user',
+        isMainInput: false,
       },
-      { key: 'b', label: 'B', fieldType: 'text', required: false, options: [], regex: '', supplierKey: '' },
+      {
+        key: 'b',
+        name: 'b',
+        label: 'B',
+        fieldType: 'text',
+        required: false,
+        options: [],
+        regex: '',
+        isMainInput: false,
+      },
     ]);
+    expect(res.body.fields[0]).not.toHaveProperty('supplierKey');
     expect(res.body.options).toEqual([
       { list: 'model', value: 'iphone15', label: 'iPhone 15', supplierValue: '' },
       { list: 'network', value: 'att', label: 'AT&T', supplierValue: 'ATT' },
@@ -639,7 +650,7 @@ describe('DELETE /admin/services/:id', () => {
     const category = await insertCategory(db);
     const id = await insertAtt(category);
     const other = await insertService(db, category);
-    await db.insert(s.serviceFields).values({ serviceId: id, key: 'a', label: 'A' });
+    await db.insert(s.serviceFields).values({ serviceId: id, key: 'a', label: 'A', supplierKey: 'a' });
     await db.insert(s.serviceOptions).values({ serviceId: id, list: 'model', value: 'x', label: 'X' });
     const [group] = await db.insert(s.clientGroups).values({ name: 'VIP' }).returning({ id: s.clientGroups.id });
     await db.insert(s.serviceGroupPrices).values({ serviceId: id, groupId: group!.id, price: '5' });
@@ -723,7 +734,7 @@ describe('DELETE /admin/services/:id', () => {
         .insert(s.pricingRules)
         .values({ scope: 'service', targetId: id, kind: 'discount', percent: '2' })
         .returning({ id: s.pricingRules.id });
-      await db.insert(s.serviceFields).values({ serviceId: id, key: 'a', label: 'A' });
+      await db.insert(s.serviceFields).values({ serviceId: id, key: 'a', label: 'A', supplierKey: 'a' });
       clock.advance(5 * MINUTE);
 
       const res = await admin.delete(`/admin/services/${id}`);

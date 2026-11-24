@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { defineRoute, listQuery, zIdParam } from '../../../common/contract';
 import { SERVICE_TYPES } from '../../catalog';
 import { ORDER_STATUSES } from '../db/schema';
-import { ORDER_QUEUES, ORDER_SORTS, StaffEventSchema, StaffOrderSchema } from './shared';
+import { ORDER_QUEUES, ORDER_SORTS, OrderAnswerSchema, StaffEventSchema, StaffOrderSchema } from './shared';
 
 /**
  * The list dialect of the staff order list, shared by the list route and the export.
@@ -129,15 +129,18 @@ export const exportOrders = defineRoute({
 export const showOrder = defineRoute({
   key: 'GET /admin/orders/:id',
   summary: 'Show an order',
-  description: 'One order in the shape of a list row. Read after every action and for deep links. Never cached.',
+  description:
+    'One order in the shape of a list row, plus `answers`: the custom field values the buyer gave as `{ key, label, value }` (decision 065), ' +
+    "the service's fields in form order that have a value, then stored keys the service has no field for any more (label = the key). " +
+    'Read after every action and for deep links. Never cached.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'orders:read',
   params: z.object({ id: zIdParam }),
-  success: { status: 200, schema: StaffOrderSchema },
+  success: { status: 200, schema: StaffOrderSchema.extend({ answers: z.array(OrderAnswerSchema) }) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { response: ORDER_EXAMPLE },
+  examples: { response: { ...ORDER_EXAMPLE, answers: [{ key: 'username', label: 'Username', value: 'amir92' }] } },
 });
 
 /** `GET /admin/orders/:id/events`. */

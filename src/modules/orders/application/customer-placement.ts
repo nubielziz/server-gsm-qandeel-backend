@@ -65,7 +65,7 @@ const CURRENCY = 'USD';
  * nothing here refuses: a service switched off since is still delivered or worked by hand. An order the risk rules hold (feature 18,
  * `holdReason` set) starts `held` through `placementDispatchState({ held })`: it claims no stock, queues no dispatch and carries the
  * hold sentence on its timeline, so the review queue shows why. An IMEI typed while the service was an IMEI service and paid after the
- * supplier sync made it a server service (decision 042) is kept under the field sent as the supplier's main box (`carriedImeiInputs`).
+ * supplier sync made it a server service (decision 042) is kept under the field flagged as the main input (`carriedImeiInputs`, decision 065).
  *
  * Side effects (on the caller's transaction): inserts `orders` and `order_events`; claims and sells stock codes (not for a held order);
  * posts the settlement of a stock delivery; inserts `outbox_events` (`order.dispatch_requested`, or `order.status_changed` for a stock
@@ -101,15 +101,13 @@ export class CustomerOrderPlacement {
     if (!service) throw new Error(`The paid checkout names service ${request.serviceId}, which does not exist.`);
     const fields = await serviceFieldsOf(tx, service.id);
     // A checkout opened while the service took an IMEI and paid after the sync made it a server service (decision 042): the buyer's
-    // value goes under the field sent as the supplier's main box, so the order is stored and sent as it would have been before.
+    // value goes under the flagged main-input field (decision 065), so the order is stored and sent as it would have been before.
     const inputs = carriedImeiInputs({ type: service.type, imei: request.imei, inputs: request.inputs, fields });
+    const box = fields.find((field) => field.isMainInput);
     const mainInput = mainInputOf({
       type: service.type,
       imei: request.imei,
-      inputs:
-        request.imei !== undefined && fields.some((field) => field.key === 'imei')
-          ? { imei: request.imei, ...inputs }
-          : inputs,
+      inputs: request.imei !== undefined && box ? { [box.key]: request.imei, ...inputs } : inputs,
       fields,
       fileName: undefined,
     });

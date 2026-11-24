@@ -277,7 +277,7 @@
                                           },
                                           "fieldname": {
                                             "type": "string",
-                                            "description": "The field key: the name `CUSTOMFIELD` takes."
+                                            "description": "The field name: what `CUSTOMFIELD` takes, matched without regard to letter case. The field key is still accepted."
                                           },
                                           "fieldtype": {
                                             "type": "string",

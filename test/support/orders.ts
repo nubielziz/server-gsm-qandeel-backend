@@ -164,6 +164,7 @@ export async function ordersWorld(db: Database): Promise<OrdersWorld> {
     serviceId: serverId,
     key: 'username',
     label: 'Username',
+    supplierKey: 'username',
     required: true,
     sort: 1,
   });

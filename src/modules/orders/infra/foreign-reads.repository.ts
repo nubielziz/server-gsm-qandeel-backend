@@ -63,8 +63,10 @@ export interface ServiceFieldRow {
   readonly required: boolean;
   readonly regex: string;
   readonly sort: number;
-  /** The supplier's name for the field (`''` when none was set). */
+  /** The field's Name (decision 065): never empty, unique in its service ignoring case, what a supplier receives. */
   readonly supplierKey: string;
+  /** The field is the service's main input: its value travels as the IMEI parameter (decision 065). */
+  readonly isMainInput: boolean;
 }
 
 /**
@@ -86,6 +88,7 @@ export async function serviceFieldsOf(db: DbExecutor, serviceId: number): Promis
       regex: s.serviceFields.regex,
       sort: s.serviceFields.sort,
       supplierKey: s.serviceFields.supplierKey,
+      isMainInput: s.serviceFields.isMainInput,
     })
     .from(s.serviceFields)
     .where(eq(s.serviceFields.serviceId, serviceId))

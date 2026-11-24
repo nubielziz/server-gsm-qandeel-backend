@@ -2,14 +2,15 @@
 // dashboard of the merchant doors). Reads only: the order status that decisions use is never cached (decision 022).
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
-import type { ParsedListQuery } from '../../../common/contract';
+import type { JsonObject, ParsedListQuery } from '../../../common/contract';
 import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import { CapabilityTokenVault } from '../../../infra/crypto';
 import { type DbExecutor, DbService } from '../../../infra/db';
 import { AccountWallets } from '../../money';
-import { actorFactsOf, actorKey } from '../infra/foreign-reads.repository';
+import { type OrderAnswer, orderAnswers } from '../domain/order-answers';
+import { actorFactsOf, actorKey, serviceFieldsOf } from '../infra/foreign-reads.repository';
 import { attemptsOf, eventsOfOrder, findOrder, reviewReasonsOf } from '../infra/order.repository';
 import { type OrderRow, type OrderSort, findOrderRow, listOrderRows } from '../infra/order-read.repository';
 import { statusCountsOf } from '../infra/order-stats.repository';
@@ -27,8 +28,14 @@ import {
   toStaffOrder,
 } from './order-views';
 
-/** An account's order of a merchant door, with its timeline. */
+/** An order as staff read it when they open it: the list row plus the custom field answers with their labels (decision 065). */
+export interface StaffOrderDetailView extends StaffOrderView {
+  readonly answers: OrderAnswer[];
+}
+
+/** An account's order of a merchant door, with its custom field answers and its timeline. */
 export interface MerchantOrderDetailView extends MerchantOrderView {
+  readonly answers: OrderAnswer[];
   readonly events: MerchantEventView[];
 }
 
@@ -97,15 +104,19 @@ export class OrderReadService {
   /**
    * Shows one order to staff.
    *
+   * Why: decision 065: besides the list row it carries the answers with the labels of the service's fields, so the console shows what the
+   * buyer filled in instead of the hidden keys of `inputs`.
+   *
    * @param id the order id
    * @param contact what the caller may see of the buyer's address (decision 047)
-   * @returns the order
+   * @returns the order with its custom field answers
    * @throws {AppError} `NOT_FOUND` (404) for an unknown id
    */
-  async showForStaff(id: number, contact: CustomerContact): Promise<StaffOrderView> {
+  async showForStaff(id: number, contact: CustomerContact): Promise<StaffOrderDetailView> {
     const row = await findOrderRow(this.db.db, { kind: 'staff' }, id);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
-    return (await this.staffViews([row], contact))[0]!;
+    const view = (await this.staffViews([row], contact))[0]!;
+    return { ...view, answers: await this.answersOf(row) };
   }
 
   /**
@@ -151,14 +162,18 @@ export class OrderReadService {
    *
    * @param accountId the signed-in account
    * @param id the order id
-   * @returns the order and the lines of its timeline the merchant may see
+   * @returns the order, its custom field answers with their labels (decision 065) and the lines of its timeline the merchant may see
    * @throws {AppError} `NOT_FOUND` (404) for an unknown id, another account's order, or the account's own store order
    */
   async showForMerchant(accountId: number, id: number): Promise<MerchantOrderDetailView> {
     const row = await findOrderRow(this.db.db, { kind: 'merchant', accountId }, id);
     if (!row) throw new AppError('NOT_FOUND', { detail: 'No order with this id.' });
     const events = await eventsOfOrder(this.db.db, id, MERCHANT_EVENT_TYPES);
-    return { ...toMerchantOrder(row, this.clock.now()), events: events.map(toMerchantEvent) };
+    return {
+      ...toMerchantOrder(row, this.clock.now()),
+      answers: await this.answersOf(row),
+      events: events.map(toMerchantEvent),
+    };
   }
 
   /**
@@ -201,6 +216,12 @@ export class OrderReadService {
       openOrders: counts.pending + counts.processing,
       latestOrders: latest.rows.map((row) => toMerchantOrder(row, now)),
     };
+  }
+
+  /** The custom field answers of one order: its stored values with the labels of its service's fields as they are now. */
+  private async answersOf(row: OrderRow): Promise<OrderAnswer[]> {
+    const fields = await serviceFieldsOf(this.db.db, row.order.serviceId);
+    return orderAnswers(row.order.inputs as JsonObject, fields);
   }
 
   /** Adds the dispatch counts and the review reasons of a page to its rows, in two queries. */

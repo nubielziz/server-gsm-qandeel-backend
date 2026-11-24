@@ -77,7 +77,8 @@ const IMMUTABLE = new Set([
  * pre-Phase-3 audit resolutions (docs/contract/RESOLUTIONS.md, migration 0003), and the billing feature's invoices.checkout_url and
  * kyc_submissions.submitted_note (migration 0009), and services.sort, the stored order of services (decision 063, migration 0063), and
  * the columns of the one account type (decision 064): the five new columns of `clients` and the `account_id` buyer column of every table
- * that named a customer (the old columns keep their SQL names and stay in the map's lists until the contract release drops them).
+ * that named a customer (the old columns keep their SQL names and stay in the map's lists until the contract release drops them), and
+ * service_fields.is_main_input, the flag of a service's main input (decision 065, migration 0068).
  */
 const ADDITIONS: Record<string, string[]> = {
   sessions: ['stage'],
@@ -207,6 +208,8 @@ const ADDITIONS: Record<string, string[]> = {
   payment_gateways: ['preset', 'logo_file_id'],
   // Feature 31 (migration 0045): the quick add run that created the service this link belongs to.
   service_supplier_links: ['import_run_id'],
+  // Decision 065 (migration 0068): the field whose value travels as the IMEI parameter.
+  service_fields: ['is_main_input'],
 };
 
 /**
