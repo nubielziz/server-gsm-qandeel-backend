@@ -1,4 +1,4 @@
-// FileUploadService: the one upload path of merchant files (map domain G, B157): `POST /v1/files` for REST v1, `POST /client/files` for the
+// FileUploadService: the one upload path of merchant files (map domain G, B157): `POST /client/files` for the
 // merchant portal and the Dhru file order. It checks the file, stores the object in the files bucket and writes the `files` row.
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -81,7 +81,7 @@ export function cleanMediaType(declared: string): string {
 /**
  * Stores the files merchants upload.
  *
- * Why: B157 and RESOLUTIONS identity-platform-16: the input of a File service order, the documents of a KYC submission and the
+ * Why: B157 and RESOLUTIONS identity-platform-16: the input of a File service order and the
  * receipt of a bank transfer are files a merchant uploads first and refers to by id. One path keeps the limits and the owner rule in
  * one place: 1 byte to 25 MiB, any media type, the name reduced to a base name, the object in the files bucket under a key built
  * here (never from the name), a `files` row owned by the merchant (`owner_type client`) with the size and the SHA-256. A storefront
@@ -206,7 +206,7 @@ export class FileUploadService {
    *
    * Why: P4a (B166). The Dhru `placefileorder` stores the upload first and places the order second; when the placement is refused or rolled
    * back (price changed, not enough credit, a duplicate) the file must not stay behind. Nothing is removed when anything still points at the
-   * file (an order, a KYC submission, a ticket message, a dispute: see {@link deleteUnreferencedClientFile}), when it is not the merchant's, or
+   * file (an order, a ticket message, a dispute: see {@link deleteUnreferencedClientFile}), when it is not the merchant's, or
    * when it is already gone. It never throws: cleanup must not hide the refusal that caused it, and an object that could not be deleted is
    * only logged (the row is gone, so the file can no longer be read or attached).
    *

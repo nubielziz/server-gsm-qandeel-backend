@@ -103,7 +103,7 @@ export async function seedCatalog(db: DbExecutor, demo: DemoSeed, config?: AppCo
       minProfit: toMoney(service.minProfit),
       code: service.code,
       slaMinutes: service.sla,
-      // What a merchant may do with its orders over the portal and REST v1 (feature 7a): an order that was not sent yet can be cancelled
+      // What a merchant may do with its orders over the portal (feature 7a): an order that was not sent yet can be cancelled
       // on every service except a File service (its input is a stored upload), and an IMEI result can be sent back for verification
       // within 72 hours. The demo has no such switches: they are the seed's choice so the portal's Cancel and Verify have something to do.
       allowCancel: service.type !== 'File',

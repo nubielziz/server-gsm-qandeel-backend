@@ -9,8 +9,8 @@ import { TokenService } from './token.service';
  * Provides {@link EncryptionService}, {@link TokenService}, {@link PasswordHasher} and {@link CapabilityTokenVault} to every module.
  *
  * Why: sessions, API keys, supplier and gateway credentials and passwords all need the same keys and pepper from the
- * config; the secrets stay inside these classes (decision 019). Webhook signing is a set of pure functions
- * (`webhook-signature.ts`) that takes the endpoint secret as an argument.
+ * config; the secrets stay inside these classes (decision 019). Webhook signatures are a set of pure functions
+ * (`webhook-signature.ts`) that take the gateway secret as an argument.
  */
 @Global()
 @Module({

@@ -7,9 +7,9 @@ import { TICKET_MAIL_EVENT } from '../application/ticket-mail-outbox';
 import { type TicketMailJobResult, TicketMailJobs } from '../application/ticket-mail.jobs';
 
 /**
- * Sends the receipt, the reply or the survey of a support ticket.
+ * Sends the receipt or the reply of a support ticket.
  *
- * Why: `POST /store/v1/tickets`, a staff reply and a resolve write `support.ticket_mail` (feature 17); this job hands the message to the
+ * Why: `POST /store/v1/tickets` and a staff reply write `support.ticket_mail` (feature 17); this job hands the message to the
  * notification delivery. The `notifications` queue is shared with feature 12a and the identity module, so this processor names its one job.
  */
 @Injectable()

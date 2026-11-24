@@ -13,6 +13,7 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
 | contract registry | `src/common/contract` (imported) | every backend `defineRoute()`, Dhru action, supplier call and event schema |
 | `docs/contract/error-codes.md` + `src/common/errors/catalog.ts` | hand-written | the error catalog |
 | `test/contract/allowlist.ts` | hand-written | accepted deviations, each naming its `docs/contract/MISMATCHES.md` id |
+| `test/contract/retired.ts` | hand-written | the rows of the map that the product gave up, each with the decision that retired it and a reason (decision 061) |
 
 ## Tests
 
@@ -21,7 +22,11 @@ live in `test/contract/` and run in `bun run check`; a red contract test blocks 
      exactly those routes plus the documentation routes (no route without a contract, no contract without a route).
    - Dhru actions = manifest `DHRU …` keys; supplier calls (`defineSupplierCall`, the calls the supplier client
      makes) = `SUPPLIER …`; outgoing event schemas = `EVENT …`.
-   - Every key in `frontend-endpoints.json` is a backend route.
+   - Every key in `frontend-endpoints.json` is a backend route, and none of them is retired.
+   - Retired routes (`test/contract/retired.ts`, decision 061): the registry and the router are compared with the manifest minus the
+     pending and the retired keys. A retired key must be a row of the map (the map is read-only and keeps it; a row of
+     `scripts/map-additions` is deleted instead), must not be built, and is not also pending; the decision it cites must exist and
+     name the key in backticks (`test/tooling/retired-routes.test.ts`).
    - Every built contract has the access and permission of its manifest row (decision 035): the same access scheme (three
      deviations are listed with their B-entries), the same concrete permission, and for an `area:*` row the CRUD word of
      its operation (`area:read|create|update|delete`) or, on a single route, `area:*` or one action of that area.
@@ -65,3 +70,6 @@ frontend's dependencies. Exact entry points and env shims: see `ALIGNMENT.md` §
   built yet are listed in `test/contract/pending.ts` (generated from the manifest, shrinking as features land).
 - Phase 3: each feature removes its routes from `pending.ts`; its review fails if any of them remains.
 - Phase 4: `pending.ts` is empty; `COVERAGE.md` is generated from the same registry.
+- Any phase, decision 061: a row of the map that the product gives up is listed in `test/contract/retired.ts`, never in `pending.ts`
+  (which keeps its meaning: routes still owed, none today). `COVERAGE.md` leaves retired rows out of "built of" and every table and
+  lists them in a "Retired" section with their decision and reason. `test/tooling/retired-routes.test.ts` proves the rules.

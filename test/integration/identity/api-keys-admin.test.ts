@@ -1,5 +1,5 @@
 // Integration tests of the API keys staff create and edit for a merchant (feature 20, slice D): POST /admin/clients/:id/api-keys and
-// PATCH /admin/api-keys/:id, on the real application. A created key is used on a REST v1 sample route to prove it works and that a change
+// PATCH /admin/api-keys/:id, on the real application. A created key is used on the Dhru endpoint to prove it works and that a change
 // applies on the next call.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { desc, eq } from 'drizzle-orm';
@@ -12,10 +12,10 @@ import { clearIdentityCaches, insertMerchant } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { seedIdentityTemplates } from '../../support/identity-mail';
-import { MachineTestController, insertApiKey } from '../../support/machine-auth';
+import { insertApiKey } from '../../support/machine-auth';
 import { clearApiKeyCaches } from '../../support/machine-orders';
 import { mailbox, notificationRows, sendAllQueued } from '../../support/notifications';
-import { type PortalClient, portalFor } from '../../support/webhooks';
+import { type PortalClient, portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 let t: TestApp;
@@ -23,7 +23,7 @@ let db: Database;
 
 beforeAll(async () => {
   ({ db } = await testDb());
-  t = await createTestApp({ clock, controllers: [MachineTestController] });
+  t = await createTestApp({ clock });
 });
 afterAll(async () => {
   await resetDb();
@@ -39,24 +39,35 @@ beforeEach(async () => {
   mailbox(t).reset();
 });
 
-const BODY = { name: 'Production server', scopes: ['orders:read', 'orders:write'] };
+const BODY = { name: 'Production server' };
 
-/** Calls the REST v1 sample route that needs `orders:read` with a key, from an address. */
-function useKey(key: string, ip = '127.0.0.1') {
+/** Calls the Dhru `accountinfo` action with a key and the username of its merchant, from an address. */
+async function useKey(key: string, ip = '127.0.0.1') {
+  const [owner] = await db
+    .select({ username: s.clients.username })
+    .from(s.apiKeys)
+    .innerJoin(s.clients, eq(s.clients.id, s.apiKeys.clientId))
+    .where(eq(s.apiKeys.keyHash, t.app.get(TokenService).hash(key)));
   return t.app.inject({
-    method: 'GET',
-    url: '/v1/t/mach/read',
-    headers: { authorization: `Bearer ${key}` },
+    method: 'POST',
+    url: '/api/index.php',
     remoteAddress: ip,
+    payload: { action: 'accountinfo', username: owner!.username, apiaccesskey: key } as never,
   });
 }
+
+/** True when the Dhru answer is a success, false when it is the envelope of a refusal. */
+const works = (res: { json: () => { SUCCESS?: unknown } }): boolean => res.json().SUCCESS !== undefined;
+/** The message of a Dhru refusal. */
+const refusal = (res: { json: () => { ERROR?: Array<{ MESSAGE: string }> } }): string | undefined =>
+  res.json().ERROR?.[0]?.MESSAGE;
 
 // Creating a key from the console is kept for Owners (decision 046): the default member is one; pass a list for another role.
 const staff = (permissions: string[] = ['*']) => adminWith(t, permissions, { name: 'Rami K.' });
 const keyRows = () => db.select().from(s.apiKeys).orderBy(s.apiKeys.id);
 
 describe('POST /admin/clients/:id/api-keys', () => {
-  it('creates a key shown once with no-store, authenticates a REST v1 call, and is marked as made by staff', async () => {
+  it('creates a key shown once with no-store, authenticates a Dhru call, and is marked as made by staff', async () => {
     const api = await staff();
     const clientId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const res = await api.post(`/admin/clients/${clientId}/api-keys`, {
@@ -72,21 +83,21 @@ describe('POST /admin/clients/:id/api-keys', () => {
       clientId,
       name: 'Production server',
       prefix: secret.slice(0, 8),
-      scopes: ['orders:read', 'orders:write'],
       allowedIps: ['203.0.113.55', '198.51.100.0/24'],
       rateLimitPerMin: 120,
       revokedAt: null,
       createdByStaff: true,
     });
     expect(JSON.stringify(key)).not.toContain(secret);
+    expect(key).not.toHaveProperty('scopes');
 
     // Only the hash and the prefix are stored, and the row says which staff member made it.
     const [row] = await keyRows();
     expect(row).toMatchObject({ createdBy: api.staffId, keyHash: t.app.get(TokenService).hash(secret) });
     expect(JSON.stringify(row)).not.toContain(secret);
 
-    expect((await useKey(secret, '203.0.113.55')).statusCode).toBe(200);
-    expect((await useKey(secret, '192.0.2.77')).statusCode).toBe(403);
+    expect(works(await useKey(secret, '203.0.113.55'))).toBe(true);
+    expect(refusal(await useKey(secret, '192.0.2.77'))).toContain('allowed for this API key');
   });
 
   it('defaults the limit to 60 and honours the limit it was given on the next calls', async () => {
@@ -95,9 +106,9 @@ describe('POST /admin/clients/:id/api-keys', () => {
     const def = await api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'Default' });
     expect(def.body.key.rateLimitPerMin).toBe(60);
     const low = await api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'Low', rateLimitPerMin: 2 });
-    expect((await useKey(low.body.secret)).statusCode).toBe(200);
-    expect((await useKey(low.body.secret)).statusCode).toBe(200);
-    expect((await useKey(low.body.secret)).statusCode).toBe(429);
+    expect(works(await useKey(low.body.secret))).toBe(true);
+    expect(works(await useKey(low.body.secret))).toBe(true);
+    expect(refusal(await useKey(low.body.secret))).toContain('Too many requests');
   });
 
   it('shows createdByStaff in the admin list and in the merchant portal, and false for a key the merchant made', async () => {
@@ -105,7 +116,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
     const clientId = await insertMerchant(db);
     await api.post(`/admin/clients/${clientId}/api-keys`, BODY);
     const portal: PortalClient = await portalFor(t, clientId);
-    const own = await portal.call('POST', '/client/api-keys', { name: 'Mine', scopes: ['dhru'] });
+    const own = await portal.call('POST', '/client/api-keys', { name: 'Mine' });
     expect(own.body.key.createdByStaff).toBe(false);
 
     const admin = (await api.get(`/admin/clients/${clientId}/api-keys`)).body as {
@@ -142,11 +153,11 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(audits[0]!.after).toMatchObject({
       name: 'Production server',
       prefix: first.body.key.prefix,
-      scopes: ['orders:read', 'orders:write'],
       rateLimitPerMin: 60,
     });
     expect(JSON.stringify(audits)).not.toContain(first.body.secret);
     expect(JSON.stringify(audits)).not.toContain('keyHash');
+    expect(audits[0]!.after).not.toHaveProperty('scopes');
 
     const sent = await notificationRows(db);
     expect(sent.map((row) => [row.event, row.recipientId])).toEqual([
@@ -180,7 +191,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(await notificationRows(db)).toEqual([]);
   });
 
-  it('answers 422 on the field for a bad scope, address, past expiry, limit and name, and writes nothing', async () => {
+  it('answers 422 on the field for a bad address, past expiry, limit and name, and writes nothing', async () => {
     const api = await staff();
     const clientId = await insertMerchant(db);
     const fields = async (patch: Record<string, unknown>): Promise<string[]> => {
@@ -188,7 +199,6 @@ describe('POST /admin/clients/:id/api-keys', () => {
       expect(res.status).toBe(422);
       return res.body.errors.map((error: { field: string }) => error.field);
     };
-    expect(await fields({ scopes: ['orders:read', 'staff:read', '*'] })).toEqual(['scopes.1', 'scopes.2']);
     expect(await fields({ allowedIps: ['203.0.113.55', 'nope', '10.0.0.1/8'] })).toEqual([
       'allowedIps.1',
       'allowedIps.2',
@@ -198,7 +208,6 @@ describe('POST /admin/clients/:id/api-keys', () => {
     expect(await fields({ rateLimitPerMin: 6001 })).toEqual(['rateLimitPerMin']);
     expect(await fields({ rateLimitPerMin: 1.5 })).toEqual(['rateLimitPerMin']);
     expect(await fields({ name: '   ' })).toEqual(['name']);
-    expect(await fields({ scopes: [] })).toEqual(['scopes']);
     expect(await keyRows()).toEqual([]);
     expect(await db.select().from(s.auditLogs)).toEqual([]);
     // The boundaries are accepted.
@@ -222,7 +231,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
     const portal = await portalFor(t, clientId);
     const answers = await Promise.all([
       api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, name: 'Staff' }),
-      portal.call('POST', '/client/api-keys', { name: 'Merchant', scopes: ['dhru'] }),
+      portal.call('POST', '/client/api-keys', { name: 'Merchant' }),
     ]);
     expect(answers.map((answer) => answer.status).sort()).toEqual([201, 422]);
     expect(await keyRows()).toHaveLength(10);
@@ -267,7 +276,7 @@ describe('POST /admin/clients/:id/api-keys', () => {
   it("the merchant's own POST /client/api-keys keeps created_by null and mails the notice of a key made in the portal", async () => {
     const clientId = await insertMerchant(db);
     const portal = await portalFor(t, clientId);
-    const res = await portal.call('POST', '/client/api-keys', { name: 'Mine', scopes: ['dhru'] });
+    const res = await portal.call('POST', '/client/api-keys', { name: 'Mine' });
     expect(res.status).toBe(201);
     expect((await keyRows())[0]).toMatchObject({ createdBy: null, rateLimitPerMin: 60 });
     expect((await notificationRows(db)).map((row) => [row.event, row.recipientId])).toEqual([
@@ -280,12 +289,8 @@ describe('PATCH /admin/api-keys/:id', () => {
   it('changes the limit and the allowed addresses, applies them on the next call and audits before and after', async () => {
     const api = await staff();
     const clientId = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const key = await insertApiKey(t, db, clientId, {
-      name: 'Production',
-      scopes: ['orders:read'],
-      rateLimitPerMin: 60,
-    });
-    expect((await useKey(key.key, '198.51.100.9')).statusCode).toBe(200);
+    const key = await insertApiKey(t, db, clientId, { name: 'Production', rateLimitPerMin: 60 });
+    expect(works(await useKey(key.key, '198.51.100.9'))).toBe(true);
 
     const res = await api.patch(`/admin/api-keys/${key.id}`, { rateLimitPerMin: 2, allowedIps: ['203.0.113.55'] });
     expect(res.status).toBe(200);
@@ -296,10 +301,10 @@ describe('PATCH /admin/api-keys/:id', () => {
       createdByStaff: false,
     });
     // The cached view was dropped: the new addresses and the new limit apply at once.
-    expect((await useKey(key.key, '198.51.100.9')).statusCode).toBe(403);
+    expect(refusal(await useKey(key.key, '198.51.100.9'))).toContain('allowed for this API key');
     // The refused call cost nothing; the call before the change used one of the new limit of 2 in this minute, so one more fits.
-    expect((await useKey(key.key, '203.0.113.55')).statusCode).toBe(200);
-    expect((await useKey(key.key, '203.0.113.55')).statusCode).toBe(429);
+    expect(works(await useKey(key.key, '203.0.113.55'))).toBe(true);
+    expect(refusal(await useKey(key.key, '203.0.113.55'))).toContain('Too many requests');
 
     const [audit] = await db.select().from(s.auditLogs);
     expect(audit).toMatchObject({
@@ -324,7 +329,7 @@ describe('PATCH /admin/api-keys/:id', () => {
     expect(limit.body).toMatchObject({ rateLimitPerMin: 300, allowedIps: ['203.0.113.55'] });
     const open = await api.patch(`/admin/api-keys/${key.id}`, { allowedIps: [] });
     expect(open.body).toMatchObject({ rateLimitPerMin: 300, allowedIps: [] });
-    expect((await useKey(key.key, '192.0.2.5')).statusCode).toBe(200);
+    expect(works(await useKey(key.key, '192.0.2.5'))).toBe(true);
   });
 
   it('answers 422 for an empty body, a bad limit and a bad address; 404 for an unknown key; 409 ALREADY_REVOKED for a revoked key', async () => {
@@ -395,7 +400,7 @@ describe('PATCH /admin/api-keys/:id: who may widen a key, and the merchant is to
       expect(refused.body.detail).toBe(WIDEN_DETAIL);
     }
     expect(await keyRow(key.id)).toMatchObject({ allowedIps: [SERVER], rateLimitPerMin: 60 });
-    expect((await useKey(key.key, OTHER)).statusCode).toBe(403);
+    expect(refusal(await useKey(key.key, OTHER))).toContain('allowed for this API key');
     expect(await db.select().from(s.auditLogs)).toEqual([]);
     expect(await notificationRows(db)).toEqual([]);
     expect(await db.select().from(s.outboxEvents)).toEqual([]);
@@ -426,18 +431,18 @@ describe('PATCH /admin/api-keys/:id: who may widen a key, and the merchant is to
     expect(both.status).toBe(200);
     const open = await insertApiKey(t, db, clientId, { allowedIps: [], rateLimitPerMin: 60 });
     expect((await member.patch(`/admin/api-keys/${open.id}`, { allowedIps: [SERVER] })).status).toBe(200);
-    expect((await useKey(open.key, OTHER)).statusCode).toBe(403);
+    expect(refusal(await useKey(open.key, OTHER))).toContain('allowed for this API key');
   });
 
   it('lets an Owner widen a key', async () => {
     const clientId = await insertMerchant(db);
     const key = await insertApiKey(t, db, clientId, { allowedIps: [SERVER], rateLimitPerMin: 60 });
-    expect((await useKey(key.key, OTHER)).statusCode).toBe(403);
+    expect(refusal(await useKey(key.key, OTHER))).toContain('allowed for this API key');
     const owner = await staff();
     const res = await owner.patch(`/admin/api-keys/${key.id}`, { allowedIps: [], rateLimitPerMin: 6000 });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ allowedIps: [], rateLimitPerMin: 6000 });
-    expect((await useKey(key.key, OTHER)).statusCode).toBe(200);
+    expect(works(await useKey(key.key, OTHER))).toBe(true);
   });
 
   it('mails the merchant one security notice for each change, whoever made it, and only that merchant', async () => {
@@ -486,9 +491,9 @@ describe('expiry and the clock', () => {
     const expiresAt = new Date(clock.nowMs() + DAY).toISOString();
     const { body } = await api.post(`/admin/clients/${clientId}/api-keys`, { ...BODY, expiresAt });
     expect(body.key.expiresAt).toBe(expiresAt);
-    expect((await useKey(body.secret)).statusCode).toBe(200);
+    expect(works(await useKey(body.secret))).toBe(true);
     clock.advance(2 * DAY);
-    expect((await useKey(body.secret)).statusCode).toBe(401);
+    expect(refusal(await useKey(body.secret))).toBe('Authentication Failed');
     expect((await db.select().from(s.apiKeys).orderBy(desc(s.apiKeys.id)))[0]!.expiresAt?.toISOString()).toBe(
       expiresAt,
     );

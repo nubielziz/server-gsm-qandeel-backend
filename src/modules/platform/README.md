@@ -1,6 +1,6 @@
 # Platform module (`platform`)
 
-Map domain G. Cross-cutting services: system settings, the audit log, files, notification templates and notifications, merchant webhook endpoints and deliveries, and the transactional outbox. It also serves the API documentation built from the route contracts: `GET /openapi.json`, `GET /docs`, `GET /reference` (decision 017).
+Map domain G. Cross-cutting services: system settings, the audit log, files, notification templates and notifications, and the transactional outbox. It also serves the API documentation built from the route contracts: `GET /openapi.json`, `GET /docs`, `GET /reference` (decision 017).
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
@@ -8,7 +8,7 @@ Decisions that shape this module: 004 file storage, 017 API documentation, 020 o
 
 ## Status
 
-Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 7b built the merchant webhooks (9 routes, 4 events, the delivery engine): see "Merchant webhooks (feature 7b)" below. Feature 12a built the notifications (8 admin routes, the event registry, the delivery path over SMTP and the Telegram Bot API, the daily price change digest): see "Notifications (feature 12a)" below. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
+Built: `GET /openapi.json` and `GET /docs` (the public documentation), plus the internal `GET /reference` and `GET /reference/openapi.json` (no contracts: they are documentation routes, gated by `REFERENCE_DOCS`). Code: `docs/`. The transactional outbox (`outbox_events`): writing events and the worker's relay. Code: `outbox/`. The audit log (`audit_logs`): `AuditService.record` and the check that staff writes are audited. Code: `audit/`. Cached read access to `settings` for other modules. Code: `settings/`. Feature 12a built the notifications (8 admin routes, the event registry, the delivery path over SMTP and the Telegram Bot API, the daily price change digest): see "Notifications (feature 12a)" below. Feature 2a built the four admin routes of the audit log and the settings (`GET /admin/audit-logs[/:id]`, `GET` and `PATCH /admin/settings`): see "Audit log and settings routes (feature 2a)" below. Code: `contracts/`, `controllers/`, `application/`, `infra/`, wired by `PlatformAdminModule`.
 
 ## Public API (`index.ts`)
 
@@ -24,11 +24,9 @@ Documents and stored files (feature 8): `PdfModule` (global) provides `PdfRender
 
 Public service pictures (feature 22): `PublicImages` (`store`, `urlsOf`, `read`; global through `FilesModule`), `inspectImage` and its limits (`PUBLIC_IMAGE_MAX_BYTES`, `PUBLIC_IMAGE_MIN_SIDE`, `PUBLIC_IMAGE_MAX_SIDE`), `PUBLIC_IMAGE_NAME`, `PUBLIC_IMAGE_PREFIX`, `PUBLIC_MEDIA_PATH`. See "Public service pictures (feature 22)" below.
 
-The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `MERCHANT_MAIL_EVENT_KEYS`, `CUSTOMER_MAIL_EVENT_KEYS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `withoutTelegram`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
+The notifications (12a): `NotificationEventsModule` (global: `NotificationEventRegistry` and the outbox routes, API and worker), `NotificationTransportModule` (`MailTransport`, `TelegramClient`, their drivers), `NotificationDeliveryModule` (`NotificationService`, the planning and sending processors; API and worker), `NotificationAdminModule` (the 8 staff routes); `BUILT_IN_EVENTS`, `MERCHANT_MAIL_EVENT_KEYS`, `CUSTOMER_MAIL_EVENT_KEYS`, `NotificationService` (`enqueue`, `sendNow`, `statusOf`, `abandon`, `check`), `NOTIFICATION_SEND_EVENT`, `DeliveryError`, `MailTransport` (`send`, `verify`: the `mail` health check of feature 9 calls it), `TelegramClient`, the in-memory drivers and their tokens (`MAIL_DRIVER`, `TELEGRAM_DRIVER`), `maskEmail`, `maskTelegram`, `redactAddresses`, the preference rules (`choiceFor`, `channelsFor`, `applyPreferences`, `thresholdOf`, `parseThreshold`) that identity's portal routes use, and `DEFAULT_TEMPLATES`.
 
 The inbox's live side (feature 27, decision 037): `InboxDoorbell` (`created`, `campaignChunk`, `read`, `readAll`, `recount`; `INBOX_TOPIC`, `CHUNK_IDS_PER_DOORBELL`), `InboxRealtimeSource` (`INBOX_REPLAY_LIMIT`) and the event names and zod schemas of the three inbox events (`NOTIFICATION_CREATED_EVENT`, `NOTIFICATION_READ_EVENT`, `UNREAD_CHANGED_EVENT`, `zNotificationCreatedEvent`, `zNotificationReadEvent`, `zUnreadChangedEvent`). See "Live notifications (feature 27)" below.
-
-The merchant webhooks (7b): `WebhookEventsModule` (event contracts and the outbox routes of `wallet.low_balance` and `service.price_changed`, loaded by the API and the worker), `WebhookDeliveryModule` (sender, fan-out, the processor of `merchant-webhooks`; API and worker), `MerchantWebhooksModule` (the staff log routes and `MerchantWebhookService`), the four `defineEvent` contracts (`orderStatusChanged`, `walletLowBalance`, `invoicePaid`, `servicePriceChanged`), `WEBHOOK_EVENT_NAMES`, `PING_EVENT`, `WebhookDeliveries`, `WebhookFanOut`, `MerchantWebhooksProcessor`, the event type constants and the `WEBHOOK_TARGET_POLICY` token. The portal's controller for `/client/webhooks*` (`MerchantWebhooksController`) lives in the identity module (`controllers/merchant-webhooks.controller.ts`, `MerchantWebhookRoutesModule`): it needs identity's `CurrentMerchant`, and platform imports no module, so a platform file that imported identity would make a cycle for every identity file that imports platform (decision 032). Platform exports `MerchantWebhookService` and the six portal contracts for it.
 
 ## Owned tables
 
@@ -39,8 +37,8 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the
 | `settings` | System settings as key and value pairs. |
 | `notification_templates` | Email and Telegram templates for staff, merchants and customers. |
 | `notifications` | A log of the notifications that were sent. |
-| `webhook_endpoints` | Webhook URLs registered by merchants. |
-| `webhook_deliveries` | Attempts to deliver webhooks. |
+| `webhook_endpoints` | Retired: the webhook URLs merchants registered; unread and unwritten, dropped by the accounts migration. |
+| `webhook_deliveries` | Retired: the attempts to deliver webhooks; unread and unwritten, dropped by the accounts migration. |
 | `outbox_events` | Events waiting to be processed by the worker. |
 | `audit_logs` | The audit log of admin actions. |
 | `files` | S3 files and their metadata. |
@@ -49,9 +47,9 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the
 
 ## Routes
 
-33 endpoints (admin 17, client 11, v1 2, hooks 1, system 2). Source: `docs/slices/platform.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+20 endpoints (admin 14, client 4, system 2); the retired rows of the map are listed in `test/contract/retired.ts`. Source: `docs/slices/platform.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
 
-### Admin console (17)
+### Admin console (14)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
@@ -65,49 +63,26 @@ Only this module reads and writes these 10 tables (`scripts/module-map.mjs`; the
 | `GET /admin/notifications` | staff-permission · `notifications:read` | Log of sent notifications. | 12 |
 | `GET /admin/notifications/:id` | staff-permission · `notifications:read` | Log of sent notifications. | 12 |
 | `GET /admin/settings` | staff-permission · `settings:read` | System settings. | 2 |
-| `GET /admin/webhook-deliveries` | staff-permission · `webhooks:read` | Log of merchant webhooks. | 7 |
-| `GET /admin/webhook-deliveries/:id` | staff-permission · `webhooks:read` | Log of merchant webhooks. | 7 |
 | `PATCH /admin/notification-templates/:id` | staff-permission · `notifications:*` | Email and Telegram templates for each event. | 12 |
 | `PATCH /admin/settings` | staff-permission · `settings:update` | Edit the settings. | 2 |
 | `POST /admin/notification-templates` | staff-permission · `notifications:*` | Email and Telegram templates for each event. | 12 |
 | `POST /admin/notification-templates/:id/preview` | staff-permission · `notifications:read` | Preview the template with sample data. | 12 |
-| `POST /admin/webhook-deliveries/:id/retry` | staff-permission · `webhooks:update` | Resend the delivery. | 7 |
 
-### Merchant portal (11)
+### Merchant portal (4)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `DELETE /client/webhooks/:id` | merchant-session | Delete an endpoint. | 7 |
 | `GET /client/files/:id` | merchant-session | Download a file through a signed URL. | 5 |
 | `GET /client/notification-preferences` | merchant-session | Notification preferences. | 12 |
-| `GET /client/webhooks` | merchant-session | Webhook endpoints. | 7 |
-| `GET /client/webhooks/:id/deliveries` | merchant-session | Delivery log and attempts. | 7 |
-| `PATCH /client/webhooks/:id` | merchant-session | Edit or pause an endpoint. | 7 |
 | `POST /client/files` | merchant-session | Upload a file for a File service order. | 5 |
-| `POST /client/telegram/link` | merchant-session | One-time link to connect Telegram. | 12 |
-| `POST /client/webhooks` | merchant-session | New webhook endpoint with its events; returns the signing secret. | 7 |
-| `POST /client/webhooks/:id/test` | merchant-session | Send a test event. | 7 |
 | `PUT /client/notification-preferences` | merchant-session | Save the preferences per event and channel. | 12 |
-
-### REST API v1 (2)
-
-| Route | Access | What it does | Stage |
-|---|---|---|---|
-| `GET /v1/files/:id` | api-key · `orders:read` | Download the result file through a signed URL. | 7 |
-| `POST /v1/files` | api-key · `orders:write` | Upload a file for File services; returns a fileId. | 7 |
-
-### Incoming webhooks (1)
-
-| Route | Access | What it does | Stage |
-|---|---|---|---|
-| `POST /webhooks/telegram/:secret` | url-secret | Telegram bot updates: account linking and commands. | 12 |
 
 ### System (2)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `GET /docs` | public | REST v1 documentation page. | 7 |
-| `GET /openapi.json` | public | REST v1 specification (OpenAPI). | 7 |
+| `GET /docs` | public | Public API documentation page. | 7 |
+| `GET /openapi.json` | public | Public API specification (OpenAPI). | 7 |
 
 ## Scenarios
 
@@ -129,9 +104,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `audit:read`, `dashboard:read`, `files:read`, `notifications:*`, `notifications:read`, `settings:read`, `settings:update`, `webhooks:read`, `webhooks:update`.
-
-API key scopes on its REST v1 routes: `orders:read`, `orders:write`.
+Staff permissions the map requires on this module's admin routes: `audit:read`, `dashboard:read`, `files:read`, `notifications:*`, `notifications:read`, `settings:read`, `settings:update`.
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
@@ -140,8 +113,7 @@ Keep this list in step with the contracts (`permission` of each `defineRoute`).
 `SettingsService` is the only code outside the settings routes that reads the `settings` table: other modules call it
 (identity reads `adminAllowlistOnly`). The routes that write settings call the `invalidate()` of whatever cache holds a value
 after their commit. `PATCH /admin/settings` is an allow-list (lead resolution identity-platform-13):
-it accepts only the keys of a settings registry in this module, each with its validator (today `imeiRetentionDays`, a JSON
-integer 0 to 3650, shared with `PATCH /admin/storefront/settings`, and `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
+it accepts only the keys of a settings registry in this module, each with its validator (today `pricing.price_change_tolerance_percent`, a JSON integer 0 to 100,
 default 10 when never saved, read by the catalog's price guard, user rule 9; and, from feature 28, `support.replyEmailDelayMinutes`, a JSON integer 0 to 1440, default 5, and `support.attachmentRetentionDays`, a JSON integer 0 to 3650, default 180, both read by the support module through `SettingsReader.integer` and kept in `SUPPORT_SETTINGS`; and, from decision 049, the exchange-rate guards of `FX_GUARD_SETTINGS`: `fx.max_refresh_move_percent`, a JSON integer 1 to 100, default 20, and `fx.max_rate_age_hours`, a JSON integer 1 to 720, default 48, read by the money module); any other key, including the keys owned by stricter routes
 (`adminAllowlistOnly`, `maintenance`, risk rules, storefront policies), is `422 VALIDATION_FAILED` with `errors[].field` = the key.
 Five keys are changed by an Owner only (the registry's `ownerOnly` mark; any other caller with `settings:update` gets `403 FORBIDDEN`):
@@ -161,7 +133,7 @@ The stage is the second of the request pipeline (`src/common/pipeline/README.md`
 |---|---|---|
 | `store` | every request to `/store/v1/*` | |
 | `checkout` | `POST /store/v1/checkout-sessions` (opening a checkout), `POST /store/v1/checkout-sessions/:token/pay` (starting its payment) and `POST /store/v1/checkout-sessions/:token/balance-payment` (paying from the store balance, feature 21): no session is created, nothing is held | the rest of the storefront |
-| `api_orders` | order placement: `POST /v1/orders`, `POST /v1/orders/bulk`, and the Dhru actions `placeimeiorder`, `placeimeiorderbulk`, `placefileorder` | reads, cancels and verifies of running orders; Dhru `getimeiorder`, `getimeiorderbulk`, `accountinfo`, `imeiservicelist` |
+| `api_orders` | order placement: the Dhru actions `placeimeiorder`, `placeimeiorderbulk`, `placefileorder` | reads, cancels and verifies of running orders; Dhru `getimeiorder`, `getimeiorderbulk`, `accountinfo`, `imeiservicelist` |
 | `all` | the union of the three | |
 
 Never affected by any scope: `/admin/*` (staff are not locked out), `/client/*` (the merchant portal), `/webhooks/*` (a payment
@@ -176,8 +148,8 @@ already started must still be confirmed), `/health`, `/metrics`, `/docs`, `/open
   body is parsed and the `action` field is known (`dhruActionOf`). A multipart body is parsed before the guards too
   (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a: text fields and file parts as one object), so Dhru credentials and the
   `action` of a multipart call are read like those of a form body and the maintenance stage refuses a multipart placement as it refuses a
-  form one; the file orders need no handler-side call. The upload of a File service's input (`POST /v1/files`) is part of placing the
-  order: scope `api_orders` refuses it too (`POST /client/files` is not: a merchant uploads its KYC documents and receipts in any mode).
+  form one; the file orders need no handler-side call. `POST /client/files` is not refused by any scope: a merchant uploads its
+  receipts and the input of a File service in any mode.
 - **Failure policy:** if the state cannot be read at all, requests go through (maintenance is a courtesy to customers, not a
   security rule).
 
@@ -196,7 +168,7 @@ Four admin routes (`contracts/`, `controllers/`, `application/`, `infra/`), wire
 - **The audit list is read-only** (the table is append-only). `actorName` and `entityLabel` are snapshots written with the entry; the wire
   sends `null` for `''` (a system row has no actor name, id or address). `before` and `after` were masked when the entry was written.
 - **`PATCH /admin/settings` is an allow-list** (`settings/settings-registry.ts`, resolution `identity-platform-13`): the registry holds
-  `imeiRetentionDays` (a JSON integer 0 to 3650), `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28), and the two exchange-rate guards of decision 049, `fx.max_refresh_move_percent` (1 to 100) and `fx.max_rate_age_hours` (1 to 720). Every key of the patch is judged first; any other key (the keys of the stricter routes
+  `pricing.price_change_tolerance_percent` (a JSON integer 0 to 100; feature 4b), `support.replyEmailDelayMinutes` (0 to 1440; how long an unseen staff email reply waits before it is mailed, `0` mails at once) and `support.attachmentRetentionDays` (0 to 3650; how long after a ticket was resolved its attachments are kept, `0` keeps them; feature 28), and the two exchange-rate guards of decision 049, `fx.max_refresh_move_percent` (1 to 100) and `fx.max_rate_age_hours` (1 to 720). Every key of the patch is judged first; any other key (the keys of the stricter routes
   `adminAllowlistOnly`, `maintenance`, the risk rules, the storefront policies included) or a value the validator refuses is `422
   VALIDATION_FAILED` with one `errors[]` item per refused key (`field` = the key), and nothing is written. An empty body is `422` on
   `body`. A key the registry marks `ownerOnly` (`suppliers.allowPlainHttp`, decision 051: it lowers the protection of supplier
@@ -223,10 +195,10 @@ logged at info without the file name. The merchant and API key routes read the c
 
 **Staff downloads by kind** (decision 047). `GET /admin/files/:id` needs `files:read` (the route) and the read permission of every kind of record that
 uses the file, found by `fileReferencesOf` (`infra/file.repository.ts`, one statement over the tables that name a file: a documented deviation of decision 016,
-like `deleteUnreferencedFiles`) and judged by the pure `files/file-kinds.ts`: `kyc:read` (a KYC submission lists the file: an identity document), `payments:read` (a
+like `deleteUnreferencedFiles`) and judged by the pure `files/file-kinds.ts`: `clients:read` (an identity document: a verification request of the document check that decision 061 retired lists the file; no new one is made), `payments:read` (a
 payment's receipt), `disputes:read` (dispute evidence), `orders:read` (an order's input or result), `invoices:read` (an invoice PDF), `support:read` (a ticket message's
 attachment) and `customers:privacy` (a data request's export). A file used by several kinds needs all their permissions (the first missing one, in that order, is named in the
-`403 FORBIDDEN`). A file nothing uses yet needs `kyc:read` when a merchant owns it and `customers:read` when a customer owns it; the public pictures of listings and payment methods
+`403 FORBIDDEN`). A file nothing uses yet needs `clients:read` when a merchant owns it (decision 061) and `customers:read` when a customer owns it; the public pictures of listings and payment methods
 need only `files:read`. Every download of an identity document writes an audit row under the merchant (`opened an identity document of`, with the file and the submission) and
 every download of a payment receipt one under the payment (`opened the payment proof of`, `PAY-<id>`), in one short transaction before the link is made: no row, no link. The rows are
 written by `auditStaffFileOpening` (`files/file-opening-audit.ts`, exported by the module's index), which takes the audited kinds from `auditedKindsOf` (the list `AUDITED_FILE_KINDS`); the support module's staff download of a
@@ -236,20 +208,18 @@ import would close a cycle, decision 032 amendment); a staff caller is `StaffFil
 
 ## File uploads (feature 7a, MISMATCHES B157)
 
-`POST /v1/files` (REST v1, key scope `orders:write`) and `POST /client/files` (merchant session and CSRF, `pendingMerchant: 'allow'` so a
-merchant waiting for approval can upload its KYC documents) are one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
+`POST /client/files` (merchant session and CSRF, `pendingMerchant: 'allow'` so a
+merchant waiting for approval can upload) and the Dhru file order share one code path, `FileUploadService.upload` (`application/file-upload.service.ts`,
 provided to every module by the global `FilesModule`, which the Dhru file order of the orders module uses too). The body is
 `multipart/form-data` with one part named `file`, parsed before the guards by `registerMultipartBodies` (a multipart body on any route but
-`/api/index.php`, `/v1/files`, `/client/files` and `/admin/service-listings/:id/image` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
+`/api/index.php`, `/client/files` and `/admin/service-listings/:id/image` is `415 UNSUPPORTED_MEDIA_TYPE`, and the buffer is bounded at 25 MiB plus the form
 fields). Limits: 1 byte to 25 MiB (`422` on `file` when missing or empty, `413 PAYLOAD_TOO_LARGE` above), any media type (a value that is not a
 `type/subtype` is stored as `application/octet-stream`), the name reduced to its base name without control characters and cut to 200
 characters. The object goes to the files bucket under a key built here (`files/<year>/<month>/<uuid>`: never from the name), then a `files`
 row owned by the merchant (`owner_type client`) is written with the size and SHA-256; an object whose row could not be written is deleted
-again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the id is what a File service order takes as `fileId`, or a KYC
-submission or a receipt (features 8 and 17, B161, B163). `GET /v1/files/:id` (scope `orders:read`) redirects like the other downloads and
-opens less than the portal's `GET /client/files/:id` (which opens every file the merchant owns): only the input or result file of the merchant's own orders and an
-upload of its own that no record uses (`FileAccessService.linkForKey`). A file that a KYC submission, a payment receipt, a ticket, a dispute, an invoice or a data export
-uses is `404` for a key, whatever else refers to it; so is anything else, an unknown id included. No audit row for a merchant's upload (B121).
+again. The answer is `201 { id, filename, size, mime, sha256, createdAt }`; the id is what a File service order takes as `fileId`, or a
+receipt (features 8 and 17, B161, B163). `GET /client/files/:id` redirects like the other downloads and opens every file the merchant owns and
+the files of its own orders; anything else, an unknown id included, is `404`. No audit row for a merchant's upload (B121).
 
 **Quotas, the session precheck, the byte bound and the janitor (decision 053).** Every upload that a merchant or a customer makes is counted
 per owner over the `files` rows whose key starts with an upload area (`files/`, and `tickets-` for the customer), so a generated document never counts
@@ -274,7 +244,8 @@ deleted is only logged (the row is gone, so the file can no longer be read or at
 of reference. The foreign keys (an order's input or result file, an invoice PDF, a payment receipt, a data request, a storefront image)
 make the delete fail with `23503`, which `discard` reads as "in use". The three tables that keep file ids in an array, which the
 database cannot enforce (`kyc_submissions.file_ids`, `ticket_messages.file_ids`, `disputes.evidence_file_ids`), are checked in the same
-`delete` statement. Only the Dhru `placefileorder` of the orders module calls it (see the orders README). DEVIATION of decision 016, the
+`delete` statement (`kyc_submissions` is the table of the retired document check: nothing writes it any more, but its line stays here until the owner
+decides how long to keep the documents it names, decision 061). Only the Dhru `placefileorder` of the orders module calls it (see the orders README). DEVIATION of decision 016, the
 same kind as `ownsOrderFile`: `deleteUnreferencedClientFile` in `infra/file.repository.ts` reads tables of other modules (identity's
 `kyc_submissions`, support's `ticket_messages`, money's `disputes`) because platform imports no module (decision 032); this one statement is
 the only place that names them. Replace its body when those modules export a reader.
@@ -300,11 +271,11 @@ public, limiter `media`: 1200 a minute per address, not the store's `ip`) serves
   the row inserted (`owner_type staff`, the cleaned file name; a concurrent duplicate insert reads the other row). A failed insert leaves
   the object (its key is shared by identical uploads). Only this class writes under `media/`.
 - **Serve**: the route builds the key only from a name matching `^[0-9a-f]{64}\.(jpg|png|webp)$` (anything else is `404` with no storage
-  call, so `..`, encoded slashes or a KYC key never reach storage) and reads no database row. Headers: the type from the extension,
+  call, so `..`, encoded slashes or the key of a private document never reach storage) and reads no database row. Headers: the type from the extension,
   `Cache-Control: public, max-age=31536000, immutable`, `ETag: "<sha256>"`, `Content-Disposition: inline`,
   `Cross-Origin-Resource-Policy: cross-origin`, `X-Content-Type-Options: nosniff`, helmet's CSP `default-src 'none'`.
 - **Exception to "the API never proxies file bytes"** (`file-access.service.ts` presigns private files instead): these bytes are public,
-  at most 2 MiB, immutable and cached by browsers, the proxy and a CDN for a year, while the bucket stays private (it holds KYC
+  at most 2 MiB, immutable and cached by browsers, the proxy and a CDN for a year, while the bucket stays private (it holds identity
   documents and order files, so no public prefix or bucket policy is used).
 
 ## OpenAPI: the Dhru reference (feature 7a, decision 017)
@@ -312,16 +283,15 @@ public, limiter `media`: 1200 a minute per address, not the store's `ip`) serves
 `describeDhruActions` (`docs/dhru-reference.ts`) writes the eight action contracts of the Dhru registry (`src/common/dhru`) into the Dhru
 operation of both documents: the form body becomes a `oneOf` by `action` (each branch with `x-gsm-decoded`, the shape of the decoded
 `parameters`, and `x-gsm-success-entry`) with one request and one response example per action; the operation documents HTTP 200 only
-(every refusal is an `ERROR` list in a 200 body). Every REST v1 operation documents the `RateLimit-*` response headers.
+(every refusal is an `ERROR` list in a 200 body).
 
 ## Events
 
-Outbox events produced (types, payload ids): the orders module registers `order.status_changed` and `order.dispatch_requested`
-(`docs/queues.md`); this module registers `notification.send` (one `notifications` row, written with the row) and adds a `notifications`
-route to `order.status_changed`, `wallet.low_balance` and `service.price_changed` (an event type may have one route per queue). A module registers an event type with its queue in `onModuleInit`
+Outbox events produced (types, payload ids): the orders module writes `order.status_changed` and `order.dispatch_requested` and registers the route of
+the second (`docs/queues.md`); this module registers `notification.send` (one `notifications` row, written with the row) and the `notifications`
+route of `order.status_changed`, `wallet.low_balance`, `service.price_changed` and `invoice.paid` (an event type may have one route per queue). A module registers an event type with its queue in `onModuleInit`
 (`OutboxRouteRegistry.register`) and writes it with `OutboxService.add(tx, ...)` inside its transaction; the table of event
-types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet. The map's outgoing events (`order.status_changed`,
-`wallet.low_balance`, `invoice.paid`) are registered by the features that produce them.
+types is in `docs/queues.md` ("Outbox event types"). Consumed: none yet.
 
 ### The outbox (`outbox/`)
 
@@ -366,14 +336,14 @@ reuse it.
 `StoredFiles` (`files/stored-files.ts`, a plain provider: it needs `StorageService` and a database executor, so the money and identity modules list it themselves) is what other modules use instead of touching `files`:
 `store(db, { ownerType, ownerId, filename, mime, bytes, area })` puts the object in the files bucket (key `<area>/<owner>/<uuid>`, never built from the file name) and inserts the row (the object goes first: a rolled-back
 caller leaves an unreferenced object, never a row without an object), `metaOf(db, ids)` reads the metadata of files by id (with `area`, the first segment of the key: the support chat lets a ticket link attach only the uploads of its own ticket's area `tickets-<id>`), and `findOwned(db, id, owner)` returns a file only if it belongs to that owner (B161 and B163: a
-merchant attaches only its own uploads; another owner's id answers like an unknown one). Feature 28 (the support chat) adds two methods: `linkTo(db, id)` makes the presigned download link of a file (5 minutes, `Content-Disposition: attachment` with the stored name; the caller has already decided who may read it, and the object is not checked), and `remove(tx, ids)` deletes files that nothing else uses: the rows in the caller's transaction (a file another record still points at is kept) and the objects after its commit, best effort. Support uses them for the downloads of ticket attachments and for the deletion with an anonymized customer and after the retention. Decision 049 adds `sha256Of(db, id)` and `idsWithSha256(db, sha256)`: the files that hold the same bytes (every row keeps the SHA-256 of its object), so the money module's receipt rule finds a copy uploaded again. `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a KYC document or a transfer receipt. The merchants'
+merchant attaches only its own uploads; another owner's id answers like an unknown one). Feature 28 (the support chat) adds two methods: `linkTo(db, id)` makes the presigned download link of a file (5 minutes, `Content-Disposition: attachment` with the stored name; the caller has already decided who may read it, and the object is not checked), and `remove(tx, ids)` deletes files that nothing else uses: the rows in the caller's transaction (a file another record still points at is kept) and the objects after its commit, best effort. Support uses them for the downloads of ticket attachments and for the deletion with an anonymized customer and after the retention. Decision 049 adds `sha256Of(db, id)` and `idsWithSha256(db, sha256)`: the files that hold the same bytes (every row keeps the SHA-256 of its object), so the money module's receipt rule finds a copy uploaded again. `PROOF_MIME_TYPES` (PDF, JPEG, PNG) are the types a merchant may attach as a transfer receipt. The merchants'
 upload routes are feature 7a's; invoice PDFs are written here as the merchant's file, so `GET /client/files/:id` serves them.
 
 ## Jobs and schedules
 
 The relay tick: `outbox-relay-tick`, every second, queue `outbox-relay`, job `tick` (processor `OutboxRelayProcessor`). Listed
-in `docs/queues.md`. Decision 053 adds two daily jobs on `maintenance` in the worker-only `PlatformRetentionModule` (`jobs/platform-retention.module.ts`): `upload_janitor` (04:30 UTC) and
-`webhook_delivery_retention` (04:40 UTC); both record their runs in `job_runs` through the `JOB_RUN_RECORDER` port. The webhook deliveries (7b) and the notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
+in `docs/queues.md`. Decision 053 adds a daily job on `maintenance` in the worker-only `PlatformRetentionModule` (`jobs/platform-retention.module.ts`): `upload_janitor` (04:30 UTC)
+which records its runs in `job_runs` through the `JOB_RUN_RECORDER` port; the scheduler of the retired delivery log's retention is listed as retired. The notifications (12a: `notification.plan`, `notification.send`, no schedule) are event-driven; file jobs arrive with their feature.
 Decision 055 adds `outbox_purge` (above) and `lost_work_reconcile` (below).
 
 ### Lost work (`lost-work/`, decision 055)
@@ -390,11 +360,6 @@ decide nothing; a live request (not handed over yet, or its job `outbox-<id>` wa
 waited for; a row with no request is left alone; a request younger than 10 minutes is waited for; after three automatic requests
 (`reconcile: true` in the payload) the kind gives up; otherwise a new event of the same type goes out. An event type no route names in the
 process reads as `unknown`.
-
-The platform's own pass, `WebhookDeliveryReconcilePass` (kind `webhook_deliveries`, in `WebhookDeliveryModule`), watches pending
-deliveries overdue by 10 minutes: a missing job `webhook-<delivery>-<attempt>` is added again (`WebhookDeliveries.ensureJobs`), a completed
-or failed job of that id is removed first, a waiting, active or delayed one is left. There is no give-up: the delivery's write is guarded
-by `status = 'pending' and attempt = n`, so adding the current attempt's job is always safe.
 
 ## Cache keys
 
@@ -436,13 +401,13 @@ actor is `system`. The row is written on the caller's transaction, so a rolled-b
   renamed or deleted accounts still read correctly and `q` can search it in SQL. On the wire `actorName` is `null` when the snapshot
   is `''`. `actor_type` is `staff | client | customer | system` (exported `AUDIT_ACTOR_TYPES`, CHECK `audit_logs_actor_type_check`).
 - `entityType` must come from the exported `AUDIT_ENTITY_TYPES` (the console's 19 words plus `role`, `client_group`, `category`,
-  `currency`, `payment_gateway`, `invoice`, `api_key`, `webhook_endpoint`, `kyc_submission`, `notification_template`,
+  `currency`, `payment_gateway`, `invoice`, `api_key`, `notification_template`,
   `alert_rule`, `alert`, `incident`, `tax_rate`, `help_article`, `content_page`, `ledger_transaction`, `inventory_code`, `pricing_rule`); `record` throws a
   `RangeError` (a programming error that rolls the transaction back) on any other value. The list is enforced in code with no
   DB CHECK, so the append-only table never needs a migration for it; a feature that needs a new type adds it in its own commit.
   Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions` `checkout`, `legal_documents` `legal`,
-  blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan`, `withdrawal_requests` `withdrawal`,
-  `support_tickets` `ticket`.
+  blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan` (retired, decision 062: old rows only, the word stays so they can be read and
+  filtered), `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`.
 
 **Enforcement.** A global interceptor (`AuditEnforcementInterceptor`) checks every successful staff mutation (a staff-authenticated
 route whose method is not GET and whose contract does not say `audit: false`): if the request wrote no audit row, development and
@@ -466,70 +431,9 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-9` · GET /admin/dashboard
 - `identity-platform-10` · GET /admin/dashboard
 - `identity-platform-11` · GET /admin/notification-templates
-- `identity-platform-12` · GET /admin/webhook-deliveries
 - `identity-platform-13` · PATCH /admin/settings
 - `identity-platform-15` · GET /admin/audit-logs
-- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret
-
-## Merchant webhooks (feature 7b)
-
-Nine routes (contracts `webhooks/webhooks.contracts.ts` for the portal, `webhooks/webhook-deliveries.contracts.ts` for staff; controllers
-`webhooks/webhook-deliveries.controller.ts` (staff) and identity's `merchant-webhooks.controller.ts` (portal); use cases `merchant-webhook.service.ts` and `webhook-delivery-admin.service.ts`; queries
-`webhook-endpoint.repository.ts` and `webhook-delivery.repository.ts`; pure rules `webhook-delivery.rules.ts`), the engine and the events.
-Specs: MISMATCHES B156 (portal), RESOLUTIONS identity-platform-12 (the staff log), ALIGNMENT § 7 (the format).
-
-| Route | Access | What it does |
-|---|---|---|
-| `GET /client/webhooks` | merchant | the merchant's endpoints, newest first, `x-total-count`; never the secret |
-| `POST /client/webhooks` | merchant | `{ url, events, isActive? }` → `201 { endpoint, secret }`, `Cache-Control: no-store`; https with a public host (SSRF guard of decision 023, `422` on `url`), events a subset of the four (`422` on `events.N`), at most 5 endpoints (`422` on `url`, advisory lock against races); the secret is `whsec_` + 32 random bytes, stored AES-GCM (AAD `webhook_endpoints.secret_enc`), shown once; `403 FORBIDDEN` while the merchant's password is one staff set, or its email address one that a staff member who is not an Owner set and no Owner confirmed (identity's `MachineCredentialHold`, checked by the controller) |
-| `PATCH /client/webhooks/:id` | merchant | url, events, isActive; turning an endpoint back on resets `failureCount` and the count of failed deliveries in a row (decision 053); another merchant's or unknown id is `404`; `403 FORBIDDEN` like a new endpoint |
-| `DELETE /client/webhooks/:id` | merchant | `204`; the deliveries go with it (`ON DELETE CASCADE`) |
-| `POST /client/webhooks/:id/test` | merchant | `202 { deliveryId }`: a signed `ping` delivery `{ message, endpointId }`; `409 INVALID_TRANSITION` for a paused endpoint; `429 RATE_LIMITED` from the eleventh test of a merchant in an hour (limiter `webhook-test`, key `client:<id>`, decision 053; counted after the ownership and switched-on checks, before the delivery is inserted); if the queue cannot take the job the delivery is removed and the answer is `503` |
-| `GET /client/webhooks/:id/deliveries` | merchant | newest first: `{ id, event, attempt, status (pending, succeeded, failed), responseCode (0 without an answer), error (''), nextRetryAt, createdAt }` |
-| `GET /admin/webhook-deliveries` | `webhooks:read` | the log: delivery columns plus `endpoint {id, url}` and `client {id, name}`; filters `status` (`delivered`, `pending`, `failed`), `event`, `clientId`; `q` over merchant, event and address |
-| `GET /admin/webhook-deliveries/:id` | `webhooks:read` | the same row (it carries `payload`, `responseBody`, `error`) |
-| `POST /admin/webhook-deliveries/:id/retry` | `webhooks:update` | one more attempt of the same payload: `pending`, `attempt + 1`, due now; `409 DELIVERY_SUCCEEDED`, `429` (limiter `webhook-retry`, one a minute per delivery); audited `retried webhook delivery of <merchant>` |
-
-Merchant routes write no audit row (B121). The portal says `succeeded` where the console's log says `delivered` (B156 wording, kept).
-
-### The events (public OpenAPI `webhooks`, decision 017)
-
-| Event | Who writes the outbox row | Outbox payload (ids and codes) | `data` sent to the merchant |
-|---|---|---|---|
-| `order.status_changed` | feature 5 (registers the route to `merchant-webhooks`) | `{ orderId, clientId, fromStatus, toStatus }` | the order's public fields: ids, service name, status and previous status, IMEI, quantity, prices, currency, result, times; never cost, supplier or notes |
-| `wallet.low_balance` | money, `WalletLowBalanceWatch` inside `LedgerPoster.post` (route registered here) | `{ clientId, currency, available, threshold }` | `{ currency, available, threshold }` |
-| `invoice.paid` | feature 8 (registers the route to `merchant-webhooks`) | `{ invoiceId, clientId }` | `{ invoiceId, number, amount, currency, paidAt }` |
-| `service.price_changed` | catalog, `PriceChangeScan` (route registered here) | `{ clientId, serviceId, previousPrice, price, currency }` | `{ serviceId, serviceName, previousPrice, price, currency }` |
-
-The envelope is `{ id, type, createdAt, data }`; the id is `evt_` and 24 hex characters of a keyed hash of the event (stable, says nothing about volume). A merchant
-event reaches `merchant-webhooks` with `payload.clientId`; `WebhookFanOut` fans out ANY registered type that carries a `clientId` and has a contract.
-`order.status_changed` and `invoice.paid` are registered by features 5 and 8, not here (a type is registered once); until they exist the tests register them
-(`test/support/webhooks.ts`). The data is built at fan-out from the outbox row and, for orders and invoices, from the source row through
-`webhooks/webhook-foreign-reads.ts`, a documented deviation of decision 016 (platform imports no module; replace the bodies when orders and
-invoices export a reader). The data is checked against the event contract before it is stored.
-
-### Delivery (decision 020, `docs/queues.md`)
-
-`WebhookFanOut` inserts one `webhook_deliveries` row per active, subscribed endpoint (`ON CONFLICT (endpoint_id, event_id) DO NOTHING`; `event_id` is the
-envelope id, migration 0007) holding the envelope as `payload`, then adds the delivery job. `WebhookDeliveries.deliver` sends
-`POST` JSON with `X-GSM-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">` and `X-GSM-Event-Id`, 10 s timeout, no redirects, answer read up to 64 KB and
-stored up to 4 KB. 2xx is delivered. Anything else is a failed attempt: `10 min x 2^(n-1)` shortened by up to 20 % before attempt n + 1, 8 attempts over about 21 h,
-then `failed`. The row is the truth (`attempt`, `next_retry_at`, `response_code` null for no answer, `response_body`, `error`); the BullMQ job
-(`webhook-<delivery>-<attempt>`, delayed) is the alarm clock. The address is checked again at every send; a host that is no longer public fails the delivery at once.
-Guarded writes (`status = 'pending' and attempt = n`) make a job that runs twice, or after a manual retry, harmless; sends are at least once, and the same
-event id on every retry lets the receiver drop repeats. `failure_count` of the endpoint counts failed attempts and resets on a success or when the endpoint is switched on.
-
-**Pause after failed deliveries and retention (decision 053).** A delivery that ends `failed` while its endpoint is on adds one to `webhook_endpoints.consecutive_failed_deliveries` (an
-attempt that is only retried counts nothing); a delivered one, or turning the endpoint on, sets it to 0. At 20 the same transaction switches the endpoint off (guarded
-`WHERE is_active`, so once) and writes the outbox event `webhook.endpoint_disabled` `{ clientId, endpointId }`; the notification planner turns it into the new transactional merchant email
-`webhook.endpoint_disabled` ("A webhook endpoint was switched off", variables `merchantName`, `url`, `count`; never a preference; no in-app text). `failureCount` on the wire keeps its
-meaning (failed attempts). Deliveries created more than 90 days ago that are not `pending` are deleted by the daily job `webhook_delivery_retention` (04:40 UTC, batches of 1000,
-at most 100 batches a run).
-
-`WEBHOOK_TARGET_POLICY` (optional token) lets tests give the sender a local server and a stand-in DNS; nothing provides it in production.
-
-Open points: nothing re-queues a pending delivery whose job was lost (the queue Redis lost its data): `webhook_deliveries_retry_idx` supports a sweep for 12b;
-an endpoint is switched off after 20 failed deliveries in a row (decision 053); `invoice.paid` needs feature 8 to register its route and write `payload.clientId`.
+- `identity-platform-16` · POST /client/*
 
 ## Notifications (feature 12a)
 
@@ -552,8 +456,8 @@ Code: `notifications/` (contracts `notification-templates.contracts.ts` and `not
 
 **The event registry** (`notification-events.ts`) is the only list of events: key, audience (`staff`, `merchant`, `customer`), channels, the variables a template may
 use with a sample of each, whether the message is transactional (always sent, not in a merchant's preferences) and its defaults. Built in: the three merchant
-mails, `wallet.low_balance`, `service.price_changed` (a digest), `deposit.approved`, `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
-opts in), the bot's `telegram.linked` and `telegram.unlinked`, the transactional `webhook.endpoint_disabled` (decision 053: an endpoint switched off after 20 failed deliveries in a row; `notifications` route only, no webhook route, no in-app text), the six customer events of the console's Customer emails tab (their producers are the storefront
+mails, `wallet.low_balance`, `service.price_changed` (a digest), `invoice.paid`, `order.completed` and `order.failed` (off until a merchant
+opts in), the six customer events of the console's Customer emails tab (their producers are the storefront
 features) and the four transactional customer account mails of feature 14b (`customer.magic_link`, `customer.password_reset`, `customer.invited`,
 `customer.email_verification`; variables `customerName`, `link`, `expiresAt`; `CUSTOMER_MAIL_EVENT_KEYS`). Feature 12b adds two staff events, `alert.fired` and `alert.resolved` (email and Telegram,
 always sent), for the messages of alerts, and feature 31 adds the staff event `retail.prices_followed` (the hourly counts of the shop prices that follow a rule; its `link` opens the console's Shop price rules tab, `<CONSOLE_BASE_URL>/catalog?view=settings&tab=shop-prices`, decision 060, and its sample shows the same address). They go to no person's row but to the ops mailbox(es) and chat of the configuration
@@ -564,7 +468,7 @@ merchant rows, `0012_customer_mail_templates.sql` the customer mails' rows, `001
 (a test reads the files and keeps code and migrations equal; a later migration that adds templates must be listed in that test).
 
 **Link emails and security emails** (decision 047). Three flags of the registry's event definitions: `secretLink` (the `link` placeholder is a one-time credential: the 3 merchant
-link mails, the 4 customer account mails, the 2 staff link mails, the customer `support.reply`, `support.ticket_received`, `support.csat_survey` and `checkout.abandoned`),
+link mails, the 4 customer account mails, the 2 staff link mails, the customer `support.reply` and `support.ticket_received`),
 `security` (the account link mails and the security notices, `merchant.security_notice`, `merchant.portal_api_key_created` (the notice of a key the merchant made in the portal; its shipped text has no stored row) and the new `customer.security_notice`; a security event must be transactional) and
 `namedAddress` (a row of `merchant.security_notice` and `customer.security_notice` names the address it goes to, `NotificationInput.to`, kept in the payload as `to`: the notice of an email change goes to the address before
 the change; `enqueue` refuses `to` for any other event and `sendNow` refuses it always). The pure `linkTemplateProblems` (`template-rules.ts`) keeps a link template's `{{link}}` inside the message:
@@ -578,12 +482,12 @@ outside the list, a refused `style` or `hidden` attribute, no `href` in a notice
 registry also holds the shipped texts: the platform registers `DEFAULT_TEMPLATES` in its constructor, identity and support register theirs at boot in both processes
 (`registerBuiltInTemplates`; `builtInTemplate(key)`). `NotificationService.check` does not skip a security event whose template is missing or off (the shipped text exists), and the
 delivery's `templateFor` uses a stored template only when it is on and keeps the rules (and, for a security email, its placeholder), else the shipped text with a warning that names the
-template and the rule and never its text; an event with no shipped text (`checkout.abandoned`) whose stored template breaks the rules counts as switched off in `check` and `templateIsOn`
+template and the rule and never its text; an event with no shipped text whose stored template breaks the rules counts as switched off in `check`
 (`template_off`), and a row queued earlier fails for good (`The template breaks the rules of a link mail.`).
 
 **One delivery path** (decision 020, `docs/queues.md` "notifications"). A use case calls `NotificationService.enqueue({ tx }, ...)`: a `notifications` row (`queued`) and the
 outbox event `notification.send` commit with the caller's change. Producers that already write an outbox event (`order.status_changed`, `wallet.low_balance`,
-`service.price_changed`, and feature 8's `invoice.paid` and `deposit.approved` once the lead routes them) reach the `notifications` queue as well as the webhooks;
+`service.price_changed`, and feature 8's `invoice.paid` once the lead routes it) reach the `notifications` queue (the platform's `NotificationRoutes` registers their routes);
 `EventNotifier` (job `notification.plan`) decides who is told by the merchant's preferences and needs an active template. The send job (`NotificationDelivery.deliver`)
 re-reads the row, the recipient and the template, renders (an HTML body gets escaped values and a text part), sends and marks the row `sent` with a guarded update.
 A transient failure records the attempt and rethrows (the queue retries: 5 attempts, 30 s backoff); the last attempt, or a refusal that cannot change, marks the row
@@ -593,32 +497,38 @@ A transient failure records the attempt and rethrows (the queue retries: 5 attem
 per merchant, channel and period, key `digest:service.price_changed:<channel>:<client>:<day>`), sent by a delayed job `notification-<id>` at the end of the period. The send job
 closes the row first, so a later change opens the next period's row: at most one message a day, no change lost.
 
-**Mail and Telegram** (decision 033): `MailTransport` (`send`, `verify`) over nodemailer with explicit timeouts; `TelegramClient.sendMessage` over `OutboundHttp` (target `telegram`);
+**Mail and Telegram** (decision 033; Telegram is for the operations alerts only since decision 062): `MailTransport` (`send`, `verify`) over nodemailer with explicit timeouts; `TelegramClient.sendMessage` over `OutboundHttp` (target `telegram`);
 `NODE_ENV=test` uses the in-memory drivers (nothing leaves the process). In production the SMTP driver requires TLS (decision 055, `mail.requireTls`): an `smtps://` URL is TLS from the start, an `smtp://` connection must be
 upgraded with STARTTLS or no mail is sent (the queue retries). A 5xx SMTP answer, a Telegram 400, 403 or 404 fail the row at once; everything else is retried.
 Reasons are cleaned of addresses and never hold a token. The log's masks are built from the recipient's current row.
+**Telegram for merchants, retired (decision 062).** A merchant has one channel, email: no chat link, no bot webhook, no Telegram switch in the
+preferences, no Telegram channel on a campaign or a support reply, no `broadcast-telegram` budget. The Telegram client and driver stay for one
+use, the messages of the operations alerts and of the hourly shop-price message (`ALERTS_TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN`). What older
+data may still carry is read as "not sent": a `telegram` key in a merchant's `notification_prefs`, a campaign whose `channels` lists it (its counters
+and rows too), a queued Telegram row of a merchant or customer (`NotificationDelivery` marks it `failed`: "Telegram is no longer used for this
+message."), a bulk send job that names it, and a `support.ticket_mail` event with `channel: telegram` (skipped as `channel_retired`).
 
 **Merchant and customer mail** (identity's `MerchantMailJobs`, feature 14b's customers `CustomerMailJobs`) call `NotificationService.sendNow` with the clear link as a secret
 placeholder: it fills the template and is never stored, logged or put in the payload. `recipientOf` reads a customer's status (feature 23): an anonymized customer is gone (nothing is sent), a suspended or blocked one is `suspended`
 (only transactional events reach them; the order, payment, refund, ticket and account events are transactional). The customer mail job still judges the
 customer's status itself (only an active customer gets a link).
 
-**Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) and the order of an order notification with plain selects:
-the documented deviation of decision 016 that the webhook reads already carry (platform imports no module, decision 032). Replace the bodies when those modules export a reader.
+**Foreign reads.** `notification-foreign-reads.ts` reads `clients`, `staff_users` and `customers` (the recipient) , the order of an order notification, the invoice of a paid-invoice notification and the name of a service with plain selects:
+a documented deviation of decision 016 (platform imports no module, decision 032). Replace the bodies when those modules export a reader.
 
-Open points: the routes of `invoice.paid` and `deposit.approved` to `notifications` are added when feature 8 (their producer) is merged; a Telegram `retry_after` is not
+Open points: the route of `invoice.paid` to `notifications` is added when feature 8 (its producer) is merged; a Telegram `retry_after` is not
 honoured beyond the queue's own 30 s first backoff (it is shorter in practice).
 
 ## Notification center (feature 23)
 
-Staff write a message once and send it to an audience; people read it in their inbox, by email or by Telegram. Plan:
+Staff write a message once and send it to an audience; people read it in their inbox or by email. Plan:
 `docs/briefs/23-notification-center.md`: campaigns, audiences, previews, the test send, the fan-out, the bulk queue, the campaign branch of
 the delivery, cancel and scheduling; the inbox (12 routes on three surfaces) and its event items; the customer status fix, the reconciler, retention, the cheaper log count and the marketing unsubscribe.
 
-**Tables.** `notification_campaigns` (the message as one title and one body, the audience spec, channels `in_app`/`email`/`telegram`,
+**Tables.** `notification_campaigns` (the message as one title and one body, the audience spec, channels `in_app`/`email` (a campaign written before Telegram was retired may still hold `telegram`: it is left out of every read and never sent),
 purpose `service`/`marketing`, the state machine, the fan-out cursor and counters), `notification_inbox` (one in-app item per person:
 a campaign item, rendered from the campaign at read time, or an event item with its variables; read state) and
-`notifications.campaign_id` (a campaign's email and Telegram rows, event `broadcast.announcement`). The in-app channel is its own table,
+`notifications.campaign_id` (a campaign's email rows, event `broadcast.announcement`). The in-app channel is its own table,
 not a value of the log's channel enum.
 
 **Routes** (beyond the map, `scripts/map-additions/23.mjs`; permission area `broadcasts`, held by nobody but the Owner until a role is
@@ -637,15 +547,14 @@ fan-out finished (every in-app item exists, every message is queued); the detail
 **Audiences** (`campaigns/notification-audiences.ts`). Platform imports no module, so identity registers the staff and merchant
 providers and customers the customer provider in `NotificationAudiences` at boot. Each answers `count`, `page` (keyset by id) and
 `member` (the send-time check) from one SQL predicate: active staff (roles), merchants by status (default active; a listed one may be
-pending), group and country, with the email and Telegram flags of their `broadcast.announcement` switches (the SQL twin of
+pending), group and country, with the email flag of their `broadcast.announcement` switch (the SQL twin of
 `choiceFor`), and active customers (account, country; consent for marketing).
 
 **Fan-out and sending.** `send` (or the minute sweep) writes one `notification.campaign_fanout` outbox event; the worker's
 `CampaignFanOut` walks the audience in chunk transactions (row lock on the campaign, `ON CONFLICT DO NOTHING` inserts, the cursor moved in
 the same transaction), then hands each chunk's rows to the queue `notification-broadcasts` with `QueuesService.addBulk`. It pauses while
 that queue holds more than 20 000 jobs and hands over to a continuation after 20 s. `BroadcastSendProcessor` takes one point of the
-per-channel budget (`broadcast-email`, `broadcast-telegram`, sized by the settings `notifications.broadcast_email_per_second` and
-`notifications.broadcast_telegram_per_second`) and calls `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign
+per-channel budget (`broadcast-email`, sized by the setting `notifications.broadcast_email_per_second`) and calls `NotificationDelivery.deliver`, whose campaign branch re-reads the campaign
 (cancelled: the row fails with the reason), the person's eligibility and switches, renders the campaign (`{{name}}` is the person's name; email has an escaped HTML part) and sends it. Jobs, ids and retries: `docs/queues.md`.
 
 **Scheduling.** `notification_campaign_sweep` (maintenance, every minute) queues the due campaigns, re-kicks a fan-out whose row has
@@ -653,7 +562,7 @@ not moved for 5 minutes and fails one still running a day after it was queued. I
 (`jobs/job-run-recorder.ts`) that health provides, since platform cannot import health.
 
 **Registries other modules use.** `NotificationAudiences` (providers), `InboxTextRegistry` (the in-app text of an event: one title and one body), `NotificationInbox.add` (an event item in the caller's transaction). The events `broadcast.announcement` (merchant:
-not transactional, email and Telegram on by default, so merchants see "Announcements" in their preferences; customer: not
+not transactional, email on by default, so merchants see "Announcements" in their preferences; customer: not
 transactional; staff) and `broadcast.test` are registered by `BroadcastEvents`, have `templated: false` (a template for them is refused)
 and are not in `BUILT_IN_EVENTS`.
 
@@ -669,7 +578,7 @@ event item from the `InboxTextRegistry`.
 
 **Event items.** `NotificationService.enqueue` (with a dedupe key) and `EventNotifier.notifyMerchant` also write the event's inbox item
 (`NotificationInbox.addForEvent`, key `inapp:<audience>:<event>:<occurrence>`), in the same transaction and before the template and
-channel checks, so a merchant who switched email and Telegram off, or a customer whose email template is off, still gets the item. Built in
+channel checks, so a merchant who switched email off, or a customer whose email template is off, still gets the item. Built in
 (`inbox/built-in-inbox-texts.ts`): the customer's `order.received`, `order.completed`, `order.failed`, `payment.failed`, `refund.declined`
 and the merchant's `wallet.low_balance`, `invoice.paid`. A recipient with no inbox (`Recipient.inboxEligible`: a guest customer, a
 suspended or anonymized person) gets no item. Other modules register their text with `InboxTextRegistry.register` and call
@@ -677,14 +586,12 @@ suspended or anonymized person) gets no item. Other modules register their text 
 
 **Recipient status (S6).** `recipientOf` reads a customer's status: anonymized is gone, suspended or blocked is `suspended`. The customer events
 that report on the customer's own purchase or ticket are transactional (`order.received`, `order.completed`, `order.failed`,
-`payment.failed`, `refund.declined`, `support.reply`, `support.ticket_received`), so a suspended or blocked customer still gets them;
-`support.csat_survey` and `checkout.abandoned` stay non-transactional.
+`payment.failed`, `refund.declined`, `support.reply`, `support.ticket_received`), so a suspended or blocked customer still gets them.
 
 **English only (decision 039).** Every template, inbox text and campaign has one language, English: there is no language column,
 parameter or field, no right-to-left mail part and no Arabic default template (the Arabic rows that old migrations inserted are deleted by
 `0035`). An event mail is plain text, or the markup of an HTML template; `emailHtml(text)` (campaign and inline mails) wraps escaped text
-in a `dir="ltr" lang="en"` `div`. Text that people typed (a name, a message) is carried as typed, in any script: plain-text mails and
-Telegram show it unchanged (`test/integration/platform/user-text-stays.test.ts`).
+in a `dir="ltr" lang="en"` `div`. Text that people typed (a name, a message) is carried as typed, in any script: plain-text mails show it unchanged (`test/integration/platform/user-text-stays.test.ts`).
 
 **Hardening.** `notification_reconcile` (every 5 minutes) re-adds the job of a queued row whose job was lost (a campaign row after 15 minutes,
 an event row after 30 whose relayed job is gone, a digest whose period ended) and fails a row older than 48 hours; rows made by `sendNow`
@@ -695,8 +602,7 @@ the footer and `List-Unsubscribe` headers made from `marketingUnsubscribeToken` 
 customers module owns the route `POST /store/v1/marketing/unsubscribe/:token`. `NotificationPrivacy.eraseRecipient` deletes a person's
 inbox and empties their log payloads (the customers module calls it from its anonymization hook). Jobs: `docs/queues.md`.
 
-**Settings.** `notifications.broadcast_email_per_second` (1-30, default 5), `notifications.broadcast_telegram_per_second` (1-30,
-default 20), `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default
+**Settings.** `notifications.broadcast_email_per_second` (1-30, default 5), `notifications.inbox_read_retention_days` (7-3650, default 90), `notifications.inbox_retention_days` (30-3650, default
 365), `notifications.log_retention_days` (30-3650, default 180). No cache key: the unread count is not cached.
 
 ## Live notifications (feature 27)

@@ -87,22 +87,22 @@ describe('GET /admin/files/:id', () => {
     expect((await staff.get(`/admin/files/${logo}`)).status).toBe(302);
   });
 
-  it('needs kyc:read to open a merchant upload nothing uses yet, and customers:read for a customer upload', async () => {
+  it('needs clients:read to open a merchant upload nothing uses yet, and customers:read for a customer upload', async () => {
     const merchantUpload = await insertFile('client', world.other.id, 'passport-not-submitted.pdf');
     const denied = await staff.get(`/admin/files/${merchantUpload}`);
     expect(denied.status).toBe(403);
-    expect(denied.body.detail).toBe('You need the kyc:read permission to do this.');
+    expect(denied.body.detail).toBe('You need the clients:read permission to do this.');
     const customer = await insertCustomer(world.db);
     const customerUpload = await insertFile('customer', customer.id, 'receipt.png');
     const deniedCustomer = await staff.get(`/admin/files/${customerUpload}`);
     expect(deniedCustomer.status).toBe(403);
     expect(deniedCustomer.body.detail).toBe('You need the customers:read permission to do this.');
-    const reader = await adminWith(t, ['files:read', 'kyc:read', 'customers:read']);
+    const reader = await adminWith(t, ['files:read', 'clients:read', 'customers:read']);
     expect((await reader.get(`/admin/files/${merchantUpload}`)).status).toBe(302);
     expect((await reader.get(`/admin/files/${customerUpload}`)).status).toBe(302);
   });
 
-  it('needs kyc:read to open an identity document, and audits every download under the merchant', async () => {
+  it('needs clients:read to open an identity document stored earlier, and audits every download under the merchant', async () => {
     const file = await insertFile('client', world.other.id, 'passport.pdf');
     const [submission] = await world.db
       .insert(s.kycSubmissions)
@@ -110,10 +110,13 @@ describe('GET /admin/files/:id', () => {
       .returning();
     const denied = await staff.get(`/admin/files/${file}`);
     expect(denied.status).toBe(403);
-    expect(denied.body).toMatchObject({ code: 'FORBIDDEN', detail: 'You need the kyc:read permission to do this.' });
+    expect(denied.body).toMatchObject({
+      code: 'FORBIDDEN',
+      detail: 'You need the clients:read permission to do this.',
+    });
     expect(await opened('opened an identity document of')).toHaveLength(0);
 
-    const reader = await adminWith(t, ['files:read', 'kyc:read'], { name: 'Nadia' });
+    const reader = await adminWith(t, ['files:read', 'clients:read'], { name: 'Nadia' });
     expect((await reader.get(`/admin/files/${file}`)).status).toBe(302);
     const [first] = await opened('opened an identity document of');
     expect(first).toMatchObject({
@@ -171,7 +174,7 @@ describe('GET /admin/files/:id', () => {
       const reader = await adminWith(t, ['files:read', permission]);
       expect((await reader.get(`/admin/files/${file}`)).status, permission).toBe(302);
     }
-    // A file that is an order's input and a KYC document needs both: the first missing one (in the order of the kinds) is named.
+    // A file that is an order's input and an identity document stored earlier needs both: the first missing one (in the order of the kinds) is named.
     const both = await insertFile('client', merchant.id, 'both.pdf');
     await insertOrderRow(db, {
       clientId: merchant.id,
@@ -183,12 +186,12 @@ describe('GET /admin/files/:id', () => {
     const ordersOnly = await adminWith(t, ['files:read', 'orders:read']);
     const refused = await ordersOnly.get(`/admin/files/${both}`);
     expect(refused.status).toBe(403);
-    expect(refused.body.detail).toBe('You need the kyc:read permission to do this.');
-    const kycOnly = await adminWith(t, ['files:read', 'kyc:read']);
-    expect((await kycOnly.get(`/admin/files/${both}`)).body.detail).toBe(
+    expect(refused.body.detail).toBe('You need the clients:read permission to do this.');
+    const identityOnly = await adminWith(t, ['files:read', 'clients:read']);
+    expect((await identityOnly.get(`/admin/files/${both}`)).body.detail).toBe(
       'You need the orders:read permission to do this.',
     );
-    const everything = await adminWith(t, ['files:read', 'kyc:read', 'orders:read']);
+    const everything = await adminWith(t, ['files:read', 'clients:read', 'orders:read']);
     expect((await everything.get(`/admin/files/${both}`)).status).toBe(302);
     // The kinds that are not audited leave no row.
     expect(await opened('opened the payment proof of')).toHaveLength(0);
@@ -286,7 +289,7 @@ describe('GET /client/files/:id', () => {
   it('lets a merchant waiting for approval read its own uploads (B153) but nothing of its orders', async () => {
     const { db } = world;
     const pendingId = await insertMerchant(db, { status: 'pending' });
-    const own = await insertFile('client', pendingId, 'kyc.pdf');
+    const own = await insertFile('client', pendingId, 'document.pdf');
     const portal = await portalFor(t, pendingId);
     expect((await portal.get(`/client/files/${own}`)).statusCode).toBe(302);
     expect((await portal.get('/client/orders')).statusCode).toBe(403);

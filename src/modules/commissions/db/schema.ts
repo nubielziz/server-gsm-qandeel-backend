@@ -1,4 +1,6 @@
 // Commissions tables (map domain F): referral and rebate plans, who benefits, and what is owed.
+// RETIRED (decision 062): the commissions feature is gone from the code. These three tables stay in the database and in this schema,
+// unread and unwritten, until the accounts migration drops them; no code reads or writes them, and no module serves them.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, pgTable, text, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -20,7 +22,7 @@ import { orders } from '../../orders/db/schema';
 /**
  * Kinds of commission plan: a referral reward or a rebate (cashback).
  *
- * Why: the console's plan wire enum (GET /admin/commission-plans).
+ * Why: the check of `commission_plans.kind`; kept with the table (decision 062), no code uses the list any more.
  */
 export const COMMISSION_PLAN_KINDS = ['referral', 'rebate'] as const;
 
@@ -31,7 +33,7 @@ export type CommissionPlanKind = (typeof COMMISSION_PLAN_KINDS)[number];
  * Life of a commission accrual: `accrued` when the order completes, `approved` by staff (the commission money event),
  * `reversed` when the order is refunded.
  *
- * Why: RESOLUTIONS health-commissions-11 and the console's accrual wire enum (GET /admin/commission-accruals).
+ * Why: the check of `commission_accruals.status`; kept with the table (decision 062), no code uses the list any more.
  */
 export const COMMISSION_ACCRUAL_STATUSES = ['accrued', 'approved', 'reversed'] as const;
 
@@ -41,7 +43,7 @@ export type CommissionAccrualStatus = (typeof COMMISSION_ACCRUAL_STATUSES)[numbe
 /**
  * Referral and cashback plans.
  *
- * Why: Referral and cashback plans a merchant can be assigned to (routes /admin/commission-plans).
+ * Why: the plans a merchant could be assigned to. Retired (decision 062): unread and unwritten, dropped by the accounts migration.
  */
 export const commissionPlans = pgTable(
   'commission_plans',
@@ -76,8 +78,7 @@ export type NewCommissionPlan = typeof commissionPlans.$inferInsert;
 /**
  * Links a plan to the merchant who benefits from it.
  *
- * Why: Links a plan to the merchant who benefits; ending an assignment sets ends_at (B42, routes
- * /admin/commission-assignments).
+ * Why: which merchant a plan paid. Retired (decision 062): unread and unwritten, dropped by the accounts migration.
  */
 export const commissionAssignments = pgTable(
   'commission_assignments',
@@ -111,8 +112,8 @@ export type NewCommissionAssignment = typeof commissionAssignments.$inferInsert;
 /**
  * Commissions owed and paid out.
  *
- * Why: Commissions owed, approved and paid out; approval posts the commission money event (B43, routes
- * /admin/commission-accruals).
+ * Why: the commissions that were owed, approved and paid out. Retired (decision 062): unread and unwritten, dropped by the accounts
+ * migration. The journals that approval posted stay in the ledger (kind `commission`, reference type `accrual`), valid and readable.
  */
 export const commissionAccruals = pgTable(
   'commission_accruals',

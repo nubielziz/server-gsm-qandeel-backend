@@ -12,7 +12,7 @@ import { TicketMailRoutes } from './application/ticket-mail-outbox';
  * Why: `NotificationDelivery` looks the event of a row up in the registry of its own process, so the worker must know the support events
  * too: this module is imported by `SupportModule` (API) and by the worker's root module.
  *
- * Side effects: adds three events to the registry at boot, and the shipped texts of the support mails (decision 047: the fallback of a link
+ * Side effects: adds two events to the registry at boot, and the shipped texts of the support mails (decision 047: the fallback of a link
  * mail whose stored template breaks the link rules).
  */
 @Injectable()

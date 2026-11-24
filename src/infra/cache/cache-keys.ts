@@ -116,13 +116,18 @@ export class CacheKeys {
   }
 
   /**
-   * The cached view of one API key and the status of its merchant (REST v1 and Dhru authentication, decision 018).
+   * The cached view of one API key and the status of its merchant (Dhru authentication, decision 018).
+   *
+   * Why: the name carries a version (`:v2`, decision 062). The access rule of a key changed in that release (a key no longer has scopes
+   * to check) and its migration revokes some keys in Postgres only, so a view cached under the old rule must never be read by the new
+   * code. The views of before sit under the name without a version; nothing reads them and they expire by themselves. Raise the number
+   * when the rule that judges a key changes again.
    *
    * @param keyHash the keyed hash of the API key (never the key itself)
-   * @returns `gsm:{env}:identity:api-key:{keyHash}`
+   * @returns `gsm:{env}:identity:api-key:{keyHash}:v2`
    */
   apiKey(keyHash: string): CacheKey {
-    return `${this.keyspace}identity:api-key:${segment('api key hash', keyHash)}` as CacheKey;
+    return `${this.keyspace}identity:api-key:${segment('api key hash', keyHash)}:v2` as CacheKey;
   }
 
   /**
@@ -242,17 +247,6 @@ export class CacheKeys {
    */
   webhookIntake(hour: string): CacheKey {
     return `${this.keyspace}health:webhooks-in:${segment('hour', hour)}` as CacheKey;
-  }
-
-  /**
-   * The typing throttle of one party of a support ticket (feature 28): set with `NX PX 2500`, so a burst of pings rings one doorbell.
-   *
-   * @param ticketId the ticket
-   * @param party `r` for the requester, `s<staffId>` for a staff member
-   * @returns `gsm:{env}:support:typing:{ticketId}:{party}`
-   */
-  supportTyping(ticketId: number, party: string): CacheKey {
-    return `${this.keyspace}support:typing:${segment('ticket id', ticketId)}:${segment('typing party', party)}` as CacheKey;
   }
 
   /**
@@ -404,7 +398,7 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
   },
   {
     builder: 'apiKey',
-    pattern: 'gsm:{env}:identity:api-key:{keyHash}',
+    pattern: 'gsm:{env}:identity:api-key:{keyHash}:v2',
     owner: 'identity',
     ttl: '60 s (a key that matches nothing: 10 s)',
     invalidation:
@@ -495,13 +489,6 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     owner: 'health',
     ttl: '48 h',
     invalidation: 'none; one hash per UTC hour (delivered, failed, retrying counters)',
-  },
-  {
-    builder: 'supportTyping',
-    pattern: 'gsm:{env}:support:typing:{ticketId}:{party}',
-    owner: 'support',
-    ttl: '2.5 s (SET NX PX 2500, no jitter: it is a throttle, not a cache)',
-    invalidation: 'never; it expires, and while it lives a typing ping rings no doorbell',
   },
   {
     builder: 'searchIndexLock',

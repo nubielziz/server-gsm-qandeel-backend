@@ -74,18 +74,6 @@ export const clientPing = defineRoute({
   errors: ['UNAUTHORIZED'],
 });
 
-/** A REST v1 route. */
-export const v1Ping = defineRoute({
-  key: 'GET /v1/t/ping',
-  summary: 'REST v1 sample',
-  tags: ['test'],
-  surface: 'v1',
-  access: 'api-key',
-  permission: 'orders:read',
-  success: { status: 200, schema: ok },
-  errors: ['UNAUTHORIZED'],
-});
-
 /** An incoming webhook route. */
 export const hookPing = defineRoute({
   key: 'POST /webhooks/t/ping',
@@ -123,11 +111,6 @@ export class PipelineTestController {
 
   @Route(clientPing)
   clientPing(): ResultOf<typeof clientPing> {
-    return { ok: true };
-  }
-
-  @Route(v1Ping)
-  v1Ping(): ResultOf<typeof v1Ping> {
     return { ok: true };
   }
 

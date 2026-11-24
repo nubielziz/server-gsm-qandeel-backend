@@ -1,5 +1,5 @@
 // The staff routes and use cases of the support module (stage 17): the inbox and the reply templates; feature 28 adds the console's read
-// mark, typing and attachments. Separate from SupportModule so a test app built without a database can leave it out.
+// mark and attachments. Separate from SupportModule so a test app built without a database can leave it out.
 import { Module } from '@nestjs/common';
 import { StoredFiles } from '../platform';
 import { ReplyTemplateAdminService } from './application/reply-template-admin.service';
@@ -9,7 +9,6 @@ import { TicketConversationService } from './application/ticket-conversation.ser
 import { TicketEvents } from './application/ticket-events';
 import { TicketMailOutbox } from './application/ticket-mail-outbox';
 import { TicketReadService } from './application/ticket-read.service';
-import { TicketTypingService } from './application/ticket-typing.service';
 import { ReplyTemplatesController } from './controllers/reply-templates.controller';
 import { SupportTicketLiveController } from './controllers/support-ticket-live.controller';
 import { SupportTicketsController } from './controllers/support-tickets.controller';
@@ -31,7 +30,6 @@ import { SupportTicketsController } from './controllers/support-tickets.controll
     TicketEvents,
     TicketAttachmentService,
     TicketReadService,
-    TicketTypingService,
   ],
 })
 export class SupportAdminModule {}

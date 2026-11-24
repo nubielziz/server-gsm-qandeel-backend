@@ -1,6 +1,6 @@
 // Route parity (decision 009, docs/contract/TESTS.md § 1): the application defines and serves exactly the routes of the
-// map (and of scripts/map-additions, decision 035) that are not listed in pending.ts, with the access and permission of their
-// row, and every route the frontend calls is built or pending.
+// map (and of scripts/map-additions, decision 035) that are not listed in pending.ts or retired.ts (decision 061), with the access
+// and permission of their row, and every route the frontend calls is built or pending, and none is retired.
 import { describe, expect, it } from 'bun:test';
 import { loadFrontendEndpoints, loadManifest, loadMismatchIds } from './lib/inputs';
 import {
@@ -8,24 +8,22 @@ import {
   accessMismatches,
   difference,
   expectedKeys,
+  retiredProblems,
   rowMismatches,
   staleAccessExceptions,
   turnstileMismatches,
+  unbuiltKeys,
 } from './lib/manifest-parity';
 import { appSnapshot } from './lib/snapshot';
 import { PENDING } from './pending';
+import { RETIRED } from './retired';
 
 const snapshot = await appSnapshot();
 const manifest = loadManifest();
 const pending = new Set(PENDING);
+/** The keys that have no contract on purpose: owed (pending.ts) or given up (retired.ts). */
+const unbuilt = unbuiltKeys(PENDING, RETIRED);
 const manifestKeys = new Set(manifest.map((endpoint) => endpoint.key));
-
-/**
- * Outgoing events the backend adds to the map's three (`order.status_changed`, `wallet.low_balance`, `invoice.paid`), each tied
- * to a B-entry: `service.price_changed` is user rule 9 (MISMATCHES B117 (5)). They are built but not in the manifest, so the
- * event test expects them next to the manifest's keys.
- */
-const BACKEND_EVENTS: readonly string[] = ['EVENT service.price_changed'];
 
 /**
  * The one HTTP route behind the eight Dhru actions (decision 026). The manifest lists the actions (`DHRU <action>`), not the
@@ -35,13 +33,14 @@ const DHRU_TRANSPORT = 'POST /api/index.php';
 
 /**
  * What is built, per kind of manifest key. Dhru actions come from the registry of `defineDhruAction`, supplier calls from the one of
- * `defineSupplierCall`, events from `defineEvent`.
+ * `defineSupplierCall`. No outgoing event is built: the outgoing webhooks to merchants are retired, so the `EVENT` rows of the map are listed
+ * in `retired.ts`.
  */
 const built: Record<string, string[]> = {
   http: snapshot.contracts.map((contract) => contract.key).filter((key) => key !== DHRU_TRANSPORT),
   'dhru-action': [...snapshot.dhruActions],
   'supplier-call': [...snapshot.supplierCalls],
-  event: snapshot.events.map((event) => event.key),
+  event: [],
 };
 
 describe('pending.ts', () => {
@@ -57,24 +56,31 @@ describe('pending.ts', () => {
   });
 });
 
+describe('retired.ts (decision 061)', () => {
+  it('lists only rows of the map that nothing builds, each with its decision and reason', () => {
+    const builtKeys = new Set(Object.values(built).flat());
+    expect(retiredProblems(RETIRED, manifest, builtKeys, pending)).toEqual([]);
+  });
+});
+
 describe('the registry against the manifest', () => {
-  it('HTTP: the contract registry equals the manifest routes minus pending', () => {
-    const expected = expectedKeys(manifest, 'http', pending);
+  it('HTTP: the contract registry equals the manifest routes minus pending and retired', () => {
+    const expected = expectedKeys(manifest, 'http', unbuilt);
     expect(difference('http', built.http ?? [], expected)).toEqual([]);
   });
 
-  it('Dhru actions equal the manifest DHRU keys minus pending', () => {
-    const expected = expectedKeys(manifest, 'dhru-action', pending);
+  it('Dhru actions equal the manifest DHRU keys minus pending and retired', () => {
+    const expected = expectedKeys(manifest, 'dhru-action', unbuilt);
     expect(difference('dhru', built['dhru-action'] ?? [], expected)).toEqual([]);
   });
 
-  it('supplier calls equal the manifest SUPPLIER keys minus pending', () => {
-    const expected = expectedKeys(manifest, 'supplier-call', pending);
+  it('supplier calls equal the manifest SUPPLIER keys minus pending and retired', () => {
+    const expected = expectedKeys(manifest, 'supplier-call', unbuilt);
     expect(difference('supplier', built['supplier-call'] ?? [], expected)).toEqual([]);
   });
 
-  it('outgoing event schemas equal the manifest EVENT keys minus pending, plus the backend additions of a B-entry', () => {
-    const expected = [...expectedKeys(manifest, 'event', pending), ...BACKEND_EVENTS];
+  it('no outgoing event is built: every EVENT key of the manifest is pending or retired', () => {
+    const expected = expectedKeys(manifest, 'event', unbuilt);
     expect(difference('event', built.event ?? [], expected)).toEqual([]);
   });
 
@@ -150,5 +156,11 @@ describe('the frontend against the registry', () => {
     const builtKeys = new Set(built.http);
     const lost = frontend.filter((endpoint) => !builtKeys.has(endpoint.key) && !pending.has(endpoint.key));
     expect(lost.map((endpoint) => endpoint.key)).toEqual([]);
+  });
+
+  it('no route the frontend calls is retired (the console drops a call before the backend retires its route)', () => {
+    expect(frontend.filter((endpoint) => Object.hasOwn(RETIRED, endpoint.key)).map((endpoint) => endpoint.key)).toEqual(
+      [],
+    );
   });
 });

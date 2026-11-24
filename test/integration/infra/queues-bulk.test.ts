@@ -51,7 +51,7 @@ describe('QueuesService.addBulk', () => {
       await queues.addBulk('notification-broadcasts', [
         {
           jobName: 'notification.send',
-          data: { notificationId: 1, channel: 'telegram' },
+          data: { notificationId: 1, channel: 'sms' },
           options: { jobId: 'notification-1' },
         },
       ]),

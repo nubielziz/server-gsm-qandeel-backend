@@ -12,14 +12,14 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, insertRole, insertStaff, openSession } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { MachineTestController, insertApiKey } from '../../support/machine-auth';
+import { insertApiKey } from '../../support/machine-auth';
 import { SecurityTestController } from '../../support/security-routes';
 
 const clock = new TestClock('2026-11-22T10:00:00.000Z');
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp({ controllers: [SecurityTestController, MachineTestController], clock });
+  t = await createTestApp({ controllers: [SecurityTestController], clock });
 });
 afterAll(async () => {
   await t.close();
@@ -133,36 +133,68 @@ describe('cached session views (decision 055)', () => {
   });
 });
 
+/** The Dhru `accountinfo` call of a merchant: true (`SUCCESS`) when the key authenticates, false for the `Authentication Failed` envelope. */
+async function dhruCall(clientId: number, key: string): Promise<boolean> {
+  const { db } = await testDb();
+  const [owner] = await db.select({ username: s.clients.username }).from(s.clients).where(eq(s.clients.id, clientId));
+  const res = await t.app.inject({
+    method: 'POST',
+    url: '/api/index.php',
+    payload: { action: 'accountinfo', username: owner!.username, apiaccesskey: key } as never,
+  });
+  return res.json<{ SUCCESS?: unknown }>().SUCCESS !== undefined;
+}
+
 describe('cached API key views (decision 055)', () => {
   it('an API key view of another key is refused', async () => {
     const { db } = await testDb();
     const clientId = await insertMerchant(db);
     const first = await insertApiKey(t, db, clientId);
-    const second = await insertApiKey(t, db, clientId, {
-      scopes: ['orders:read', 'orders:write', 'dhru', 'account:read'],
-    });
-    const call = (key: string) =>
-      t.app.inject({ method: 'GET', url: '/v1/t/mach/read', headers: { authorization: `Bearer ${key}` } });
-    expect((await call(second.key)).statusCode).toBe(200);
+    const second = await insertApiKey(t, db, clientId, { allowedIps: [] });
+    const call = (key: string) => dhruCall(clientId, key);
+    expect(await call(second.key)).toBe(true);
     // The call's touch stored the view again with the new last use; a lookup finds it.
     await t.app.get(ApiKeyDirectory).findByKey(second.key);
     const secondView = await storedView<Record<string, unknown>>(keys().apiKey(second.keyHash));
     const firstKey = keys().apiKey(first.keyHash);
     await redis().set(firstKey, sealEntry(macKey(), firstKey, secondView, clock.nowMs() + 3_600_000), 'PX', 60_000);
 
-    expect((await call(first.key)).statusCode).toBe(401);
+    expect(await call(first.key)).toBe(false);
     expect(await redis().exists(firstKey)).toBe(0);
     // The next call loads the key's own view again.
-    expect((await call(first.key)).statusCode).toBe(200);
+    expect(await call(first.key)).toBe(true);
+  });
+
+  it('a view cached under the key name of before decision 062 is never read', async () => {
+    const { db } = await testDb();
+    const clientId = await insertMerchant(db);
+    const key = await insertApiKey(t, db, clientId);
+    expect(await dhruCall(clientId, key.key)).toBe(true);
+    // The old API cached the live view of the key under the name without a version.
+    const current = keys().apiKey(key.keyHash);
+    const before = `${keys().keyspace}identity:api-key:${key.keyHash}` as CacheKey;
+    expect(current).not.toBe(before);
+    const liveView = await storedView<Record<string, unknown>>(current);
+    await redis().set(before, sealEntry(macKey(), before, liveView, clock.nowMs() + 3_600_000), 'PX', 60_000);
+    // The migration revokes the key in Postgres only: no invalidation, the old view stays in the cache.
+    await db
+      .update(s.apiKeys)
+      .set({ revokedAt: new Date(clock.nowMs()) })
+      .where(eq(s.apiKeys.id, key.id));
+    await redis().del(current);
+
+    expect(await dhruCall(clientId, key.key)).toBe(false);
+    // The old name still holds the old view; the lookup did not use it.
+    expect(await redis().exists(before)).toBe(1);
   });
 
   it('an API-key lookup of the label text stores a key name that is not the hex of the seal key', async () => {
     const res = await t.app.inject({
-      method: 'GET',
-      url: '/v1/t/mach/read',
-      headers: { authorization: `Bearer ${CACHE_MAC_LABEL}` },
+      method: 'POST',
+      url: '/api/index.php',
+      payload: { action: 'accountinfo', username: 'nobody', apiaccesskey: CACHE_MAC_LABEL } as never,
     });
-    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ ERROR: [{ MESSAGE: 'Authentication Failed' }], apiversion: '6.1' });
     const negative = keys().apiKey(hashOf(CACHE_MAC_LABEL));
     expect(await redis().exists(negative)).toBe(1);
     const sealHex = macKey().toString('hex');

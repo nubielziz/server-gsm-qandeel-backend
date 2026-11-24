@@ -51,7 +51,6 @@ export interface StaffOrderView {
   readonly result: { code: string | null; comment: string | null; fileId: number | null };
   readonly verificationStatus: OrderVerificationStatus | null;
   readonly inputFileId: number | null;
-  readonly clientNote: string | null;
   readonly adminNote: string | null;
   readonly sentAt: string | null;
   readonly completedAt: string | null;
@@ -128,7 +127,6 @@ export function toStaffOrder(
     result: { code: order.resultCode, comment: order.resultComment, fileId: order.resultFileId },
     verificationStatus: order.verificationStatus,
     inputFileId: order.inputFileId,
-    clientNote: order.clientNote,
     adminNote: order.adminNote,
     sentAt: iso(order.sentAt),
     completedAt: iso(order.completedAt),
@@ -179,7 +177,6 @@ export interface MerchantOrderView {
   readonly source: OrderSource;
   readonly result: { code: string | null; comment: string | null; fileId: number | null };
   readonly verificationStatus: OrderVerificationStatus | null;
-  readonly clientNote: string | null;
   readonly inputFileId: number | null;
   readonly canCancel: boolean;
   readonly canVerify: boolean;
@@ -253,7 +250,6 @@ export function toMerchantOrder(row: OrderRow, now: Date): MerchantOrderView {
     source: order.source,
     result: { code: order.resultCode, comment: order.resultComment, fileId: order.resultFileId },
     verificationStatus: order.verificationStatus,
-    clientNote: order.clientNote,
     inputFileId: order.inputFileId,
     canCancel: canCancel(row),
     canVerify: canVerify(row, now),

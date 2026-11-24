@@ -41,7 +41,6 @@ export function toWireCustomer(row: CustomerRow): WireCustomer {
     hasAccount: c.hasAccount,
     createdBy: c.createdBy,
     marketingOptIn: c.marketingOptIn,
-    riskLevel: c.riskLevel,
     status: c.status,
     suspendedAt: iso(c.suspendedAt),
     suspendedReason: c.suspendedReason,

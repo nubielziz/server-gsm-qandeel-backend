@@ -209,25 +209,6 @@ export class DashboardService {
         clients: facts.walletsNegative.clients,
       });
     }
-    if (b2b && facts.merchantsPending.count > 0) {
-      items.push({
-        id: 'merchants_pending',
-        severity: ATTENTION_SEVERITY.merchants_pending,
-        kind: 'merchants_pending',
-        count: facts.merchantsPending.count,
-        names: facts.merchantsPending.names,
-      });
-    }
-    if (b2b && facts.commissions.count > 0) {
-      items.push({
-        id: 'commissions_accrued',
-        severity: ATTENTION_SEVERITY.commissions_accrued,
-        kind: 'commissions_accrued',
-        count: facts.commissions.count,
-        total: facts.commissions.total,
-        agents: facts.commissions.agents,
-      });
-    }
     if (b2c && facts.held.count > 0 && facts.held.oldestAt) {
       items.push({
         id: 'orders_held',
@@ -338,7 +319,6 @@ export class DashboardService {
           ? {
               funnel: {
                 visitorsEstimated: funnel.visitorsEstimated,
-                imeiChecks: funnel.imeiChecks,
                 checkoutsStarted: funnel.paymentStarted,
                 paid: funnel.paid,
                 delivered: funnel.delivered,
@@ -347,7 +327,6 @@ export class DashboardService {
               refundRate: extras.refundRate,
               disputeRate: extras.disputeRate,
               firstReplySeconds: extras.firstReplySeconds,
-              satisfaction: extras.satisfaction,
               heldForReview: facts.held.count,
             }
           : null,
@@ -355,7 +334,6 @@ export class DashboardService {
       navCounts: {
         orders: counts,
         finance: { pendingDeposits: facts.depositsPending.count },
-        merchants: { pendingApproval: facts.merchantsPending.count },
         support: { open: facts.ticketsOpen, late: facts.ticketsLate.count },
         refunds: {
           open: facts.refundsRequested.count + facts.refundsFailed.count + facts.disputesDue.count,

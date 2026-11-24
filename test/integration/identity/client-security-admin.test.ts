@@ -425,7 +425,6 @@ describe('the merchant row', () => {
       address: '',
       taxId: '',
       internalNotes: '',
-      telegramLinked: false,
       suspension: null,
       security: {
         hasPassword: false,
@@ -444,7 +443,7 @@ describe('the merchant row', () => {
     expect((await row(await security(), created.body.id)).body.security.linkSentAt).toBeNull();
   });
 
-  it('counts live sessions and shows 2FA, last sign-in, Telegram and the verification link of a merchant', async () => {
+  it('counts live sessions and shows 2FA, last sign-in and the verification link of a merchant, and no longer says whether an old chat is stored', async () => {
     const merchant = await makeMerchant(t, {
       twofa: true,
       telegramChatId: '555',
@@ -458,7 +457,7 @@ describe('the merchant row', () => {
     const api = await security();
     await api.post(`/admin/clients/${merchant.id}/verify-email/resend`);
     const { body } = await row(api, merchant.id);
-    expect(body.telegramLinked).toBe(true);
+    expect(body).not.toHaveProperty('telegramLinked');
     expect(JSON.stringify(body)).not.toContain('555');
     expect(body.security).toMatchObject({
       hasPassword: true,

@@ -6,7 +6,7 @@ import { schema as s } from '@src/infra/db';
 import { DEFAULT_TEMPLATES } from '@src/modules/platform';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, insertMerchant } from '../../support/auth';
+import { clearIdentityCaches } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, pgErrorOf, resetDb, testDb } from '../../support/db';
 import { seedIdentityTemplates } from '../../support/identity-mail';
@@ -19,7 +19,7 @@ let owner: AdminApi;
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 afterAll(async () => {
@@ -106,9 +106,9 @@ describe('GET /admin/notification-templates', () => {
       DEFAULT_TEMPLATES.filter((x) => x.audience === 'customer').length + 1,
     );
     expect(await total('isActive=false')).toBe(1);
-    expect(await total('event=wallet.low_balance')).toBe(2);
+    expect(await total('event=wallet.low_balance')).toBe(1);
     expect(await total('q=ZEBRA')).toBe(1);
-    expect(await total('q=low_balance')).toBe(2);
+    expect(await total('q=low_balance')).toBe(1);
     const page = await owner.get('/admin/notification-templates?_sort=id&_order=desc&_start=1&_end=3');
     expect(page.body).toHaveLength(2);
     expect(page.total).toBe(DEFAULT_TEMPLATES.length + 1);
@@ -122,9 +122,9 @@ describe('GET /admin/notification-templates', () => {
 
   it('counts the messages sent in the last 30 days per event, channel and kind of recipient', async () => {
     const { db } = await testDb();
-    const merchant = await insertMerchant(db);
     const sent = (days: number) => new Date(clock.nowMs() - days * DAY);
-    const base = { recipientType: 'client' as const, recipientId: merchant, event: 'wallet.low_balance', payload: {} };
+    // The one event that still has both channels is the operations alert (its messages go to the ops mailbox and chat, recipient 0).
+    const base = { recipientType: 'staff' as const, recipientId: 0, event: 'alert.fired', payload: {} };
     await db.insert(s.notifications).values([
       { ...base, channel: 'email', status: 'sent', sentAt: sent(1) },
       { ...base, channel: 'email', status: 'sent', sentAt: sent(29) },
@@ -134,13 +134,13 @@ describe('GET /admin/notification-templates', () => {
       { ...base, channel: 'telegram', status: 'sent', sentAt: sent(2) },
       { ...base, recipientType: 'customer', channel: 'email', status: 'sent', sentAt: sent(2) },
     ]);
-    const rows = (await owner.get('/admin/notification-templates?event=wallet.low_balance')).body;
+    const rows = (await owner.get('/admin/notification-templates?event=alert.fired')).body;
     expect(rows).toHaveLength(2);
     const countOf = (channel: string) =>
       rows.find((row: { channel: string }) => row.channel === channel).sentLast30Days;
     expect(countOf('email')).toBe(2);
     expect(countOf('telegram')).toBe(1);
-    const one = await owner.get(`/admin/notification-templates/${await idOf('wallet.low_balance', 'email')}`);
+    const one = await owner.get(`/admin/notification-templates/${await idOf('alert.fired', 'email', 'staff')}`);
     expect(one.body.sentLast30Days).toBe(2);
   });
 
@@ -189,17 +189,17 @@ describe('POST /admin/notification-templates', () => {
   });
 
   it('keeps a Telegram template without a subject, whatever was sent', async () => {
-    // The merchant's Telegram message of the event ships as a default: take it away, so this one is the first.
+    // The Telegram message of the alert ships as a default: take it away, so this one is the first.
     const { db } = await testDb();
     await db
       .delete(s.notificationTemplates)
-      .where(eq(s.notificationTemplates.id, await idOf('order.completed', 'telegram')));
+      .where(eq(s.notificationTemplates.id, await idOf('alert.fired', 'telegram', 'staff')));
     const res = await owner.post('/admin/notification-templates', {
-      event: 'order.completed',
+      event: 'alert.fired',
       channel: 'telegram',
-      audience: 'merchant',
+      audience: 'staff',
       subject: 'ignored',
-      body: 'Order {{orderId}} is complete.',
+      body: 'ALERT {{ruleName}} on {{subject}}.',
     });
     expect(res.status).toBe(201);
     expect(res.body.subject).toBe('');
@@ -247,6 +247,16 @@ describe('POST /admin/notification-templates', () => {
       subject: '',
     });
     expect(fieldsOf(channel.body)).toEqual(['channel']);
+    // A merchant has email only (decision 062): the events that were on Telegram once are refused on that channel.
+    const merchant = await owner.post('/admin/notification-templates', {
+      event: 'wallet.low_balance',
+      channel: 'telegram',
+      audience: 'merchant',
+      subject: '',
+      body: 'Low balance: {{available}} {{currency}}.',
+    });
+    expect(fieldsOf(merchant.body)).toEqual(['channel']);
+    expect(merchant.body.errors[0].code).toBe('not_for_channel');
   });
 
   it('refuses a second template for the same event, channel and audience with 422 on event, also in parallel', async () => {
@@ -278,13 +288,10 @@ describe('POST /admin/notification-templates', () => {
       await pgErrorOf(db.insert(s.notificationTemplates).values({ ...customerSupportReply, subject: 'Twin' })),
     ).toMatchObject({ code: '23505', constraint: 'notification_templates_event_uq' });
 
-    const race = {
-      ...customerSupportReply,
-      event: 'checkout.abandoned',
-      body: 'Hi {{customerName}}, you left {{device}} behind.',
-    };
+    // The race starts from a clean slate: the two templates made above are removed, then four calls create the same one.
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'support.reply'));
     const answers = await Promise.all(
-      Array.from({ length: 4 }, () => owner.post('/admin/notification-templates', race)),
+      Array.from({ length: 4 }, () => owner.post('/admin/notification-templates', customerSupportReply)),
     );
     expect(answers.filter((answer) => answer.status === 201)).toHaveLength(1);
     expect(answers.filter((answer) => answer.status === 422)).toHaveLength(3);
@@ -340,7 +347,7 @@ describe('PATCH /admin/notification-templates/:id', () => {
   });
 
   it('turns a template off and on with the demo verb phrases, and audits a request that changes nothing too', async () => {
-    const id = await idOf('invoice.paid', 'telegram');
+    const id = await idOf('alert.resolved', 'telegram', 'staff');
     expect((await owner.patch(`/admin/notification-templates/${id}`, { isActive: false })).body.isActive).toBe(false);
     expect((await owner.patch(`/admin/notification-templates/${id}`, { isActive: true })).body.isActive).toBe(true);
     expect((await owner.patch(`/admin/notification-templates/${id}`, { isActive: true })).status).toBe(200);
@@ -354,7 +361,7 @@ describe('PATCH /admin/notification-templates/:id', () => {
   it('fixes event, channel and audience after create: another value is 422 on that field, the same value is fine', async () => {
     const id = await idOf('wallet.low_balance', 'email');
     const res = await owner.patch(`/admin/notification-templates/${id}`, {
-      event: 'deposit.approved',
+      event: 'invoice.paid',
       channel: 'telegram',
       audience: 'staff',
     });
@@ -392,7 +399,7 @@ describe('PATCH /admin/notification-templates/:id', () => {
   });
 
   it('needs the notifications:update permission', async () => {
-    const id = await idOf('invoice.paid', 'telegram');
+    const id = await idOf('invoice.paid', 'email');
     const reader = await adminWith(t, ['notifications:read']);
     expect((await reader.patch(`/admin/notification-templates/${id}`, { isActive: false })).body.code).toBe(
       'FORBIDDEN',
@@ -402,21 +409,22 @@ describe('PATCH /admin/notification-templates/:id', () => {
 
 describe('DELETE /admin/notification-templates/:id', () => {
   it('deletes the template and audits what it held', async () => {
-    const id = await idOf('invoice.paid', 'telegram');
+    const id = await idOf('invoice.paid', 'email');
     const res = await owner.delete(`/admin/notification-templates/${id}`);
     expect(res.status).toBe(204);
     expect((await owner.get(`/admin/notification-templates/${id}`)).status).toBe(404);
     const [entry] = await audit();
     expect(entry).toMatchObject({
       action: 'deleted notification template',
-      entityLabel: 'invoice.paid (telegram, merchant)',
-      before: { event: 'invoice.paid', channel: 'telegram', body: expect.stringContaining('Invoice') },
+      entityLabel: 'invoice.paid (email, merchant)',
+      before: { event: 'invoice.paid', channel: 'email', body: expect.stringContaining('Invoice') },
       after: null,
     });
     expect((await owner.delete(`/admin/notification-templates/${id}`)).body.code).toBe('NOT_FOUND');
+    // Another template that still exists: the reader is refused for want of the permission, not for a missing row.
     const reader = await adminWith(t, ['notifications:read']);
     expect(
-      (await reader.delete(`/admin/notification-templates/${await idOf('invoice.paid', 'email')}`)).body.code,
+      (await reader.delete(`/admin/notification-templates/${await idOf('order.completed', 'email')}`)).body.code,
     ).toBe('FORBIDDEN');
   });
 });
@@ -585,7 +593,7 @@ describe('the emails that carry a one-time link or protect accounts (decision 04
     expect((await owner.post('/admin/notification-templates', { ...staffInvited, isActive: false })).status).toBe(409);
     expect((await owner.post('/admin/notification-templates', staffInvited)).status).toBe(201);
     // An ordinary template switches off and is deleted as before.
-    const invoicePaid = await idOf('invoice.paid', 'telegram');
+    const invoicePaid = await idOf('invoice.paid', 'email');
     expect((await owner.patch(`/admin/notification-templates/${invoicePaid}`, { isActive: false })).status).toBe(200);
     expect((await owner.delete(`/admin/notification-templates/${invoicePaid}`)).status).toBe(204);
     // A security email that was switched off before this rule can only be switched on, with its words changed.
@@ -634,13 +642,13 @@ describe('POST /admin/notification-templates/:id/preview', () => {
   });
 
   it('previews a Telegram template with an empty subject and the bot as the sender', async () => {
-    const id = await idOf('deposit.approved', 'telegram');
+    const id = await idOf('alert.fired', 'telegram', 'staff');
     const res = await owner.post(`/admin/notification-templates/${id}/preview`);
     expect(res.body).toMatchObject({
       subject: '',
-      body: 'Deposit approved: 250.0000 USD was added to your wallet.',
+      body: 'ALERT critical: Supplier timeouts on Supplier Bosphorus Unlock. supplier.timeout_rate is 25% (limit 20%). The limit is above 20% over 3 min.',
       format: 'text',
-      from: '@gsm_test_bot',
+      from: 'Telegram bot',
     });
   });
 

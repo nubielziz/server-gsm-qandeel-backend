@@ -41,7 +41,6 @@ const customerEvent = (
   sample: Object.fromEntries(spec.variables.map((name) => [name, SAMPLE[name as keyof typeof SAMPLE] ?? ''])),
   transactional: true,
   defaultEmail: true,
-  defaultTelegram: false,
 });
 
 /**

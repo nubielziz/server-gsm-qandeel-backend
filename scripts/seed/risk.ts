@@ -1,21 +1,19 @@
-// Seeder of the risk module (feature 18): the demo's risk rules and policies, blocklist, IMEI check log, data requests and the risk
+// Seeder of the risk module (feature 18): the demo's risk rules and policies, blocklist, data requests and the risk
 // assessments of the storefront orders the rules held, mapped as the frontend mocks map them (src/features/risk/mocks/seed.ts and
 // src/features/customers/mocks/store.ts of the frontend): the same ids, kinds, displays, reasons and statuses. Runs after the customers,
 // storefront and b2c seeders (the customers, the TAC catalogue and the storefront orders the assessments point at).
 import { and, inArray, ne, or, sql } from 'drizzle-orm';
 import type { AppConfig } from '../../src/config';
-import { EncryptionService, TokenService } from '../../src/infra/crypto';
+import { TokenService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
 import {
-  IMEI_CHECK_AAD,
   type RiskRuleId,
   RISK_RULE_IDS,
   blockDisplay,
   blockHashInput,
-  imeiHashInput,
   normalizeBlockValue,
 } from '../../src/modules/risk';
-import { type DemoSeed, demoNumericId, demoRows, toDate, toMoney } from './demo-state';
+import { type DemoSeed, demoNumericId, demoRows, toDate } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
 /** A blocklist entry of the demo (`S.risk.block`). */
@@ -33,19 +31,6 @@ interface DemoRule {
   id: string;
   on: boolean;
   value: number | null;
-}
-/** An IMEI check of the demo (`S.imeiChecks`). */
-interface DemoCheck {
-  id: string;
-  ts: number;
-  imei: string;
-  brand: string;
-  model: string;
-  kind: 'blacklist' | 'basic' | 'icloud' | 'sim_lock';
-  status: 'clean' | 'blacklisted' | 'locked' | 'unknown';
-  source: 'pre_order' | 'storefront_free';
-  country: string;
-  cost: number;
 }
 /** A data request of the demo (`S.dsr`). */
 interface DemoRequest {
@@ -77,9 +62,8 @@ interface DemoRiskOrder {
   };
 }
 
-/** The demo's rr1..rr8 become the console's rule ids (the frontend mock's mapping). */
+/** The demo's rr2..rr8 become the console's rule ids (the frontend mock's mapping; its rr1, the blacklisted-IMEI rule, has no rule here). */
 const RULE_IDS: Readonly<Record<string, RiskRuleId>> = {
-  rr1: 'blockBlacklistedImei',
   rr2: 'reviewThreshold',
   rr3: 'blockThreshold',
   rr4: 'maxOrdersPerEmail',
@@ -92,33 +76,15 @@ const RULE_IDS: Readonly<Record<string, RiskRuleId>> = {
 /** The country the demo's masked "Region under sanctions" entry stands for. */
 const SANCTIONED_COUNTRY = 'KP';
 
-/** The oldest checks the demo shows with their IMEI already erased (the mock hashes its six oldest). */
-const ERASED_OLDEST = 6;
-
-/** What a lookup returned, by kind (free-form on the real server). */
-function resultOf(kind: DemoCheck['kind'], status: DemoCheck['status']): Record<string, unknown> {
-  switch (kind) {
-    case 'blacklist':
-      return { blacklist: status === 'blacklisted' ? 'listed' : 'not listed' };
-    case 'icloud':
-      return { findMy: status === 'locked' ? 'on' : 'off' };
-    case 'sim_lock':
-      return { simLock: status === 'locked' ? 'locked' : status === 'clean' ? 'unlocked' : 'unknown' };
-    case 'basic':
-      return { stage: 'basic', checksum: 'valid', tac: 'known' };
-  }
-}
-
 /**
- * Seeds the risk rules, the blocklist, the IMEI check log, the data requests and the assessments of the held and decided orders.
+ * Seeds the risk rules, the blocklist, the data requests and the assessments of the held and decided orders.
  *
  * Why: the console pointed at the real API should show the risk pages it knew from its mock. The rules go under the `riskRules`
- * setting (and `require3ds` is the storefront policy of the same name); the six oldest IMEI checks are erased like the retention job
- * would, so the mask shows. Blocklist values are stored hashed: an IMEI and a domain get their real hash (so they block), the masked
+ * setting (and `require3ds` is the storefront policy of the same name). Blocklist values are stored hashed: an IMEI and a domain get their real hash (so they block), the masked
  * email and card of the demo have no readable value and hash their display text behind a `seed:` prefix, so they never match a real
  * one. The Risk page's queue and recent decisions are the demo's storefront orders whose rules said `review`: the unreviewed ones stay
  * held (dispatch state `held`) and the reviewed ones carry who decided and how. The orders the rules allowed get no row (the page does
- * not list them). Idempotent: rows that exist are skipped. Without `config` (no encryption keys) the IMEI checks are left out.
+ * not list them). Idempotent: rows that exist are skipped. Without `config` (no token pepper) the blocklist is left out.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -130,7 +96,7 @@ export async function seedRisk(db: DbExecutor, demo: DemoSeed, config?: AppConfi
   const demoState = demo.state as { risk?: { rules?: DemoRule[] }; settings?: { policies?: Record<string, unknown> } };
   const staffIds = new Map(demoRows<DemoAdmin>(demo, 'admins').map((admin) => [admin.name, demoNumericId(admin.id)]));
 
-  // Rules and policies: the rules the risk module stores, `require3ds` as the policy, the retention days.
+  // Rules and policies: the rules the risk module stores and `require3ds` as the policy.
   const rules = Object.fromEntries(
     (demoState.risk?.rules ?? []).flatMap((rule) => {
       const id = RULE_IDS[rule.id];
@@ -144,9 +110,6 @@ export async function seedRisk(db: DbExecutor, demo: DemoSeed, config?: AppConfi
     ...(typeof (require3ds ?? policies.require3ds) === 'boolean'
       ? [{ key: 'require3ds', value: require3ds ?? policies.require3ds }]
       : []),
-    ...(typeof policies.imeiRetentionDays === 'number'
-      ? [{ key: 'imeiRetentionDays', value: policies.imeiRetentionDays }]
-      : []),
   ];
   reports.push(await insertRows(db, s.settings, settings));
   await syncIdentity(db, s.settings);
@@ -154,7 +117,6 @@ export async function seedRisk(db: DbExecutor, demo: DemoSeed, config?: AppConfi
   if (config) {
     const tokens = new TokenService(config);
     reports.push(await seedBlocklist(db, demo, tokens, staffIds));
-    reports.push(await seedImeiChecks(db, demo, tokens, new EncryptionService(config)));
   }
   reports.push(await seedDataRequests(db, demo, staffIds));
   reports.push(await seedAssessments(db, demo, staffIds));
@@ -272,51 +234,6 @@ async function seedBlocklist(
   });
   const report = await insertRows(db, s.blocklistEntries, entries);
   await syncIdentity(db, s.blocklistEntries);
-  return report;
-}
-
-async function seedImeiChecks(
-  db: DbExecutor,
-  demo: DemoSeed,
-  tokens: TokenService,
-  encryption: EncryptionService,
-): Promise<SeedReport> {
-  const checks = demoRows<DemoCheck>(demo, 'imeiChecks');
-  const tacs = new Set((await db.select({ tac: s.tacCatalog.tac }).from(s.tacCatalog)).map((row) => row.tac));
-  const oldest = new Set(
-    [...checks]
-      .sort((a, b) => a.ts - b.ts)
-      .slice(0, ERASED_OLDEST)
-      .map((check) => check.id),
-  );
-  const report = await insertRows(
-    db,
-    s.imeiChecks,
-    checks.map((check, index) => {
-      const at = toDate(check.ts)!;
-      const tac = check.imei.slice(0, 8);
-      const erased = oldest.has(check.id);
-      return {
-        id: demoNumericId(check.id),
-        imeiHash: erased ? null : tokens.lookupHash(imeiHashInput(check.imei)),
-        imeiEnc: erased ? null : encryption.encrypt(check.imei, IMEI_CHECK_AAD),
-        tac: tacs.has(tac) ? tac : null,
-        brand: check.brand,
-        model: check.model,
-        country: check.country,
-        checkType: check.kind,
-        status: check.status,
-        result: resultOf(check.kind, check.status),
-        source: check.source,
-        cost: toMoney(check.cost),
-        price: toMoney(0),
-        ip: `203.0.113.${(index % 200) + 20}`,
-        createdAt: at,
-        updatedAt: at,
-      };
-    }),
-  );
-  await syncIdentity(db, s.imeiChecks);
   return report;
 }
 

@@ -11,8 +11,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { insertWalletMerchant } from '../../support/money';
-import { placeOrderHold } from '../../support/commissions';
+import { insertWalletMerchant, placeOrderHold } from '../../support/money';
 import { type OrdersWorld, insertOrderRow, ordersWorld } from '../../support/orders';
 
 setDefaultTimeout(60_000);

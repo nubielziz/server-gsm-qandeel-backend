@@ -2,7 +2,7 @@
   "status": 200,
   "headers": {
     "content-type": "application/json",
-    "x-total-count": "8"
+    "x-total-count": "7"
   },
   "body": [
     {
@@ -50,17 +50,6 @@
       "createdAt": "2026-09-01T12:00:00.000Z"
     },
     {
-      "id": 5,
-      "event": "checkout.abandoned",
-      "channel": "email",
-      "audience": "customer",
-      "subject": "You left something behind",
-      "body": "Hi, you started an unlock for an {{device}} and did not finish paying. Your basket is saved: one tap takes you back to the payment step. No account needed.",
-      "isActive": true,
-      "sentLast30Days": 17,
-      "createdAt": "2026-09-01T12:00:00.000Z"
-    },
-    {
       "id": 6,
       "event": "payment.failed",
       "channel": "email",
@@ -74,9 +63,9 @@
     {
       "id": 7,
       "event": "order.completed",
-      "channel": "telegram",
+      "channel": "email",
       "audience": "merchant",
-      "subject": "",
+      "subject": "Order {{orderId}} is complete",
       "body": "Order {{orderId}} is complete. The result is in your panel.",
       "isActive": true,
       "sentLast30Days": 214,
@@ -84,11 +73,11 @@
     },
     {
       "id": 8,
-      "event": "deposit.approved",
+      "event": "wallet.low_balance",
       "channel": "email",
       "audience": "merchant",
-      "subject": "Your deposit of {{amount}} was approved",
-      "body": "Hi {{customerName}}, your deposit was approved and your wallet is topped up.",
+      "subject": "Your wallet balance is low",
+      "body": "Hi {{customerName}}, your wallet is down to {{amount}}. Add funds to keep your orders running.",
       "isActive": true,
       "sentLast30Days": 38,
       "createdAt": "2026-09-01T12:00:00.000Z"

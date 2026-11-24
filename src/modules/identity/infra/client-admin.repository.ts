@@ -1,4 +1,4 @@
-// Drizzle queries of the merchant management routes on `clients` (identity module): the merchant with its referrer, the list,
+// Drizzle queries of the merchant management routes on `clients` (identity module): the merchant, the list,
 // and the writes of creating, approving, suspending and moving a merchant. Groups, wallets and order figures are other modules'.
 import { eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -6,13 +6,11 @@ import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
 import { type Client, type NewClient, authTokens, clients, staffUsers } from '../db/schema';
 
-const referrers = alias(clients, 'referrers');
 const suspenders = alias(staffUsers, 'suspenders');
 
-/** A merchant with the merchant who referred it, the staff member who suspended it and the age of its newest open links. */
+/** A merchant with the staff member who suspended it and the age of its newest open links. */
 export interface ClientRow {
   readonly client: Client;
-  readonly referredBy: { readonly id: number; readonly name: string } | null;
   /** Who suspended the merchant; null when nobody did, or the staff member is gone. */
   readonly suspendedBy: { readonly id: number; readonly name: string } | null;
   /** `created_at` of the newest open (unused, unexpired) invite or reset link. */
@@ -56,22 +54,17 @@ function selectRows(db: DbExecutor, now: Date) {
   return db
     .select({
       client: clients,
-      referrerId: referrers.id,
-      referrerName: referrers.name,
       suspenderId: suspenders.id,
       suspenderName: suspenders.name,
       linkSentAt: newestOpenLink(['invite', 'reset'], now),
       verificationSentAt: newestOpenLink(['verify_email'], now),
     })
     .from(clients)
-    .leftJoin(referrers, eq(referrers.id, clients.referredById))
     .leftJoin(suspenders, eq(suspenders.id, clients.suspendedBy));
 }
 
 function toRow(row: {
   client: Client;
-  referrerId: number | null;
-  referrerName: string | null;
   suspenderId: number | null;
   suspenderName: string | null;
   linkSentAt: Date | null;
@@ -79,7 +72,6 @@ function toRow(row: {
 }): ClientRow {
   return {
     client: row.client,
-    referredBy: row.referrerId === null ? null : { id: row.referrerId, name: row.referrerName ?? '' },
     suspendedBy: row.suspenderId === null ? null : { id: row.suspenderId, name: row.suspenderName ?? '' },
     linkSentAt: row.linkSentAt,
     verificationSentAt: row.verificationSentAt,
@@ -120,7 +112,7 @@ export async function listClientRows(
  * @param db the database or a transaction
  * @param id the merchant id
  * @param now the current time (the injected clock)
- * @returns the merchant with its referrer, suspender and open-link ages, or `undefined`
+ * @returns the merchant with its suspender and open-link ages, or `undefined`
  */
 export async function findClientRow(db: DbExecutor, id: number, now: Date): Promise<ClientRow | undefined> {
   const [row] = await selectRows(db, now).where(eq(clients.id, id)).limit(1);

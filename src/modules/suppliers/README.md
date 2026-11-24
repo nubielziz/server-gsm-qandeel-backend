@@ -8,7 +8,7 @@ Decisions that shape this module: 023 outbound HTTP, 026 Dhru compatibility, 042
 
 ## Status
 
-Built (feature 6, suppliers; quick add added by feature 26): the 13 routes of this module plus the three order routes that move an order to a supplier (`dispatch`, `fetch`, `change-supplier`, owned by the orders map but built here, because they read the supplier tables; they move the order through the orders module's `OrderSupplierMoves`), the Dhru supplier client behind a driver interface, the dispatch, poll and sync jobs, the demo seed and the scenarios `success`, `reject` and `timeout`. Not here: the supplier report (11), the system health supplier view (9, it reuses `supplierHealth`), Dhru and REST v1 for merchants (7a), the outgoing order events (7b). `GET /admin/reports/suppliers` is stage 11.
+Built (feature 6, suppliers; quick add added by feature 26): the 13 routes of this module plus the three order routes that move an order to a supplier (`dispatch`, `fetch`, `change-supplier`, owned by the orders map but built here, because they read the supplier tables; they move the order through the orders module's `OrderSupplierMoves`), the Dhru supplier client behind a driver interface, the dispatch, poll and sync jobs, the demo seed and the scenarios `success`, `reject` and `timeout`. Not here: the supplier report (11), the system health supplier view (9, it reuses `supplierHealth`), Dhru for merchants (7a), the outgoing order events (7b). `GET /admin/reports/suppliers` is stage 11.
 
 Structure: `contracts/` (zod contracts: the routes, and the four supplier calls), `controllers/` (thin), `application/` (use cases and the supplier client), `domain/` (pure rules, unit tested), `infra/` (Drizzle queries), `jobs/` (worker processors and schedules), `db/schema.ts`.
 Three Nest modules: `SuppliersAdminModule` (routes and use cases, needs the database; listed in `NEEDS_DATABASE_AND_CACHE` of `test/support/app.ts`), `SupplierEngineModule` (client, sync, dispatch, poll, the quick add runner and its outbox, and `DispatchRequests` and `DispatchSweep` of decision 044: no routes, loaded by both processes) and `SupplierJobsModule` (processors and schedules, the sweep's processor and schedule included, worker only).
@@ -21,7 +21,7 @@ Every call returns a record that the caller writes to `supplier_api_logs` (the r
 
 ### Supplier answers (decision 051)
 
-Everything a supplier says is untrusted text and is cleaned and bounded where the driver reads it, so no sink (call log, order events, results, webhooks, mails) has to remember to do it:
+Everything a supplier says is untrusted text and is cleaned and bounded where the driver reads it, so no sink (call log, order events, results, mails) has to remember to do it:
 
 - **Size.** The driver reads at most `SUPPLIER_ANSWER_LIMITS`: 256 KiB for `accountinfo`, `placeimeiorder` and `getimeiorder`, 16 MiB for `imeiservicelist`. A larger answer is an unusable answer (failure kind `invalid`, outcome `error`, status 0, "The supplier's answer is larger than 256 KiB; it was not read.").
 - **Cleaning** (`domain/supplier-text.ts`, `cleanSupplierJson`). Every string of the parsed answer, keys included, loses U+0000-U+0008, U+000B, U+000C, U+000E-U+001F, U+007F-U+009F and lone surrogates and is cut to 20,000 characters; values nested deeper than 32 levels become `null`; a key `__proto__` is dropped. Format characters such as right-to-left marks stay (supplier text in Arabic is data, decision 039).
@@ -51,7 +51,7 @@ Exports the modules (`SuppliersModule`, `SuppliersAdminModule`, `SupplierEngineM
 
 ## Owned tables
 
-Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `supplier_import_runs` is an `additionalTables` entry, feature 26); other modules call its public services. Schema: `db/schema.ts`. Deviations: the orders module names `supplier_api_logs` in one SQL text (`order-supplier.repository.ts`, the poll candidates) and reads `suppliers` for names; the money module reads `suppliers` for ledger owner names; `foreign-reads.repository.ts` here reads `services`, `service_fields` and `service_categories` (the catalog exports no service or category reader; the category staff pick for an import: decision 063) and `service_checks` and `imei_checks` are read with plain selects (health and risk export no reader yet). Writes to the catalog go through the catalog's `ServiceImporter` and `recomputeEffectiveCost`.
+Only this module reads and writes these 5 tables (`scripts/module-map.mjs`; `supplier_import_runs` is an `additionalTables` entry, feature 26); other modules call its public services. Schema: `db/schema.ts`. Deviations: the orders module names `supplier_api_logs` in one SQL text (`order-supplier.repository.ts`, the poll candidates) and reads `suppliers` for names; the money module reads `suppliers` for ledger owner names; `foreign-reads.repository.ts` here reads `services`, `service_fields` and `service_categories` (the catalog exports no service or category reader; the category staff pick for an import: decision 063) and `service_checks` is read with a plain select (health exports no reader yet). Writes to the catalog go through the catalog's `ServiceImporter` and `recomputeEffectiveCost`.
 
 | Table | What it holds |
 |---|---|

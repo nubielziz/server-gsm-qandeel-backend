@@ -1,4 +1,4 @@
-// How long an Idempotency-Key is remembered (REST v1, decision 026; MISMATCHES B166): the one number the purge job and the contracts share.
+// How long an Idempotency-Key is remembered (the merchant portal, decision 026; MISMATCHES B166): the one number the purge job and the contracts share.
 
 /**
  * Days a merchant's `Idempotency-Key` is remembered.

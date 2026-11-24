@@ -8,9 +8,6 @@
     "require3ds": true,
     "withdrawalWaiver": true,
     "autoRefundFailed": true,
-    "imeiPrecheck": true,
-    "imeiRetentionDays": 180,
-    "abandonedMinutes": 60,
     "refundHoursBeforeDispatch": 1,
     "adminAllowlistOnly": true,
     "wallet.customer.enabled": true

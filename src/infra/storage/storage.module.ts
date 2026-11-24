@@ -7,7 +7,7 @@ import { StorageService } from './storage.service';
 /**
  * Provides {@link StorageService} to every module and registers the storage health indicator.
  *
- * Why: file uploads, KYC documents, receipts and result files go through one S3 client per process (decision 004), and
+ * Why: file uploads, receipts and result files go through one S3 client per process (decision 004), and
  * `GET /health` reports the store (decision 015).
  */
 @Global()

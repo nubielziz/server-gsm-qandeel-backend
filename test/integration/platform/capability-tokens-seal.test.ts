@@ -15,7 +15,7 @@ import { TICKET_TOKENS_SEAL_EVENT, TICKET_TOKENS_SEAL_JOB, TicketTokenSealModule
 import { type TestApp, createTestApp } from '../../support/app';
 import { tokenHashOf } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { insertAbandoned } from '../../support/growth';
+import { insertCheckout } from '../../support/growth';
 import { eventually } from '../../support/infra';
 import { insertOrderRow } from '../../support/orders';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
@@ -52,7 +52,7 @@ describe('the seal passes of the link tokens', () => {
   it('the migration asks each owning module for its seal pass', async () => {
     const { db } = await testDb();
     const world = await storefrontWorld(db);
-    const checkout = await insertAbandoned(t, db, {
+    const checkout = await insertCheckout(t, db, {
       serviceId: world.icloud.serviceId,
       createdAt: new Date('2026-11-01T10:00:00Z'),
     });

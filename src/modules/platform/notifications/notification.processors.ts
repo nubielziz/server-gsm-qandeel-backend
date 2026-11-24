@@ -10,8 +10,8 @@ import type { OutboxJobData } from '../outbox/outbox.types';
 /**
  * Plans the notifications of an outbox event.
  *
- * Why: `order.status_changed`, `wallet.low_balance` and `service.price_changed` are routed here (job `notification.plan`), next to the
- * merchant webhooks; `EventNotifier` decides who is told.
+ * Why: `order.status_changed`, `wallet.low_balance` and `service.price_changed` are routed here (job `notification.plan`);
+ * `EventNotifier` decides who is told.
  */
 @Injectable()
 @QueueProcessor('notifications', NOTIFICATION_PLAN_JOB)

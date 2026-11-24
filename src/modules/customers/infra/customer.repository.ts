@@ -10,7 +10,7 @@ const { currencies, orders } = foreignTables;
 
 /** The sort fields of the customer list. */
 export type CustomerSortField =
-  'name' | 'country' | 'hasAccount' | 'ordersCount' | 'totalSpent' | 'lastOrderAt' | 'riskLevel' | 'status';
+  'name' | 'country' | 'hasAccount' | 'ordersCount' | 'totalSpent' | 'lastOrderAt' | 'status';
 
 /** A customer with the currency's id and the figures the list adds. */
 export interface CustomerRow {
@@ -24,8 +24,6 @@ export interface CustomerRow {
 // Scalar subqueries: Postgres evaluates them only for the rows of the page unless the sort needs them.
 const ordersCountSql = sql<number>`(select count(*)::int from ${orders} where ${orders.customerId} = ${customers.id})`;
 const lastOrderAtSql = sql<Date | null>`(select max(${orders.createdAt}) from ${orders} where ${orders.customerId} = ${customers.id})`;
-// low < medium < high, as the console sorts the risk column.
-const riskRankSql = sql`case ${customers.riskLevel} when 'low' then 1 when 'medium' then 2 else 3 end`;
 
 const COLUMNS: ListColumns = {
   name: customers.name,
@@ -33,14 +31,10 @@ const COLUMNS: ListColumns = {
   country: customers.country,
   hasAccount: customers.hasAccount,
   status: customers.status,
-  riskLevel: riskRankSql,
   totalSpent: customers.totalSpent,
   ordersCount: ordersCountSql,
   lastOrderAt: lastOrderAtSql,
 };
-
-// The filter columns are plain columns: the rank above is for sorting only.
-const FILTER_COLUMNS: ListColumns = { ...COLUMNS, riskLevel: customers.riskLevel };
 
 function selectRows(db: DbExecutor) {
   return db
@@ -65,8 +59,8 @@ export async function listCustomerRows(
   db: DbExecutor,
   query: ParsedListQuery<CustomerSortField>,
 ): Promise<{ rows: CustomerRow[]; total: number }> {
-  const where = listWhere(query, FILTER_COLUMNS);
-  // The sort needs the order aggregates and the risk rank, so it maps its own fields.
+  const where = listWhere(query, COLUMNS);
+  // The sort needs the order aggregates, so it maps its own fields.
   const [rows, [count]] = await Promise.all([
     selectRows(db)
       .where(where)

@@ -158,7 +158,7 @@ export const approvePayment = defineRoute({
   description:
     'Approves a top-up and credits the wallet in one transaction: the money event `deposit` (Dr bank for a manual gateway or ' +
     'gateway_clearing for an automatic one, Cr client_wallet net, Cr fee_income fee, idempotency key `deposit:payment:<id>`), the ' +
-    'linked invoice becomes paid, `invoice.paid` is queued for the merchant webhook, and the decision is audited. ' +
+    'linked invoice becomes paid, `invoice.paid` is queued for the merchant notification, and the decision is audited. ' +
     `${REVIEW_RULES} The answer's \`client.walletBalance\` already includes the credit. ` +
     '`403 FORBIDDEN` when the payment pays a manual invoice the caller issued, unless the caller is an Owner (decision 049). ' +
     'A top-up that a merchant or customer made through a manual method whose credit takes what the caller approved of such top-ups ' +

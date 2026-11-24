@@ -1,4 +1,4 @@
-// Platform module (map domain G): settings, audit logs, files, notifications, webhooks and the outbox.
+// Platform module (map domain G): settings, audit logs, files, notifications and the outbox.
 // Today it serves the API documentation (src/modules/platform/docs), writes the outbox (src/modules/platform/outbox) and
 // the audit log (src/modules/platform/audit), reads and writes settings for other modules (settings/), runs maintenance mode
 // (maintenance/) and serves the audit log and settings routes (platform-admin.module.ts); the other parts arrive with their
@@ -16,8 +16,6 @@ import { OutboxModule } from './outbox/outbox.module';
 import { PdfModule } from './pdf/pdf.module';
 import { PlatformAdminModule } from './platform-admin.module';
 import { SettingsModule } from './settings/settings.module';
-import { MerchantWebhooksModule } from './webhooks/merchant-webhooks.module';
-import { WebhookEventsModule } from './webhooks/webhook-events.module';
 
 /**
  * Nest module for Platform (map domain G).
@@ -27,9 +25,7 @@ import { WebhookEventsModule } from './webhooks/webhook-events.module';
  * transactional outbox: `OutboxModule` (global) lets every module write events, `OutboxRelayModule` (worker only)
  * relays them to the queues. `AuditModule` (global) gives every use case `AuditService.record` and checks that staff
  * writes are audited; `SettingsModule` (global) is the read side of the settings table (`SettingsReader` cached,
- * `SettingsService` uncached); `MaintenanceModule` puts maintenance mode into the request pipeline. The merchant webhooks (stage
- * 7) are `WebhookEventsModule` (the event contracts and outbox routes), `MerchantWebhooksModule` (`/client/webhooks*` and
- * `/admin/webhook-deliveries*`) and `WebhookDeliveryModule` (the sender, the fan-out and the queue processor, also loaded by the worker).
+ * `SettingsService` uncached); `MaintenanceModule` puts maintenance mode into the request pipeline.
  */
 @Module({
   imports: [
@@ -38,8 +34,6 @@ import { WebhookEventsModule } from './webhooks/webhook-events.module';
     SettingsModule,
     MaintenanceModule,
     PlatformAdminModule,
-    WebhookEventsModule,
-    MerchantWebhooksModule,
     PdfModule,
     NotificationEventsModule,
     NotificationDeliveryModule,

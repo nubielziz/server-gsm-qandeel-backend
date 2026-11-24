@@ -50,7 +50,6 @@ import { PaymentWebhookController } from './controllers/payment-webhook.controll
 import { PaymentsController } from './controllers/payments.controller';
 import { RefundsController } from './controllers/refunds.controller';
 import { TaxRatesController } from './controllers/tax-rates.controller';
-import { V1AccountController } from './controllers/v1-account.controller';
 import { WalletController } from './controllers/wallet.controller';
 import { FX_PROVIDER_FACTORY } from './infra/fx-provider.factory';
 import { MoneyOutboxModule } from './money-outbox.module';
@@ -65,7 +64,7 @@ import { StorefrontMailsModule } from './storefront-mails.module';
 /**
  * Provides `/admin/clients/:id/wallet|statement|wallet/adjust|credit-limit`, `/admin/ledger/*`, `/admin/currencies`,
  * `/admin/tax-rates`, the reports `/admin/reports/profit|wallet-exposure|suppliers|top-clients|client-statement/:clientId`, the merchant's own `/client/wallet`
- * routes, the account reads of REST v1 and Dhru (`/v1/account`, `/v1/transactions`, `accountinfo`) and the billing of stage 8:
+ * routes, the account read of Dhru (`accountinfo`) and the billing of stage 8:
  * `/admin/payment-gateways`, `/admin/invoices`, `/admin/payments`, the portal's `/client/payment-methods` and `/client/invoices`,
  * and the incoming `POST /webhooks/payments/:gateway` with the gateway signature adapters behind it, and the storefront money of
  * stage 16: `/admin/refunds`, `/admin/disputes`, `/admin/reports/vat|payments` and `POST /webhooks/disputes/:gateway`, and the close of a
@@ -86,7 +85,6 @@ import { StorefrontMailsModule } from './storefront-mails.module';
     CurrenciesController,
     TaxRatesController,
     FxController,
-    V1AccountController,
     GatewaysController,
     InvoicesController,
     PaymentsController,

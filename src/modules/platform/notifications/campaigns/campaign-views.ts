@@ -1,7 +1,7 @@
 // Wire shapes of the notification campaigns (feature 23, plan section 10.1): a list row, the detail with live delivery numbers, and a
 // recipient with a masked address. Pure mapping; the services read the data.
 import type { NotificationCampaign, NotificationCampaignPurpose, NotificationCampaignStatus } from '../../db/schema';
-import { maskEmail, maskTelegram } from '../masking';
+import { maskEmail } from '../masking';
 import type { AudienceSpec } from './audience-spec';
 import { type CampaignContent, type CampaignLink, statsOf } from './campaign-rules';
 import type { ChannelDelivery, RecipientRow } from './campaign.repository';
@@ -27,7 +27,7 @@ export interface WireCampaign {
   readonly cancelledAt: string | null;
   readonly expectedRecipients: number | null;
   readonly recipients: number;
-  readonly planned: { inApp: number; email: number; telegram: number };
+  readonly planned: { inApp: number; email: number };
   readonly error: string | null;
   readonly createdBy: StaffRef;
   readonly createdAt: string;
@@ -39,11 +39,10 @@ export interface WireCampaignDetail extends WireCampaign {
   readonly audience: AudienceSpec;
   readonly content: CampaignContent;
   readonly link: CampaignLink | null;
-  readonly skipped: { optedOut: number; noTelegram: number; noAccount: number };
+  readonly skipped: { optedOut: number; noAccount: number };
   readonly delivery: {
     inApp: { delivered: number; read: number };
     email: ChannelDelivery;
-    telegram: ChannelDelivery;
   };
   readonly updatedBy: StaffRef | null;
   readonly cancelledBy: StaffRef | null;
@@ -89,11 +88,14 @@ export function linkOf(row: NotificationCampaign): CampaignLink | null {
 /**
  * The channels of a stored campaign.
  *
+ * Why: the column's CHECK still allows the value of the retired Telegram channel, so a campaign stored with it reads without it: the
+ * value is "not sent" (the fan-out, the preview and the wire never see it).
+ *
  * @param row the campaign
- * @returns the channels (the CHECK keeps them in the list)
+ * @returns the channels in use (`in_app`, `email`), in the stored order
  */
 export function channelsOf(row: NotificationCampaign): CampaignChannel[] {
-  return row.channels as CampaignChannel[];
+  return row.channels.filter((channel): channel is CampaignChannel => channel === 'in_app' || channel === 'email');
 }
 
 const refOf = (id: number | null, names: ReadonlyMap<number, string>): StaffRef | null =>
@@ -167,7 +169,7 @@ export function recipientView(row: RecipientRow, channel: CampaignChannel): Wire
     channel,
     recipientType: row.recipientType,
     recipientId: row.recipientId,
-    recipient: channel === 'telegram' ? maskTelegram(row.telegramChatId) : maskEmail(row.email ?? ''),
+    recipient: maskEmail(row.email ?? ''),
     status: row.status as WireRecipient['status'],
     error: row.error,
     attempts: row.attempts,

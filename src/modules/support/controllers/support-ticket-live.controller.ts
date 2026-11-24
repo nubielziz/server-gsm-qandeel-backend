@@ -1,28 +1,24 @@
 // HTTP controller of the console's chat routes on a ticket (feature 28, routes beyond the map: scripts/map-additions/28.mjs): the staff
-// side's read mark, typing, the attachment upload and its download. Thin: the rules live in the support services.
+// side's read mark, the attachment upload and its download. Thin: the rules live in the support services.
 import { Body, Controller, Param, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
 import { CurrentStaff, type StaffPrincipal } from '../../identity';
 import { TicketAttachmentService } from '../application/ticket-attachment.service';
 import { TicketReadService } from '../application/ticket-read.service';
-import { TicketTypingService } from '../application/ticket-typing.service';
 import {
   markSupportTicketRead,
   openSupportTicketFile,
-  supportTicketTyping,
   uploadSupportTicketFile,
 } from '../contracts/ticket-live.contracts';
 
 /**
  * The console's chat routes of a ticket.
  *
- * Why: feature 28 (rules 2 to 4 and 8): the thread marks the requester's messages seen, a colleague's draft shows as "<name> is
- * replying…" (and a reply's as "Support is typing…" to the requester), and staff attach files to replies and notes and open every file
- * of the ticket.
+ * Why: feature 28 (rules 3, 4 and 8): the thread marks the requester's messages seen, and staff attach files to replies and notes and
+ * open every file of the ticket.
  *
  * @route POST /admin/support-tickets/:id/read
- * @route POST /admin/support-tickets/:id/typing
  * @route POST /admin/support-tickets/:id/files
  * @route GET /admin/support-tickets/:id/files/:fileId
  */
@@ -30,7 +26,6 @@ import {
 export class SupportTicketLiveController {
   constructor(
     private readonly reads: TicketReadService,
-    private readonly typing: TicketTypingService,
     private readonly attachments: TicketAttachmentService,
   ) {}
 
@@ -48,25 +43,6 @@ export class SupportTicketLiveController {
     @Body() body: BodyOf<typeof markSupportTicketRead>,
   ): Promise<void> {
     await this.reads.mark(params.id, 'staff', body.upToMessageId);
-  }
-
-  /**
-   * Records that the staff member is typing a reply or a note.
-   *
-   * @param params the ticket id
-   * @param body `reply` or `note`
-   * @param staff the signed-in staff member
-   * @returns nothing (204)
-   * @throws {AppError} `NOT_FOUND` for an unknown ticket
-   * @route POST /admin/support-tickets/:id/typing
-   */
-  @Route(supportTicketTyping)
-  async typingPing(
-    @Param() params: ParamsOf<typeof supportTicketTyping>,
-    @Body() body: BodyOf<typeof supportTicketTyping>,
-    @CurrentStaff() staff: StaffPrincipal,
-  ): Promise<void> {
-    await this.typing.ping(params.id, { by: 'staff', staffId: staff.staffId, mode: body.mode });
   }
 
   /**

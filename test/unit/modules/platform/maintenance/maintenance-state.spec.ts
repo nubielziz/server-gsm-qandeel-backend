@@ -82,21 +82,11 @@ describe('scopesCovering', () => {
     expect(covers('GET', '/store/v1/checkout-sessions')).toEqual(['store', 'all']);
   });
 
-  it('puts order placement over REST v1 and Dhru in the api_orders scope, and nothing else of the API', () => {
-    expect(covers('POST', '/v1/orders')).toEqual(['api_orders', 'all']);
-    expect(covers('POST', '/v1/orders/bulk')).toEqual(['api_orders', 'all']);
-    // The upload of a File service's input is part of placing the order (B157).
-    expect(covers('POST', '/v1/files')).toEqual(['api_orders', 'all']);
+  it('puts order placement over Dhru in the api_orders scope, and nothing else of the API', () => {
     expect(covers('POST', '/api/index.php', 'placeimeiorder')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/api/index.php', 'placeimeiorderbulk')).toEqual(['api_orders', 'all']);
     expect(covers('POST', '/api/index.php', 'placefileorder')).toEqual(['api_orders', 'all']);
     for (const kept of [
-      ['GET', '/v1/orders'],
-      ['GET', '/v1/orders/:id'],
-      ['POST', '/v1/orders/:id/cancel'],
-      ['POST', '/v1/orders/:id/verify'],
-      ['GET', '/v1/services'],
-      ['GET', '/v1/files/:id'],
       ['POST', '/api/index.php', 'getimeiorder'],
       ['POST', '/api/index.php', 'getimeiorderbulk'],
       ['POST', '/api/index.php', 'accountinfo'],
@@ -127,7 +117,7 @@ describe('scopesCovering', () => {
   });
 
   it('is case-insensitive about the method', () => {
-    expect(covers('post', '/v1/orders')).toEqual(['api_orders', 'all']);
+    expect(covers('post', '/api/index.php', 'placeimeiorder')).toEqual(['api_orders', 'all']);
   });
 });
 
@@ -155,30 +145,36 @@ describe('maintenanceRefusal', () => {
     const checkout = on('checkout');
     expect(maintenanceRefusal(checkout, request('POST', '/store/v1/checkout-sessions'), NOW)).toBeDefined();
     expect(maintenanceRefusal(checkout, request('GET', '/store/v1/services'), NOW)).toBeUndefined();
-    expect(maintenanceRefusal(checkout, request('POST', '/v1/orders'), NOW)).toBeUndefined();
+    expect(maintenanceRefusal(checkout, request('POST', '/api/index.php', 'placeimeiorder'), NOW)).toBeUndefined();
     expect(maintenanceRefusal(on('store'), request('GET', '/store/v1/services'), NOW)).toBeDefined();
-    expect(maintenanceRefusal(on('store'), request('POST', '/v1/orders'), NOW)).toBeUndefined();
-    expect(maintenanceRefusal(on('api_orders'), request('POST', '/v1/orders'), NOW)).toBeDefined();
+    expect(maintenanceRefusal(on('store'), request('POST', '/api/index.php', 'placeimeiorder'), NOW)).toBeUndefined();
+    expect(
+      maintenanceRefusal(on('api_orders'), request('POST', '/api/index.php', 'placeimeiorder'), NOW),
+    ).toBeDefined();
     expect(maintenanceRefusal(on('api_orders'), request('GET', '/store/v1/services'), NOW)).toBeUndefined();
     expect(maintenanceRefusal(on('all'), request('POST', '/api/index.php', 'placeimeiorder'), NOW)).toBeDefined();
     expect(maintenanceRefusal(on('all'), request('GET', '/admin/staff'), NOW)).toBeUndefined();
   });
 
   it('refuses nothing while maintenance is off', () => {
-    expect(maintenanceRefusal(MAINTENANCE_OFF, request('POST', '/v1/orders'), NOW)).toBeUndefined();
-    expect(maintenanceRefusal(on('all', { enabled: false }), request('POST', '/v1/orders'), NOW)).toBeUndefined();
+    expect(
+      maintenanceRefusal(MAINTENANCE_OFF, request('POST', '/api/index.php', 'placeimeiorder'), NOW),
+    ).toBeUndefined();
+    expect(
+      maintenanceRefusal(on('all', { enabled: false }), request('POST', '/api/index.php', 'placeimeiorder'), NOW),
+    ).toBeUndefined();
   });
 
   it('uses a default sentence when staff wrote no message', () => {
     for (const message of [null, '', '   ']) {
-      expect(maintenanceRefusal(on('all', { message }), request('POST', '/v1/orders'), NOW)?.detail).toBe(
+      expect(maintenanceRefusal(on('all', { message }), request('GET', '/store/v1/services'), NOW)?.detail).toBe(
         DEFAULT_MAINTENANCE_MESSAGE,
       );
     }
   });
 
   it('sends expectedEndAt as null when none is known', () => {
-    expect(maintenanceRefusal(on('all'), request('POST', '/v1/orders'), NOW)?.extensions).toEqual({
+    expect(maintenanceRefusal(on('all'), request('GET', '/store/v1/services'), NOW)?.extensions).toEqual({
       expectedEndAt: null,
     });
   });

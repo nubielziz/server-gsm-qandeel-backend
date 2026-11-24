@@ -11,8 +11,8 @@ import type { RequestMeta } from './request-meta';
  * IPv4 address or the IPv6 /64 (`RequestMeta.limitKey`, decision 052). Like the staff limiter, keys that hold an email are keyed hashes
  * (`HMAC-SHA256(TOKEN_PEPPER, ...)`) so Redis shows no address, and the code, setup and password steps are limited per account, not per
  * session, so a new login does not give a thief fresh guesses; the code step uses `sign-in-code`, which is never counted in process
- * memory. The `merchant-sign-in` prefix keeps these counters apart from the staff ones. Registration and "forgot password" are counted
- * whether or not the email exists, so a 429 reveals nothing.
+ * memory. The `merchant-sign-in` prefix keeps these counters apart from the staff ones. "Forgot password" is counted whether or not
+ * the email exists, so a 429 reveals nothing.
  *
  * Side effects: counter keys `gsm:{env}:ratelimit:sign-in:{hash}`, `...:sign-in-code:{hash}` and `...:token:{address}` on the cache Redis.
  */
@@ -42,16 +42,6 @@ export class MerchantSignInLimiter {
    */
   async resetLogin(email: string, meta: Pick<RequestMeta, 'limitKey'>): Promise<void> {
     await this.limits.reset('sign-in', this.key('login', email, meta.limitKey));
-  }
-
-  /**
-   * Counts a registration from an address.
-   *
-   * @param limitKey the address key of the request (`RequestMeta.limitKey`)
-   * @throws {AppError} `RATE_LIMITED` (429, with `Retry-After`) from the sixth registration in 15 minutes
-   */
-  async enforceRegister(limitKey: string): Promise<void> {
-    await this.limits.enforce('sign-in', this.key('register', limitKey));
   }
 
   /**

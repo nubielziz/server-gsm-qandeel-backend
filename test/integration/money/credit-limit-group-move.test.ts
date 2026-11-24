@@ -72,13 +72,13 @@ describe('a group move and a credit-limit raise of one merchant (user rule 2)', 
     expect(raise.body.errors[0].field).toBe('creditLimit');
   });
 
-  it('waits for a change that holds the merchant row (a group move, the nightly promotion) and then judges the new group', async () => {
+  it('waits for a change that holds the merchant row (a group move) and then judges the new group', async () => {
     const { pool } = await testDb();
     const { merchant, strictId } = await merchantAndStrictGroup(1);
     const setter = await adminWith(t, ['wallet:credit_limit']);
     const other = await pool.connect();
     try {
-      // What a group move and the promotion job do: lock the merchant row, then write its new group.
+      // What a group move does: lock the merchant row, then write its new group.
       await other.query('begin');
       await other.query('select id from clients where id = $1 for update', [merchant.id]);
       await other.query('update clients set group_id = $1 where id = $2', [strictId, merchant.id]);

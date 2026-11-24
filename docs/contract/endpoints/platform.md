@@ -26,9 +26,9 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 | `PATCH /admin/settings` | admin | staff-permission `settings:update` | 2 | `updateSettings` |
 | `GET /admin/files/:id` | admin | staff-permission `files:read` | 5 | `orderFileUrl` |
 | `GET /admin/dashboard` | admin | staff-permission `dashboard:read` | 9 | `getDashboard` |
-| `GET /admin/webhook-deliveries` | admin | staff-permission `webhooks:read` | 7 | `listWebhookDeliveries` |
-| `GET /admin/webhook-deliveries/:id` | admin | staff-permission `webhooks:read` | 7 | `getWebhookDelivery` |
-| `POST /admin/webhook-deliveries/:id/retry` | admin | staff-permission `webhooks:update` | 7 | `retryWebhookDelivery` |
+| `GET /admin/webhook-deliveries` | admin | staff-permission `webhooks:read` | 7 |  |
+| `GET /admin/webhook-deliveries/:id` | admin | staff-permission `webhooks:read` | 7 |  |
+| `POST /admin/webhook-deliveries/:id/retry` | admin | staff-permission `webhooks:update` | 7 |  |
 | `GET /admin/notification-templates` | admin | staff-permission `notifications:*` | 12 | `listTemplates` |
 | `GET /admin/notification-templates/:id` | admin | staff-permission `notifications:*` | 12 | `getTemplate` |
 | `POST /admin/notification-templates` | admin | staff-permission `notifications:*` | 12 | `createTemplate` |
@@ -70,11 +70,13 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## POST /v1/files
 
 - **Map**: Upload a file for File services; returns a fileId. (رفع ملف لخدمات File ويرجع fileId) · api-key `orders:write` · stage 7 · tables files
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /v1/files/:id
 
 - **Map**: Download the result file through a signed URL. (تحميل ملف النتيجة برابط موقّع) · api-key `orders:read` · stage 7 · tables files
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /client/files
@@ -90,31 +92,37 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /client/webhooks
 
 - **Map**: Webhook endpoints. (عناوين الـ webhooks) · merchant-session · stage 7 · tables webhook_endpoints
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /client/webhooks
 
 - **Map**: New webhook endpoint with its events; returns the signing secret. (عنوان جديد مع الأحداث، ويرجع secret) · merchant-session · stage 7 · tables webhook_endpoints
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## PATCH /client/webhooks/:id
 
 - **Map**: Edit or pause an endpoint. (تعديل أو إيقاف) · merchant-session · stage 7 · tables webhook_endpoints
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## DELETE /client/webhooks/:id
 
 - **Map**: Delete an endpoint. (حذف عنوان) · merchant-session · stage 7 · tables webhook_endpoints
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /client/webhooks/:id/test
 
 - **Map**: Send a test event. (إرسال حدث تجريبي) · merchant-session · stage 7 · tables webhook_deliveries
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/webhooks/:id/deliveries
 
 - **Map**: Delivery log and attempts. (سجل الإرسال والمحاولات) · merchant-session · stage 7 · tables webhook_deliveries
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/notification-preferences
@@ -130,13 +138,14 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## POST /client/telegram/link
 
 - **Map**: One-time link to connect Telegram. (رابط ربط Telegram لمرة وحدة) · merchant-session · stage 12 · tables clients
+- **Retired** (decision 062): Telegram for merchants was retired: email and the inbox stay. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /admin/audit-logs
 
 - **Map**: Audit log. (سجل التدقيق) · staff-permission `audit:read` · stage 2 · tables audit_logs
 - **Frontend**: `listAuditLogs` (src/features/audit/api/auditLogs.ts:15) · params `query?: ListQuery` · returns `ListResult<AuditLog>` · success 200 · assumed contract
-- **Query**: `_start`/`_end` in pages of 25 (0-25, 25-50, …; Refine useInfiniteList, view.ts:14, useAuditLogs.ts:16-23) and always `_sort=createdAt&_order=desc`. Optional plain filters: `actorType=staff|client|customer|system` with `actorId=<id>` (a person) or `actorType=system`; `entityType=<singular name>` from the fixed list order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting (entities.ts:7-27; a type from the URL outside the list is passed through) plus the backend additions role, client_group, category, currency, payment_gateway, invoice, api_key, webhook_endpoint, kyc_submission, notification_template, alert_rule, alert, incident, tax_rate, help_article, content_page, ledger_transaction; every value comes from the exported AUDIT_ENTITY_TYPES of the platform audit module, and AuditService.record throws a RangeError (programming error, rolls back) on any other value; table to word: clients→merchant, staff_users→staff, checkout_sessions→checkout, legal_documents→legal, blocklist entries→blocklist, settings→setting, commission_plans→plan, withdrawal_requests→withdrawal, support_tickets→ticket; the list is enforced in code with no DB CHECK, so the append-only table never needs a migration for it, and a feature that needs a new type adds it to the list in its own commit; `q` = case-insensitive contains over actor_name, action and entity_label (mock routes.ts:13); `from=YYYY-MM-DD` and `to=YYYY-MM-DD`, both days included (mock: whole UTC days, routes.ts:17-27) — NOT createdAt_gte/lte (view.ts:41-51).
+- **Query**: `_start`/`_end` in pages of 25 (0-25, 25-50, …; Refine useInfiniteList, view.ts:14, useAuditLogs.ts:16-23) and always `_sort=createdAt&_order=desc`. Optional plain filters: `actorType=staff|client|customer|system` with `actorId=<id>` (a person) or `actorType=system`; `entityType=<singular name>` from the fixed list order, merchant, service, supplier, payment, withdrawal, plan, session, customer, staff, ip_rule, checkout, refund, dispute, ticket, listing, blocklist, legal, setting (entities.ts:7-27; a type from the URL outside the list is passed through) plus the backend additions role, client_group, category, currency, payment_gateway, invoice, api_key, webhook_endpoint, notification_template, alert_rule, alert, incident, tax_rate, help_article, content_page, ledger_transaction; every value comes from the exported AUDIT_ENTITY_TYPES of the platform audit module, and AuditService.record throws a RangeError (programming error, rolls back) on any other value; table to word: clients→merchant, staff_users→staff, checkout_sessions→checkout, legal_documents→legal, blocklist entries→blocklist, settings→setting, commission_plans→plan, withdrawal_requests→withdrawal, support_tickets→ticket; the list is enforced in code with no DB CHECK, so the append-only table never needs a migration for it, and a feature that needs a new type adds it to the list in its own commit; `q` = case-insensitive contains over actor_name, action and entity_label (mock routes.ts:13); `from=YYYY-MM-DD` and `to=YYYY-MM-DD`, both days included (mock: whole UTC days, routes.ts:17-27) — NOT createdAt_gte/lte (view.ts:41-51).
 - **Response**: Array newest first + exact x-total-count for the filter: it drives "Show more", the toolbar count and "of N remaining" (Refine computes hasNextPage from total/pageSize). Rows: `actorName` and `entityLabel` joined or snapshotted at write time so deleted records and accounts still read well (without them the screen falls back to "Staff #3" / "Order #4812"); `actorName` = the audit_logs.actor_name snapshot written by AuditService.record from the request actor (RequestActor.name: staff and merchant names are filled by the session guards, the API-key and Dhru guards set {type:'client', id, name}); null when the snapshot is '' (system), where the console shows "System"; a renamed or deleted account still reads correctly and q can search it in SQL; `actorType` staff|client|customer|system (audit_logs.actor_type CHECK from AUDIT_ACTOR_TYPES; system: actorId null and ip null, shown as "automatic"); `action` = a readable verb phrase that follows the person's name ("suspended admin", "blocked IP", "changed price of"; demo logAudit verbs) — a code like order.completed is rendered as "order completed"; `entityId` a number, 0 when no numeric record exists (then no link, link.ts:34); `before`/`after` = JSON snapshots (objects of the changed fields; whole row for create/delete), both null for a plain action such as a sign-in; they may be omitted from list rows, and the screen then calls GET /:id on expand (AuditDetails.tsx:22-23). Secrets masked. The client dedupes rows by id across pages (pages.ts), so a growing log is tolerated.
 - **Errors**: 401 UNAUTHORIZED (no full session); 403 FORBIDDEN (caller lacks audit:read); 500 INTERNAL_ERROR (server failure)
 - **B10**: Map: CRUD row with ops LS and no filters or bodies (M188-M191). The console adds the from/to day filters and the joined actorName/entityLabel; audit_logs has no label column in the map (proposal: add an entity_label snapshot column; actorName is likewise an actor_name snapshot column written by AuditService from the request actor, not a join, so renamed or deleted accounts still read correctly: lead resolution identity-platform-7). → Proposal accepted.
@@ -174,7 +183,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 
 - **Map**: Download a file through a signed link. (تحميل ملف برابط موقّع) · staff-permission `files:read` · stage 5 · tables files
 - **Frontend**: `orderFileUrl` (src/features/orders/api/orders.ts:63) · params `fileId: number` · returns `string` · success 302
-- **Request**: Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`); merchants' KYC document links use the same route (M47).
+- **Request**: Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`).
 - **Response**: 302 with Location = short-lived presigned object-storage URL (Content-Disposition attachment; filename from files.filename). Any error is rendered raw in the new tab, so keep `detail` readable. Proposal: audit-log the access (files hold personal data).
 - **Errors**: 401 UNAUTHORIZED (no or expired staff session); 403 FORBIDDEN (staff lacks files:read); 404 NOT_FOUND (file id unknown)
 - **Mock**: src/mocks/handlers/orders.ts (Reads, export columns, paste matching and per-item apply; rows from src/mocks/orders.ts (demo orders from src/mocks/seed/demo-state.json mapped to status/queue, ids without prefix, pricing snapshots). The file route returns text in the mock; the real one redirects.)
@@ -182,7 +191,7 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /admin/dashboard
 
 - **Map**: KPIs for today: sales, profit, queues and supplier balances; scope=all|b2b|b2c separates merchants from the storefront. (مؤشرات اليوم: المبيعات والربح والطوابير وأرصدة الموردين؛ scope=all|b2b|b2c لفصل التجار عن المتجر) · staff-permission `dashboard:read` · stage 9 · tables orders, suppliers, payments
-- **Frontend**: `getDashboard` (src/features/dashboard/api/dashboard.ts:14) · params `params: DashboardParams` · returns `Dashboard` · success 200 · assumed contract
+- **Frontend**: `getDashboard` (src/features/dashboard/api/dashboard.ts:26) · params `params: DashboardParams` · returns `Dashboard` · success 200 · assumed contract
 - **Query**: scope=all|b2b|b2c and days=1|7|14, both always sent (api/dashboard.ts:14-16); the sidebar sends scope=all&days=7 every 60 s from every page for staff with dashboard:read (hooks/useDashboardNavCounts.ts:16-20, useDashboard.ts:8,14). The mock defaults to all/7 when a parameter is absent.
 - **Response**: One object, every section from one snapshot. generatedAt = server time. stats.current = orders created in the rolling window [now - days x 24 h, now] within scope: revenue = sum total_price (excl. VAT) of completed ones, profit = revenue - total_cost (before gateway fees), orders = count of all statuses, successRate = completed/(completed+rejected) x 100 (JSON number, null when none), medianTurnaroundSeconds = median of completed_at - created_at (null when none); previous = the same-length window before, null when it has no order (mocks/stats.ts:5-37). attention = every item, ranked critical > high > medium > low (stable), facts only, opaque string ids (rules in businessRules). queues = 4 rows imei, server, remote, file: open (pending|processing), review (orders whose derived queue, decision 025, is manual (status pending + dispatch_state manual), needs_attention (dispatch_state needs_attention), review (dispatch_state held, the risk hold) or verification (status completed + verification_status requested); dispatch_state 'operator' (accepted by staff) has queue null, is not review, counts in open and can be past SLA), pastSla (open and older than the service SLA, review orders included: the age-only B92 predicate shared with GET /admin/orders?pastSla=true, orders_past_sla, navCounts.orders.pastSla and GET /admin/system/orders-health; a service with a null or 0 SLA is never past SLA), oldestCreatedAt or null. suppliers = every supplier incl. disabled: enabled (status active), health up|degraded|down|unknown mapped from the supplier's latest service_checks row (component 'supplier', supplier_id): ok→up, degraded→degraded, down→down, and unknown or no check yet→unknown (an idle supplier: never shown as healthy, never as a fault; the console shows "No recent calls", B180; a contract test covers the mappings), successRate1h (0-100) or null, p50Ms or null, balance (USD: balance × suppliers.credit_rate), lowBalance (judged in the supplier's own units: balance < low_balance_alert; runwayDays compares USD against USD). ordersByType.daily = 30 UTC days oldest first {date 'YYYY-MM-DD', imei, server, remote, file} of orders created; monthly = 12 UTC months {month 'YYYY-MM', ...} oldest first, null only for a scope with no history. revenueByChannel (scope=all only, else null) = 30 UTC days of completed revenue excl. VAT by completed_at {date, b2b, b2c} plus totals last7Days and last30Days. storefront (null for b2b) = always the last 30 days: funnel {visitorsEstimated, imeiChecks, checkoutsStarted (paid + abandoned sessions), paid, delivered}, averageOrder (paid incl. VAT) or null, refundRate (% of money taken refunded) or null, disputeRate (% disputes per order) or null, firstReplySeconds (median) or null, satisfaction {average out of 5, ratings} or null, heldForReview (now). topCustomers (null for b2b) = top 5 storefront customers by spend incl. VAT over non-rejected orders created in the window {id, name, country, orders, spend}. navCounts = whole console whatever the scope: orders {open, pastSla}, finance {pendingDeposits}, merchants {pendingApproval}, support {open, late}, refunds {open = requested + failed refunds + needs_response disputes, disputesDueSoon = needs_response due within 3 days}, risk {held}. Units: money 4-dp strings, rates JSON numbers 0-100, durations named in the field. Money: every money field is in USD (base currency) as a 4-dp string. orders amounts (unit/total price, cost, tax_amount) are already stored in USD (orders.currency is only the buyer's display currency) and need no conversion. payments, refunds and disputes amounts are in their own currency: a row tied to a checkout session (B2C) converts at the rate locked there (amount ÷ checkout_sessions.fx_rate, units per 1 USD, as the ledger does, B111); a row with no locked rate (for example a pending B2B deposit in EUR) converts at the current currencies.rate_to_base; a USD row is taken as is. Convert per row in SQL numeric and round the sum once, half-up to 4 dp (decision 011). Attention: supplier_down and supplier_degraded fire only from a real down or degraded check result, never from unknown or no check, so a new supplier does not raise a false high alert. The storefront funnel counts come from the customers module function storefrontFunnel(30), the same function as GET /admin/reports/funnel (b2c-10).
 - **Errors**: 422 VALIDATION_FAILED (scope or days outside the choices (errors[].field = scope or days)); 403 FORBIDDEN (caller lacks dashboard:read)
@@ -192,7 +201,8 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /admin/webhook-deliveries
 
 - **Map**: Log of merchant webhooks. (سجل webhooks التجار) · staff-permission `webhooks:read` · stage 7 · tables webhook_deliveries
-- **Frontend**: `listWebhookDeliveries` (src/features/settings/api/webhooks.ts:21) · params `query?: ListQuery` · returns `ListResult<WebhookDelivery>` · success 200 · assumed contract
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: Pages of 25 (_start/_end), _sort=createdAt&_order=desc, filter status=delivered|pending|failed, q = case-insensitive contains over client.name, event and endpoint.url (hooks/useLogs.ts:34-44, WebhooksTab.tsx:77-79, mock logRoutes.ts:44-51). event and clientId filters are documented but not sent.
 - **Response**: JSON array + x-total-count. Row = webhook_deliveries columns plus joins endpoint {id, url} and client {id, name} (never null: deliveries are deleted with their endpoint, ON DELETE CASCADE, and merchants are never hard-deleted); responseCode = response_code with null sent as 0 (no answer; the same in GET /:id and the retry response); attempt integer; nextRetryAt null when finished. event values are the map's outgoing event names (order.status_changed, wallet.low_balance, invoice.paid); the mock's order.completed values are illustrative.
 - **Errors**: 403 FORBIDDEN (caller lacks webhooks:read)
@@ -202,7 +212,8 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /admin/webhook-deliveries/:id
 
 - **Map**: Log of merchant webhooks. (سجل webhooks التجار) · staff-permission `webhooks:read` · stage 7 · tables webhook_deliveries
-- **Frontend**: `getWebhookDelivery` (src/features/settings/api/webhooks.ts:33) · params `id: number` · returns `WebhookDeliveryDetail` · success 200 · assumed contract
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: :id numeric delivery id.
 - **Response**: The row plus payload (the signed request body that was sent), responseBody (the merchant's answer body, truncated, null when none) and error (network error such as a timeout, null otherwise).
 - **Errors**: 404 NOT_FOUND (no delivery with that id); 403 FORBIDDEN (caller lacks webhooks:read)
@@ -212,7 +223,8 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## POST /admin/webhook-deliveries/:id/retry
 
 - **Map**: Resend the delivery. (إعادة إرسال) · staff-permission `webhooks:update` · stage 7 · tables webhook_deliveries
-- **Frontend**: `retryWebhookDelivery` (src/features/settings/api/webhooks.ts:43) · params `id: number` · returns `WebhookDelivery` · success 200 · assumed contract
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: No body and no Content-Type (api/webhooks.ts:43-45).
 - **Response**: The delivery after a new attempt is queued now: status pending, attempt + 1, nextRetryAt = now (mock logRoutes.ts:34-40). The worker sends it signed with the endpoint secret and updates status and responseCode; the drawer re-reads it.
 - **Errors**: 409 DELIVERY_SUCCEEDED (the delivery already has status delivered); 429 RATE_LIMITED (proposed: repeated manual retries of one delivery within a minute (Retry-After)); 404 NOT_FOUND (no delivery with that id); 403 FORBIDDEN (caller lacks webhooks:update)
@@ -296,16 +308,17 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## POST /webhooks/telegram/:secret
 
 - **Map**: Telegram bot updates: account linking and commands. (تحديثات بوتات Telegram: ربط الحساب والأوامر) · url-secret · stage 12 · tables clients, notifications
+- **Retired** (decision 062): Telegram for merchants was retired: email and the inbox stay. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /openapi.json
 
-- **Map**: REST v1 specification (OpenAPI). (مواصفات REST v1) · public · stage 7 · tables -
+- **Map**: Dhru API specification (OpenAPI). (مواصفات REST v1) · public · stage 7 · tables -
 - **Frontend**: none.
 
 ## GET /docs
 
-- **Map**: REST v1 documentation page. (صفحة توثيق REST v1) · public · stage 7 · tables -
+- **Map**: Dhru API documentation page. (صفحة توثيق REST v1) · public · stage 7 · tables -
 - **Frontend**: none.
 
 ## POST /store/v1/files
@@ -321,62 +334,62 @@ Frontend features covering this module: `audit`, `settings`, `orders`, `dashboar
 ## GET /admin/notification-campaigns
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): List notification campaigns. (حملات الإشعارات: القائمة) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns · success 200
-- **Frontend**: `listCampaigns` (src/features/notifications/api/campaigns.ts:42) · params `query?: ListQuery` · returns `ListResult<Campaign>`
+- **Frontend**: `listCampaigns` (src/features/notifications/api/campaigns.ts:54) · params `query?: ListQuery` · returns `ListResult<Campaign>`
 
 ## POST /admin/notification-campaigns
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Create a campaign as a draft. (إنشاء حملة إشعارات كمسودة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 201
-- **Frontend**: `createCampaign` (src/features/notifications/api/campaigns.ts:59) · params `body: CampaignInput` · returns `CampaignDetail`
+- **Frontend**: `createCampaign` (src/features/notifications/api/campaigns.ts:73) · params `body: CampaignInput` · returns `CampaignDetail`
 
 ## GET /admin/notification-campaigns/:id
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): One campaign with its delivery numbers. (حملة إشعارات مع أرقام التسليم) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns, notifications, notification_inbox · success 200
-- **Frontend**: `getCampaign` (src/features/notifications/api/campaigns.ts:50) · params `id: number` · returns `CampaignDetail`
+- **Frontend**: `getCampaign` (src/features/notifications/api/campaigns.ts:65) · params `id: number` · returns `CampaignDetail`
 
 ## PATCH /admin/notification-campaigns/:id
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Edit a draft or scheduled campaign. (تعديل حملة مسودة أو مجدولة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
-- **Frontend**: `updateCampaign` (src/features/notifications/api/campaigns.ts:67) · params `id: number`, `body: Partial<CampaignInput>` · returns `CampaignDetail`
+- **Frontend**: `updateCampaign` (src/features/notifications/api/campaigns.ts:81) · params `id: number`, `body: Partial<CampaignInput>` · returns `CampaignDetail`
 
 ## DELETE /admin/notification-campaigns/:id
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Delete a draft campaign. (حذف حملة مسودة) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 204
-- **Frontend**: `deleteCampaign` (src/features/notifications/api/campaigns.ts:75) · params `id: number` · returns `void`
+- **Frontend**: `deleteCampaign` (src/features/notifications/api/campaigns.ts:89) · params `id: number` · returns `void`
 
 ## POST /admin/notification-campaigns/audience-preview
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Count the people an audience reaches. (عدد من تصلهم الحملة) · staff-permission `broadcasts:read` · stage 23 · tables staff_users, clients, customers, consent_records · success 200
-- **Frontend**: `previewAudience` (src/features/notifications/api/campaigns.ts:84) · params `body: AudiencePreviewBody` · returns `AudiencePreview`
+- **Frontend**: `previewAudience` (src/features/notifications/api/campaigns.ts:98) · params `body: AudiencePreviewBody` · returns `AudiencePreview`
 
 ## POST /admin/notification-campaigns/:id/preview
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Render a campaign for one language and channel. (معاينة الحملة بلغة وقناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_campaigns · success 200
-- **Frontend**: `previewCampaign` (src/features/notifications/api/campaigns.ts:92) · params `id: number`, `body: PreviewCampaignBody` · returns `CampaignPreview`
+- **Frontend**: `previewCampaign` (src/features/notifications/api/campaigns.ts:106) · params `id: number`, `body: PreviewCampaignBody` · returns `CampaignPreview`
 
 ## POST /admin/notification-campaigns/:id/test
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a test to yourself. (إرسال تجربة للموظف نفسه) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, notification_inbox, notifications, outbox_events, audit_logs · success 202
-- **Frontend**: `sendCampaignTest` (src/features/notifications/api/campaigns.ts:101) · params `id: number`, `body: TestCampaignBody` · returns `TestCampaignResult`
+- **Frontend**: `sendCampaignTest` (src/features/notifications/api/campaigns.ts:115) · params `id: number`, `body: TestCampaignBody` · returns `TestCampaignResult`
 
 ## POST /admin/notification-campaigns/:id/send
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Send a campaign now. (إرسال حملة الآن) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, outbox_events, audit_logs · success 202
-- **Frontend**: `sendCampaign` (src/features/notifications/api/campaigns.ts:115) · params `id: number`, `body: SendCampaignBody` · returns `CampaignDetail`
+- **Frontend**: `sendCampaign` (src/features/notifications/api/campaigns.ts:129) · params `id: number`, `body: SendCampaignBody` · returns `CampaignDetail`
 
 ## POST /admin/notification-campaigns/:id/schedule
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Schedule or reschedule a campaign. (جدولة حملة أو تغيير موعدها) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
-- **Frontend**: `scheduleCampaign` (src/features/notifications/api/campaigns.ts:124) · params `id: number`, `body: ScheduleCampaignBody` · returns `CampaignDetail`
+- **Frontend**: `scheduleCampaign` (src/features/notifications/api/campaigns.ts:138) · params `id: number`, `body: ScheduleCampaignBody` · returns `CampaignDetail`
 
 ## POST /admin/notification-campaigns/:id/cancel
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): Cancel a scheduled or running campaign. (إلغاء حملة مجدولة أو جارية) · staff-permission `broadcasts:send` · stage 23 · tables notification_campaigns, audit_logs · success 200
-- **Frontend**: `cancelCampaign` (src/features/notifications/api/campaigns.ts:137) · params `id: number` · returns `CampaignDetail`
+- **Frontend**: `cancelCampaign` (src/features/notifications/api/campaigns.ts:151) · params `id: number` · returns `CampaignDetail`
 
 ## GET /admin/notification-campaigns/:id/recipients
 
 - **Map addition** (B-TBD notification-center-routes, `scripts/map-additions/23.mjs`): The recipients of a campaign on one channel. (مستلمو الحملة على قناة) · staff-permission `broadcasts:read` · stage 23 · tables notification_inbox, notifications · success 200
-- **Frontend**: `listCampaignRecipients` (src/features/notifications/api/campaigns.ts:146) · params `id: number`, `__1: RecipientsQuery` · returns `ListResult<CampaignRecipient>`
+- **Frontend**: `listCampaignRecipients` (src/features/notifications/api/campaigns.ts:160) · params `id: number`, `__1: RecipientsQuery` · returns `ListResult<CampaignRecipient>`
 
 ## GET /admin/inbox
 

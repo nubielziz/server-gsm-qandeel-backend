@@ -9,12 +9,10 @@ import { TicketRowSchema } from '../contracts/tickets.contracts';
 
 /** A message was written; the only ticket event with an `id` (`t<message id>`), so a reconnect replays it. */
 export const TICKET_MESSAGE_CREATED_EVENT = 'ticket.message.created';
-/** The ticket changed (status, assignee, priority, rating, a new message, a new ticket). */
+/** The ticket changed (status, assignee, priority, a new message, a new ticket). */
 export const TICKET_UPDATED_EVENT = 'ticket.updated';
 /** A side's seen mark moved. */
 export const TICKET_READ_EVENT = 'ticket.read';
-/** Someone is typing (never stored, never replayed). */
-export const TICKET_TYPING_EVENT = 'ticket.typing';
 
 const zLive = z.boolean().describe('False for a message replayed after a reconnect (no sound, no alert).');
 
@@ -38,15 +36,6 @@ export const zStaffTicketRead = z.object({
   by: z.enum(['requester', 'staff']),
   upToMessageId: zId,
   at: zIsoDateTime,
-});
-
-/** The staff view of `ticket.typing`: the requester, or a colleague writing a reply or a note (the console skips its own). */
-export const zStaffTicketTyping = z.object({
-  ticketId: zId,
-  by: z.enum(['requester', 'staff']),
-  staffId: zId.nullable(),
-  staffName: z.string().nullable(),
-  mode: z.enum(['reply', 'note']).nullable(),
 });
 
 /**
@@ -78,8 +67,6 @@ export const zRequesterTicketUpdated = z.strictObject({
   status: WireStatusSchema,
   updatedAt: zIsoDateTime,
   resolvedAt: zIsoDateTime.nullable(),
-  canRate: z.boolean(),
-  csatScore: z.number().int().min(1).max(5).nullable(),
   hasUnread: z.boolean(),
 });
 
@@ -90,6 +77,3 @@ export const zRequesterTicketRead = z.strictObject({
   upToMessageId: zId,
   at: zIsoDateTime,
 });
-
-/** The requester view of `ticket.typing`: "Support is typing…", only while a staff member types a reply. */
-export const zRequesterTicketTyping = z.strictObject(requesterTicket);

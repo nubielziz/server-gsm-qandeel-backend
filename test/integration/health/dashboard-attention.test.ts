@@ -120,7 +120,7 @@ describe('money at the checkout locked rate (identity-platform-8)', () => {
   it('converts refunds per row at the locked rate and rounds the sum once', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
-    const { world, customer, order, payment } = await lockedRateWorld(db);
+    const { customer, order, payment } = await lockedRateWorld(db);
     const refund = {
       paymentId: payment.id,
       orderId: order.id,
@@ -140,9 +140,8 @@ describe('money at the checkout locked rate (identity-platform-8)', () => {
       total: '1.0000',
       severity: 'medium',
     });
-    // A refund with no checkout (a merchant's) converts at the current rate: 1.0000 / 2 = 0.5000 more.
+    // A refund with no checkout (made by staff, with no payment) converts at the current rate: 1.0000 / 2 = 0.5000 more.
     await db.insert(s.refunds).values({
-      clientId: world.merchant.id,
       amount: '1.0000',
       currency: 'EUR',
       method: 'manual',
@@ -380,7 +379,7 @@ describe('the storefront attention items', () => {
 });
 
 describe('the merchant attention items', () => {
-  it('raises accrued commissions as low, counting only accrued ones and the distinct merchants', async () => {
+  it('raises nothing for commissions that are still stored (the feature is retired, decision 062)', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
@@ -388,47 +387,27 @@ describe('the merchant attention items', () => {
       .insert(s.commissionPlans)
       .values({ name: 'Referral 10%', kind: 'referral', basis: 'revenue', period: 'monthly', percent: '10.0000' })
       .returning({ id: s.commissionPlans.id });
-    const order = (clientId: number) =>
-      insertOrderRow(db, {
-        serviceId: world.auto.serviceId,
-        clientId,
-        status: 'completed',
-        dispatchState: 'done',
-        createdAt: ago(DAY),
-        completedAt: ago(DAY),
-      });
-    const accrual = async (
-      clientId: number,
-      amount: string,
-      status: 'accrued' | 'approved' | 'reversed',
-      over: Partial<typeof s.commissionAccruals.$inferInsert> = {},
-    ) =>
-      db.insert(s.commissionAccruals).values({
-        planId: plan!.id,
-        beneficiaryId: clientId,
-        orderId: (await order(clientId)).id,
-        period: '2026-11',
-        basisAmount: '100.0000',
-        percent: '10.0000',
-        amount,
-        status,
-        ...over,
-      });
-    await accrual(world.merchant.id, '10.0000', 'accrued');
-    await accrual(world.merchant.id, '2.5000', 'accrued');
-    await accrual(world.other.id, '1.0000', 'accrued');
-    await accrual(world.other.id, '99.0000', 'approved', { approvedAt: ago(HOUR) });
-    await accrual(world.other.id, '77.0000', 'reversed');
-    const body = await dashboard(api);
-    expect(item(body, 'commissions_accrued')).toEqual({
-      id: 'commissions_accrued',
-      severity: 'low',
-      kind: 'commissions_accrued',
-      count: 3,
-      total: '13.5000',
-      agents: 2,
+    const order = await insertOrderRow(db, {
+      serviceId: world.auto.serviceId,
+      clientId: world.merchant.id,
+      status: 'completed',
+      dispatchState: 'done',
+      createdAt: ago(DAY),
+      completedAt: ago(DAY),
     });
-    expect(item(await dashboard(api, 'scope=b2c&days=7'), 'commissions_accrued')).toBeUndefined();
+    await db.insert(s.commissionAccruals).values({
+      planId: plan!.id,
+      beneficiaryId: world.merchant.id,
+      orderId: order.id,
+      period: '2026-11',
+      basisAmount: '100.0000',
+      percent: '10.0000',
+      amount: '10.0000',
+      status: 'accrued',
+    });
+    const body = await dashboard(api);
+    expect(kinds(body)).not.toContain('commissions_accrued');
+    expect(JSON.stringify(body)).not.toMatch(/commission/i);
   });
 
   it('gives each kind its rule severity and ranks critical first', async () => {
@@ -437,8 +416,7 @@ describe('the merchant attention items', () => {
     const world = await ordersWorld(db);
     // The world's supplier starts with an empty balance; fund it so that it raises nothing here.
     await db.update(s.suppliers).set({ balance: '5000.0000' }).where(eq(s.suppliers.id, world.auto.supplierId));
-    // A merchant waiting for approval, a deposit waiting, a service priced below its floor, one past-SLA order and one stale rate.
-    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.other.id));
+    // A deposit waiting, a service priced below its floor, one past-SLA order and one stale rate.
     await db
       .update(s.services)
       .set({ basePrice: '5.0000', effectiveCost: '13.5000' })
@@ -476,15 +454,8 @@ describe('the merchant attention items', () => {
       services_below_floor: 'high',
       deposits_pending: 'medium',
       fx_stale: 'medium',
-      merchants_pending: 'low',
     });
-    expect(kinds(body)).toEqual([
-      'orders_past_sla',
-      'services_below_floor',
-      'deposits_pending',
-      'fx_stale',
-      'merchants_pending',
-    ]);
+    expect(kinds(body)).toEqual(['orders_past_sla', 'services_below_floor', 'deposits_pending', 'fx_stale']);
   });
 });
 

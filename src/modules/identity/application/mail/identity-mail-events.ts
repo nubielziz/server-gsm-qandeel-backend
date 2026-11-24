@@ -2,16 +2,10 @@
 // two staff link mails. Registered with the platform's registry at boot, in the API and in the worker (IdentityMailEventsModule).
 import type { NotificationEventDefinition } from '../../../platform';
 
-/** A merchant's account was approved (`pending` to `active`). */
-export const MERCHANT_APPROVED_EVENT = 'merchant.approved';
-/** A merchant's account was suspended (also how staff decline an application). */
+/** A merchant's account was suspended. */
 export const MERCHANT_SUSPENDED_EVENT = 'merchant.suspended';
 /** A suspended merchant's account was reactivated. */
 export const MERCHANT_REACTIVATED_EVENT = 'merchant.reactivated';
-/** Staff approved the merchant's identity verification (KYC). */
-export const MERCHANT_KYC_APPROVED_EVENT = 'merchant.kyc_approved';
-/** Staff rejected the merchant's identity verification (KYC); the mail carries the staff note. */
-export const MERCHANT_KYC_REJECTED_EVENT = 'merchant.kyc_rejected';
 /** Staff changed something security-relevant on the merchant's account (temporary password, 2FA reset, API key, email change). */
 export const MERCHANT_SECURITY_NOTICE_EVENT = 'merchant.security_notice';
 /** The merchant created an API key in the portal: the notice says so, and does not name the support team. */
@@ -24,7 +18,6 @@ export const STAFF_PASSWORD_RESET_EVENT = 'staff.password_reset';
 const MERCHANT_SAMPLE = {
   merchantName: 'Zain Mobile Hub',
   portalUrl: 'https://shop.example.com/merchant',
-  reason: 'The photo of the document is not readable.',
   change: 'a temporary password was set for your account',
 } as const;
 
@@ -48,29 +41,21 @@ const event = (
     // Always sent, never in a merchant's preferences, delivered to a suspended recipient (the suspension mail needs it).
     transactional: true,
     defaultEmail: true,
-    defaultTelegram: false,
   };
 };
 
 /**
  * The events the identity module registers for feature 20.
  *
- * Why: LEAD-DECISIONS section 6 (merchant management): transactional emails on approval, KYC decision, suspension and
+ * Why: LEAD-DECISIONS section 6 (merchant management): transactional emails on suspension and
  * reactivation, a security notice after staff actions on the account, and the staff invitation and reset links.
  * Transactional means: sent whatever the recipient's preferences say, and also to a suspended recipient.
  */
 export const IDENTITY_MAIL_EVENTS: readonly NotificationEventDefinition[] = [
   event('merchant', {
-    key: MERCHANT_APPROVED_EVENT,
-    label: 'Account approved',
-    description: 'Staff approved a pending merchant: tells them they can sign in and trade.',
-    variables: ['merchantName', 'portalUrl'],
-  }),
-  event('merchant', {
     key: MERCHANT_SUSPENDED_EVENT,
     label: 'Account suspended',
-    description:
-      'Staff suspended the merchant (or declined an application). The staff reason is internal and is not in the mail.',
+    description: 'Staff suspended the merchant. The staff reason is internal and is not in the mail.',
     variables: ['merchantName'],
   }),
   event('merchant', {
@@ -78,18 +63,6 @@ export const IDENTITY_MAIL_EVENTS: readonly NotificationEventDefinition[] = [
     label: 'Account reactivated',
     description: 'Staff reactivated a suspended merchant.',
     variables: ['merchantName', 'portalUrl'],
-  }),
-  event('merchant', {
-    key: MERCHANT_KYC_APPROVED_EVENT,
-    label: 'Identity verification approved',
-    description: 'Staff approved the merchant’s identity documents.',
-    variables: ['merchantName'],
-  }),
-  event('merchant', {
-    key: MERCHANT_KYC_REJECTED_EVENT,
-    label: 'Identity verification rejected',
-    description: 'Staff rejected the merchant’s identity documents; the mail carries the staff note.',
-    variables: ['merchantName', 'reason'],
   }),
   event('merchant', {
     key: MERCHANT_SECURITY_NOTICE_EVENT,

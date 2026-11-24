@@ -505,7 +505,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 22,
@@ -538,7 +538,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 31,
@@ -571,7 +571,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 40,
@@ -604,7 +604,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 50,
@@ -637,7 +637,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 59,

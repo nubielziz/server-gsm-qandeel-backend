@@ -1,4 +1,4 @@
-// Unit tests of the API key rules (B155): scopes, allowed addresses, the key text and the wire shape.
+// Unit tests of the API key rules (B155): allowed addresses, the key text and the wire shape.
 import { describe, expect, it } from 'bun:test';
 import {
   API_KEY_LEADER,
@@ -7,52 +7,9 @@ import {
   type ApiKeyColumns,
   apiKeyToWire,
   checkAllowedIps,
-  checkScopes,
   classifyKeyChange,
   composeApiKey,
-  scopeProblem,
 } from '@src/modules/identity/domain/api-key-input';
-
-describe('scopeProblem', () => {
-  it('accepts the merchant scopes', () => {
-    for (const scope of ['dhru', 'account:read', 'orders:read', 'orders:write', 'services:read']) {
-      expect(scopeProblem(scope), scope).toBeUndefined();
-    }
-  });
-
-  it('accepts the area wildcards of those scopes', () => {
-    for (const scope of ['orders:*', 'account:*', 'services:*']) expect(scopeProblem(scope), scope).toBeUndefined();
-  });
-
-  it('refuses a scope outside the merchant list, a wildcard of another area, `*` and near misses', () => {
-    for (const scope of [
-      '*',
-      '*:*',
-      'staff:read',
-      'wallet:*',
-      'orders',
-      'ORDERS:READ',
-      'orders:create',
-      'dhru:*',
-      ' dhru',
-      '',
-    ]) {
-      expect(scopeProblem(scope), JSON.stringify(scope)).toContain('Unknown scope');
-    }
-  });
-});
-
-describe('checkScopes', () => {
-  it('keeps the order and drops repeats', () => {
-    expect(checkScopes(['orders:read', 'dhru', 'orders:read'])).toEqual({ ok: true, value: ['orders:read', 'dhru'] });
-  });
-
-  it('names every refused scope by its position', () => {
-    const result = checkScopes(['orders:read', 'staff:read', 'dhru', '*']);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors.map((error) => error.field)).toEqual(['scopes.1', 'scopes.3']);
-  });
-});
 
 describe('checkAllowedIps', () => {
   it('stores a bare address with its host prefix and keeps a range as written', () => {
@@ -99,7 +56,6 @@ describe('apiKeyToWire', () => {
     clientId: 1,
     name: 'Production',
     prefix: 'gsm_Qx4f',
-    scopes: ['orders:read'],
     allowedIps: ['203.0.113.55/32', '198.51.100.0/24', '2001:db8::1/128', '2001:db8::/32'],
     rateLimitPerMin: 60,
     lastUsedAt: null,
@@ -116,7 +72,6 @@ describe('apiKeyToWire', () => {
       clientId: 1,
       name: 'Production',
       prefix: 'gsm_Qx4f',
-      scopes: ['orders:read'],
       allowedIps: ['203.0.113.55', '198.51.100.0/24', '2001:db8::1', '2001:db8::/32'],
       rateLimitPerMin: 60,
       lastUsedAt: null,

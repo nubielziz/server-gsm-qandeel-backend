@@ -131,11 +131,11 @@ export const createAlertRule = defineRoute({
   summary: 'Add an alert rule',
   description:
     'Every field is required except `isActive` (default true). `key` is unique among the rules that are not deleted (a duplicate is `422` on ' +
-    '`key`). `metric` is one of the eleven registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, ' +
-    '`api.rate5xx`, `db.connection_usage`, `redis.memory_usage` and `webhooks.success_rate` are `percent`; `api.p95` is `ms`; `queue.oldest_age` is ' +
+    '`key`). `metric` is one of the ten registry keys and the server sets `unit` from it: `supplier.timeout_rate`, `supplier.error_rate`, ' +
+    '`api.rate5xx`, `db.connection_usage` and `redis.memory_usage` are `percent`; `api.p95` is `ms`; `queue.oldest_age` is ' +
     '`s`; `orders.past_sla` and `ledger.mismatch_count` are `count`; `supplier.balance` has no unit (`null`). `threshold` is a number in that unit. ' +
     '`windowSeconds` (60 to 86400) is the period a rate or percentile is measured over (`supplier.timeout_rate`, `supplier.error_rate`, `api.p95`, ' +
-    '`api.rate5xx`, `webhooks.success_rate`); for `supplier.balance`, `queue.oldest_age`, `orders.past_sla`, `db.connection_usage` and ' +
+    '`api.rate5xx`); for `supplier.balance`, `queue.oldest_age`, `orders.past_sla`, `db.connection_usage` and ' +
     '`redis.memory_usage`, which read the moment, it is how long the condition must hold: the alert opens after every evaluation of the whole window ' +
     'was over the threshold and closes after every evaluation of the whole window was back in range. `ledger.mismatch_count` is the result of the ' +
     'newest integrity run and ignores the window. `channels` is a non-empty list of `telegram` and `email`. Writes the audit entry `added alert rule`.',

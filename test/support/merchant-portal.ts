@@ -95,11 +95,6 @@ export class MerchantPortal {
     return res;
   }
 
-  /** `POST /client/auth/register`. */
-  register(body: Record<string, unknown>, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
-    return this.call('POST', '/client/auth/register', body, options);
-  }
-
   /** `POST /client/auth/verify-email`. */
   verifyEmail(token: string, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
     return this.call('POST', '/client/auth/verify-email', { token }, options);
@@ -176,16 +171,6 @@ export class MerchantPortal {
   /** `POST /client/security/2fa/disable`. */
   disableTwoFactor(code: string, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
     return this.call('POST', '/client/security/2fa/disable', { code }, options);
-  }
-
-  /** `GET /client/sessions`. */
-  sessions(query = '', options?: PortalCallOptions): Promise<LightMyRequestResponse> {
-    return this.call('GET', `/client/sessions${query}`, undefined, options);
-  }
-
-  /** `DELETE /client/sessions/:id`. */
-  endSession(id: number, options?: PortalCallOptions): Promise<LightMyRequestResponse> {
-    return this.call('DELETE', `/client/sessions/${id}`, undefined, options);
   }
 }
 
@@ -290,7 +275,7 @@ export function emailedLinks(): EmailedLink[] {
 }
 
 /**
- * Inserts what registration needs to exist: USD (the wallet currency) and the default merchant group.
+ * Inserts what a merchant needs to exist: USD (the wallet currency) and the default merchant group.
  *
  * @returns the id of the default group
  */

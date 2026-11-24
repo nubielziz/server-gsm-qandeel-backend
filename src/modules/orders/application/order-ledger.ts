@@ -75,8 +75,7 @@ const memo = (word: string, order: Order): string => `${word} ORD-${order.id}`;
  * same supplier acceptance), rejection releases it (`reject`), a reopen moves the revenue back to the hold and a B2B refund
  * moves it to the wallet, both keeping the cost. Keys: `order:<id>:hold`, `order:<id>:settle` (numbered from the second completion), `order:<id>:release`,
  * `order:<id>:refund` (B2C, or `refund:<id>` for an approved refund, posted by `B2cRefunds`; none while `autoRefundFailed` is off and the
- * system rejected the order: a refund request waits for staff instead), and `reverse:<settlement id>` for a reopen or a B2B refund, the key `MerchantSpend` reads to stop
- * counting a reversed settlement. A repeated key posts nothing, so a retried or doubled transition never moves money twice.
+ * system rejected the order: a refund request waits for staff instead), and `reverse:<settlement id>` for a reopen or a B2B refund (decision 024). A repeated key posts nothing, so a retried or doubled transition never moves money twice.
  *
  * Side effects: inserts ledger transactions and entries and changes account balances through `LedgerPoster` (locks the accounts
  * in id order); throws `INSUFFICIENT_FUNDS` when a hold would take the wallet below its credit limit.

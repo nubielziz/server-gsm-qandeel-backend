@@ -29,11 +29,10 @@ export interface LimiterConfig {
  * `api_keys.rate_limit_per_min` through the `limit` option, this is the default); `sign-in` email + network (the IPv4 address or
  * the IPv6 /64, `RequestMeta.limitKey`; build the key with `RateLimitService.compositeKey`), counted per attempt and reset on
  * success; `sign-in-code` the account (the authenticator code steps, never counted in process memory, decision 052); `sign-in-familiar` scope + email + network, hashed (the attempts a familiar network is still allowed while an email is locked, decision 052); `token` the client IP; `supplier` the
- * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-retry` the delivery id; `webhook-test` the merchant
- * (`client:<id>`, decision 053); `webhook-intake` the client address key of an incoming webhook (decision 053); `upload` the client IP; `ticket-email`
+ * supplier id (the points come from `suppliers.rate_limit_per_min`); `webhook-intake` the client address key of an incoming webhook (decision 053); `upload` the client IP; `ticket-email`
  * the hashed email address of a public ticket form, the typed one or the order's customer's (`RateLimitService.compositeKey`);
  * `wallet-topup` the customer id; `help-vote` the client address key (IPv4, or the IPv6 /64) + help article id (`RateLimitService.compositeKey`); `media` the client IP; `account-mail` an account and a kind of
- * mail (`accountMailKey`); `broadcast-email` and `broadcast-telegram` the constant `all` (one budget for the whole system,
+ * mail (`accountMailKey`); `broadcast-email` the constant `all` (one budget for the whole system,
  * feature 23); `stream-connect` the first cap key of a live stream (`session:<id>`, decision 037); `ticket-chat` the client IP;
  * `ticket-message` the ticket id; `ticket-open` the account (`customer:<id>` or `client:<id>`) (feature 28); `search-suggest` the client IP (feature 29).
  *
@@ -48,14 +47,14 @@ export const RATE_LIMITERS = {
   'api-key': {
     points: 60,
     windowSeconds: 60,
-    description: 'Dhru and REST v1: requests per API key; the key own limit (rate_limit_per_min) replaces the points.',
+    description: 'Dhru: requests per API key; the key own limit (rate_limit_per_min) replaces the points.',
   },
   'sign-in': {
     points: 5,
     windowSeconds: 15 * 60,
     blockSeconds: 15 * 60,
     description:
-      'Staff, merchant and customer sign-in, forgot password, sign-in link and registration: attempts per email and network (the IPv4 address or the IPv6 /64; registration per network only); the sixth locks that pair for 15 minutes; a success resets it.',
+      'Staff, merchant and customer sign-in, forgot password and sign-in link: attempts per email and network (the IPv4 address or the IPv6 /64); the sixth locks that pair for 15 minutes; a success resets it.',
   },
   'sign-in-code': {
     points: 5,
@@ -85,25 +84,13 @@ export const RATE_LIMITERS = {
     points: 20,
     windowSeconds: 60,
     description:
-      'Large bodies read before the credentials are known (multipart or over 1 MiB on Dhru, REST v1, the portal upload and the admin console, whose service picture upload is multipart): requests per client IP.',
-  },
-  'webhook-retry': {
-    points: 1,
-    windowSeconds: 60,
-    description:
-      'Manual retries of one webhook delivery by staff: one a minute per delivery (POST /admin/webhook-deliveries/:id/retry).',
-  },
-  'webhook-test': {
-    points: 10,
-    windowSeconds: 60 * 60,
-    description:
-      'Test deliveries a merchant asks for (POST /client/webhooks/:id/test): ten an hour per merchant (key client:<id>), so the shared delivery queue and other hosts are not flooded (decision 053).',
+      'Large bodies read before the credentials are known (multipart or over 1 MiB on Dhru, the portal upload and the admin console, whose service picture upload is multipart): requests per client IP.',
   },
   'webhook-intake': {
     points: 600,
     windowSeconds: 60,
     description:
-      'Incoming webhooks (POST /webhooks/*: payment and dispute events, Telegram updates): requests per client address, counted before the route reads anything; generous, and a refused sender retries (decision 053).',
+      'Incoming webhooks (POST /webhooks/*: payment and dispute events): requests per client address, counted before the route reads anything; generous, and a refused sender retries (decision 053).',
   },
   'ticket-email': {
     points: 3,
@@ -116,12 +103,6 @@ export const RATE_LIMITERS = {
     windowSeconds: 1,
     description:
       'Emails of notification campaigns, for the whole system (key `all`): per second; the setting notifications.broadcast_email_per_second replaces the points (feature 23).',
-  },
-  'broadcast-telegram': {
-    points: 20,
-    windowSeconds: 1,
-    description:
-      'Telegram messages of notification campaigns, for the whole system (key `all`): per second; the setting notifications.broadcast_telegram_per_second replaces the points (feature 23).',
   },
   'account-mail': {
     points: 5,
@@ -151,7 +132,7 @@ export const RATE_LIMITERS = {
     points: 120,
     windowSeconds: 60,
     description:
-      'The typing pings and read marks of a ticket page (POST /store/v1/tickets/:token/typing and /read), instead of `token`: requests per client IP, so a typing ping every few seconds never uses up the 30 token lookups a minute (feature 28).',
+      'The read marks of a ticket page (POST /store/v1/tickets/:token/read), instead of `token`: requests per client IP, so a read mark every few seconds never uses up the 30 token lookups a minute (feature 28).',
   },
   'ticket-message': {
     points: 20,

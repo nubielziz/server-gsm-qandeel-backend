@@ -1,9 +1,9 @@
 // The billing seed with the demo merchants present: the four demo gateways (credentials only where there is an API), the 54 top-ups
-// with an invoice each linked to the deposit journals the money seed replayed, the manual invoices and the verification requests.
+// with an invoice each linked to the deposit journals the money seed replayed, and the manual invoices.
 // Needs the frontend checkout (the demo state); the merchants are inserted with the demo ids and groups, as money-seed.test does.
 import { afterAll, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { parseEnv } from '@src/config';
 import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
@@ -29,7 +29,6 @@ interface DemoMerchant {
   group: 'std' | 'whl' | 'vip';
   email: string;
   cc: string;
-  kyc: string;
 }
 
 const GROUPS = { std: 1, whl: 2, vip: 3 } as const;
@@ -54,7 +53,6 @@ async function insertDemoMerchants(demo: Awaited<ReturnType<typeof loadDemoState
       groupId: GROUPS[merchant.group],
       referralCode: `REF-${merchant.id}`,
       status: 'active' as const,
-      kycStatus: merchant.kyc === 'Verified' ? ('approved' as const) : ('pending' as const),
     })),
   );
 }
@@ -76,7 +74,6 @@ describe.skipIf(!existsSync(demoStatePath()))('the billing seed', () => {
       ['payment_gateways', 4],
       ['invoices', demoPayments.length + 3],
       ['payments', demoPayments.length],
-      ['kyc_submissions', demoRows(demo, 'merchants').length],
     ]);
 
     const gateways = await db.select().from(s.paymentGateways).orderBy(s.paymentGateways.id);
@@ -133,23 +130,15 @@ describe.skipIf(!existsSync(demoStatePath()))('the billing seed', () => {
       expect(source.kind).toBe(payment.gatewayId === 3 || payment.gatewayId === 4 ? 'bank' : 'gateway_clearing');
     }
 
-    // The manual invoices and one verification request per merchant, in step with `clients.kyc_status`.
+    // The manual invoices.
     expect(
       [...invoices.values()]
         .filter((invoice) => invoice.kind === 'manual')
         .map((invoice) => invoice.status)
         .sort(),
     ).toEqual(['open', 'open', 'void']);
-    const kyc = await db
-      .select({ status: s.kycSubmissions.status, client: s.kycSubmissions.clientId })
-      .from(s.kycSubmissions);
-    const clients = new Map((await db.select().from(s.clients)).map((client) => [client.id, client.kycStatus]));
-    expect(kyc.every((row) => clients.get(row.client) === row.status)).toBe(true);
-    const [dup] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(s.kycSubmissions)
-      .where(eq(s.kycSubmissions.status, 'pending'));
-    expect(dup!.n).toBeGreaterThan(0);
+    // The retired verification table (decision 061) gets no row from the seed.
+    expect(await db.select().from(s.kycSubmissions)).toHaveLength(0);
   });
 
   it('is idempotent: a second run inserts nothing', async () => {
@@ -158,8 +147,6 @@ describe.skipIf(!existsSync(demoStatePath()))('the billing seed', () => {
     await insertDemoMerchants(demo);
     await runSeed(db, demo);
     const second = await runSeed(db, await loadDemoState({ now: Date.parse('2026-11-02T10:00:00.000Z') }));
-    expect(second.filter((report) => report.module === 'billing').map((report) => report.inserted)).toEqual([
-      0, 0, 0, 0,
-    ]);
+    expect(second.filter((report) => report.module === 'billing').map((report) => report.inserted)).toEqual([0, 0, 0]);
   });
 });

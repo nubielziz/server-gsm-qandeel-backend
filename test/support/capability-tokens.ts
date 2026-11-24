@@ -1,7 +1,6 @@
 // The stored forms of the shop's link tokens in tests (decision 054): the app's vault computes the hash and the copy, and reveals a stored
-// row's token; the two derived values of the Telegram webhook.
+// row's token.
 import { type CapabilityTokenKind, CapabilityTokenVault, type SealedCapabilityToken } from '@src/infra/crypto';
-import { telegramWebhookHeader, telegramWebhookPath } from '@src/modules/identity';
 import type { TestApp } from './app';
 
 /**
@@ -42,14 +41,4 @@ export function revealedToken(
   stored: { readonly enc: string | null; readonly plain: string | null },
 ): string | null {
   return t.app.get(CapabilityTokenVault).reveal(kind, stored);
-}
-
-/**
- * The path segment and header value a Telegram call must carry for a configured secret.
- *
- * @param secret `TELEGRAM_WEBHOOK_SECRET`
- * @returns the two derived values
- */
-export function telegramWebhookRequest(secret: string): { readonly path: string; readonly header: string } {
-  return { path: telegramWebhookPath(secret), header: telegramWebhookHeader(secret) };
 }

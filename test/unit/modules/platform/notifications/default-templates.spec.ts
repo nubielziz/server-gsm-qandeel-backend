@@ -1,11 +1,11 @@
 // Unit tests of the default templates (features 12a, 14b, 12b, 16 and 31): they use only their event's placeholders, cover every merchant
 // event the platform wires, the four customer account mails, both alert events, the five storefront mails of feature 16 and the hourly
-// message about retail prices and the notice of a switched-off webhook endpoint, migrations 0011, 0012, 0015, 0018, 0044 and 0054 and the
-// feature-43 migration (found by its suffix) together insert exactly these rows, and `defaultTemplatesSql()` writes today's shape (no
+// message about retail prices, migrations 0011, 0012, 0015, 0018, 0044 and 0054 and the feature-43 migration (found by its suffix) together
+// insert these rows (the retired rows that the migration of decision 062 deletes again aside), and `defaultTemplatesSql()` writes today's shape (no
 // language, decision 039).
 import { describe, expect, it } from 'bun:test';
 import { insertedTemplates } from '../../../../support/applied-templates';
-import { migrationFileName } from '../../../../support/migration-files';
+import { migrationFileName, migrationSql } from '../../../../support/migration-files';
 import { DEFAULT_TEMPLATES, defaultTemplatesSql } from '@src/modules/platform/notifications/default-templates';
 import {
   BUILT_IN_EVENTS,
@@ -16,6 +16,19 @@ import {
 import { checkTemplateFields } from '@src/modules/platform/notifications/template-rules';
 
 const registry = new NotificationEventRegistry();
+
+// The merchant's Telegram texts (decision 062): the applied migration 0011 still inserts their rows, and the migration of decision 062 deletes
+// them again, so they are rows of that file that the code no longer has (the deposit event's Telegram text is one of the retired events
+// below). The migration is found by its name, not its number.
+const RETIRED_TEMPLATES = [
+  'wallet.low_balance',
+  'service.price_changed',
+  'invoice.paid',
+  'order.completed',
+  'order.failed',
+  'telegram.linked',
+  'telegram.unlinked',
+].map((event) => `${event}|telegram|merchant`);
 
 describe('DEFAULT_TEMPLATES', () => {
   it('belong to a registered event and channel, use only that event’s placeholders, and give an email a subject', () => {
@@ -71,6 +84,12 @@ describe('DEFAULT_TEMPLATES', () => {
     }
   });
 });
+
+// The notice of a switched-off webhook endpoint and the deposit event are retired (decision 062): the applied migrations of decision 053 and
+// 0011 still insert their rows, and the migration of decision 062 deletes them again, so they are rows of applied files that the code no
+// longer has.
+const RETIRED_EVENTS = ['webhook.endpoint_disabled', 'deposit.approved'];
+const RETIRED_BY_MIGRATION = '_retired_features.sql';
 
 /** The migrations that insert default templates, oldest first. */
 const MIGRATIONS = [
@@ -148,24 +167,61 @@ describe('the customer security notice (decision 047)', () => {
 
 describe('the migrations that insert the default templates', () => {
   /** The rows each migration inserts, with the key and the texts the code holds (the files keep their `locale` column). */
-  const shipped = MIGRATIONS.flatMap((file) =>
+  const shippedAll = MIGRATIONS.flatMap((file) =>
     insertedTemplates(file).map((row) => ({ file, row, key: `${row.event}|${row.channel}|${row.audience}` })),
   );
+  const shipped = shippedAll.filter(({ row }) => !RETIRED_EVENTS.includes(row.event));
 
-  it('insert only English rows, each a default of the code with the same event, channel, audience, subject and body', () => {
+  it('insert only English rows, each a default of the code (the retired Telegram texts excepted) with the same event, channel, audience, subject and body', () => {
     const defaults: readonly object[] = DEFAULT_TEMPLATES;
-    for (const { file, row } of shipped) {
+    for (const { file, row, key } of shipped) {
       // A migration written after decision 039 has no language column at all.
       expect(row.locale ?? 'en', file).toBe('en');
       const { event, channel, audience, subject, body } = row;
+      if (RETIRED_TEMPLATES.includes(key)) continue;
       expect(defaults, `${file} ${event} ${channel}`).toContainEqual({ event, channel, audience, subject, body });
     }
   });
 
-  it('together insert every default template, each once', () => {
-    const inserted = shipped.map(({ key }) => key).sort();
+  it('still show the retired events in the applied files, and a later migration deletes their stored rows', () => {
+    const inMigrations = shippedAll.map(({ row }) => row.event);
+    const deleting = migrationSql(RETIRED_BY_MIGRATION);
+    for (const event of RETIRED_EVENTS) {
+      expect(inMigrations, event).toContain(event);
+      expect(
+        DEFAULT_TEMPLATES.some((template) => template.event === event),
+        event,
+      ).toBe(false);
+      expect(registry.get(event, 'merchant'), event).toBeUndefined();
+      expect(deleting, event).toContain(`'${event}'`);
+    }
+    expect(deleting).toContain('DELETE FROM "notification_templates"');
+  });
+
+  it('together insert every default template, each once, and the retired Telegram texts of the merchant besides', () => {
+    const inserted = shipped
+      .map(({ key }) => key)
+      .filter((key) => !RETIRED_TEMPLATES.includes(key))
+      .sort();
     const expected = DEFAULT_TEMPLATES.map((t) => `${t.event}|${t.channel}|${t.audience}`).sort();
     expect(inserted).toEqual(expected);
+  });
+
+  it('still show the retired Telegram texts of the merchant, and a later migration deletes their stored rows', () => {
+    expect(shipped.map(({ key }) => key)).toEqual(expect.arrayContaining(RETIRED_TEMPLATES));
+    const deleting = migrationSql(RETIRED_BY_MIGRATION);
+    expect(deleting).toContain('DELETE FROM "notification_templates"');
+    expect(deleting).toContain(`"channel" = 'telegram'`);
+    expect(deleting).toContain(`"audience" = 'merchant'`);
+    for (const key of RETIRED_TEMPLATES) {
+      const [event] = key.split('|');
+      expect(
+        DEFAULT_TEMPLATES.some(
+          (template) => template.event === event && template.channel === 'telegram' && template.audience === 'merchant',
+        ),
+        key,
+      ).toBe(false);
+    }
   });
 });
 
@@ -214,22 +270,5 @@ describe('the retail price templates (feature 31)', () => {
       for (const name of ['changed', 'waiting', 'detached', 'link'])
         expect(template.body, `${template.channel} {{${name}}}`).toContain(`{{${name}}}`);
     }
-  });
-});
-
-describe('the notice of a switched-off webhook endpoint (decision 053)', () => {
-  it('is a transactional merchant email that names the address and the count', () => {
-    const definition = registry.get('webhook.endpoint_disabled', 'merchant');
-    expect(definition).toMatchObject({
-      channels: ['email'],
-      variables: ['merchantName', 'url', 'count'],
-      transactional: true,
-    });
-    const template = DEFAULT_TEMPLATES.find((t) => t.event === 'webhook.endpoint_disabled');
-    expect(template).toMatchObject({ channel: 'email', audience: 'merchant' });
-    for (const placeholder of ['{{merchantName}}', '{{url}}', '{{count}}'])
-      expect(template!.body).toContain(placeholder);
-    // A transactional event is never listed in a merchant's preferences.
-    expect(registry.merchantPreferenceEvents().some((event) => event.key === 'webhook.endpoint_disabled')).toBe(false);
   });
 });

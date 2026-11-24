@@ -1,5 +1,5 @@
 // DhruOrders: the six order actions of the Dhru surface (map domain D, stage 7, decision 026): `placeimeiorder`, `placeimeiorderbulk`,
-// `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Placement is feature 5's one path, like REST v1 and the portal.
+// `getimeiorder`, `getimeiorderbulk`, `placefileorder` and `getfileorder`. Placement is feature 5's one path, like the portal.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { z } from 'zod';
 import { type DhruCall, DhruGateway, dhruStatusOf, readCustomFields } from '../../../common/dhru';

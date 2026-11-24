@@ -23,7 +23,7 @@ const context = (error: AppError): ErrorFormatContext => ({
 describe('DhruErrorFormatter', () => {
   it('owns the Dhru surface only', () => {
     expect(formatter.matches({ surface: 'dhru' })).toBe(true);
-    for (const surface of ['admin', 'client', 'v1', 'store', 'hooks', 'system']) {
+    for (const surface of ['admin', 'client', 'store', 'hooks', 'system']) {
       expect(formatter.matches({ surface }), surface).toBe(false);
     }
   });

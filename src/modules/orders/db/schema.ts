@@ -43,7 +43,11 @@ export type OrderDispatchState = (typeof ORDER_DISPATCH_STATES)[number];
 /**
  * Which surface placed the order.
  *
- * Why: decision 025 and MISMATCHES B12 (the map's example `rest_api` is stored as `v1`).
+ * Why: decision 025 and MISMATCHES B12 (the map's example `rest_api` is stored as `v1`). `v1` is kept for the orders that the retired
+ * REST API v1 placed: old rows carry it, nothing writes it any more.
+ *
+ * `admin` is retired (decision 062): no surface places an order with it any more (see `PlacedOrderSource` of the placement rules); the value
+ * stays in the list because the check constraint and the readers must accept an old row.
  */
 export const ORDER_SOURCES = ['dhru', 'v1', 'portal', 'store', 'admin'] as const;
 
@@ -121,7 +125,7 @@ export const orders = pgTable(
     serviceId: fk((): AnyPgColumn => services.id).notNull(),
     type: text().$type<ServiceType>().notNull(),
     source: text().$type<OrderSource>().notNull(),
-    /** the merchant key that placed the order (v1, Dhru) */
+    /** the merchant key that placed the order (Dhru; the retired REST API v1 also set it) */
     apiKeyId: fk((): AnyPgColumn => apiKeys.id),
     status: text().$type<OrderStatus>().notNull().default('pending'),
     dispatchState: text().$type<OrderDispatchState>().notNull().default('pending'),
@@ -156,11 +160,12 @@ export const orders = pgTable(
     supplierRef: text(),
     resultCode: text(),
     resultComment: text(),
+    /** Retired (decision 062): no route writes or reads the buyer's note; the accounts migration drops it. */
     clientNote: text(),
     adminNote: text(),
     /** requested when the buyer asks for verification, then accepted or refunded by staff; null when none */
     verificationStatus: text().$type<OrderVerificationStatus>(),
-    /** REST v1 Idempotency-Key, unique per merchant (decision 026); cleared once the order is older than the 7-day window (by the placement that meets the key, or by `idempotency_purge`) */
+    /** Retired with REST API v1 (decision 062): unread and unwritten (the portal's key lives in `idempotency_keys` only); the accounts migration drops it. */
     idempotencyKey: text(),
     /** keyed hash of merchant, service and IMEI for the open-duplicate rule */
     fingerprint: text(),
@@ -193,7 +198,7 @@ export const orders = pgTable(
       'orders_verification_status_check',
       sql`${t.verificationStatus} is null or ${inList(t.verificationStatus, ORDER_VERIFICATION_STATUSES)}`,
     ),
-    // The daily `idempotency_purge` finds the keyed orders older than the window without scanning the table (P4a, B166).
+    // Retired with REST API v1 (decision 062): nothing reads this index any more (the daily `idempotency_purge` used it to find keyed orders); the accounts migration drops it.
     index('orders_idempotency_placed_idx')
       .on(t.placedAt)
       .where(sql`${t.idempotencyKey} is not null`),
@@ -278,11 +283,11 @@ export type OrderEvent = typeof orderEvents.$inferSelect;
 export type NewOrderEvent = typeof orderEvents.$inferInsert;
 
 /**
- * What an `Idempotency-Key` was used for: one order, a bulk of orders, or the merchant portal's placement.
+ * What an `Idempotency-Key` was used for: the merchant portal's placement (`portal`), or, in rows stored by the retired REST API v1, one
+ * order (`order`) or a bulk of orders (`bulk`).
  *
- * Why: REST v1 (ALIGNMENT § 7, decision 026): `POST /v1/orders` and `POST /v1/orders/bulk` accept the header; the scope is part of what the key
- * stands for, so the same key on the other route is a different request. `portal` (feature 24B) is `POST /client/orders`, whose stored answer
- * is `{ orders: [...] }` and never a v1 body.
+ * Why: the scope is part of what the key stands for. `portal` (feature 24B) is `POST /client/orders`, whose stored answer is
+ * `{ orders: [...] }`. `order` and `bulk` stay valid in the database check for the rows stored earlier; nothing writes them any more.
  */
 export const IDEMPOTENCY_SCOPES = ['order', 'bulk', 'portal'] as const;
 
@@ -290,12 +295,12 @@ export const IDEMPOTENCY_SCOPES = ['order', 'bulk', 'portal'] as const;
 export type IdempotencyScope = (typeof IDEMPOTENCY_SCOPES)[number];
 
 /**
- * The first answer of each REST v1 order placement that came with an `Idempotency-Key`.
+ * The first answer of each merchant portal order placement that came with an `Idempotency-Key`.
  *
  * Why: decision 026 and brief 7a: the first result is stored with the key in Postgres, in the placement's own transaction, and replayed
  * for the same request; a different request with the same key is `409 IDEMPOTENCY_KEY_REUSED`. The row exists only when the placement
  * committed, so a refused or rolled-back attempt leaves nothing and the same key may be tried again. The key is unique per merchant and
- * remembered for 7 days (`IDEMPOTENCY_WINDOW_DAYS`): a placement that meets an older row deletes it and clears the order's key, and the daily
+ * remembered for 7 days (`IDEMPOTENCY_WINDOW_DAYS`): a placement that meets an older row deletes it, and the daily
  * job `idempotency_purge` does the same for keys nobody sends again (B166, P4a), so the key is free again. Not one of
  * the map's 66 tables: MISMATCHES B116 note (the backend's additions); the map's `idempotencyKey` rows describe only the header.
  */

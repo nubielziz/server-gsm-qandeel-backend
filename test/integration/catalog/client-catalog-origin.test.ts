@@ -15,7 +15,7 @@ import {
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, openSession } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { body, clearApiKeyCaches, credentialsFor, v1Client } from '../../support/machine-orders';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../../support/machine-orders';
 import { PORTAL_ORIGIN } from '../../support/merchant-portal';
 import { insertAtt, insertClientPriceRow, insertDemoGroups, insertMerchantIn } from '../../support/pricing';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
@@ -168,11 +168,14 @@ describe('the listed price a merchant was shown', () => {
 });
 
 describe('the merchant API key surface', () => {
-  it('lists and shows services without any browser header and still records the listed prices', async () => {
+  it('lists the services on the Dhru endpoint without any browser header and still records the listed prices', async () => {
     const { db, serviceId, merchant } = await world();
-    const v1 = v1Client(t, (await credentialsFor(t, db, merchant)).key);
-    expect((await v1.get('/v1/services')).statusCode).toBe(200);
-    expect(body(await v1.get(`/v1/services/${serviceId}`)).id).toBe(serviceId);
+    const dhru = dhruClient(t, await credentialsFor(t, db, merchant));
+    const answer = await dhru.call('imeiservicelist');
+    const listed = Object.values<{ SERVICES: Record<string, unknown> }>(answer.SUCCESS[0].LIST).flatMap((group) =>
+      Object.keys(group.SERVICES),
+    );
+    expect(listed).toContain(String(serviceId));
     expect((await listedRows()).map((row) => [row.clientId, row.serviceId])).toEqual([[merchant, serviceId]]);
   });
 });

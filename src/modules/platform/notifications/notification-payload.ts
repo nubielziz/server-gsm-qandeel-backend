@@ -70,7 +70,7 @@ export const OPERATIONS_RECIPIENT_ID = 0;
  * The recipient of an operations message, built from its payload.
  *
  * @param payload the stored payload (`to` holds the addresses of an email)
- * @returns a staff-audience recipient with the addresses as its `email`, no linked chat (the chat is the payload's `chatId`) and no suspension
+ * @returns a staff-audience recipient with the addresses as its `email`, and no suspension (the chat of a Telegram message is the payload's `chatId`)
  */
 export function operationsRecipientOf(payload: NotificationPayload): Recipient {
   return {
@@ -79,7 +79,6 @@ export function operationsRecipientOf(payload: NotificationPayload): Recipient {
     audience: 'staff',
     name: 'Operations',
     email: asString(payload.to) ? payload.to : '',
-    telegramChatId: null,
     prefs: {},
     suspended: false,
     inboxEligible: false,

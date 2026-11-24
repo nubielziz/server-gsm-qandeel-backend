@@ -44,7 +44,7 @@ customer routes are feature 14b; paying a session (`.../pay`) and creating the o
   `onModuleInit`): the row is found by the keyed hash of the token (`checkout_sessions.token_hash`, decision 054) and the stored hash is
   compared with the presented token's in constant time; a session written before decision 054 is found by its plain `token` until the
   seal pass ran. The token is stored only as that hash and an AES-GCM copy (`token_enc`, AAD `checkout_sessions.token_enc`), which the
-  session view and the recovery mail reveal (`CapabilityTokenVault`). One
+  session view reveals (`CapabilityTokenVault`). One
   answer (`404 NOT_FOUND`, "This link is not valid.") for an unknown, malformed or nearly-right token; lookups are limited to 30 a
   minute per address by the pipeline. The view: status, expiry, the service, quantity, masked IMEI and email, the country, currency,
   rate and tax rate, the amounts in USD and in the buyer's currency (`gross` is what is charged), the consent state and the active
@@ -153,89 +153,54 @@ and `domain/customer-export.ts`, and the reads and writes that reach other modul
 `infra/privacy-reads.repository.ts` (decision 016 deviation, like the foreign-reads file).
 
 - **Block** (`POST /admin/customers/:id/block`, `customers:block`, RESOLUTIONS b2c-5, B48): `{ blocked: true, reason }` (one of the console's
-  four reasons) sets `blocked` and risk `high`, ends the sessions, appends `Blocked: <reason>` to the internal notes and adds, through
+  four reasons) sets `blocked`, ends the sessions, appends `Blocked: <reason>` to the internal notes and adds, through
   the risk module's `Blocklist`, manual entries with the reason, the caller and `customer_id`: the email, each distinct card
   fingerprint of the customer's payments, each distinct IMEI still stored on their orders and checkout sessions
-  (`ON CONFLICT DO NOTHING`: an existing entry stays as it is and is not linked). `{ blocked: false }` sets `active`, risk `high` to
-  `medium`, and deletes only the manual entries `WHERE customer_id = :id`. `ALREADY_BLOCKED`, `NOT_BLOCKED`, `ANONYMIZED` are `409`.
+  (`ON CONFLICT DO NOTHING`: an existing entry stays as it is and is not linked). `{ blocked: false }` sets `active` and deletes only
+  the manual entries `WHERE customer_id = :id`. `ALREADY_BLOCKED`, `NOT_BLOCKED`, `ANONYMIZED` are `409`.
 - **Export** (`GET /admin/customers/:id/export`, `customers:privacy`, RESOLUTIONS b2c-8): a `customer-<id>.json` download of the profile,
   orders with their IMEI, payments without card data, consents, checkout sessions, support tickets with their public messages (only a
-  ticket whose requester's address is confirmed: `requesterProven()` of the support schema, decision 053), IMEI
-  checks and data requests (what the customer gave and did: no internal notes, risk level, suspension reason or blocklist entries); closes the customer's waiting export request and is audited `exported data of`. The contract sets
+  ticket whose requester's address is confirmed: `requesterProven()` of the support schema, decision 053) and data requests (what the
+  customer gave and did: no internal notes, suspension reason or blocklist entries); closes the customer's waiting export request and is audited `exported data of`. The contract sets
   `originCheck: true`: the CSRF guard asks for `Sec-Fetch-Site: same-origin` or an `Origin` that is one of the console's origins (`CONSOLE_ORIGINS`), else `403
   CSRF_FAILED`. No copy of the file is kept.
 - **Anonymize** (`POST /admin/customers/:id/anonymize`, `customers:privacy`, B50, RESOLUTIONS b2c-4): irreversible. Name `Deleted
   customer`, email `deleted-<id>@redacted.invalid` (free again), phone and notes cleared, marketing off, account closed (credentials
-  deleted, sessions revoked, links voided); the IMEI of their orders and checkout sessions is cut to the TAC and a mask (the risk
-  module's `ImeiErasure` does the same for their IMEI checks); the sessions' visitor country (`ip_country`) is cleared with the address
+  deleted, sessions revoked, links voided); the IMEI of their orders and checkout sessions is cut to the TAC and a mask; the sessions' visitor country (`ip_country`) is cleared with the address
   (decision 050); the erasure request is completed; payments and ledger entries stay.
   The audit row names the customer by number (the log is append-only). Other modules clear what they hold through
   `CustomerErasureHooks` (run in the same transaction; the support module registers its ticket-link hook there). Afterwards the
   customer's checkout links (`CheckoutTokenResolver`) and order tracking links (the status, the result and the receipt, through
   `TrackingCustomerPorts` of the orders module) answer `404` like unknown links, and the ticket form refuses their order link (`422`).
 
-## Growth pages (feature 19)
+## Funnel report (feature 19)
 
-Built: `GET /admin/checkouts/abandoned`, `POST /admin/checkouts/recover` and `GET /admin/reports/funnel` (the Checkouts page of the console), the
-mail job of one recovery email and the automatic reminder. Files: `growth.module.ts` (routes), `checkout-recovery.module.ts` (the event, the mail job,
-the reminder and its schedule: loaded by the API and the worker), `controllers/growth.controller.ts`, `contracts/growth.contracts.ts`,
-`application/{abandoned-checkouts,checkout-recovery,funnel-report,recovery-queue,recovery-outbox,recovery-mail,recovery-sweep}.*`,
-`jobs/checkout-recovery.processors.ts`, `infra/recovery.repository.ts`, `domain/recovery.ts`. Rules: RULES checkouts 1 to 8, ANSWERS checkouts 1 to 8,
-resolutions `b2c-10` and `b2c-14`.
+Built: `GET /admin/reports/funnel`. Files: `growth.module.ts` (the route), `controllers/growth.controller.ts`, `contracts/growth.contracts.ts`,
+`application/funnel-report.service.ts`. Rules: RULES checkouts, ANSWERS checkouts, resolutions `b2c-10` and `b2c-14`.
 
-- **The list's search** (decision 047): `q` is a case-insensitive contains over the FULL email while the rows carry it masked, for a caller who holds
-  `customers:read`; for any other caller the address is not a search field, so a `q` finds no row (`withoutSearchFields` leaves no field, and `listWhere` answers
-  "no row" for a search with no field).
-- **One rule** (`domain/recovery.ts`, `recoveryVerdict`): a checkout may get its recovery email when it exists, no recovery email went out
-  (`recovery_emailed_at` is null), it is not paid (no `order_id` and status not `paid`), its customer agreed to marketing email and is `active`, it is at
-  least `abandonedMinutes` old (the storefront policy, 5 to 1440, default 60) and not older than 30 days. The first failing check is the skip reason, in
-  this order: `not_found`, `already_emailed`, `already_paid`, `no_marketing_consent`, `recipient_suspended`, `too_recent`, `expired`; the send adds
-  `no_template` and `template_off` when the `checkout.abandoned` email has no active template. The list's `canRecover` flag is this function returning
-  `null`; the `canRecover=true` filter and the automatic reminder select with its SQL twin (`canRecoverSql` in `infra/recovery.repository.ts`), and a test
-  walks every state of the rule to keep the two equal.
-- **Consent** (`consentSql`): the latest `marketing` record of the session's customer (append only, a withdrawal is a new `granted = false` row) is a
-  grant AND the customer's own `marketing_opt_in` is on. A guest's choice is the record its checkout wrote (14a), an account holder's the record its
-  account page wrote (14b); a switch turned off by staff stops the mail even without a withdrawal record. A session with no customer has no consent.
-  **Effective consent needs a proven address (decision 053):** `consentSql` also requires `provenAddressSql`: `customers.email_verified_at` is set (a used sign-in or verification link, or an
-  accepted invitation) or a checkout of the customer has `status = 'paid'` (a paid order by that guest). Anyone can type an address at a guest checkout, so the answer recorded there
-  stays as proof (the proof row of RESOLUTIONS b2c-12 and the switch are still written) and counts from the moment the address is proven. The same predicate answers the recovery
-  sweep, the abandoned list's `marketingConsent` and `canRecover` and marketing campaigns. Residual, by decision: an answer typed before the owner proved the address counts after the
-  proof; every marketing mail carries the unsubscribe link and header.
-- **List**: sessions created in the last 30 days that are not paid, plus paid ones that had a recovery email (recovered); rows carry the email masked
-  (`ab•••@domain`; `q` searches the full address), the USD basket with the locked rate, the service name (`StorefrontServices.names`, one batch per
-  page), `status` judged on the clock (`effectiveStatus`), `utm`, `orderId`, `marketingConsent` and `canRecover`. Sorts `createdAt` (default, newest
-  first), `grossAmount`, `recoveryEmailedAt`. The delay is read by the server (`SettingsReader`), so a growth user needs no `settings:read`.
-- **Recover** (`RecoveryQueue.queue`, shared with the reminder): in one transaction the sessions are read `FOR UPDATE OF checkout_sessions` in id
-  order (two sends over the same ids never mail one checkout twice and never deadlock), each id is decided again, the template is probed through
-  `NotificationService.check` (the one template of `checkout.abandoned` serves every customer; the checkout is skipped as `no_template` / `template_off` when it is missing or switched off), and an eligible checkout is claimed (`UPDATE ... WHERE recovery_emailed_at IS NULL`) with
-  one outbox event `checkout.recovery` written in the same transaction. The answer is `{ sent, skipped: [{ id, reason }] }` in the order asked (a
-  repeated id counts once); `422` on `ids` when empty, over 100 or not ids. One audit entry `sent recovery emails` (entity `checkout`, `before { emails: 0 }`,
-  `after { emails, checkoutIds, skipped }`).
-- **The mail** (`RecoveryMail`, queue `notifications`, job `checkout.recovery`): re-reads the session, repeats the checks that can change after the
-  claim (paid, consent, active customer; consent is checked again at send time), builds the link `<STORE_BASE_URL>/checkout/resume?token=<checkout
-  token>` and sends through `NotificationService.sendNow` with the link as a secret: the checkout token is a bearer credential (decision 010), so it
-  is never in the event, the job data or the `notifications` row the console shows. The device name is the TAC catalogue's marketing name of the IMEI's
-  first 8 digits (else brand and model, else "your phone"), the greeting the customer's name (else "there"). Dedupe key `outbox-<event id>:email`; a
-  repeat of the job after a sent or failed row is skipped; a job that ends skipped finishes the earlier row as `failed` with the reason and, unless a row of
-  its event was `sent`, takes the claim off again (`recovery_emailed_at = null`, in one transaction), so the checkout is recoverable again.
-- **The automatic reminder** (`RecoverySweep`, scheduler `checkout-recovery-sweep`, queue `maintenance`, job `checkout_recovery_sweep`, every 5
-  minutes): selects at most 200 due checkouts while the `checkout.abandoned` email template is switched on (`NotificationService.templateIsOn`; none is
-  selected while it is missing or off), oldest first, and queues them through the same `RecoveryQueue`, so a manual send after it is
-  `already_emailed`. A tick with nothing due writes no `job_runs` row; a tick that queued something is recorded and audited as the system
-  (`sent automatic recovery emails`).
 - **Funnel**: `FunnelReportService` calls `storefrontFunnel(db, now, days)` for `days` 7, 30 (default) or 90 (`422` on `days` otherwise), the same
   function as the dashboard's storefront block.
 - **Seed**: `scripts/seed/growth.ts` writes the demo's 238 checkouts (ids 3000 and up, one guest customer per address, the mock's marketing answers);
   the paid ones have no order until feature 16's seed.
+
+### Retired: the abandoned-checkouts list and the reminder (decision 062)
+
+The list of abandoned checkouts for staff, the manual recovery email, the automatic reminder (job `checkout_recovery_sweep`, scheduler
+`checkout-recovery-sweep`, outbox event `checkout.recovery`), the customer email `checkout.abandoned`, the storefront policy `abandonedMinutes` and the
+staff permissions `growth:read` and `growth:send` are gone. `GET /admin/checkouts/abandoned` and `POST /admin/checkouts/recover` are rows of the
+map, so they stay in the route manifest and are listed in `test/contract/retired.ts`. The column `checkout_sessions.recovery_emailed_at` stays in the database
+and in the Drizzle schema, unread and unwritten. The worker lists the old scheduler as retired (`CustomerMailModule`), so it is removed from Redis
+at boot. The checkout itself, the funnel and the marketing consent (below) are unchanged.
+
 
 ## Notification center audience (feature 23)
 
 `notifications/customer-audience.ts` is the customer audience provider of the platform's notification center, registered with
 `NotificationAudiences` by `CustomerNotificationsModule` at boot (imported by `CustomersModule` and the worker). It selects active
 customers (suspended, blocked and anonymized ones never), by account and country, and for a marketing campaign only those
-whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`, the recovery mail's predicate). **No campaign of any purpose (a service campaign
-too) reaches a customer whose address was never proven** (`provenAddressSql`, decision 053: a used sign-in or verification link, an accepted invitation, or a paid checkout), so guest
-rows made from typed addresses that nobody confirmed are never written to; the preview's "no consent" count keeps that condition. The
+whose `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql` in `infra/consent.repository.ts`: the latest `marketing` record is a grant AND the customer's own `marketing_opt_in` is on; a switch turned off by staff stops the mail even without a withdrawal record). **No campaign of any purpose (a service campaign
+too) reaches a customer whose address was never proven** (`provenAddressSql`, decision 053: `customers.email_verified_at` is set by a used sign-in or verification link or an accepted invitation, or a checkout of the customer has `status = 'paid'`), so guest
+rows made from typed addresses that nobody confirmed are never written to (the answer recorded at a guest checkout stays as proof and counts from the moment the address is proven; every marketing mail carries the unsubscribe link and header); the preview's "no consent" count keeps that condition. The
 same predicate answers the preview count, the fan-out's pages and the send-time check, so consent withdrawn after the fan-out stops the
 message. The provider only reads `customers` and `consent_records`.
 
@@ -251,10 +216,10 @@ token. **Erasure:** `CustomerInboxErasure` registers with `CustomerErasureHooks`
 
 Exports the checkout rules `CHECKOUT_SESSION_TTL_MINUTES`, `CHECKOUT_IMEI_AAD`, `LEGAL_TYPE_OF_PURPOSE`, `effectiveStatus`,
 `requiredConsents`; `storefrontFunnel(db, now, days)` (`storefront-funnel.ts`, resolution b2c-10: a read-only count of the
-storefront funnel, IMEI checks, checkouts started, paid, delivered, over the last `days` days, shared by the dashboard's storefront
+storefront funnel, checkouts started, paid, delivered, over the last `days` days, shared by the dashboard's storefront
 block of feature 9 and the funnel report of feature 19); the modules `CustomersModule`, `CheckoutModule`,
 `CustomersAccountsModule`, `GrowthModule` (the app's test builder replaces those that need a database when there is none), `CustomerMailModule`
-and `CheckoutRecoveryModule` with `CHECKOUT_RECOVERY_SCHEDULER` (the worker loads both), `CustomerErasureModule` and `CustomerErasureHooks`
+(the worker loads it), `CustomerErasureModule` and `CustomerErasureHooks`
 (modules that hold personal data of a customer register a hook that runs when the customer is anonymized), `CUSTOMER_MAIL_EVENTS` and the
 `CustomerMailKind` type (the mails are sent through the platform's notification delivery, decision 033).
 The smart sign-in (`SmartSignInService`, feature 24A) is not exported: it is a route of this module.
@@ -280,19 +245,17 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 ## Routes
 
-28 endpoints (admin 15, store 13). Source: `docs/slices/customers.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+26 endpoints (admin 13, store 13; the map has 28, two of them retired by decision 062 and not built). Source: `docs/slices/customers.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
 
-### Admin console (15)
+### Admin console (13)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `GET /admin/checkouts/abandoned` | staff-permission · `growth:read` | Abandoned carts, including who has marketing consent. | 19 |
 | `GET /admin/customers` | staff-permission · `customers:*` | Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. | 14 |
 | `GET /admin/customers/:id` | staff-permission · `customers:*` | Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. | 14 |
 | `GET /admin/customers/:id/export` | staff-permission · `customers:privacy` | Export the customer data for a data-protection request. | 18 |
 | `GET /admin/reports/funnel` | staff-permission · `reports:growth` | Sales funnel: check, then payment started, then paid, then delivered. | 19 |
 | `PATCH /admin/customers/:id` | staff-permission · `customers:*` | Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. | 14 |
-| `POST /admin/checkouts/recover` | staff-permission · `growth:send` | Send a recovery email once, only to customers with marketing consent. | 19 |
 | `POST /admin/customers` | staff-permission · `customers:*` | Storefront customers: search and view orders and payments; create a customer with an account (invitation link or temporary password); edit name, email, country, phone and notes; changing the email cancels the verification. | 14 |
 | `POST /admin/customers/:id/account` | staff-permission · `customers:update` | Create an account for a customer who bought as a guest: earlier orders are linked to the account and the customer receives a link to choose a password. | 14 |
 | `POST /admin/customers/:id/anonymize` | staff-permission · `customers:privacy` | Anonymize the name, email and IMEI while keeping payment records for accounting. | 18 |
@@ -367,7 +330,7 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 ## Permissions
 
-Staff permissions the map requires on this module's admin routes: `customers:*`, `customers:block`, `customers:password`, `customers:privacy`, `customers:suspend`, `customers:update`, `growth:read`, `growth:send`, `reports:growth`. A `customers:*` row means the action of the method: `customers:read` (list, detail), `customers:create`, `customers:update` (edit, create an account); `customers:password` (password, end sessions) and `customers:suspend` (suspend, reactivate) are exact. Audit entity type written: `customer`.
+Staff permissions the map requires on this module's admin routes: `customers:*`, `customers:block`, `customers:password`, `customers:privacy`, `customers:suspend`, `customers:update`, `reports:growth`. A `customers:*` row means the action of the method: `customers:read` (list, detail), `customers:create`, `customers:update` (edit, create an account); `customers:password` (password, end sessions) and `customers:suspend` (suspend, reactivate) are exact. Audit entity type written: `customer`.
 
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
@@ -377,9 +340,6 @@ Outbox events produced (aggregate `customers`, payload `{ tokenId }`, never the 
 queue): `customer.magic_link` (sign-in link), `customer.password_reset` (forgot password, staff link), `customer.invited` (staff
 created the account, link mode) and `customer.email_verification` (an account's email changed). The checkout routes write none. Consumed: none. The routes are
 registered by `CustomerMailOutbox` (this module is their one owner, decision 020) and documented in `docs/queues.md`.
-
-Feature 19: `checkout.recovery` (aggregate `checkout_sessions`, no payload; written by `POST /admin/checkouts/recover` and
-the automatic reminder; route: queue `notifications`, job `checkout.recovery`, registered by `RecoveryOutbox` in both processes).
 
 ## Jobs and schedules
 
@@ -393,19 +353,10 @@ unexpired) and sends the link `<STORE_BASE_URL>/sign-in?token=<token>` (`/set-pa
 verification) through the platform's `NotificationService.sendNow`, with the clear link as a *secret* placeholder that is never stored or
 logged. The four events are transactional customer email events in the platform's `NotificationEventRegistry` (variables `customerName`,
 `link`, `expiresAt`), with a default English template each (`DEFAULT_TEMPLATES`, inserted by migration `0012_customer_mail_templates.sql`);
-the console's six customer events stay as they were. The `notifications` row (`outbox-<event id>:email`, recipient type `customer`) logs the mail
+the console's other customer events stay as they were. The `notifications` row (`outbox-<event id>:email`, recipient type `customer`) logs the mail
 with its attempts and without the link; a retry of the job rotates again and resends (the earlier value never arrived), and a repeat after a
 delivered mail is skipped (`already_sent`) before it can spoil the link that arrived. In development the mail lands in Mailpit
 (`http://localhost:8025`); the old "link in the log" convenience is gone, because a link is a credential. See `docs/queues.md` (notifications).
-
-Feature 19:
-
-- `checkout.recovery` (queue `notifications`): the mail of one recovery email; job id `outbox-<event id>`; guarded by the notification row's dedupe key
-  `outbox-<event id>:email`; the queue's policy (5 attempts, backoff from 30 s); `UnrecoverableError` for a job with no session.
-- `checkout_recovery_sweep` (queue `maintenance`, scheduler `checkout-recovery-sweep`, every 5 minutes): the automatic reminder; recorded in
-  `job_runs` only when something was due or the run is manual; the queue's policy (3 attempts), and the next tick is the real retry.
-
-Both are documented in `docs/queues.md`.
 
 ## Cache keys
 
@@ -413,21 +364,20 @@ None of its own. The email lock is identity's (`SignInLock`, key `gsm:{env}:iden
 replaced this module's own lock key). Customer sessions use identity's session keys
 (`gsm:{env}:identity:session:{hash}`), and the per-email-and-network sign-in limit uses the rate-limit keys of decision 021
 (`customer-sign-in` prefix inside the hashed key). A checkout session, its consents and the guest customer are decision-making
-state and are read from Postgres every time. The `abandonedMinutes` setting of the recovery is read through `SettingsReader` (the settings snapshot,
-`docs/cache-keys.md`).
+state and are read from Postgres every time.
 
 ## Audit resolutions
 
 The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
 
 - `b2c-1` · GET /admin/customers, GET /admin/customers/:id, POST /admin/customers, PATCH /admin/customers/:id
-- `b2c-4` · GET /admin/imei-checks, POST /admin/customers/:id/anonymize
+- `b2c-4` · POST /admin/customers/:id/anonymize
 - `b2c-5` · POST /admin/customers/:id/block
 - `b2c-8` · GET /admin/customers/:id/export
 - `b2c-10` · GET /admin/reports/funnel
 - `b2c-11` · GET /admin/customers/:id, GET /admin/risk/queue
 - `b2c-12` · GET /admin/customers/:id
-- `b2c-14` · GET /admin/checkouts/abandoned, GET /admin/customers/:id, GET /admin/legal-documents
+- `b2c-14` · GET /admin/customers/:id, GET /admin/legal-documents
 - `b2c-16` · POST /admin/customers, PATCH /admin/customers/:id
 
 ## Link tokens at rest (decision 054)

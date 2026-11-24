@@ -97,7 +97,7 @@ describe('the upload janitor', () => {
     expect(await run()).toEqual({ deleted: 1, kept: 0 });
   });
 
-  it('keeps a file an order, a ticket message, a KYC submission, a payment, a payment method logo, an invoice or a dispute uses', async () => {
+  it('keeps a file an order, a ticket message, a verification request stored earlier, a payment, a payment method logo, an invoice or a dispute uses', async () => {
     await insertCurrency(db, { code: 'USD' });
     const merchant = await insertWalletMerchant(db);
     const customer = await insertCustomer(db);
@@ -106,7 +106,7 @@ describe('the upload janitor', () => {
     const used = {
       order: await storedFile(),
       ticket: await storedFile(),
-      kyc: await storedFile(),
+      verification: await storedFile(),
       payment: await storedFile(),
       logo: await storedFile(),
       invoice: await storedFile(),
@@ -121,7 +121,7 @@ describe('the upload janitor', () => {
       authorId: customer.id,
       fileIds: [used.ticket.id],
     });
-    await db.insert(s.kycSubmissions).values({ clientId: merchant.id, fileIds: [used.kyc.id] });
+    await db.insert(s.kycSubmissions).values({ clientId: merchant.id, fileIds: [used.verification.id] });
     const gatewayId = await insertGateway(t, db, { logoFileId: used.logo.id });
     const invoice = await insertInvoiceRow(db, merchant.id, { gatewayId, pdfFileId: used.invoice.id });
     const payment = await insertPendingPayment(db, invoice, gatewayId, { receiptFileId: used.payment.id });

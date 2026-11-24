@@ -1,4 +1,4 @@
-// Platform tables (map domain G): settings, notifications, merchant webhooks, the outbox, audit log, files.
+// Platform tables (map domain G): settings, notifications, the outbox, audit log, files (and two retired webhook tables).
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
@@ -71,7 +71,7 @@ export type NotificationRecipientType = (typeof NOTIFICATION_RECIPIENT_TYPES)[nu
 /**
  * Delivery state of one webhook attempt chain.
  *
- * Why: the console's webhook log wire enum (GET /admin/webhook-deliveries).
+ * Why: the check constraint of the retired `webhook_deliveries` table; nothing reads or writes the table any more.
  */
 export const WEBHOOK_DELIVERY_STATUSES = ['pending', 'delivered', 'failed'] as const;
 
@@ -210,7 +210,10 @@ export const notificationCampaigns = pgTable(
     /** the staff-facing label, 1-120 characters */
     name: text().notNull(),
     purpose: text().$type<NotificationCampaignPurpose>().notNull(),
-    /** `in_app`, `email`, `telegram`; at least one (CHECK) */
+    /**
+     * `in_app`, `email`; at least one (CHECK). The CHECK still lists `telegram`, which only campaigns written before decision 062 hold:
+     * nothing writes it and every reader leaves it out.
+     */
     channels: textList(),
     /** the validated audience spec (`campaigns/audience-spec.ts`) */
     audience: jsonb().$type<Record<string, unknown>>().notNull(),
@@ -228,7 +231,7 @@ export const notificationCampaigns = pgTable(
     expectedRecipients: integer(),
     /** people the fan-out made at least one row for */
     recipients: integer().notNull().default(0),
-    /** `{ planned: { inApp, email, telegram }, skipped: { optedOut, noTelegram, noAccount } }`, written by the fan-out only */
+    /** `{ planned: { inApp, email }, skipped: { optedOut, noAccount } }`, written by the fan-out only (older rows also hold the counters of the retired channel; readers ignore them) */
     stats: jsonObject(),
     /** `{ type, afterId }` of the next fan-out chunk; null before the start and after the end */
     fanoutCursor: jsonb().$type<Record<string, unknown>>(),
@@ -345,8 +348,8 @@ export const notifications = pgTable(
     /** how many sends were tried (feature 12a: the attempt is on the row, decision 020) */
     attempts: integer().notNull().default(0),
     /**
-     * names the occurrence a row is for (`outbox-<event id>:<channel>`, `telegram-update-<id>`, `digest:...`), so a job that runs
-     * twice, or an update Telegram repeats, never makes a second row; null for a row nothing repeats (feature 12a)
+     * names the occurrence a row is for (`outbox-<event id>:<channel>`, `digest:...`), so a job that runs
+     * twice never makes a second row; null for a row nothing repeats (feature 12a)
      */
     dedupeKey: text(),
     /** the campaign a broadcast row belongs to (feature 23); null for an event's message */
@@ -386,6 +389,8 @@ export type NewNotification = typeof notifications.$inferInsert;
  * Webhook URLs registered by merchants.
  *
  * Why: Webhook URLs merchants register to receive order and wallet events (routes /client/webhooks).
+ *
+ * Retired with the outgoing webhooks to merchants (decision 062): unread and unwritten, kept until the accounts migration drops it.
  */
 export const webhookEndpoints = pgTable(
   'webhook_endpoints',
@@ -416,6 +421,8 @@ export type NewWebhookEndpoint = typeof webhookEndpoints.$inferInsert;
  * Attempts to deliver webhooks.
  *
  * Why: Attempts to deliver outgoing events, retried with backoff by the worker (routes /admin/webhook-deliveries).
+ *
+ * Retired with the outgoing webhooks to merchants (decision 062): unread and unwritten, kept until the accounts migration drops it.
  */
 export const webhookDeliveries = pgTable(
   'webhook_deliveries',
@@ -549,7 +556,7 @@ export type NewAuditLog = typeof auditLogs.$inferInsert;
 /**
  * S3 files and their metadata.
  *
- * Why: Metadata of S3 objects: KYC documents, receipts, invoices PDFs, dispute evidence (decision 004).
+ * Why: Metadata of S3 objects: order files, receipts, invoice PDFs, dispute evidence, and the identity documents stored before decision 061 (decision 004).
  */
 export const files = pgTable(
   'files',

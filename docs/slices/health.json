@@ -254,7 +254,7 @@
       "description": "Bull Board UI for monitoring the queues.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 35,
+        "line": 55,
         "fn": "queuesBoardUrl"
       }
     },
@@ -748,10 +748,10 @@
         "path": "/admin/system/webhooks"
       },
       "module": "health",
-      "description": "Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message.",
+      "description": "Health of the incoming webhooks from gateways: success rate, failures, attempts and the oldest undelivered message.",
       "frontend": {
         "file": "src/features/system-health/api/jobs.ts",
-        "line": 31,
+        "line": 32,
         "fn": "getWebhooksHealth"
       }
     },

@@ -34,6 +34,8 @@ describe('GET /admin/permissions', () => {
     expect(keys).toContain('roles:update');
     expect(keys).toContain('staff:suspend');
     expect(keys.some((key: string) => key.endsWith(':*'))).toBe(false);
+    // The two permissions of the retired webhook log routes are gone with their routes.
+    expect(keys.filter((key: string) => key.startsWith('webhooks:'))).toEqual([]);
     expect(res.body.find((p: { key: string }) => p.key === 'staff:suspend')).toEqual({
       key: 'staff:suspend',
       label: 'Suspend',

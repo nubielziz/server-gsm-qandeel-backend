@@ -14,7 +14,7 @@
       "system": 2,
       "store": 6
     },
-    "frontendCalled": 33
+    "frontendCalled": 30
   },
   "stages": [
     2,
@@ -827,7 +827,7 @@
       "description": "KPIs for today: sales, profit, queues and supplier balances; scope=all|b2b|b2c separates merchants from the storefront.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 12,
+        "line": 24,
         "fn": "getDashboard"
       }
     },
@@ -858,11 +858,7 @@
       },
       "module": "platform",
       "description": "Log of merchant webhooks.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 19,
-        "fn": "listWebhookDeliveries"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/webhook-deliveries/:id",
@@ -891,11 +887,7 @@
       },
       "module": "platform",
       "description": "Log of merchant webhooks.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 31,
-        "fn": "getWebhookDelivery"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/webhook-deliveries/:id/retry",
@@ -924,11 +916,7 @@
       },
       "module": "platform",
       "description": "Resend the delivery.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 41,
-        "fn": "retryWebhookDelivery"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/notification-templates",
@@ -1248,7 +1236,7 @@
         "path": "/openapi.json"
       },
       "module": "platform",
-      "description": "REST v1 specification (OpenAPI).",
+      "description": "Dhru API specification (OpenAPI).",
       "frontend": null
     },
     {
@@ -1275,7 +1263,7 @@
         "path": "/docs"
       },
       "module": "platform",
-      "description": "REST v1 documentation page.",
+      "description": "Dhru API documentation page.",
       "frontend": null
     },
     {
@@ -1373,7 +1361,7 @@
       "description": "List notification campaigns.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 40,
+        "line": 52,
         "fn": "listCampaigns"
       },
       "addition": {
@@ -1412,7 +1400,7 @@
       "description": "Create a campaign as a draft.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 57,
+        "line": 71,
         "fn": "createCampaign"
       },
       "addition": {
@@ -1452,7 +1440,7 @@
       "description": "One campaign with its delivery numbers.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 48,
+        "line": 63,
         "fn": "getCampaign"
       },
       "addition": {
@@ -1491,7 +1479,7 @@
       "description": "Edit a draft or scheduled campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 65,
+        "line": 79,
         "fn": "updateCampaign"
       },
       "addition": {
@@ -1530,7 +1518,7 @@
       "description": "Delete a draft campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 73,
+        "line": 87,
         "fn": "deleteCampaign"
       },
       "addition": {
@@ -1571,7 +1559,7 @@
       "description": "Count the people an audience reaches.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 82,
+        "line": 96,
         "fn": "previewAudience"
       },
       "addition": {
@@ -1609,7 +1597,7 @@
       "description": "Render a campaign for one language and channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 90,
+        "line": 104,
         "fn": "previewCampaign"
       },
       "addition": {
@@ -1651,7 +1639,7 @@
       "description": "Send a test to yourself.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 99,
+        "line": 113,
         "fn": "sendCampaignTest"
       },
       "addition": {
@@ -1691,7 +1679,7 @@
       "description": "Send a campaign now.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 113,
+        "line": 127,
         "fn": "sendCampaign"
       },
       "addition": {
@@ -1730,7 +1718,7 @@
       "description": "Schedule or reschedule a campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 122,
+        "line": 136,
         "fn": "scheduleCampaign"
       },
       "addition": {
@@ -1769,7 +1757,7 @@
       "description": "Cancel a scheduled or running campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 135,
+        "line": 149,
         "fn": "cancelCampaign"
       },
       "addition": {
@@ -1808,7 +1796,7 @@
       "description": "The recipients of a campaign on one channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 144,
+        "line": 158,
         "fn": "listCampaignRecipients"
       },
       "addition": {

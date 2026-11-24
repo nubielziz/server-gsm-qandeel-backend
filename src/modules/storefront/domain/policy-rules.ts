@@ -1,18 +1,11 @@
-// The eight storefront policies of the console's Policies tab (feature 16): their keys, labels, kinds and the check each value must pass.
+// The five storefront policies of the console's Policies tab (feature 16): their keys, labels, kinds and the check each value must pass.
 // Pure; the route writes them as flat keys of the settings table.
-import { imeiRetentionDaysProblem } from '../../platform';
 
 /** The yes/no policies. */
-export const BOOLEAN_POLICIES = [
-  'guestCheckout',
-  'require3ds',
-  'withdrawalWaiver',
-  'autoRefundFailed',
-  'imeiPrecheck',
-] as const;
+export const BOOLEAN_POLICIES = ['guestCheckout', 'require3ds', 'withdrawalWaiver', 'autoRefundFailed'] as const;
 
-/** The policies that are a number of hours, minutes or days. */
-export const NUMBER_POLICIES = ['refundHoursBeforeDispatch', 'abandonedMinutes', 'imeiRetentionDays'] as const;
+/** The policies that are a number of hours. */
+export const NUMBER_POLICIES = ['refundHoursBeforeDispatch'] as const;
 
 /** Every policy key, in the order of the console's rows. */
 export const POLICY_KEYS = [...BOOLEAN_POLICIES, ...NUMBER_POLICIES] as const;
@@ -26,14 +19,11 @@ export const POLICY_LABELS: Readonly<Record<PolicyKey, string>> = {
   require3ds: 'Require 3D Secure',
   withdrawalWaiver: 'Ask for withdrawal waiver at checkout',
   autoRefundFailed: 'Auto-refund failed unlocks',
-  imeiPrecheck: 'Check the IMEI before payment',
   refundHoursBeforeDispatch: 'Free cancellation window',
-  abandonedMinutes: 'Abandoned checkout reminder',
-  imeiRetentionDays: 'IMEI retention',
 };
 
 /**
- * Tells whether a key is one of the eight policies.
+ * Tells whether a key is one of the five policies.
  *
  * @param key the key as sent
  * @returns true for a policy key
@@ -52,9 +42,8 @@ const integerProblem = (value: unknown, min: number, max: number): string | unde
 /**
  * Judges the value of a policy.
  *
- * Why: ANSWERS settings Q1 and the endpoint doc of `PATCH /admin/storefront/settings`: the five switches must be JSON booleans,
- * `refundHoursBeforeDispatch` an integer from 0 to 72, `abandonedMinutes` from 5 to 1440 and `imeiRetentionDays` from 0 to 3650 (the same
- * check as the generic settings route); any other key is not a storefront setting.
+ * Why: ANSWERS settings Q1 and the endpoint doc of `PATCH /admin/storefront/settings`: the four switches must be JSON booleans,
+ * `refundHoursBeforeDispatch` an integer from 0 to 72; any other key is not a storefront setting.
  *
  * @param key the key as sent
  * @param value the value as sent
@@ -65,7 +54,6 @@ export function policyProblem(key: string, value: unknown): string | undefined {
   if ((BOOLEAN_POLICIES as readonly string[]).includes(key)) {
     return typeof value === 'boolean' ? undefined : 'Use true or false.';
   }
-  if (key === 'refundHoursBeforeDispatch') return integerProblem(value, 0, 72);
-  if (key === 'abandonedMinutes') return integerProblem(value, 5, 1440);
-  return imeiRetentionDaysProblem(value);
+  // The one number policy is `refundHoursBeforeDispatch`.
+  return integerProblem(value, 0, 72);
 }

@@ -8,7 +8,7 @@ import type { NotificationCampaignPurpose, NotificationRecipientType } from '../
 import type { TypeSelection } from './audience-spec';
 
 /** The channels of a campaign. */
-export type CampaignChannel = 'in_app' | 'email' | 'telegram';
+export type CampaignChannel = 'in_app' | 'email';
 
 /** What a provider is asked: the selection of its type, the campaign's purpose and channels. */
 export interface AudienceQuery extends TypeSelection {
@@ -24,8 +24,6 @@ export interface AudienceMember {
   readonly inApp: boolean;
   /** May be emailed for this purpose (merchants: the announcement email switch). */
   readonly email: boolean;
-  /** Has a linked chat and the announcement Telegram switch on (merchants only). */
-  readonly telegram: boolean;
 }
 
 /** The counts of one provider for one query. */
@@ -36,7 +34,6 @@ export interface AudienceCounts {
   readonly reachable: number;
   readonly inApp: number;
   readonly email: number;
-  readonly telegram: number;
   /** Customers left out by a marketing purpose (no consent); 0 for the other types. */
   readonly noConsent: number;
 }
@@ -84,7 +81,6 @@ export const NO_COUNTS: AudienceCounts = {
   reachable: 0,
   inApp: 0,
   email: 0,
-  telegram: 0,
   noConsent: 0,
 };
 
@@ -92,7 +88,6 @@ export const NO_COUNTS: AudienceCounts = {
 export interface AudienceFlagsSql {
   readonly inApp: SQL;
   readonly email: SQL;
-  readonly telegram: SQL;
 }
 
 /**
@@ -106,7 +101,6 @@ export function reachableSql(flags: AudienceFlagsSql, channels: readonly Campaig
   const parts: SQL[] = [];
   if (channels.includes('in_app')) parts.push(sql`(${flags.inApp})`);
   if (channels.includes('email')) parts.push(sql`(${flags.email})`);
-  if (channels.includes('telegram')) parts.push(sql`(${flags.telegram})`);
   return parts.length === 0 ? sql`false` : sql`(${sql.join(parts, sql` or `)})`;
 }
 
@@ -126,7 +120,6 @@ export function audienceCountFields(flags: AudienceFlagsSql, channels: readonly 
     reachable: sql<number>`(count(*) filter (where ${reach}))::int`,
     inApp: sql<number>`(count(*) filter (where ${flags.inApp}))::int`,
     email: sql<number>`(count(*) filter (where ${flags.email}))::int`,
-    telegram: sql<number>`(count(*) filter (where ${flags.telegram}))::int`,
   };
 }
 
@@ -140,7 +133,7 @@ export function audienceCountFields(flags: AudienceFlagsSql, channels: readonly 
  * @returns the query
  */
 export function memberQuery(purpose: NotificationCampaignPurpose, id: number): AudienceQuery {
-  return { segment: undefined, include: [id], exclude: [], purpose, channels: ['in_app', 'email', 'telegram'] };
+  return { segment: undefined, include: [id], exclude: [], purpose, channels: ['in_app', 'email'] };
 }
 
 /**

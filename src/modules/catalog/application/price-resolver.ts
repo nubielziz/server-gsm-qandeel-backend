@@ -1,6 +1,6 @@
 // PriceResolver: the one public price resolver of the catalog (user rule 8, RESOLUTIONS catalog-4). It loads what a resolution
 // needs and runs the pure rules of domain/price-resolution.ts. Used by GET /admin/pricing/resolve, the client and group price
-// checks, the merchant catalog and price export, and (later) orders, the Dhru and REST v1 lists and the storefront listings.
+// checks, the merchant catalog and price export, and (later) orders, the Dhru list and the storefront listings.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { DbExecutor } from '../../../infra/db';

@@ -46,9 +46,9 @@ import { SignInLock } from './sign-in-lock';
  * and sends nothing. A link works once, for an hour; links a visitor asked for do not void each other (up to three work at once, the
  * oldest goes first); choosing a password ends the merchant's sessions (reset, invite) or the others (change). A password from a link
  * ends the email's shop sign-in lock and the count of wrong authenticator codes (a closed code step opens, `CodeStepLock`) and, when
- * the email was never verified, turns two-factor sign-in off (the link proves the mailbox); an own or forced change leaves both running, because a registration proves no mailbox and the customer of the same
- * email may be someone else. Only a password from a link ends the hold that a password set by staff puts on API keys and webhook
- * endpoints (`password_set_by_staff`, `MachineCredentialHold`), and not the hold of an email address staff set. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
+ * the email was never verified, turns two-factor sign-in off (the link proves the mailbox); an own or forced change leaves both running, because a password chosen without the emailed link proves no mailbox and the customer of the same
+ * email may be someone else. Only a password from a link ends the hold that a password set by staff puts on API keys
+ * (`password_set_by_staff`, `MachineCredentialHold`), and not the hold of an email address staff set. A wrong current password is `422` on its field, never `401`, which would sign the caller out.
  *
  * Side effects: updates `clients`; inserts `auth_tokens` rows and the outbox event `merchant.password_reset` (rolled back for an email
  * that gets no mail); marks links used; revokes sessions (their cached views are dropped after the commit); counts one point of
@@ -196,7 +196,7 @@ export class MerchantPasswordService {
       // An old reset link must not be able to undo the change.
       await voidOpenClientTokens(work.tx, client.id, PASSWORD_LINK_PURPOSES, now);
       await this.sessions.revokeAllOf('client', client.id, { exceptSessionId: principal.session.id }, work);
-      // The shop lock of the email stays: a registration proves no mailbox, so the email's customer may be someone else (decision 052).
+      // The shop lock of the email stays: a password chosen without the emailed link proves no mailbox, so the email's customer may be someone else (decision 052).
     });
   }
 

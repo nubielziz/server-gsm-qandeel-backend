@@ -44,11 +44,6 @@ export const IDENTITY_SHIPPED_TEXT_ONLY: readonly string[] = ['merchant.portal_a
  */
 export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
   merchant(
-    'merchant.approved',
-    'Your merchant account is approved',
-    'Hi {{merchantName}},\n\nGood news: our team approved your merchant account. You can now add funds, place orders and create API keys.\n\nSign in here: {{portalUrl}}\n\nIf you have not chosen a password yet, use "Forgot password" on the sign-in page.',
-  ),
-  merchant(
     'merchant.suspended',
     'Your merchant account is suspended',
     'Hi {{merchantName}},\n\nYour merchant account has been suspended. You cannot sign in, and API calls are refused, until it is reactivated. Orders that are already in progress will still be completed.\n\nIf you think this is a mistake, reply to this email or contact our support team.',
@@ -57,16 +52,6 @@ export const IDENTITY_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     'merchant.reactivated',
     'Your merchant account is active again',
     'Hi {{merchantName}},\n\nYour merchant account is active again. You can sign in and place orders: {{portalUrl}}\n\nYour earlier sessions were ended, so please sign in again.',
-  ),
-  merchant(
-    'merchant.kyc_approved',
-    'Your identity verification is approved',
-    'Hi {{merchantName}},\n\nWe reviewed your documents and your identity verification is approved. Thank you.',
-  ),
-  merchant(
-    'merchant.kyc_rejected',
-    'Your identity verification needs attention',
-    'Hi {{merchantName}},\n\nWe could not approve your identity verification.\n\nReason: {{reason}}\n\nYou can upload new documents from the Verification page of your account.',
   ),
   merchant(
     'merchant.security_notice',

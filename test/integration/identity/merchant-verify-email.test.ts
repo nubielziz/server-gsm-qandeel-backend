@@ -1,6 +1,6 @@
 // Integration tests of POST /client/auth/verify-email: the emailed link proves the mailbox, and a full session of the same merchant in
-// the same request proves the holder of the password chosen at registration. Without that session the address is still verified, but
-// the registration password and the two-step sign-in enrolled with it stop working, every session of the merchant ends and the address
+// the same request proves the holder of the password chosen before the address was proven. Without that session the address is still verified, but
+// that earlier password and the two-step sign-in enrolled with it stop working, every session of the merchant ends and the address
 // gets a link to choose a password. Also the sign-in and the password change next to it: a proven password counts while it is stored.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -53,7 +53,7 @@ beforeEach(async () => {
   captureEmailedLinks(t);
 });
 
-const REGISTRATION_PASSWORD = 'registration-pass-91';
+const EARLIER_PASSWORD = 'earlier-pass-91';
 const CHOSEN_PASSWORD = 'quiet-harbour-dawn-42';
 const portal = () => new MerchantPortal(t, freshClientIp());
 const problem = (res: { json: () => unknown }) => res.json() as { code: string; detail?: string };
@@ -66,10 +66,20 @@ const oneFormSignIn = (email: string, password: string) =>
     { csrf: false, headers: { 'x-turnstile-token': TURNSTILE_TEST_TOKEN } },
   );
 
-/** Registers a merchant and returns its verification link. */
-async function registered(email: string) {
-  const res = await portal().register({ name: 'Ali Hassan', email, password: REGISTRATION_PASSWORD, country: 'jo' });
-  expect(res.statusCode).toBe(204);
+/**
+ * Makes a merchant that has a password and an address nobody proved yet (staff set a temporary password and the merchant replaced it),
+ * and returns the verification link it was sent.
+ */
+async function unconfirmed(email: string) {
+  const merchant = await makeMerchant(t, {
+    email,
+    name: 'Ali Hassan',
+    emailVerifiedAt: null,
+    password: EARLIER_PASSWORD,
+  });
+  await t.app.get(DbService).runInTransaction(async (work) => {
+    await t.app.get(MerchantAuthTokens).issue(work, { clientId: merchant.id, purpose: 'verify_email' });
+  });
   const link = emailedLinks().find((l) => l.kind === 'email_verification');
   expect(link).toBeDefined();
   return link!;
@@ -109,9 +119,9 @@ async function resetEventsOf(clientId: number) {
 describe('POST /client/auth/verify-email: the address and the password holder prove the account together', () => {
   it('with a full session of the same merchant it verifies the address and keeps the password and the session', async () => {
     const email = 'holder@example.com';
-    const link = await registered(email);
+    const link = await unconfirmed(email);
     const browser = portal();
-    expect((await browser.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    expect((await browser.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     const res = await browser.verifyEmail(link.token);
     expect(res.statusCode).toBe(204);
@@ -120,28 +130,28 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
     expect(row.emailVerifiedAt).not.toBeNull();
     expect(row.passwordHash).not.toBeNull();
     expect((await browser.me()).statusCode).toBe(200);
-    expect((await portal().login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    expect((await portal().login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
     expect(passwordLinksOf(link.clientId)).toEqual([]);
   });
 
-  it('without a session it verifies the address, ends the registration password and every session, and mails a password link', async () => {
+  it('without a session it verifies the address, ends the earlier password and every session, and mails a password link', async () => {
     const email = 'mailbox@example.com';
-    const link = await registered(email);
-    const registrant = portal();
-    expect((await registrant.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    const link = await unconfirmed(email);
+    const holder = portal();
+    expect((await holder.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     const res = await portal().verifyEmail(link.token);
     expect(res.statusCode).toBe(204);
     expect(res.body).toBe('');
     expect(res.cookies).toEqual([]);
     const row = await clientRow(link.clientId);
-    expect(row.status).toBe('pending');
+    expect(row.status).toBe('active');
     expect(row.emailVerifiedAt?.getTime()).toBe(clock.nowMs());
     expect(row.passwordHash).toBeNull();
 
-    // The session of the registration's browser ended, and the registration password no longer signs in.
-    expect((await registrant.me()).statusCode).toBe(401);
-    expect((await portal().login(email, REGISTRATION_PASSWORD)).statusCode).toBe(401);
+    // The session of the earlier browser ended, and the earlier password no longer signs in.
+    expect((await holder.me()).statusCode).toBe(401);
+    expect((await portal().login(email, EARLIER_PASSWORD)).statusCode).toBe(401);
 
     // The address gets the password link through the reset mail, and that link sets a password that signs in.
     const links = passwordLinksOf(link.clientId);
@@ -154,7 +164,7 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
 
   it('treats the session of another merchant as no session', async () => {
     const email = 'other-browser@example.com';
-    const link = await registered(email);
+    const link = await unconfirmed(email);
     const other = await makeMerchant(t);
     const browser = portal();
     expect((await browser.login(other.email)).json()).toEqual({ next: 'done' });
@@ -169,9 +179,9 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
 
   it('answers 403 CSRF_FAILED for a session of the merchant without its CSRF token and leaves the link usable', async () => {
     const email = 'no-header@example.com';
-    const link = await registered(email);
+    const link = await unconfirmed(email);
     const browser = portal();
-    expect((await browser.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    expect((await browser.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     const refused = await browser.verifyEmail(link.token, { csrf: false });
     expect(refused.statusCode).toBe(403);
@@ -194,9 +204,9 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
         { csrf: false, headers: { 'x-turnstile-token': TURNSTILE_TEST_TOKEN } },
       );
 
-    const link = await registered(email);
-    const registrant = portal();
-    expect((await registrant.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    const link = await unconfirmed(email);
+    const holder = portal();
+    expect((await holder.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     // The owner of the mailbox presses the button of the mail, in a browser without a merchant session.
     expect((await portal().verifyEmail(link.token)).statusCode).toBe(204);
@@ -206,10 +216,10 @@ describe('POST /client/auth/verify-email: the address and the password holder pr
     expect(shop.statusCode).toBe(200);
     expect(shop.json()).toMatchObject({ kind: 'customer' });
 
-    // The registrant's session ended and its password is gone: no sign-in, no second factor to enrol.
-    expect((await registrant.setupTwoFactor()).statusCode).toBe(401);
-    expect((await registrant.login(email, REGISTRATION_PASSWORD)).statusCode).toBe(401);
-    expect((await oneForm(REGISTRATION_PASSWORD)).statusCode).toBe(401);
+    // The holder's session ended and its password is gone: no sign-in, no second factor to enrol.
+    expect((await holder.setupTwoFactor()).statusCode).toBe(401);
+    expect((await holder.login(email, EARLIER_PASSWORD)).statusCode).toBe(401);
+    expect((await oneForm(EARLIER_PASSWORD)).statusCode).toBe(401);
 
     // Only the mailbox owner can choose the merchant password, and the sign-in then asks for no second step.
     const [setLink] = passwordLinksOf(link.clientId);
@@ -265,9 +275,9 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
 
   it('refuses a password change whose current password was checked before the verification committed (401), and stores no password', async () => {
     const email = 'change-before@example.com';
-    const link = await registered(email);
+    const link = await unconfirmed(email);
     const browser = portal();
-    expect((await browser.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    expect((await browser.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     // The change has checked the current password and is hashing the new one when the verification commits.
     const hasher = t.app.get(PasswordHasher);
@@ -280,7 +290,7 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
       }
       return hash(password);
     });
-    const change = browser.changePassword(REGISTRATION_PASSWORD, CHANGED_PASSWORD);
+    const change = browser.changePassword(EARLIER_PASSWORD, CHANGED_PASSWORD);
     await held.reached;
     expect((await portal().verifyEmail(link.token)).statusCode).toBe(204);
     held.open();
@@ -305,9 +315,9 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
 
   it('a password change that holds the row first commits, and the verification then ends the new password and every session', async () => {
     const email = 'change-first@example.com';
-    const link = await registered(email);
+    const link = await unconfirmed(email);
     const browser = portal();
-    expect((await browser.login(email, REGISTRATION_PASSWORD)).json()).toEqual({ next: 'done' });
+    expect((await browser.login(email, EARLIER_PASSWORD)).json()).toEqual({ next: 'done' });
 
     // The change has written the new password (the row is locked) and waits before it ends the other sessions.
     const sessions = t.app.get(SessionService);
@@ -320,7 +330,7 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
       }
       return revokeAllOf(subjectType, subjectId, options, work);
     });
-    const change = browser.changePassword(REGISTRATION_PASSWORD, CHANGED_PASSWORD);
+    const change = browser.changePassword(EARLIER_PASSWORD, CHANGED_PASSWORD);
     await held.reached;
     const verify = portal().verifyEmail(link.token);
     await Bun.sleep(300);
@@ -336,8 +346,8 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
 
   it('refuses a sign-in whose password was checked before the verification committed (401), and opens no session', async () => {
     const email = 'login-before@example.com';
-    const link = await registered(email);
-    const registrant = portal();
+    const link = await unconfirmed(email);
+    const holder = portal();
 
     // The sign-in has checked the password and has not opened its session yet when the verification commits.
     const hasher = t.app.get(PasswordHasher);
@@ -345,13 +355,13 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
     const held = gate();
     spyOn(hasher, 'verify').mockImplementation(async (hashed: string, password: string) => {
       const correct = await verifyHash(hashed, password);
-      if (password === REGISTRATION_PASSWORD) {
+      if (password === EARLIER_PASSWORD) {
         held.enter();
         await held.opened;
       }
       return correct;
     });
-    const login = registrant.login(email, REGISTRATION_PASSWORD);
+    const login = holder.login(email, EARLIER_PASSWORD);
     await held.reached;
     expect((await portal().verifyEmail(link.token)).statusCode).toBe(204);
     held.open();
@@ -359,15 +369,15 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
     const res = await login;
     expect(res.statusCode).toBe(401);
     expect(problem(res).code).toBe('UNAUTHORIZED');
-    expect((await registrant.me()).statusCode).toBe(401);
+    expect((await holder.me()).statusCode).toBe(401);
     expect(await liveSessionsOf(link.clientId)).toEqual([]);
     expect((await clientRow(link.clientId)).passwordHash).toBeNull();
   });
 
   it('a sign-in that holds the row first opens its session, and the verification then ends it', async () => {
     const email = 'login-first@example.com';
-    const link = await registered(email);
-    const registrant = portal();
+    const link = await unconfirmed(email);
+    const holder = portal();
 
     // The sign-in has locked the merchant row and waits before it inserts the session.
     const sessions = t.app.get(SessionService);
@@ -380,7 +390,7 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
       }
       return create(input, work);
     });
-    const login = registrant.login(email, REGISTRATION_PASSWORD);
+    const login = holder.login(email, EARLIER_PASSWORD);
     await held.reached;
     const verify = portal().verifyEmail(link.token);
     await Bun.sleep(300);
@@ -388,15 +398,15 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
 
     expect((await login).json()).toEqual({ next: 'done' });
     expect((await verify).statusCode).toBe(204);
-    expect((await registrant.me()).statusCode).toBe(401);
+    expect((await holder.me()).statusCode).toBe(401);
     expect(await liveSessionsOf(link.clientId)).toEqual([]);
     expect((await clientRow(link.clientId)).passwordHash).toBeNull();
   });
 
   it('a hash upgrade after a sign-in writes nothing once the verification ended the password', async () => {
     const email = 'rehash@example.com';
-    const link = await registered(email);
-    const registrant = portal();
+    const link = await unconfirmed(email);
+    const holder = portal();
 
     // The stored hash is due for an upgrade; the upgrade is hashing the proven password when the verification commits.
     const hasher = t.app.get(PasswordHasher);
@@ -404,22 +414,22 @@ describe('POST /client/auth/verify-email next to a password change or a sign-in 
     spyOn(hasher, 'needsRehash').mockReturnValue(true);
     const held = gate();
     spyOn(hasher, 'hash').mockImplementation(async (password: string) => {
-      if (password === REGISTRATION_PASSWORD) {
+      if (password === EARLIER_PASSWORD) {
         held.enter();
         await held.opened;
       }
       return hash(password);
     });
-    const login = registrant.login(email, REGISTRATION_PASSWORD);
+    const login = holder.login(email, EARLIER_PASSWORD);
     await held.reached;
     expect((await portal().verifyEmail(link.token)).statusCode).toBe(204);
     held.open();
     await login;
 
     expect((await clientRow(link.clientId)).passwordHash).toBeNull();
-    expect((await registrant.me()).statusCode).toBe(401);
+    expect((await holder.me()).statusCode).toBe(401);
     expect(await liveSessionsOf(link.clientId)).toEqual([]);
-    expect((await portal().login(email, REGISTRATION_PASSWORD)).statusCode).toBe(401);
+    expect((await portal().login(email, EARLIER_PASSWORD)).statusCode).toBe(401);
   });
 
   it('counts a session that is still at the code step as no session', async () => {

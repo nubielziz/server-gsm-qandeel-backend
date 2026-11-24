@@ -1,11 +1,12 @@
 // Integration tests of the in-app items events make (feature 23, plan section 9.2, S9): a storefront order mail also makes one inbox item
 // for a customer with an account (and none for a guest, a suspended or an anonymized one), a merchant's low balance makes one even when
-// the merchant switched email and Telegram off, a job that runs twice makes one, and an event without a registered text makes none.
+// the merchant switched email off, a job that runs twice makes one, and an event without a registered text makes none.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { DbService, type Database, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { type NotificationInput, NotificationService } from '@src/modules/platform';
+import { SUPPORT_DEFAULT_TEMPLATES } from '@src/modules/support';
 import { type TestApp, createTestApp } from '../../support/app';
 import { insertMerchant } from '../../support/auth';
 import { insertCustomer } from '../../support/campaigns';
@@ -110,15 +111,24 @@ describe('customer events', () => {
     expect(await notificationRows(db)).toHaveLength(0);
   });
 
-  it('makes no item for an event with no registered text', async () => {
+  it('makes no item for an event with no registered text, and still writes its mail', async () => {
     const customerId = await insertCustomer(db);
-    await enqueue({
-      event: 'checkout.abandoned',
+    await db
+      .insert(s.notificationTemplates)
+      .values(SUPPORT_DEFAULT_TEMPLATES.map((template) => ({ ...template, isActive: true })));
+    const made = await enqueue({
+      event: 'support.ticket_received',
       recipient: { type: 'customer', id: customerId },
       channel: 'email',
-      variables: { customerName: 'Dana', device: 'iPhone', link: 'https://shop.example.com/x' },
-      dedupeKey: 'recovery-1:email',
+      variables: {
+        customerName: 'Dana',
+        ticketNumber: 'T-1042',
+        subject: 'Where is my unlock?',
+        link: 'https://shop.example.com/support/tickets/x',
+      },
+      dedupeKey: 'ticket-1:email',
     });
+    expect(made.status).toBe('queued');
     expect(await items()).toHaveLength(0);
   });
 });
@@ -148,10 +158,10 @@ describe('merchant events', () => {
     });
   });
 
-  it('still makes the item for a merchant who switched email and Telegram off', async () => {
+  it('still makes the item for a merchant who switched email off', async () => {
     const clientId = await insertMerchant(db, {
       email: 'ops@zainmobilehub.example',
-      notificationPrefs: { events: { 'wallet.low_balance': { email: false, telegram: false } } },
+      notificationPrefs: { events: { 'wallet.low_balance': { email: false } } },
     });
     expect(await planEvent(t, lowBalance(clientId))).toEqual({ created: 0, skipped: 'opted_out' });
     expect(await items()).toHaveLength(1);

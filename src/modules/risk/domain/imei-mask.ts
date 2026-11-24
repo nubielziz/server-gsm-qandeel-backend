@@ -1,4 +1,4 @@
-// How an erased IMEI is shown (feature 18, RESOLUTIONS b2c-4): the TAC that is still public, then bullets for the rest.
+// How an erased or hidden IMEI is shown (feature 18, RESOLUTIONS b2c-4): the TAC that is still public, then bullets for the rest.
 // Pure, no database.
 
 /** The mask character the console prints for the digits that are gone. */
@@ -10,10 +10,10 @@ export const IMEI_LENGTH = 15;
 /**
  * The text that stands for an IMEI whose digits were erased.
  *
- * Why: RESOLUTIONS b2c-4: after the retention job or an anonymization the staff log keeps the device (the TAC) and no longer the
- * serial part: the TAC followed by bullets up to 15 characters, or 15 bullets when the TAC is not in the catalogue.
+ * Why: RESOLUTIONS b2c-4: an anonymization (and an audit row of a blocklist entry) keeps the device (the TAC) and no longer the
+ * serial part: the TAC followed by bullets up to 15 characters, or 15 bullets when there is no TAC.
  *
- * @param tac the 8-digit TAC of the check, or `null` when it is not in the catalogue
+ * @param tac the 8-digit TAC of the IMEI, or `null` when it is not known
  * @returns for example `35389011•••••••`
  */
 export function maskedImei(tac: string | null): string {

@@ -91,11 +91,13 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /v1/account
 
 - **Map**: Available and held balance, credit limit and client group. (الرصيد المتاح والمحجوز والحد الائتماني والفئة) · api-key `account:read` · stage 7 · tables clients, client_groups, ledger_accounts
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /v1/transactions
 
 - **Map**: Account statement: wallet ledger entries, cursor pagination. (كشف الحساب: قيود المحفظة بالـ cursor) · api-key `account:read` · stage 7 · tables ledger_entries, ledger_transactions
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/wallet
@@ -359,7 +361,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/reports/profit
 
 - **Map**: Profit by day, service, supplier or merchant. (الربح حسب اليوم أو الخدمة أو المورد أو التاجر) · staff-permission `reports:read` · stage 11 · tables orders, ledger_entries
-- **Frontend**: `getProfitReport` (src/features/finance/api/reports.ts:13) · params `query: ProfitQuery` · returns `ProfitReport` · success 200 · assumed contract
+- **Frontend**: `getProfitReport` (src/features/finance/api/reports.ts:21) · params `query: ProfitQuery` · returns `ProfitReport` · success 200 · assumed contract
 - **Query**: groupBy=day|service|supplier|client, from=YYYY-MM-DD, to=YYYY-MM-DD (both inclusive; presets last 7/30/90 days ending today, computed in the browser time zone, finance/lib/reports.ts:39-43).
 - **Response**: Object {groupBy, from, to (echo the dates used), currency, rows: [{key, label, orders, revenue, cost, profit}], totals: {orders, revenue, cost, profit}}. Completed orders by completion time; revenue = selling price without VAT (revenue lines of moneyEvents complete and b2c_deliver), cost = supplier cost (cogs lines), profit = revenue - cost (may be negative). day: key = the date, oldest first, days without orders omitted; other splits: key = record id as a string, sorted by profit desc; supplier key "0" label "No supplier"; client key "0" label "Storefront customers" for B2C orders (mocks/reports.ts:25-74).
 - **Errors**: 422 VALIDATION_FAILED (unknown groupBy or bad dates); 403 FORBIDDEN (caller lacks reports:read)
@@ -368,7 +370,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/reports/wallet-exposure
 
 - **Map**: Balances, overdraft and reserved amounts. (الأرصدة والـ overdraft والمحجوز) · staff-permission `reports:read` · stage 11 · tables ledger_accounts
-- **Frontend**: `getWalletExposure` (src/features/finance/api/reports.ts:27) · params none · returns `WalletExposure` · success 200 · assumed contract
+- **Frontend**: `getWalletExposure` (src/features/finance/api/reports.ts:35) · params none · returns `WalletExposure` · success 200 · assumed contract
 - **Response**: Object {currency, totals: {clients, balance, reserved, overdraftLimit, overdraftUsed, inOverdraft}, rows: [{clientId, name, balance, reserved, overdraftLimit, overdraftUsed}]}. Merchant side: balance from client_wallet, reserved from client_hold, overdraftLimit = overdraft_limit, overdraftUsed = max(0, -balance) (the mock caps it at the limit), inOverdraft = merchants with balance < 0. Rows largest balance first, capped (mock 50); totals cover every merchant, not just the rows. The strip shows totals.balance, totals.reserved and totals.overdraftUsed (mocks/books.ts:56-92).
 - **Errors**: 403 FORBIDDEN (caller lacks reports:read)
 - **Mock**: src/features/finance/mocks/reports.ts (Profit from the orders mock (completed, by completedAt), VAT from demo storefront orders, exposure from mocks/books.ts exposureOf.)
@@ -390,11 +392,13 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## EVENT wallet.low_balance
 
 - **Map**: The available balance fell below the alert threshold. (الرصيد المتاح نزل تحت حد التنبيه) · outbound-hmac · stage 7 · tables ledger_accounts, webhook_deliveries
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## EVENT invoice.paid
 
 - **Map**: The wallet was credited from an invoice. (انشحنت المحفظة من فاتورة) · outbound-hmac · stage 8 · tables invoices, webhook_deliveries
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /admin/tax-rates
@@ -531,7 +535,7 @@ Frontend features covering this module: `merchants`, `finance`, `settings`, `ref
 ## GET /admin/reports/vat
 
 - **Map**: VAT due by country and period, computed from ledger entries rather than invoices. (الضريبة المستحقة بالبلد والفترة من القيود لا من الفواتير) · staff-permission `reports:finance` · stage 16 · tables ledger_entries, tax_rates, invoices
-- **Frontend**: `getVatReport` (src/features/finance/api/reports.ts:37) · params `query: VatQuery` · returns `VatReport` · success 200 · assumed contract
+- **Frontend**: `getVatReport` (src/features/finance/api/reports.ts:45) · params `query: VatQuery` · returns `VatReport` · success 200 · assumed contract
 - **Query**: from, to (YYYY-MM-DD inclusive; this/last month or quarter computed in the browser time zone, finance/lib/reports.ts:45-55).
 - **Response**: Object {from, to, currency, rows: [{country, period (YYYY-MM), rate (percent string), orders, taxable, vat}], totals: {orders, taxable, vat}}, computed from vat_payable ledger lines (moneyEvent b2c_pay minus b2c_refund), not from invoices; one row per tax country and month, newest period first then country (mocks/reports.ts:86-125).
 - **Errors**: 422 VALIDATION_FAILED (bad dates); 403 FORBIDDEN (caller lacks reports:finance)

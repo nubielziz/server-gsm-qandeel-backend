@@ -53,8 +53,6 @@ export const ATTENTION_SEVERITY = {
   services_below_floor: 'high',
   deposits_pending: 'medium',
   wallets_negative: 'medium',
-  merchants_pending: 'low',
-  commissions_accrued: 'low',
   orders_held: 'high',
   tickets_late: 'medium',
   refunds_requested: 'medium',

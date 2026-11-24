@@ -412,10 +412,10 @@ describe('a locked email answers alike for every email', () => {
   });
 });
 
-describe("a merchant registered on a customer's email (no mailbox proven)", () => {
+describe("a merchant with a password on a customer's email (no mailbox proven)", () => {
   const SQUATTER_PASSWORD = 'the-squatters-own-passphrase';
 
-  /** A customer with a password, and a pending merchant on the same email whose email was never verified (an open registration). */
+  /** A customer with a password, and a pending merchant on the same email whose email was never verified (a row written before decision 062). */
   async function sharedEmail(): Promise<string> {
     const email = uniqueEmail('shared');
     await makeCustomer(t, { email });

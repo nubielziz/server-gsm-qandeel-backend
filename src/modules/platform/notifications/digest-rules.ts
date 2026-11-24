@@ -54,7 +54,7 @@ export function digestSendDelay(cycle: DigestCycle, now: Date): number {
  * Builds the dedupe key of one merchant's digest on one channel in one period.
  *
  * @param event the event key (`service.price_changed`)
- * @param channel `email` or `telegram`
+ * @param channel the channel (`email`)
  * @param clientId the merchant
  * @param cycle the period
  * @returns the key stored on the notification row

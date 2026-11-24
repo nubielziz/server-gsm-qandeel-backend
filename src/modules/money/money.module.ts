@@ -2,7 +2,6 @@
 // gateways, invoices, top-up payments, the payment webhook). Refunds and disputes arrive with their own features (docs/ARCHITECTURE.md § 2).
 import { Global, Module } from '@nestjs/common';
 import { MerchantAccounts } from './application/merchant-accounts';
-import { MerchantSpend } from './application/merchant-spend';
 import { OrderSettlements } from './application/order-settlements';
 import { StorefrontMoney } from './application/storefront-money';
 import { MerchantWallets } from './application/merchant-wallets';
@@ -30,7 +29,6 @@ import { MoneyOutboxModule } from './money-outbox.module';
     WalletLowBalanceWatch,
     LedgerPoster,
     MerchantWallets,
-    MerchantSpend,
     OrderSettlements,
     PaymentGateways,
     StorefrontMoney,
@@ -42,7 +40,6 @@ import { MoneyOutboxModule } from './money-outbox.module';
     MerchantAccounts,
     LedgerPoster,
     MerchantWallets,
-    MerchantSpend,
     OrderSettlements,
     PaymentGateways,
     StorefrontMoney,

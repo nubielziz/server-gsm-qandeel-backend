@@ -86,9 +86,9 @@ await this.db.runInTransaction(async ({ tx, afterCommit }) => {
 - A CHECK passes when its expression is `NULL`: write multi-branch checks with `is not distinct from` or `is null`
   (see `ledger_accounts_kind_owner_check`).
 - Foreign keys are `ON DELETE RESTRICT`, except configuration that dies with its parent (service fields, options and
-  prices, supplier services, webhook deliveries, ticket messages, customer credentials, check history).
+  prices, supplier services, ticket messages, customer credentials, check history).
 - Every foreign key has a full (non-partial) index starting with its column; a test checks the schema and the database.
-- Partial indexes serve hot states: open orders, unprocessed outbox rows, live sessions, pending webhook retries.
+- Partial indexes serve hot states: open orders, unprocessed outbox rows, live sessions.
 - Deviation from decision 027 ("booleans default false"): `is_active` / `is_available` default to `true`, because a
   newly created rule, link or service is meant to be live unless the admin switches it off (the frontend forms send
   the flag explicitly anyway).

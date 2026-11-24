@@ -449,6 +449,20 @@
       "when": 1795462073332,
       "tag": "0063_service_sort",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795480456251,
+      "tag": "0064_merchant_verification_retired",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795480462211,
+      "tag": "0065_retired_features",
+      "breakpoints": true
     }
   ]
 }

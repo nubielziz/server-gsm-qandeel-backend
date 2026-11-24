@@ -21,7 +21,6 @@ describe('RATE_LIMITERS', () => {
       'account-mail',
       'api-key',
       'broadcast-email',
-      'broadcast-telegram',
       'help-vote',
       'ip',
       'media',
@@ -39,8 +38,6 @@ describe('RATE_LIMITERS', () => {
       'upload',
       'wallet-topup',
       'webhook-intake',
-      'webhook-retry',
-      'webhook-test',
     ]);
   });
 
@@ -71,7 +68,7 @@ describe('RATE_LIMITERS', () => {
     expect(RATE_LIMITERS['stream-connect']).toMatchObject({ points: 20, windowSeconds: 60 });
   });
 
-  it('gives a ticket page 120 typing and read calls a minute, a ticket 20 requester messages and an account 5 tickets an hour (feature 28)', () => {
+  it('gives a ticket page 120 read calls a minute, a ticket 20 requester messages and an account 5 tickets an hour (feature 28)', () => {
     expect(RATE_LIMITERS['search-suggest']).toMatchObject({ points: 1200, windowSeconds: 60 });
     expect(RATE_LIMITERS['ticket-chat']).toMatchObject({ points: 120, windowSeconds: 60 });
     expect(RATE_LIMITERS['ticket-message']).toMatchObject({ points: 20, windowSeconds: 60 });
@@ -82,16 +79,14 @@ describe('RATE_LIMITERS', () => {
     expect(RATE_LIMITERS['ticket-email']).toMatchObject({ points: 3, windowSeconds: 3600 });
   });
 
-  it('gives a merchant 10 test deliveries an hour and an address 600 incoming webhooks a minute (decision 053)', () => {
-    expect(RATE_LIMITERS['webhook-test']).toMatchObject({ points: 10, windowSeconds: 3600 });
+  it('gives an address 600 incoming webhooks a minute (decision 053)', () => {
     expect(RATE_LIMITERS['webhook-intake']).toMatchObject({ points: 600, windowSeconds: 60 });
-    expect(RATE_LIMITERS['webhook-test']).not.toHaveProperty('blockSeconds');
     expect(RATE_LIMITERS['webhook-intake']).not.toHaveProperty('blockSeconds');
   });
 
-  it('sends at most 5 campaign emails and 20 campaign Telegram messages a second by default (feature 23)', () => {
+  it('sends at most 5 campaign emails a second by default, and has no budget for a campaign channel that was retired (feature 23)', () => {
     expect(RATE_LIMITERS['broadcast-email']).toMatchObject({ points: 5, windowSeconds: 1 });
-    expect(RATE_LIMITERS['broadcast-telegram']).toMatchObject({ points: 20, windowSeconds: 1 });
+    expect(Object.keys(RATE_LIMITERS).filter((name) => name.startsWith('broadcast-'))).toEqual(['broadcast-email']);
   });
 
   it('lets one account have 5 emails of a kind an hour, with no lock-out', () => {

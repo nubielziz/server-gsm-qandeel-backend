@@ -31,14 +31,14 @@ export interface SignInAccount {
  * addresses still ends in a lock, and they are counted before the slow password check, atomically, so a burst of parallel attempts
  * cannot all be checked: ten counted attempts are checked, the eleventh is refused and starts a lock of 15 minutes. A correct password
  * takes back only its own attempt (`giveBack`), never the failures others caused: two shop accounts of one email may belong to two
- * people (a registration proves no mailbox), so one's success must not reopen the other's guessing. A lock that refused every caller
+ * people (a password chosen without the emailed link proves no mailbox), so one's success must not reopen the other's guessing. A lock that refused every caller
  * would let a stranger keep the owner out, so while the email is locked an attempt is refused (`429` with `Retry-After`) unless the
  * request comes from a network (an IPv4 /24 or IPv6 /64) that one of the newest 50 full sessions of the account being signed into came
  * from; the attempts such a network is still allowed share one budget per email and network (limiter `sign-in-familiar`, 5 in 15
  * minutes: the sixth is refused like any other attempt on a locked email, before its password is checked). The sessions are read whenever
  * the email is locked, with the account's id or with an id no account has, so a locked email answers alike for every email. Count and lock end (`clear`) only with a new password
  * from an emailed link (it proves the mailbox), one staff set, or the own change of an account whose holder proved the mailbox or was
- * made by staff (customers, console members); a merchant's own change does not end them (a registration proves no mailbox).
+ * made by staff (customers, console members); a merchant's own change does not end them (a password chosen without the emailed link proves no mailbox).
  *
  * Side effects: the Redis hash of `SignInFailures`; one `sessions` read while an email is locked; while it is locked, one point of the
  * `sign-in-familiar` counter (`gsm:{env}:ratelimit:sign-in-familiar:{hash}`) for an attempt that comes from a network the account used.

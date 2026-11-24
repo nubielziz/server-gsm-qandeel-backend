@@ -1,4 +1,4 @@
-// HTTP controller of the ticket page's chat routes (feature 28, routes beyond the map: scripts/map-additions/28.mjs): typing, the read
+// HTTP controller of the ticket page's chat routes (feature 28, routes beyond the map: scripts/map-additions/28.mjs): the read
 // mark, the attachment upload and its download. Thin: the rules live in the support services. The token routes read the ticket id the
 // capability guard resolved.
 import { Body, Controller, Param, Res } from '@nestjs/common';
@@ -8,13 +8,7 @@ import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
 import { TicketAttachmentService } from '../application/ticket-attachment.service';
 import { TicketReadService } from '../application/ticket-read.service';
-import { TicketTypingService } from '../application/ticket-typing.service';
-import {
-  openStoreTicketFile,
-  storeTicketRead,
-  storeTicketTyping,
-  uploadStoreTicketFile,
-} from '../contracts/ticket-live.contracts';
+import { openStoreTicketFile, storeTicketRead, uploadStoreTicketFile } from '../contracts/ticket-live.contracts';
 
 /** The ticket id the capability guard found; a handler behind a `ticket-token` route always has one. */
 function ticketIdOf(principal: Principal | undefined): CapabilityGrant['id'] {
@@ -28,10 +22,9 @@ const NO_STORE = 'no-store';
 /**
  * The chat routes of a ticket page.
  *
- * Why: feature 28 (rules 2, 3 and 8): the customer's typing reaches staff, the page marks what it showed as seen, and files go both
- * ways. Typing and read marks count against `ticket-chat`, not the token limit (fact 7 of the plan); the upload against `upload`.
+ * Why: feature 28 (rules 3 and 8): the page marks what it showed as seen, and files go both ways. Read marks count against
+ * `ticket-chat`, not the token limit (fact 7 of the plan); the upload against `upload`.
  *
- * @route POST /store/v1/tickets/:token/typing
  * @route POST /store/v1/tickets/:token/read
  * @route POST /store/v1/tickets/:token/files
  * @route GET /store/v1/tickets/:token/files/:fileId
@@ -39,27 +32,9 @@ const NO_STORE = 'no-store';
 @Controller()
 export class StoreTicketLiveController {
   constructor(
-    private readonly typing: TicketTypingService,
     private readonly reads: TicketReadService,
     private readonly attachments: TicketAttachmentService,
   ) {}
-
-  /**
-   * Records that the customer is typing.
-   *
-   * @param principal the holder of the ticket token
-   * @param reply the reply, for the cache header
-   * @returns nothing (204), whatever happened to the ping
-   * @route POST /store/v1/tickets/:token/typing
-   */
-  @Route(storeTicketTyping)
-  async typingPing(
-    @CurrentPrincipal() principal: Principal | undefined,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<void> {
-    reply.header('cache-control', NO_STORE);
-    await this.typing.ping(ticketIdOf(principal), { by: 'requester' });
-  }
 
   /**
    * Moves the customer's seen mark.

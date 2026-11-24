@@ -26,7 +26,7 @@ export interface RateLimitResult {
   readonly limit: number;
   /** Seconds until the key may try again; 0 when allowed, at least 1 when refused. */
   readonly retryAfterSeconds: number;
-  /** Seconds until the window ends and the counter starts over (the `RateLimit-Reset` header of REST v1); at least 1. */
+  /** Seconds until the window ends and the counter starts over; at least 1. */
   readonly resetSeconds: number;
 }
 

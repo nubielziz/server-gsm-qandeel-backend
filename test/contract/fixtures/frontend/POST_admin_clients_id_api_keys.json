@@ -1,0 +1,23 @@
+{
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "key": {
+      "clientId": 1,
+      "name": "Harvest sample",
+      "prefix": "gsm_MqJS",
+      "allowedIps": [],
+      "rateLimitPerMin": 60,
+      "lastUsedAt": null,
+      "lastUsedIp": "",
+      "expiresAt": null,
+      "revokedAt": null,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "createdByStaff": true,
+      "id": 21
+    },
+    "secret": "gsm_MqJSJdYTXgvZ5TaSN3xbUV95dFXx53czmSucge4tawzb"
+  }
+}

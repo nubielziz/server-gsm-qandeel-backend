@@ -39,7 +39,6 @@ describe('actorOf', () => {
       clientId: 8,
       clientName: 'Zain Mobile Hub',
       keyId: 2,
-      scopes: ['dhru'],
       ip: 'x',
     };
     expect(actorOf(principal)).toEqual({ type: 'client', id: 8, name: 'Zain Mobile Hub' });

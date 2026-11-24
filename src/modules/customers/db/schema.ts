@@ -45,7 +45,7 @@ export type CustomerStatus = (typeof CUSTOMER_STATUSES)[number];
 /**
  * Risk level of a customer.
  *
- * Why: the console's customer wire enum.
+ * Why: the check of `customers.risk_level`, which was retired (decision 062): no code reads or writes the column, and it keeps its default `low`.
  */
 export const RISK_LEVELS = ['low', 'medium', 'high'] as const;
 
@@ -55,7 +55,7 @@ export type RiskLevel = (typeof RISK_LEVELS)[number];
 /**
  * Life of a checkout session: `open` until it is paid or runs out.
  *
- * Why: RESOLUTIONS b2c-14: the abandoned-checkouts report reads `open` sessions past `expires_at`; `paid` creates the order.
+ * Why: RESOLUTIONS b2c-14: a session past `expires_at` that is still `open` reads as expired; `paid` creates the order.
  */
 export const CHECKOUT_SESSION_STATUSES = ['open', 'paid', 'expired'] as const;
 
@@ -74,9 +74,10 @@ export const CONSENT_PURPOSES = ['terms', 'privacy', 'refund_policy', 'withdrawa
 export type ConsentPurpose = (typeof CONSENT_PURPOSES)[number];
 
 /**
- * Who gave a consent: a storefront customer or a merchant.
+ * Who gave a consent: a storefront customer, or a merchant (retired).
  *
- * Why: RESOLUTIONS b2c-14; `subject_id` points at `customers` or `clients` accordingly.
+ * Why: RESOLUTIONS b2c-14; `subject_id` points at `customers` or `clients` accordingly. No code ever wrote a `client` row and none writes one now;
+ * the value stays in the list because the check constraint and the readers must accept an old row.
  */
 export const CONSENT_SUBJECT_TYPES = ['customer', 'client'] as const;
 
@@ -105,6 +106,7 @@ export const customers = pgTable(
     /** the staff member who created the account for the customer */
     createdBy: fk((): AnyPgColumn => staffUsers.id),
     marketingOptIn: boolean().notNull().default(false),
+    /** Retired (decision 062): unread and unwritten (the customer risk level is gone from the wire and the code); the accounts migration drops it. */
     riskLevel: text().$type<RiskLevel>().notNull().default('low'),
     status: text().$type<CustomerStatus>().notNull().default('active'),
     suspendedAt: timestampTz(),
@@ -155,6 +157,7 @@ export const customerCredentials = pgTable(
     passwordHash: text(),
     mustChangePassword: boolean().notNull().default(false),
     passwordChangedAt: timestampTz(),
+    /** Retired with `locked_until` (decision 062): the lockout lives in the cache, nothing reads or writes these two; the accounts migration drops them. */
     failedAttempts: integer().notNull().default(0),
     lockedUntil: timestampTz(),
     updatedBy: fk((): AnyPgColumn => staffUsers.id),
@@ -216,6 +219,7 @@ export const checkoutSessions = pgTable(
     expiresAt: timestampTz().notNull(),
     /** set when the payment created the order */
     orderId: fk((): AnyPgColumn => orders.id),
+    /** Retired (decision 062): the automatic and the manual reminder of an abandoned checkout are gone; nothing reads or writes this column until the accounts migration drops it. */
     recoveryEmailedAt: timestampTz(),
     /** true when a signed-in customer opened the checkout: only then may it be paid from the store balance (feature 21) */
     openedSignedIn: boolean().notNull().default(false),

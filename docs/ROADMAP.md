@@ -15,7 +15,7 @@ money, Fable; site changes for the storefront session in `/home/saifi/gsm-projec
 | Phase / item | State | Commit (backend) |
 |---|---|---|
 | 0.1-0.6 merchant management (plus the owner's list: forced password change, profile and business info, suspension hardening, lifecycle mails, staff mails with `CONSOLE_BASE_URL`, staff-made API keys, the console's merchant page) | **done** | `1087d98` (console `5e844ab`) |
-| 1.3 smart sign-in; 1.4/1.7 Turnstile on merchant register, login, forgot (behind `TURNSTILE_MERCHANT_AUTH`) | **done** | `dc747c0` |
+| 1.3 smart sign-in; 1.4/1.7 Turnstile on merchant login, forgot (behind `TURNSTILE_MERCHANT_AUTH`) | **done** | `dc747c0` |
 | 2W customer wallet (2W.1-2W.5; 2W.6 is the site's; 2W.7 is the owner's legal and accounting check: the switch `wallet.customer.enabled` stays off until then) | **done** | `796eeab` (console `faed3fb`) |
 | Storefront catalog needs (`storefront/docs/BACKEND-NEEDS.md` 1-8, page list, slug alternates, help vote) | **done** | `430cf59` (console `de1b819`) |
 | Notification center (broadcasts, in-app inbox on three surfaces, scheduling) | **done** | `620eea7` (console `1011fd7`) |
@@ -38,7 +38,7 @@ The sections below are the original plan (2026-11-09), kept as written.
 3. **One smart sign-in form.** One email + password form; the site finds out which kind of account it is and opens the right
    area. Needs one new backend route (phase 1, item 1.3).
 4. **The whole merchant portal lives inside the site** (all 51 `/client/*` routes): prices, orders from the wallet, top-ups,
-   invoices and statement, API keys, webhooks, 2FA, settings.
+   invoices and statement, API keys, 2FA, settings.
 5. **English only** (decision 039, 2026-11-16). It was planned as Arabic and English with a language switch; the owner removed Arabic
    as a language of the system. Arabic text that people type is still data and keeps working (PDF shaping, CSV, plain-text mails).
 6. **Customers get a wallet too, like merchants** (decided 2026-11-09): a regular customer tops up a balance ("Add Funds") and
@@ -70,10 +70,10 @@ Every item: permission `clients:update` (0.6 maybe a new one), one audit row, te
 | 1.1 | **New app** `storefront/` next to `frontend-admin/` | Lead's choice to confirm at the start: Next.js (server-rendered pages for search engines: services, help, pages) or Vite + React like the console (simpler, no SEO). Same HTTP rules as the console (one `fetch` client, problem+json errors) |
 | 1.2 | **One language: English** (decision 039; first planned as Arabic + English, right-to-left) | No switch and no saved language: `/en/…` pages, every `/ar/…` address answers 308 to the same path under `/en` |
 | 1.3 | **One smart sign-in** (backend) | New route, for example `POST /auth/sign-in`: checks the email against merchants then customers, verifies the password with the same lockout and rate limits, opens the right session and answers `{ kind: 'merchant' | 'customer', next }` (merchant 2FA step as today). It must not reveal whether an email exists. An email present in both tables: the merchant wins, and the customer area is reachable with a separate customer sign-in link. Customers without a password keep the magic link (`/store/v1/auth/magic-link`) |
-| 1.4 | **Sign up** | "Create an account" (customer: magic link) and "Apply as a merchant" (`POST /client/auth/register`: pending until staff approve, email verification) |
+| 1.4 | **Sign up** | "Create an account" (customer: magic link); a merchant applies through WhatsApp and the owner makes the account (active at once, invitation link) |
 | 1.5 | **Email links on one domain** | Both kinds use `/set-password?token=`. No code change: set `PORTAL_BASE_URL=https://<site>/merchant` and `STORE_BASE_URL=https://<site>`, so merchant links go to `/merchant/set-password`, `/merchant/verify-email` |
-| 1.6 | **Public pages** | Home, services list and service page (`/store/v1/services`, `/:slug`), IMEI check (`/store/v1/imei/check`), help (`/store/v1/help`), content pages (`/store/v1/pages/:slug`), site settings (`/store/v1/config`). A signed-in merchant sees their own prices (`/client/services`) instead of retail |
-| 1.7 | **Turnstile** on sign-up, sign-in, IMEI check, checkout and tickets | Site key in the app's build settings; the backend already checks the token |
+| 1.6 | **Public pages** | Home, services list and service page (`/store/v1/services`, `/:slug`), help (`/store/v1/help`), content pages (`/store/v1/pages/:slug`), site settings (`/store/v1/config`). A signed-in merchant sees their own prices (`/client/services`) instead of retail |
+| 1.7 | **Turnstile** on sign-up, sign-in, checkout and tickets | Site key in the app's build settings; the backend already checks the token |
 | 1.8 | **Hosting on one domain** | `shop.` (site), `admin.` (console), `api.` (API); `CONSOLE_ORIGINS` and `SHOP_ORIGINS` (derived from the base URLs in production, decision 045), `CSRF_COOKIE_DOMAIN` and `TRUST_PROXY` set for them (cookies are SameSite=Lax) |
 
 ## Phase 2W: a wallet for customers (decided 2026-11-09; backend first, before phase 2 goes live)
@@ -101,7 +101,7 @@ decisions go to B-entries as usual.
 
 Checkout (`/store/v1/checkout-sessions*`: open, consents, pay), order tracking and tax receipt (`/store/v1/orders/:token*`), my
 account (`/store/v1/me*`: orders, password, currency, data export and deletion), support tickets
-(`/store/v1/tickets*`, rating). **Card payment depends on phase 4; paying from the balance and "Add Funds" depend on phase 2W.**
+(`/store/v1/tickets*`). **Card payment depends on phase 4; paying from the balance and "Add Funds" depend on phase 2W.**
 
 ## Phase 3: the merchant area (all `/client/*` routes)
 
@@ -112,12 +112,9 @@ account (`/store/v1/me*`: orders, password, currency, data export and deletion),
 | Orders | `GET /client/orders`, `/:id`, cancel, verify, CSV export |
 | Wallet and statement | `GET /client/wallet`, `/wallet/statement` |
 | Top-ups and invoices (bank transfer receipt upload) | `/client/invoices*`, `GET /client/payment-methods` |
-| API keys and the Dhru / REST v1 connection details | `/client/api-keys*` |
-| Webhooks with delivery log and test | `/client/webhooks*` |
-| Security: password, 2FA, sessions | `/client/security/*`, `/client/sessions*` |
-| Profile, notification preferences, Telegram | `PATCH /client/profile`, `/client/notification-preferences`, `POST /client/telegram/link` |
-| Verification (KYC upload) | `/client/kyc` |
-| Referrals and commissions | `GET /client/referrals`, `GET /client/commissions` |
+| API keys and the Dhru connection details | `/client/api-keys*` |
+| Security: password, 2FA | `/client/security/*` |
+| Profile and notification preferences | `PATCH /client/profile`, `/client/notification-preferences` |
 | Sign-in pieces | `/client/auth/*` (2FA step, verify email, forgot and reset password, sign out, me) |
 
 ## Phase 4: payments (decide before phase 2 goes live)

@@ -31,7 +31,6 @@ export const SECURITY_SCHEME: Readonly<Record<AccessKind, string | undefined>> =
   'staff-permission': 'staffSession',
   'merchant-session': 'merchantSession',
   'customer-session': 'customerSession',
-  'api-key': 'apiKey',
   'dhru-credentials': 'dhruCredentials',
   'gateway-signature': 'gatewaySignature',
   'url-secret': 'urlSecret',
@@ -117,28 +116,6 @@ const REQUEST_MEDIA_TYPES: Readonly<Record<BodyType, string>> = {
   json: 'application/json',
   form: 'application/x-www-form-urlencoded',
   multipart: 'multipart/form-data',
-};
-
-/**
- * The headers of the per-key rate limit on a REST v1 answer.
- *
- * Why: ALIGNMENT § 7 and decision 021: after the key's call was counted every v1 answer says how many calls the window allows, how many
- * are left and in how many seconds it starts over, so an integration paces itself before it meets a `429`.
- */
-const RATE_LIMIT_HEADERS: Record<string, { description: string; schema: JsonSchema }> = {
-  'ratelimit-limit': {
-    description:
-      "Calls the API key may make per minute (the key's own limit). Absent when the key was refused before it was counted.",
-    schema: { type: 'integer', minimum: 1 },
-  },
-  'ratelimit-remaining': {
-    description: 'Calls left in the current window.',
-    schema: { type: 'integer', minimum: 0 },
-  },
-  'ratelimit-reset': {
-    description: 'Seconds until the window starts over.',
-    schema: { type: 'integer', minimum: 1 },
-  },
 };
 
 const REQUEST_ID_HEADER = {
@@ -354,11 +331,6 @@ export function buildOperation(contract: AnyRouteContract): OperationParts {
     for (const [status, codes] of [...byStatus].sort((a, b) => a[0] - b[0]))
       responses[String(status)] = problemResponse(status, codes);
   }
-  if (contract.surface === 'v1' && contract.access === 'api-key') {
-    for (const [status, response] of Object.entries(responses)) {
-      responses[status] = { ...response, headers: { ...response.headers, ...RATE_LIMIT_HEADERS } };
-    }
-  }
   return {
     operationId: operationIdOf(contract.key),
     parameters,
@@ -400,7 +372,7 @@ export function openApiDecorators(contract: AnyRouteContract): MethodDecorator[]
     ApiTags(...contract.tags),
     ApiExtension('x-gsm-key', contract.key),
     ApiExtension('x-gsm-access', contract.access),
-    // Lets the documents be filtered by surface (the public one keeps v1 and the Dhru reference, decision 017).
+    // Lets the documents be filtered by surface (the public one keeps the Dhru reference, decision 017).
     ApiExtension('x-gsm-surface', contract.surface),
   ];
   if (contract.permission) decorators.push(ApiExtension('x-gsm-permission', contract.permission));

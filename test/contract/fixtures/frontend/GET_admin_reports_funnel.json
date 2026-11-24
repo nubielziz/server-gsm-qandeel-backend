@@ -5,7 +5,6 @@
   },
   "body": {
     "days": 7,
-    "imeiChecks": 307,
     "paymentStarted": 115,
     "paid": 49,
     "delivered": 34

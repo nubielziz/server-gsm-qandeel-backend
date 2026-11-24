@@ -1,35 +1,27 @@
-// HTTP controller of the merchant portal's notification settings and of Telegram's update webhook (map domain G, stage 12, MISMATCHES
-// B165). It lives in the identity module because it needs `CurrentMerchant` and the merchant's own columns; the platform module imports no
-// other module (decision 032). Thin: the rules are in `MerchantNotificationSettings` and `TelegramLinking`.
-import { Body, Controller, Header, Param } from '@nestjs/common';
-import { type BodyOf, type ParamsOf, type ResultOf, Route } from '../../../common/contract';
+// HTTP controller of the merchant portal's notification settings (map domain G, stage 12, MISMATCHES B165). It lives in the identity module
+// because it needs `CurrentMerchant` and the merchant's own columns; the platform module imports no other module (decision 032). Thin: the
+// rules are in `MerchantNotificationSettings`.
+import { Body, Controller } from '@nestjs/common';
+import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
 import { MerchantNotificationSettings } from '../application/merchant-notification-settings.service';
-import { TelegramLinking } from '../application/telegram-linking.service';
 import {
-  merchantCreateTelegramLink,
   merchantGetNotificationPreferences,
   merchantPutNotificationPreferences,
-  telegramWebhook,
 } from '../contracts/merchant-notifications.contracts';
 import { CurrentMerchant } from '../security/access-state';
 import type { MerchantPrincipal } from '../security/principal';
 
 /**
- * The merchant portal's notification routes and the Telegram webhook.
+ * The merchant portal's notification routes.
  *
- * Why: B165. A merchant chooses what it is told about and connects a Telegram chat; Telegram's bot calls the webhook with the updates of that chat.
+ * Why: B165. A merchant chooses what it is told about, by email.
  *
  * @route GET /client/notification-preferences
  * @route PUT /client/notification-preferences
- * @route POST /client/telegram/link
- * @route POST /webhooks/telegram/:secret
  */
 @Controller()
 export class MerchantNotificationsController {
-  constructor(
-    private readonly settings: MerchantNotificationSettings,
-    private readonly telegram: TelegramLinking,
-  ) {}
+  constructor(private readonly settings: MerchantNotificationSettings) {}
 
   /**
    * Reads the merchant's preferences.
@@ -57,39 +49,5 @@ export class MerchantNotificationsController {
     @Body() body: BodyOf<typeof merchantPutNotificationPreferences>,
   ): Promise<ResultOf<typeof merchantPutNotificationPreferences>> {
     return this.settings.update(merchant.clientId, body);
-  }
-
-  /**
-   * Makes a one-time link to connect Telegram.
-   *
-   * Why: a connected chat keeps receiving the merchant's notifications, so the link is refused while the account's password or email
-   * address is one staff set (`MachineCredentialHold`, decision 046).
-   *
-   * @param merchant the signed-in merchant
-   * @returns the link and its expiry
-   * @throws {AppError} `FORBIDDEN` (403: the account's password or email address is one staff set), `UNAVAILABLE` (503: no bot is set up)
-   * @route POST /client/telegram/link
-   */
-  @Route(merchantCreateTelegramLink)
-  @Header('Cache-Control', 'no-store')
-  link(@CurrentMerchant() merchant: MerchantPrincipal): Promise<ResultOf<typeof merchantCreateTelegramLink>> {
-    return this.telegram.createLink(merchant);
-  }
-
-  /**
-   * Handles a Telegram update.
-   *
-   * @param _params the path secret (checked by the guard before this runs)
-   * @param body the update
-   * @returns an empty object: Telegram needs a quick 200
-   * @route POST /webhooks/telegram/:secret
-   */
-  @Route(telegramWebhook)
-  async webhook(
-    @Param() _params: ParamsOf<typeof telegramWebhook>,
-    @Body() body: BodyOf<typeof telegramWebhook>,
-  ): Promise<ResultOf<typeof telegramWebhook>> {
-    await this.telegram.handleUpdate(body);
-    return {};
   }
 }

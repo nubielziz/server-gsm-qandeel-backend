@@ -11,9 +11,6 @@ const GroupRow = z.object({
   kind: z.string().describe('`b2b` for merchant groups, `b2c_retail` for the one storefront group.'),
   discountPercent: zDecimal.describe('Percent off the base price, four decimals: `"4.0000"` is 4 %.'),
   isDefault: z.boolean().describe('New merchants join the default group; exactly one group is the default.'),
-  earnThreshold: zMoney.describe(
-    'USD of completed-order spend that promotes a merchant into this group; 0 = never a target.',
-  ),
   depositLimit: zMoney.describe('The most a merchant of the group may add in one deposit; 0 = no per-deposit limit.'),
   overdraftAllowed: z.boolean().describe('Whether merchants of the group may have a credit limit above zero.'),
   sort: z.number().int(),
@@ -27,7 +24,6 @@ const GROUP_EXAMPLE = {
   kind: 'b2b',
   discountPercent: '4.0000',
   isDefault: false,
-  earnThreshold: '5000.0000',
   depositLimit: '20000.0000',
   overdraftAllowed: true,
   sort: 2,
@@ -40,7 +36,6 @@ const GroupName = z.string().trim().min(1, 'Enter a group name.').max(80, 'Use a
 
 const GroupFields = {
   discountPercent: PercentField,
-  earnThreshold: NonNegativeMoney,
   depositLimit: NonNegativeMoney,
   overdraftAllowed: z.boolean(),
   isDefault: z.boolean(),
@@ -88,8 +83,8 @@ export const createClientGroup = defineRoute({
   summary: 'Create a merchant group',
   description:
     'The server makes the group a `b2b` group (the storefront retail group cannot be created) and puts it last in the order. ' +
-    '`discountPercent` is plain decimal text from 0 to 100 with at most two decimals; the money fields are `Money` of 0 or ' +
-    'more. A group with `earnThreshold` 0 is never a promotion target; `depositLimit` 0 means no per-deposit limit. ' +
+    '`discountPercent` is plain decimal text from 0 to 100 with at most two decimals; `depositLimit` is `Money` of 0 or ' +
+    'more, and 0 means no per-deposit limit. ' +
     '`isDefault: true` takes the default mark off the old default group in the same transaction. Fields left out are 0 or ' +
     'false. A name that another group already has (case-insensitive) is `422` on `name`.',
   tags: ['client-groups'],
@@ -99,7 +94,6 @@ export const createClientGroup = defineRoute({
   body: z.object({
     name: GroupName,
     discountPercent: GroupFields.discountPercent.optional(),
-    earnThreshold: GroupFields.earnThreshold.optional(),
     depositLimit: GroupFields.depositLimit.optional(),
     overdraftAllowed: GroupFields.overdraftAllowed.optional(),
     isDefault: GroupFields.isDefault.optional(),
@@ -110,7 +104,6 @@ export const createClientGroup = defineRoute({
     request: {
       name: 'Wholesale',
       discountPercent: '4',
-      earnThreshold: '5000.0000',
       depositLimit: '20000.0000',
       overdraftAllowed: true,
       isDefault: false,
@@ -138,7 +131,6 @@ export const updateClientGroup = defineRoute({
     .object({
       name: GroupName.optional(),
       discountPercent: GroupFields.discountPercent.optional(),
-      earnThreshold: GroupFields.earnThreshold.optional(),
       depositLimit: GroupFields.depositLimit.optional(),
       overdraftAllowed: GroupFields.overdraftAllowed.optional(),
       isDefault: GroupFields.isDefault.optional(),

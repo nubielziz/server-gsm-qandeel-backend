@@ -366,7 +366,7 @@ export interface SupplierOrderStatus {
 /**
  * Reads the answer of `getimeiorder`.
  *
- * Why: decision 051: the CODE becomes the order's result and reaches webhooks, mails and tracking, so it is kept to 20,000 characters
+ * Why: decision 051: the CODE becomes the order's result and reaches mails and tracking, so it is kept to 20,000 characters
  * without control characters (line breaks stay).
  *
  * @param payload the success entry

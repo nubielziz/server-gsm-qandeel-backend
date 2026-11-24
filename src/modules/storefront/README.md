@@ -38,7 +38,7 @@ tables).
   one the catalog says the retail group may buy (live, `active`, in an active category whose allowed groups are empty or include the
   retail group: catalog's `StorefrontServices`, the merchant catalog's visibility rule, catalog-3) AND staff priced it for the
   retail group (a `service_group_prices` row: without it the shop would fall back to the B2B base price, which is not a retail
-  price). `StorefrontQuotes.listedSellable` is the one rule behind the list, the page, the checkout and the pre-order IMEI check:
+  price). `StorefrontQuotes.listedSellable` is the one rule behind the list, the page and the checkout:
   sellable for the retail group AND its one `service_listings` row with `is_listed` on, so an unlisted service cannot be
   bought by guessing its id. The search asks the same `listedServiceIds`, so what it shows and what can be bought agree. The list's total is exact (the sellable ids go into the SQL). Nothing staff-only is ever sent: no cost, supplier, floor,
   `locked` flag or supplier field name.
@@ -63,9 +63,9 @@ tables).
   `sort`, then title; filters `brand`, `network`, `country` (case-insensitive), `featured`; `locale` is an unknown parameter (422); `q` over
   title, summary, brand and network) with `x-total-count`; the buyer's `buyerCountry`, `region` and `currency` are extra query
   parameters. `GET /store/v1/config` answers the offered currencies with their locked rate, the tax windows in force, the active
-  B2C payment gateways (`code`, `name`, `supports3ds`), the three policy switches and the current legal documents. The three
+  B2C payment gateways (`code`, `name`, `supports3ds`), the two policy switches and the current legal documents. The three
   answers carry `Cache-Control: public, max-age=30`; nothing is cached server side.
-- **Policies** (`application/storefront-policies.ts`): `guestCheckout`, `withdrawalWaiver` and `imeiPrecheck` are flat keys of the
+- **Policies** (`application/storefront-policies.ts`): `guestCheckout` and `withdrawalWaiver` are flat keys of the
   `settings` table (RULES settings 5; feature 16 builds the route that writes them), read through the platform's `SettingsService`;
   a key that is unset or not a boolean means on.
 - **Legal documents** (`application/legal-documents.ts`): the one read of the version in force. `CurrentLegalDocuments.current(db,
@@ -73,12 +73,12 @@ tables).
   public page route, 404 otherwise); `find` reads a version by id (a retired version too); `listCurrent` feeds the storefront config. The console's Legal page publishes into the same
   `is_current` flag, so a consent always references the version the console shows as current.
 
-- **Policies** (feature 16, `PATCH /admin/storefront/settings`, permission `settings:storefront`): `StorefrontSettingsService` writes the eight policy keys of the console's Policies tab as flat keys of the settings table: the switches `guestCheckout`, `require3ds`,
-  `withdrawalWaiver`, `autoRefundFailed`, `imeiPrecheck` (JSON booleans) and the numbers `refundHoursBeforeDispatch` (0 to 72), `abandonedMinutes` (5 to 1440), `imeiRetentionDays` (0 to 3650, the same check as `PATCH /admin/settings`). Any other key or a value that does not fit is
+- **Policies** (feature 16, `PATCH /admin/storefront/settings`, permission `settings:storefront`): `StorefrontSettingsService` writes the five policy keys of the console's Policies tab as flat keys of the settings table: the switches `guestCheckout`, `require3ds`,
+  `withdrawalWaiver`, `autoRefundFailed` (JSON booleans) and the number `refundHoursBeforeDispatch` (0 to 72). Any other key or a value that does not fit is
   `422` on that key (`This is not a storefront setting.`), and one bad key writes none. Every changed key writes its own audit row in the demo's words (`turned on policy`, `turned off policy`, `changed policy`, entity type `setting`, the row label as `entityLabel`);
-  an unchanged value writes nothing. The answer is the policies that have a value after the change, the same ones `GET /admin/settings` shows; the settings snapshot is cleared after the commit. The checkout reads `guestCheckout`, `withdrawalWaiver` and `imeiPrecheck`
+  an unchanged value writes nothing. The answer is the policies that have a value after the change, the same ones `GET /admin/settings` shows; the settings snapshot is cleared after the commit. The checkout reads `guestCheckout` and `withdrawalWaiver`
   through `StorefrontPolicies`, and `POST .../pay` reads `require3ds`, so a change reaches them at once. **A `require3ds` change should also flip the risk rule of that name: that rule belongs to the risk feature (18) and plugs in right after the write in `StorefrontSettingsService.update`.** Sending `require3ds` also needs `risk:*` (decision 046).
-  `StorefrontPolicies.autoRefundFailed` reads `autoRefundFailed` for the order engine (a supplier-rejected storefront order is refunded by the system while it is on, which is the default; off, the rejection opens a refund request for staff). The other policy keys (`refundHoursBeforeDispatch`, `abandonedMinutes`) are stored here and read by the features that use them (the self-cancel window, the abandoned-checkout reminder).
+  `StorefrontPolicies.autoRefundFailed` reads `autoRefundFailed` for the order engine (a supplier-rejected storefront order is refunded by the system while it is on, which is the default; off, the rejection opens a refund request for staff). The other policy key (`refundHoursBeforeDispatch`) is stored here and read by the feature that uses it (the self-cancel window).
 
 ## Public API (`index.ts`)
 
@@ -359,5 +359,5 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 
 - `catalog-3` · DELETE /admin/services/:id (an archived or disabled service is never listed or sold)
 - `b2c-7` · GET /admin/service-listings, PATCH /admin/service-listings/:id
-- `b2c-14` · GET /admin/checkouts/abandoned, GET /admin/customers/:id, GET /admin/legal-documents
+- `b2c-14` · GET /admin/customers/:id, GET /admin/legal-documents
 - `b2c-15` · POST /admin/content-pages/generate

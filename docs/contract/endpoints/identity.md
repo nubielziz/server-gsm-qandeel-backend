@@ -63,9 +63,9 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 | `PATCH /admin/clients/:id` | admin | staff-permission `clients:*` | 2 | `updateClient` |
 | `GET /admin/clients/:id/api-keys` | admin | staff-permission `api_keys:read` | 7 | `listClientApiKeys` |
 | `DELETE /admin/api-keys/:id` | admin | staff-permission `api_keys:revoke` | 7 | `revokeApiKey` |
-| `GET /admin/kyc-submissions` | admin | staff-permission `kyc:read` | 8 | `listKycSubmissions` |
-| `GET /admin/kyc-submissions/:id` | admin | staff-permission `kyc:read` | 8 | `getKycSubmission` |
-| `POST /admin/kyc-submissions/:id/decide` | admin | staff-permission `kyc:decide` | 8 | `decideKycSubmission` |
+| `GET /admin/kyc-submissions` | admin | staff-permission `kyc:read` | 8 |  |
+| `GET /admin/kyc-submissions/:id` | admin | staff-permission `kyc:read` | 8 |  |
+| `POST /admin/kyc-submissions/:id/decide` | admin | staff-permission `kyc:decide` | 8 |  |
 | `POST /admin/clients/:id/password` | admin | staff-permission `clients:security` | 20 | `setClientPassword` |
 | `POST /admin/clients/:id/reset-2fa` | admin | staff-permission `clients:security` | 20 | `resetClientTwoFactor` |
 | `POST /admin/clients/:id/sessions/revoke` | admin | staff-permission `clients:security` | 20 | `revokeClientSessions` |
@@ -81,6 +81,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /client/auth/register
 
 - **Map**: Register a new merchant and send the verification email. (تسجيل تاجر جديد وإرسال إيميل التفعيل) · public · stage 2 · tables clients
+- **Retired** (decision 062): Public merchant sign-up was retired: the owner creates every merchant account. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /client/auth/verify-email
@@ -146,21 +147,25 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /client/sessions
 
 - **Map**: Active devices and sessions. (الأجهزة والجلسات الفعّالة) · merchant-session · stage 2 · tables sessions
+- **Retired** (decision 062): The merchant's list of signed-in devices was retired: a merchant signs out of every device at once, and staff end every session of a merchant. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## DELETE /client/sessions/:id
 
 - **Map**: End a session. (إنهاء جلسة) · merchant-session · stage 2 · tables sessions
+- **Retired** (decision 062): The merchant's list of signed-in devices was retired: a merchant signs out of every device at once, and staff end every session of a merchant. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/kyc
 
 - **Map**: Verification (KYC) status. (حالة التوثيق) · merchant-session · stage 8 · tables kyc_submissions
+- **Retired** (decision 061): Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /client/kyc
 
 - **Map**: Upload verification documents. (رفع مستندات التوثيق) · merchant-session · stage 8 · tables kyc_submissions, files
+- **Retired** (decision 061): Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/api-keys
@@ -434,7 +439,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## GET /admin/sessions
 
 - **Map**: Active sessions of staff members and merchants. (الجلسات الفعّالة للموظفين والتجار) · staff-permission `sessions:read` · stage 2 · tables sessions
-- **Frontend**: `listSessions` (src/features/access/api/sessions.ts:20) · params `query?: ListQuery` · returns `ListResult<Session>` · success 200 · assumed contract
+- **Frontend**: `listSessions` (src/features/access/api/sessions.ts:25) · params `query?: ListQuery` · returns `ListResult<Session>` · success 200 · assumed contract
 - **Query**: `_start`/`_end` pages of 25 (useSessions.ts:8-26), optional `subjectType=staff` or `subjectType=client`. No `_sort` is sent: server default (proposed lastSeenAt desc, then id desc).
 - **Response**: Only live sessions (revoked_at IS NULL AND expires_at > now() AND (stage <> 'active' OR last_seen_at > now() - the idle limit of the subject type), the one live-session predicate of the identity sessions repository (idle limits from SessionPolicy: settings sessions.staff_idle_minutes 30 and sessions.client_idle_minutes 10080, decision 018)) of staff (fully signed in) and merchants; exclude storefront customer sessions and pre-2FA sessions. `subject {id, name, email}` joined from staff_users/clients; `current: true` only on the session making the request (the mock marks the caller's first session, accessSessions.ts:11-23); lastSeenAt null reads "Unknown", expiresAt null "Never". x-total-count drives the pager.
 - **Errors**: 403 FORBIDDEN (caller lacks sessions:read)
@@ -444,7 +449,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## DELETE /admin/sessions/:id
 
 - **Map**: End a session. (إنهاء جلسة) · staff-permission `sessions:revoke` · stage 2 · tables sessions
-- **Frontend**: `revokeSession` (src/features/access/api/sessions.ts:29) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `revokeSession` (src/features/access/api/sessions.ts:35) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body; any session id from the list (staff or merchant).
 - **Response**: 204; revoked_at=now (revokeAllOf still revokes every non-revoked row, idle-dead ones included); audit (entityType 'session'). Ending your own session signs you out (next request 401; EndSessionDialog.tsx warns).
 - **Errors**: 404 NOT_FOUND (unknown session, or one that is no longer live by the same predicate as GET /admin/sessions (an idle-dead session reads as already ended) (accessSessions.ts:26-32)); 403 FORBIDDEN (caller lacks sessions:revoke)
@@ -455,7 +460,7 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
 - **Frontend**: `listClients` (src/features/merchants/api/clients.ts:25) · params `query?: ListQuery` · returns `ListResult<Client>` · success 200 · assumed contract
 - **Query**: Paging _start/_end (25 per page). Tab counts: _start=0&_end=1 with only status (or nothing for All). Other features (orders, finance, commissions, services) read _start=0&_end=200&_sort=name&_order=asc; palette sends q with _end=5. _sort: name | status only (default name asc; merchants/lib/filters.ts:70). Filters (eq): status=active|pending|suspended, groupId=<id>. q: case-insensitive contains over name, email, company (mock also username, country: mocks/clientRoutes.ts:12). Refetched every 30 s.
-- **Response**: JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), kycStatus (none|pending|approved|rejected), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.
+- **Response**: JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.
 - **Errors**: 403 FORBIDDEN (caller lacks clients:read)
 - **B26**: Map row CRUD /admin/clients lists only table clients; the rows need client_groups (group join), ledger_accounts (wallet) and orders (stats). Proposal: allow these read joins and gate wallet + stats on wallet:read (ASSUMED merchants Q1, MISMATCHES M53). → Proposal accepted.
 - **Mock**: src/features/merchants/mocks/clientRoutes.ts (List/search/invite/patch behaviour; rows from mocks/dto.ts toClient over mocks/seed.ts (demo S.merchants in src/mocks/seed/demo-state.json), stats from mocks/figures.ts statsOf over the orders mock. Exact query/body expectations in api/clients.test.ts.)
@@ -473,8 +478,8 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 
 - **Map**: Merchants: creation, group, status and blocking. (التجار: الإنشاء والفئة والحالة والحظر) · staff-permission `clients:*` · stage 2 · tables clients
 - **Frontend**: `createClient` (src/features/merchants/api/clients.ts:44) · params `body: CreateClientBody` · returns `Client` · success 201 · assumed contract
-- **Request**: Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be "0.0000"), invite: true (always)}. Server: insert clients with status=pending, kyc_status=none, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).
-- **Response**: 201 with the new Client (same shape as GET; status pending, kycStatus none, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts "Invitation sent" and refetches lists and counts.
+- **Request**: Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be "0.0000"), invite: true (always)}. Server: insert clients with status=pending, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).
+- **Response**: 201 with the new Client (same shape as GET; status pending, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts "Invitation sent" and refetches lists and counts.
 - **Errors**: 422 VALIDATION_FAILED (bad input; errors[].field in name | email | country | groupId | creditLimit (e.g. country not ISO-2, unknown group, group of kind b2c_retail, negative credit limit; creditLimit > 0 while the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false answers errors[{field:'creditLimit', message:'This group does not allow credit.'}], user rule 2, raised by MerchantAccounts.open)); 409 EMAIL_TAKEN (a merchant already uses that email (detail e.g. "A merchant with x already exists."; no field needed)); 403 FORBIDDEN (caller lacks clients:create)
 - **B27**: Map row touches only clients; an invite also writes auth_tokens (invite token), outbox_events/notifications (email), ledger_accounts (wallet + credit limit) and audit_logs. Proposal: add those tables to the route. → Proposal accepted.
 - **Mock**: src/features/merchants/mocks/clientRoutes.ts (List/search/invite/patch behaviour; rows from mocks/dto.ts toClient over mocks/seed.ts (demo S.merchants in src/mocks/seed/demo-state.json), stats from mocks/figures.ts statsOf over the orders mock. Exact query/body expectations in api/clients.test.ts.)
@@ -485,53 +490,53 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 - **Frontend**: `updateClient` (src/features/merchants/api/clients.ts:58) · params `id: number`, `body: UpdateClientBody` · returns `Client` · success 200 · assumed contract
 - **Request**: Partial body, one action per call: approve {status:"active"} from pending; reactivate {status:"active"} from suspended; suspend {status:"suspended", reason} from active (reason trimmed, 3-140 chars, staff-only); group move {groupId} (refused with 422 on groupId when the target group has overdraft_allowed = false while the merchant's credit limit is above 0). Server enforces pending->active, active->suspended, suspended->active; writes audit_logs (field from/to, reason). Suspension refuses new orders on Dhru, v1 and portal while open orders keep processing and the wallet is untouched; a group move prices new orders only (open orders keep pricing_snapshot). No money event.
 - **Response**: 200 with the full updated Client.
-- **Errors**: 404 NOT_FOUND (no merchant with that id); 422 VALIDATION_FAILED (errors[].field reason (missing on suspend) | groupId (unknown, b2c_retail, or a group without overdraft_allowed while the merchant's wallet overdraft_limit is above 0: user rule 2) | status); 409 INVALID_TRANSITION (status change not allowed from the current status, or a policy refusal (tests use KYC_REQUIRED / LAST_ACTIVE as examples)); 403 FORBIDDEN (caller lacks clients:update)
+- **Errors**: 404 NOT_FOUND (no merchant with that id); 422 VALIDATION_FAILED (errors[].field reason (missing on suspend) | groupId (unknown, b2c_retail, or a group without overdraft_allowed while the merchant's wallet overdraft_limit is above 0: user rule 2) | status); 409 INVALID_TRANSITION (status change not allowed from the current status, or a policy refusal (tests use LAST_ACTIVE as an example)); 403 FORBIDDEN (caller lacks clients:update)
 - **B28**: clients has no column for the suspension reason (staff_users has suspended_at/suspended_reason/suspended_by). Proposal: add suspended_at, suspended_reason, suspended_by to clients, or keep the reason only in audit_logs. → Proposal accepted.
 - **Mock**: src/features/merchants/mocks/clientRoutes.ts (List/search/invite/patch behaviour; rows from mocks/dto.ts toClient over mocks/seed.ts (demo S.merchants in src/mocks/seed/demo-state.json), stats from mocks/figures.ts statsOf over the orders mock. Exact query/body expectations in api/clients.test.ts.)
 
 ## GET /admin/clients/:id/api-keys
 
 - **Map**: API keys of a merchant. (مفاتيح API للتاجر) · staff-permission `api_keys:read` · stage 7 · tables api_keys
-- **Frontend**: `listClientApiKeys` (src/features/merchants/api/apiKeys.ts:13) · params `clientId: number` · returns `ApiKey[]` · success 200 · assumed contract
+- **Frontend**: `listClientApiKeys` (src/features/merchants/api/apiKeys.ts:19) · params `clientId: number` · returns `ApiKey[]` · success 200 · assumed contract
 - **Response**: Plain JSON array (no paging, no x-total-count), newest first (id desc), every key incl. revoked and expired: id, clientId, name, prefix, scopes[], allowedIps[] (CIDR strings written like ip_rules.cidr: a host prefix /32 (IPv4) or /128 (IPv6) is dropped on read, so '203.0.113.55/32' is sent as '203.0.113.55' and ranges keep their prefix; the merchant write side (/client/api-keys, 7b) accepts a bare IP and stores /32 or /128; one shared formatter, moved to an identity helper), rateLimitPerMin, lastUsedAt, lastUsedIp ('' when the key was never used: the console type is a non-null string; the same rule applies wherever an ApiKey is serialized), expiresAt, revokedAt, createdAt. Never key_hash or the secret. The console derives Active/Revoked/Expired from revokedAt and expiresAt.
 - **Errors**: 404 NOT_FOUND (no merchant with that id); 403 FORBIDDEN (caller lacks api_keys:read)
-- **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
+- **Mock**: src/features/merchants/mocks/apiKeyRoutes.ts (API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
 
 ## DELETE /admin/api-keys/:id
 
 - **Map**: Revoke a merchant API key. (إلغاء مفتاح تاجر) · staff-permission `api_keys:revoke` · stage 7 · tables api_keys, audit_logs
-- **Frontend**: `revokeApiKey` (src/features/merchants/api/apiKeys.ts:23) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Frontend**: `revokeApiKey` (src/features/merchants/api/apiKeys.ts:29) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Request**: No body.
 - **Response**: 204 empty. Revoke = set revoked_at = now (row kept for orders.api_key_id and audit); effective at once (drop it from the key cache so Dhru/v1 calls fail); audit_logs entry.
 - **Errors**: 404 NOT_FOUND (no API key with that id); 409 ALREADY_REVOKED (the key already has revoked_at); 403 FORBIDDEN (caller lacks api_keys:revoke)
 - **B31**: HTTP DELETE but the map semantic is a soft revoke ("Revoke a merchant API key", tables api_keys, audit_logs). No admin create/rotate route exists (MISMATCHES M45). → Proposal accepted.
-- **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
+- **Mock**: src/features/merchants/mocks/apiKeyRoutes.ts (API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
 
 ## GET /admin/kyc-submissions
 
 - **Map**: Verification (KYC) requests. (طلبات التوثيق) · staff-permission `kyc:read` · stage 8 · tables kyc_submissions
-- **Frontend**: `listKycSubmissions` (src/features/merchants/api/kyc.ts:22) · params `query?: ListQuery` · returns `ListResult<KycSubmission>` · success 200 · assumed contract
+- **Retired** (decision 061): Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: status=pending|approved|rejected (omitted for All; the tab opens on pending), _sort=createdAt&_order=desc, _start/_end 25 per page; pending count = status=pending&_start=0&_end=1; refetched every 30 s. A clientId filter is declared but unused.
 - **Response**: JSON array + x-total-count: id, clientId, status, fileIds[], files [{id, filename, mime, size}] (join on files; console falls back to "Document n"), reviewedAt, note (reviewer note / rejection reason), createdAt, client {id, name, email, country, status}, reviewedBy {id, name} or null. Documents open as plain links to GET /admin/files/:id (files:read).
 - **Errors**: 403 FORBIDDEN (caller lacks kyc:read)
-- **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
 
 ## GET /admin/kyc-submissions/:id
 
 - **Map**: Verification (KYC) requests. (طلبات التوثيق) · staff-permission `kyc:read` · stage 8 · tables kyc_submissions
-- **Frontend**: `getKycSubmission` (src/features/merchants/api/kyc.ts:34) · params `id: number` · returns `KycSubmission` · success 200 · assumed contract
+- **Retired** (decision 061): Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Response**: Same row as the list, with files.
 - **Errors**: 404 NOT_FOUND (no verification request with that id)
-- **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
 
 ## POST /admin/kyc-submissions/:id/decide
 
 - **Map**: Approve or reject the verification. (قبول أو رفض التوثيق) · staff-permission `kyc:decide` · stage 8 · tables kyc_submissions, clients
-- **Frontend**: `decideKycSubmission` (src/features/merchants/api/kyc.ts:44) · params `id: number`, `body: KycDecisionBody` · returns `KycSubmission` · success 200 · assumed contract
+- **Retired** (decision 061): Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {decision: "approve" | "reject", note?} (note trimmed, max 300; the console requires it for reject and may send it with approve). Pending only. Sets status approved|rejected, reviewed_by, reviewed_at, note, and clients.kyc_status to the same word; does not change clients.status; notifies the merchant (rejection reason included); audit entry.
 - **Response**: 200 with the submission after the decision (full shape).
 - **Errors**: 409 ALREADY_DECIDED (the request is not pending (detail "This request was already approved.")); 422 VALIDATION_FAILED (errors[].field decision | note (reject without a note)); 404 NOT_FOUND (no verification request with that id); 403 FORBIDDEN (caller lacks kyc:decide)
-- **Mock**: src/features/merchants/mocks/kycRoutes.ts (KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras).)
 
 ## POST /admin/clients/:id/password
 
@@ -556,12 +561,12 @@ Frontend features covering this module: `auth`, `access`, `merchants` (rules in 
 ## POST /admin/clients/:id/api-keys
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Create an API key for a merchant; the key is shown once. (إنشاء مفتاح API لتاجر من اللوحة، يُعرض مرة واحدة) · staff-permission `api_keys:create` · stage 20 · tables api_keys, audit_logs · success 201
-- **Frontend**: `createClientApiKey` (src/features/merchants/api/apiKeys.ts:34) · params `clientId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
+- **Frontend**: `createClientApiKey` (src/features/merchants/api/apiKeys.ts:41) · params `clientId: number`, `body: CreateApiKeyBody` · returns `CreatedApiKey`
 
 ## PATCH /admin/api-keys/:id
 
 - **Map addition** (B-TBD staff-api-keys, `scripts/map-additions/20.mjs`): Change a merchant key's per-minute limit and allowed addresses. (تعديل حدود مفتاح تاجر: المعدّل بالدقيقة والعناوين المسموحة) · staff-permission `api_keys:update` · stage 20 · tables api_keys, audit_logs · success 200
-- **Frontend**: `updateApiKey` (src/features/merchants/api/apiKeys.ts:47) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
+- **Frontend**: `updateApiKey` (src/features/merchants/api/apiKeys.ts:58) · params `id: number`, `body: UpdateApiKeyBody` · returns `ApiKey`
 
 ## POST /client/auth/password/change
 

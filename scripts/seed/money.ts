@@ -229,7 +229,7 @@ function referenceOf(journal: DemoJournal): Pick<PostTransactionInput, 'refType'
     case 'system':
       return { refType: 'system', refId: 0 };
     case 'withdrawal':
-      // Withdrawals are a later phase (`withdrawal_requests`); until then the merchant is the record, as for an adjustment.
+      // A withdrawal journal has no record of its own: the merchant is the record, as for an adjustment.
       return { refType: 'client', refId: journal.mid ? demoNumericId(journal.mid) : refId };
     case 'order':
     case 'payment':

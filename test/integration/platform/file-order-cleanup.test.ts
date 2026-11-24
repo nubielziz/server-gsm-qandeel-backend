@@ -152,12 +152,12 @@ describe('FileUploadService.discard', () => {
     expect(await t.app.get(StorageService).head(row!.key)).not.toBeNull();
   });
 
-  it('keeps a file a KYC submission lists in its array column (ticket messages and disputes are checked by the same statement)', async () => {
+  it('keeps a file a verification request stored earlier lists in its array column (ticket messages and disputes are checked by the same statement)', async () => {
     const { db } = await testDb();
-    const kyc = await upload(world.merchant.id, 'kyc.pdf');
-    await db.insert(s.kycSubmissions).values({ clientId: world.merchant.id, fileIds: [kyc.id] });
-    expect(await t.app.get(FileUploadService).discard(world.merchant.id, kyc.id)).toBe(false);
-    expect(await db.select().from(s.files).where(eq(s.files.id, kyc.id))).toHaveLength(1);
+    const stored = await upload(world.merchant.id, 'document.pdf');
+    await db.insert(s.kycSubmissions).values({ clientId: world.merchant.id, fileIds: [stored.id] });
+    expect(await t.app.get(FileUploadService).discard(world.merchant.id, stored.id)).toBe(false);
+    expect(await db.select().from(s.files).where(eq(s.files.id, stored.id))).toHaveLength(1);
   });
 
   it('never removes the file of another merchant or of staff', async () => {

@@ -1,6 +1,6 @@
 // Route contracts of the support chat (feature 28, routes beyond the map: scripts/map-additions/28.mjs; plan
-// docs/briefs/28-support-live-chat.md § 3.2): the ticket link's live stream, typing, read mark, attachment upload and download, and the
-// console's read mark, typing, upload and download. The events are documented in docs/contract/realtime-events.md.
+// docs/briefs/28-support-live-chat.md § 3.2): the ticket link's live stream, read mark, attachment upload and download, and the
+// console's read mark, upload and download. The events are documented in docs/contract/realtime-events.md.
 import { z } from 'zod';
 import { defineRoute, zId, zIdParam, zIsoDateTime, zUploadedFile } from '../../../common/contract';
 
@@ -48,8 +48,8 @@ export const storeTicketStream = defineRoute({
   summary: 'Live events of a support ticket',
   description:
     'A server-sent event stream (`text/event-stream`) of the ticket the token opens: `ready` first, `hb` every 15 seconds, then ' +
-    '`ticket.message.created` (a new public message, with `id: t<message id>`), `ticket.updated`, `ticket.read` and `ticket.typing` ' +
-    '("Support is typing…"), in the requester view (docs/contract/realtime-events.md); never an internal note or a staff name. ' +
+    '`ticket.message.created` (a new public message, with `id: t<message id>`), `ticket.updated` and `ticket.read`, in the requester ' +
+    'view (docs/contract/realtime-events.md); never an internal note or a staff name. ' +
     'The ticket is matched by `number` (`ticketId` is null). A reconnect sends the last event id back (`Last-Event-ID`, or ' +
     '`cursor`) and gets the messages it missed, at most 100, else `resync`. No cookie is involved: the token in the path is the ' +
     'credential, as for the other ticket routes. At most 3 streams per ticket and 30 per address (`429`), 20 opens a minute per ' +
@@ -76,23 +76,6 @@ export const storeTicketStream = defineRoute({
   }),
   success: { status: 200, contentType: 'text/event-stream' },
   errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'RATE_LIMITED', 'UNAVAILABLE'],
-});
-
-/** `POST /store/v1/tickets/:token/typing`. */
-export const storeTicketTyping = defineRoute({
-  key: 'POST /store/v1/tickets/:token/typing',
-  summary: 'Tell support the customer is typing',
-  description:
-    'A typing ping of the ticket page (send at most one every 3 seconds while the text changes and is not empty). Staff see ' +
-    '"<name> is typing…" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204`, ' +
-    'whatever happened to the ping; on a resolved ticket nothing is published. Counted against `ticket-chat` (120 a minute per address), ' +
-    'not the token limit.',
-  tags: ['support-tickets'],
-  surface: 'store',
-  access: 'ticket-token',
-  params: TOKEN_PARAMS,
-  success: { status: 204 },
-  errors: ['NOT_FOUND', 'RATE_LIMITED'],
 });
 
 /** `POST /store/v1/tickets/:token/read`. */
@@ -170,27 +153,6 @@ export const markSupportTicketRead = defineRoute({
   examples: { request: { upToMessageId: 9002 } },
 });
 
-/** `POST /admin/support-tickets/:id/typing`. */
-export const supportTicketTyping = defineRoute({
-  key: 'POST /admin/support-tickets/:id/typing',
-  summary: 'Tell others you are typing on a ticket',
-  description:
-    'A typing ping of the console (at most one every 3 seconds while the draft changes and is not empty). `mode` is the composer’s tab: ' +
-    'a `reply` shows "Support is typing…" to the requester and "<name> is replying…" to other staff; a `note` shows "<name> is writing a ' +
-    'note…" to other staff only. Never stored; pings within 2.5 seconds of the last one are absorbed. Writes no audit row: nothing ' +
-    'is stored (the reason of `audit: false`).',
-  tags: ['support-tickets'],
-  surface: 'admin',
-  access: 'staff-permission',
-  permission: 'support:reply',
-  audit: false,
-  params: ID_PARAMS,
-  body: z.object({ mode: z.enum(['reply', 'note'], 'Send reply or note.') }),
-  success: { status: 204 },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: { request: { mode: 'reply' } },
-});
-
 /** `POST /admin/support-tickets/:id/files`. */
 export const uploadSupportTicketFile = defineRoute({
   key: 'POST /admin/support-tickets/:id/files',
@@ -222,7 +184,7 @@ export const openSupportTicketFile = defineRoute({
   key: 'GET /admin/support-tickets/:id/files/:fileId',
   summary: 'Download an attachment of a ticket',
   description:
-    `${DOWNLOAD_RULES} Any attachment of a message of this ticket, internal notes included; anything else is \`404\`. A file that is also a KYC document or a payment receipt writes the same audit row as \`GET /admin/files/:id\` (decision 047); the permission stays \`support:read\`. A requester's ` +
+    `${DOWNLOAD_RULES} Any attachment of a message of this ticket, internal notes included; anything else is \`404\`. A file that is also an identity document or a payment receipt writes the same audit row as \`GET /admin/files/:id\` (decision 047); the permission stays \`support:read\`. A requester's ` +
     'file is not virus-scanned (the console says so).',
   tags: ['support-tickets'],
   surface: 'admin',

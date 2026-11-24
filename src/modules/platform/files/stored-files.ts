@@ -11,14 +11,14 @@ import { type StoredFile, files } from '../db/schema';
 import { deleteUnreferencedFiles } from '../infra/file.repository';
 
 /**
- * The media types a merchant may attach as proof (a KYC document, a bank transfer receipt): PDF, JPEG and PNG.
+ * The media types a merchant may attach as proof (a bank transfer receipt): PDF, JPEG and PNG.
  *
  * Why: MISMATCHES B161 and B163 accept only these three for the files a merchant uploaded through `POST /client/files`.
  */
 export const PROOF_MIME_TYPES: readonly string[] = ['application/pdf', 'image/jpeg', 'image/png'];
 
 /**
- * The area of the files an owner uploaded itself through the upload routes (`POST /client/files`, `POST /v1/files`,
+ * The area of the files an owner uploaded itself through the upload routes (`POST /client/files`,
  * `POST /store/v1/files`): `FileUploadService` stores them under `files/`.
  *
  * Why: a transfer receipt must be a file its owner uploaded; the documents the platform stores for an owner (invoice PDFs, tax
@@ -84,7 +84,7 @@ function metaOf(row: StoredFile): FileMeta {
 /**
  * Stores generated files and reads file metadata for the other modules.
  *
- * Why: invoice PDFs (decision 030) are written by billing, KYC documents and receipts are checked by identity and billing, and
+ * Why: invoice PDFs (decision 030) are written by billing, receipts are checked by the money module, and
  * the `files` table belongs to the platform module (decision 016). The object goes to S3 first and the row follows; a rolled-back
  * caller leaves an unreferenced object, never a row without an object.
  *
@@ -240,7 +240,7 @@ export class StoredFiles {
    * Deletes files that nothing uses any more: their rows now, their objects after the commit.
    *
    * Why: feature 28, rule 10: the attachments of an anonymized customer and of a ticket resolved longer ago than the retention are
-   * deleted. A file another record still points at (a KYC document, an order's input, an attachment of another ticket) is kept: the
+   * deleted. A file another record still points at (an identity document stored earlier, an order's input, an attachment of another ticket) is kept: the
    * caller first empties its own references in the same transaction. The objects go only once the rows are gone for good, best effort: an
    * object that could not be deleted is logged and is unreachable (no row names it).
    *

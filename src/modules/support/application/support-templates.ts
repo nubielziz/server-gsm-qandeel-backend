@@ -1,10 +1,16 @@
-// The default templates of the support events (feature 17): English email and Telegram texts. Migration `0016_support_tickets` inserted the
+// The default templates of the support events (feature 17): English email texts. Migration `0016_support_tickets` inserted the
 // rows as they first shipped; migration `0032_support_reply_link` added the conversation link to the merchant's reply (feature 28); the migration
 // `..._public_abuse_limits` replaced the receipt text where it was not edited (decision 053). A spec finds every row of this file in them. The
 // console edits the templates afterwards (Settings > Customer emails).
 import { type DefaultTemplate, templatesInsertSql } from '../../platform';
 
-/** The templates as migration 0016 shipped them (the merchant's reply had no link: the portal had no ticket page yet). */
+/**
+ * The templates as migration 0016 shipped them (the merchant's reply had no link: the portal had no ticket page yet), without the
+ * customer's survey mail that the retirement migration of decision 062 deletes.
+ *
+ * Why: the list mirrors the migrations, which the unit spec compares with it. It still holds the merchant's reply on the channel that was
+ * retired (decision 062): {@link SUPPORT_DEFAULT_TEMPLATES} leaves it out and a data step deletes the stored row.
+ */
 const SHIPPED_IN_0016: readonly DefaultTemplate[] = [
   {
     event: 'support.reply',
@@ -19,13 +25,6 @@ const SHIPPED_IN_0016: readonly DefaultTemplate[] = [
     audience: 'customer',
     subject: 'We got your message ({{ticketNumber}})',
     body: 'Hi {{customerName}},\n\nWe received your message "{{subject}}" and opened ticket {{ticketNumber}}. Our team will answer by email.\n\nYou can follow the ticket and add details here: {{link}}\n\nPlease keep this email: the link is private to you.',
-  },
-  {
-    event: 'support.csat_survey',
-    channel: 'email',
-    audience: 'customer',
-    subject: 'How did we do? ({{ticketNumber}})',
-    body: 'Hi {{customerName}},\n\nWe marked your ticket {{ticketNumber}} "{{subject}}" as resolved. Please tell us how we did, it takes five seconds:\n\n{{link}}\n\nIf your problem is not solved, write on the same page and we will reopen the ticket.',
   },
   {
     event: 'support.reply',
@@ -46,7 +45,7 @@ const SHIPPED_IN_0016: readonly DefaultTemplate[] = [
 /**
  * The line migration 0032 appends to the merchant's reply templates.
  *
- * Why: feature 28 gives the merchant portal a ticket page (`/merchant/support/<id>`), so the reply mail and Telegram message link to it.
+ * Why: feature 28 gives the merchant portal a ticket page (`/merchant/support/<id>`), so the reply mail links to it.
  */
 export const CONVERSATION_LINK_LINE = 'Open the conversation: {{link}}';
 
@@ -58,7 +57,7 @@ interface TemplateText {
   readonly body: string;
 }
 
-/** True for the merchant's `support.reply` rows (email and Telegram) that get the conversation link. */
+/** True for the merchant's `support.reply` rows that get the conversation link. */
 const takesConversationLink = (template: TemplateText): boolean =>
   template.event === 'support.reply' && template.audience === 'merchant';
 
@@ -99,12 +98,15 @@ function withReceiptText<T extends TemplateText>(template: T): T {
 /**
  * The templates the support events start with today.
  *
- * Why: a missing template sends nothing (RULES settings 10), so the reply, the receipt and the survey come with the migrations. They
+ * Why: a missing template sends nothing (RULES settings 10), so the reply and the receipt come with the migrations. They
  * live here and not in the platform's `DEFAULT_TEMPLATES`: that list is checked against its own migration. The merchant's reply carries
  * the conversation link since feature 28 (migration 0032); the receipt holds no typed text since decision 053.
  */
-export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] =
-  SHIPPED_IN_0016.map(withConversationLink).map(withReceiptText);
+export const SUPPORT_DEFAULT_TEMPLATES: readonly DefaultTemplate[] = SHIPPED_IN_0016.filter(
+  (template) => template.channel === 'email',
+)
+  .map(withConversationLink)
+  .map(withReceiptText);
 
 const quote = (text: string) => `'${text.replace(/'/g, "''")}'`;
 
@@ -123,7 +125,7 @@ export function supportTemplatesSql(): string {
 
 /**
  * Writes the guarded updates of migration 0032 in today's shape: the conversation link is appended to the merchant's reply templates
- * (email and Telegram) only where the body still equals the default migration 0016 shipped.
+ * (as 0032 shipped them) only where the body still equals the default migration 0016 shipped.
  *
  * Why: feature 28 (plan § 3.1): a template staff edited keeps their text. Migration 0032 holds these updates with the language it was
  * written for (`"locale" = 'en'`) and for the Arabic rows that migration 0035 deletes; the spec finds each of today's updates in it.

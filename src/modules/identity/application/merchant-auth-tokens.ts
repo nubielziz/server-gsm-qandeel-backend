@@ -19,9 +19,9 @@ export const MERCHANT_TOKEN_TTL_MS = 60 * 60 * 1000;
 export interface IssueMerchantTokenInput {
   /** The merchant the link is for. */
   readonly clientId: number;
-  /** `verify_email` after registration, `reset` for a forgotten password, `invite` when staff created the merchant. */
+  /** `verify_email` when the merchant asks for a new link or staff change its address, `reset` for a forgotten password, `invite` when staff created the merchant. */
   readonly purpose: ClientTokenPurpose;
-  /** The staff member who created the invitation; null for a link nobody sent (registration, forgot password). */
+  /** The staff member who created the invitation; null for a link nobody sent (forgot password, verification). */
   readonly createdBy?: number | null;
   /** The IP of the request that created the link, for the record. */
   readonly ip?: string | null;

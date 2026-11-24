@@ -30,9 +30,9 @@ Layout of the admin part (`HealthAdminModule`, API process; `HealthJobsModule`, 
 |---|---|
 | `contracts/` | one `defineRoute` per System health route (`system-health`, `system-ops`, `system-pipeline`, `system-traffic`) and per alert route (`alert-rules`, `alerts`, `incidents`, `integrity`) |
 | `controllers/` | thin controllers (`system-overview`, `system-ops`, `system-traffic`, `alert-rules`, `alerts`, `incidents`, `integrity`) |
-| `application/` | the read models: `HealthSnapshotService` (overview, cached 10 s), `ChecksHistoryService`, `PipelineHealthService` (orders, suppliers), `StoresHealthService` (database, cache, webhooks), `QueueAdminService`, `JobsAdminService`, `TrafficService` + `PrometheusClient` (metrics, errors; Prometheus is called through `OutboundHttp`: no redirect is followed, the answer is read up to 4 MiB, the call is counted under `target="prometheus"`, decision 051), `MaintenanceAdminService`, `ComponentChecker` (writes `service_checks`), `WebhookIntakeCounter`, `ApiHeartbeat`, `database-guard` (`503 DATABASE_UNAVAILABLE`); 12b: `AlertRulesService`, `AlertsService`, `IncidentsService`, `IntegrityService` (API) and `AlertEvaluator`, `AlertMetricReader` (the eleven metrics), `AlertNotifier` and its `NotificationAlertNotifier` (the alert messages, see "Alert messages"), `LedgerIntegrityCheck` (worker) |
+| `application/` | the read models: `HealthSnapshotService` (overview, cached 10 s), `ChecksHistoryService`, `PipelineHealthService` (orders, suppliers), `StoresHealthService` (database, cache, webhooks), `QueueAdminService`, `JobsAdminService`, `TrafficService` + `PrometheusClient` (metrics, errors; Prometheus is called through `OutboundHttp`: no redirect is followed, the answer is read up to 4 MiB, the call is counted under `target="prometheus"`, decision 051), `MaintenanceAdminService`, `ComponentChecker` (writes `service_checks`), `WebhookIntakeCounter`, `ApiHeartbeat`, `database-guard` (`503 DATABASE_UNAVAILABLE`); 12b: `AlertRulesService`, `AlertsService`, `IncidentsService`, `IntegrityService` (API) and `AlertEvaluator`, `AlertMetricReader` (the ten metrics), `AlertNotifier` and its `NotificationAlertNotifier` (the alert messages, see "Alert messages"), `LedgerIntegrityCheck` (worker) |
 | `dashboard/` | `GET /admin/dashboard`: contract, controller, service, the read queries (`dashboard-reads.ts`) and the attention rules (`attention.ts`: the fixed severity of each kind, RULES dashboard 3, and the ranking) |
-| `domain/` | pure rules: `checks` (status words, uptime, overall verdict), `measure` (the metric specs and thresholds), `queue-verdict`, `cron-text`; 12b: `metric-registry` (the eleven alert metrics, their units and subjects), `alert-evaluation` (comparison, subject key, fire/resolve decision, the three ok minutes of a measured recovery, the reminder rounds), `alert-message` (the words of the alert messages), `incident-timeline`, `integrity` (the four checks, finding labels, the run result) |
+| `domain/` | pure rules: `checks` (status words, uptime, overall verdict), `measure` (the metric specs and thresholds), `queue-verdict`, `cron-text`; 12b: `metric-registry` (the ten alert metrics, their units and subjects), `alert-evaluation` (comparison, subject key, fire/resolve decision, the three ok minutes of a measured recovery, the reminder rounds), `alert-message` (the words of the alert messages), `incident-timeline`, `integrity` (the four checks, finding labels, the run result) |
 | `infra/` | Drizzle queries on the module's own tables (`service-checks`, `job-runs-admin`, `alerts-read`; 12b: `alert-rules`, `alert-events`, `incidents`, `integrity-runs`) and the documented reads of other modules' tables: `foreign-reads.repository.ts` and (12b) `integrity-reads.repository.ts` (ledger entries, holds, payments); `sibling-modules.ts` (late-bound imports of the other modules' public API, decision 032) |
 | `jobs/` | the six worker jobs and their schedules (`health-processors.ts`; 12b: `alerts-processors.ts`) |
 | `queues-board/` | the read-only Bull Board mount behind the staff gate (no Redis details; the failure text of every job it shows is cleaned of database statements and URL credentials, decision 054) |
@@ -97,7 +97,7 @@ Only this module reads and writes these 5 tables and `alert_streaks` (`scripts/m
 | `GET /admin/system/queues` | staff-permission · `system:read` | BullMQ counters per queue: waiting, active, delayed, failed, age of the oldest job, rate and number of workers. Deep details stay in Bull Board. | 9 |
 | `GET /admin/system/queues/:name/failed` | staff-permission · `system:read` | Failed jobs with the failure reason and the number of attempts. | 9 |
 | `GET /admin/system/suppliers` | staff-permission · `system:read` | Health of each supplier: up or down, last successful call, response time, error and timeout rate, circuit-breaker state, last sync and our balance with them. Pausing uses PATCH /admin/suppliers/:id (status = paused). | 9 |
-| `GET /admin/system/webhooks` | staff-permission · `system:read` | Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message. | 9 |
+| `GET /admin/system/webhooks` | staff-permission · `system:read` | Health of the incoming webhooks from gateways: success rate, failures, attempts and the oldest undelivered message. | 9 |
 | `PATCH /admin/alert-rules/:id` | staff-permission · `alerts:*` | Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until. | 12 |
 | `PATCH /admin/incidents/:id` | staff-permission · `incidents:*` | Incidents: declare an incident, update its timeline and close it with the cause and the action taken. | 12 |
 | `POST /admin/alert-rules` | staff-permission · `alerts:*` | Alert rules: metric, threshold, window, severity and channels, with a temporary mute through muted_until. | 12 |
@@ -159,7 +159,7 @@ policy: `docs/queues.md`. Feature 12b adds `alert_evaluation` (queue `alerts`, e
   `run({ ..., runId })`. A row that is no longer `running` (closed by the reaper) is not run again.
 - **`failStuck(maxAgeMs)`** closes runs that stayed `running` too long (a worker that was killed), so the guard cannot block
   a job for ever. The `job_runs_reaper` job schedules it.
-- Event-driven jobs (dispatch, webhooks) are not recorded here, and neither are three high-frequency ticks: the outbox relay `tick`
+- Event-driven jobs (dispatch) are not recorded here, and neither are three high-frequency ticks: the outbox relay `tick`
   (every second), `ip_rule_hits_flush` and `supplier_poll_tick` (every minute). Their processors ignore `data.runId`, so
   `domain/unrecorded-jobs.ts` (`UNRECORDED_JOBS`) keeps them out of `GET /admin/system/jobs` and a manual run of one is 404: a
   manual run would insert a `running` row that nothing closes. A new scheduler whose processor does not use `JobRunsService.run`
@@ -169,18 +169,18 @@ Queues, jobs and schedules: `docs/queues.md`.
 
 ## Alerts and integrity (12b)
 
-- **Metric registry** (`domain/metric-registry.ts`): eleven keys with a fixed unit and subject (health-commissions-13 and -14): `supplier.timeout_rate`,
+- **Metric registry** (`domain/metric-registry.ts`): ten keys with a fixed unit and subject (health-commissions-13 and -14): `supplier.timeout_rate`,
   `supplier.error_rate` (percent, one alert per supplier), `supplier.balance` (no unit, per supplier), `api.p95` (ms), `api.rate5xx` (percent),
-  `queue.oldest_age` (s, one alert per queue), `orders.past_sla` (count), `ledger.mismatch_count` (count), `db.connection_usage`, `redis.memory_usage`,
-  `webhooks.success_rate` (percent); the others raise a `system` alert. What the rule's window means depends on the metric (`window` in the registry):
-  rates and percentiles (`supplier.*_rate`, `api.*`, `webhooks.success_rate`) are **measured** over it: they fire at the first breached evaluation and
+  `queue.oldest_age` (s, one alert per queue), `orders.past_sla` (count), `ledger.mismatch_count` (count), `db.connection_usage`, `redis.memory_usage`;
+  the others raise a `system` alert. The retired key `webhooks.success_rate` stays readable on the alerts that fired with it (`RETIRED_METRIC_KEYS`); no rule can use it. What the rule's window means depends on the metric (`window` in the registry):
+  rates and percentiles (`supplier.*_rate`, `api.*`) are **measured** over it: they fire at the first breached evaluation and
   close only after three consecutive ok minutes (`RECOVERY_SECONDS` = 180, the `clear` stretch of `alert_streaks`, RULES health 8; a breach or a
   missing reading starts the three minutes again); readings of the moment (`supplier.balance`,
   `queue.oldest_age`, `orders.past_sla`, `db.connection_usage`, `redis.memory_usage`) are **held**: the alert opens only after every evaluation of the
   whole window saw the breach and closes only after every evaluation of the whole window saw the value back in range (`alert_streaks` keeps when the
   stretch began; a missing reading, a rule edited to judge differently, or more than 5 minutes unseen starts the window again; a mute keeps it running);
-  `ledger.mismatch_count` is the outcome of a run and is judged at once (scenario system-integrity steps 2 and 7). Sources: Postgres (`supplier_api_logs`, `suppliers`, orders, webhook
-  deliveries, `pg_stat_activity`, the last integrity run), BullMQ, both Redis roles and Prometheus (`api.*` only: while it is down those rules are
+  `ledger.mismatch_count` is the outcome of a run and is judged at once (scenario system-integrity steps 2 and 7). Sources: Postgres (`supplier_api_logs`, `suppliers`, orders,
+  `pg_stat_activity`, the last integrity run), BullMQ, both Redis roles and Prometheus (`api.*` only: while it is down those rules are
   skipped and the run says so in `result.unevaluated`, ANSWERS Q15).
 - **Evaluator** (`AlertEvaluator`): a rule that is switched on and not deleted is judged each minute. Breached with no open alert for the subject opens one
   (unless muted), recovered closes it (an acknowledged one too), no data does neither, and a subject that has no reading any more (a supplier disabled
@@ -231,9 +231,9 @@ maintenance state is read live on top of the cached snapshot.
 `scripts/seed/health.ts` (run last by `scripts/seed/run.ts`, after the suppliers): a week of `service_checks` at one sample per half hour for
 the six core components and every active demo supplier (calm, with two blips: a supplier slow for an hour two days ago and the queue Redis
 down for one sample four days ago; the newest sample of each is `ok`), and the run history of the scheduled jobs (`price_sync`,
-`balance_check`, `session_purge`, `client_group_promotion`, `service_checks_purge`, `db_size_sample`; one old failed price sync, and
+`balance_check`, `session_purge`, `service_checks_purge`, `db_size_sample`; one old failed price sync, and
 `db_size_sample` rows that show 4.3 MB of growth a day). It writes only into empty tables, because the worker's own rows are the real
-data. `scripts/seed/health-alerts.ts` (12b) adds, each only into an empty table: the ten alert rules of the mock (ids 1 to 10; one muted, one off), ten
+data. `scripts/seed/health-alerts.ts` (12b) adds, each only into an empty table: the nine alert rules of the mock (ids 1 to 9; one muted, one off), nine
 resolved alerts of the last month with their rule snapshot (nothing open: the console opens on Operational), four resolved incidents with their
 timelines, and 14 clean nightly `ledger_integrity` runs. Test: `test/integration/health/health-seed.test.ts`.
 

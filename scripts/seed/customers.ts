@@ -21,7 +21,6 @@ interface DemoCustomer {
   cur: string;
   hasAccount: boolean;
   optIn: boolean;
-  risk: 'low' | 'med' | 'high';
   status: 'active' | 'suspended' | 'blocked';
   created: number;
   notes: string;
@@ -35,9 +34,6 @@ interface DemoCustomer {
   suspendedReason: string;
 }
 
-/** The demo says `med`, the API says `medium` (MISMATCHES M82). */
-const RISK = { low: 'low', med: 'medium', high: 'high' } as const;
-
 /** The staff id the mock gives a customer "added by the team" (the seed has none, so nobody is listed as the creator). */
 const MOCK_STAFF_ID = 1;
 
@@ -45,8 +41,7 @@ const MOCK_STAFF_ID = 1;
  * Seeds the customers and the credentials of the accounts.
  *
  * Why: the console pointed at the real API should show the customers it knew from its mock. Ids are the demo's
- * (`c1` is 1), the currency is the demo's `cur` (the money seeder inserted the demo currencies first), a customer the demo marks
- * `med` risk is `medium`. An account's credentials row has no password (accounts choose theirs through a link); the demo's
+ * (`c1` is 1), the currency is the demo's `cur` (the money seeder inserted the demo currencies first). An account's credentials row has no password (accounts choose theirs through a link); the demo's
  * `mustChangePw` and `pwChangedAt` are kept. Idempotent: rows that exist are skipped.
  *
  * @param db the transaction to write with
@@ -69,7 +64,6 @@ export async function seedCustomers(db: DbExecutor, demo: DemoSeed): Promise<See
       hasAccount: c.hasAccount,
       createdBy: c.createdBy === 'admin' ? MOCK_STAFF_ID : null,
       marketingOptIn: c.optIn,
-      riskLevel: RISK[c.risk],
       status: c.status,
       suspendedAt: toDate(c.suspendedAt),
       suspendedReason: c.suspendedReason === '' ? null : c.suspendedReason,

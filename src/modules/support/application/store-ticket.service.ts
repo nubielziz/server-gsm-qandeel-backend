@@ -1,5 +1,5 @@
 // StoreTicketService: what a storefront visitor does with a support ticket (feature 17, scenario b2c-ticket): open one from the order or
-// contact page, read it by its token, write on it and rate it once it is resolved. The ticket token is the credential of the last three.
+// contact page, read it by its token and write on it. The ticket token is the credential of the last two.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
@@ -17,7 +17,6 @@ import {
   insertMessage,
   insertTicket,
   listMessageRows,
-  lockTicket,
   markRequesterProven,
   updateTicket,
 } from '../infra/ticket.repository';
@@ -45,9 +44,9 @@ const refuse = (field: string, code: string, message: string) =>
   new AppError('VALIDATION_FAILED', { errors: [{ field, code, message } satisfies FieldError] });
 
 /**
- * Opens, reads, answers and rates support tickets for a storefront visitor.
+ * Opens, reads and answers support tickets for a storefront visitor.
  *
- * Why: scenario b2c-ticket steps 1, 2, 6 and 8. A visitor with no account opens a ticket from the tracking page
+ * Why: scenario b2c-ticket steps 1, 2 and 6. A visitor with no account opens a ticket from the tracking page
  * (the order's tracking token links it to the order and to the order's customer) or the contact page (an email, which makes a guest
  * customer the first time); it starts `new` with the priority of its category and a reply target, and the customer gets a receipt. The
  * ticket token (128 random bits, decision 010) is the only credential of the ticket page: it reaches the visitor in the receipt email, and in
@@ -57,8 +56,7 @@ const refuse = (field: string, code: string, message: string) =>
  * (`CustomerDirectory.orderLinkStanding`); any other order link files the ticket unproven, exactly like a typed address. The order link
  * of an anonymized customer is refused like an unknown one. A message on a ticket that waited on the customer makes it `open` again and restarts the
  * reply target from that message. A resolved ticket is closed for the customer (B220, owner decision 2026-11-15, replacing ANSWERS support
- * Q8): a message is `409 TICKET_RESOLVED`, and staff reopen the ticket to continue. The rating is one answer, 1 to 5, only once the
- * ticket is resolved, and the ticket stays resolved (no `closed` status).
+ * Q8): a message is `409 TICKET_RESOLVED`, and staff reopen the ticket to continue (there is no `closed` status).
  *
  * The receipt email goes to an address anyone can type, so it could be used to mail a stranger: besides Turnstile and the per-IP limit, one
  * email address gets at most 3 new tickets an hour (case-insensitive, `429 RATE_LIMITED` with `Retry-After`, limiter `ticket-email` of
@@ -68,11 +66,11 @@ const refuse = (field: string, code: string, message: string) =>
  * Decision 053: a ticket opened with a typed email (no order link), or with the link of a guest order filed under an account, is unproven:
  * `requester_proven_at` is null until the link that was
  * mailed to that address is first used (the ticket page is read, or a message is written with the link). Until then the ticket is not in the
- * customer's account list, its live events do not reach the account stream, its replay leaves it out and a resolve sends no satisfaction
- * survey; staff see an internal system note at the start of the thread and another when the address is confirmed.
+ * customer's account list, its live events do not reach the account stream, its replay leaves it out; staff see an internal system note
+ * at the start of the thread and another when the address is confirmed.
  *
  * Feature 28: the customer's message is written by `TicketThreadService` (attachments, the `ticket-message` limit, the doorbell), the views
- * carry the attachments and the seen marks, and a new ticket and a rating ring `ticket updated` so the console sees them at once.
+ * carry the attachments and the seen marks, and a new ticket rings `ticket updated` so the console sees it at once.
  *
  * Side effects: counts a point of the `ticket-email` limiter on the cache Redis (a hashed key, one hour); may insert a guest `customers`
  * row through the customers module; inserts `support_tickets` and `ticket_messages` rows (a system note for an unproven ticket), and for a new
@@ -262,30 +260,6 @@ export class StoreTicketService {
       });
       this.events.message(ticketId, note.id);
     });
-  }
-
-  /**
-   * Records the satisfaction rating.
-   *
-   * @param id the ticket id the token resolved to
-   * @param score 1 to 5
-   * @returns the ticket after the rating
-   * @throws {AppError} `NOT_FOUND`; `VALIDATION_FAILED` (422 on `score` for a ticket that is not resolved yet, or already rated)
-   */
-  async rate(id: number, score: number): Promise<StoreTicketView> {
-    const ticket = await this.db.runInTransaction(async ({ tx }): Promise<SupportTicket> => {
-      const locked = await lockTicket(tx, id);
-      if (!locked) throw notFound();
-      if (locked.status !== 'resolved') {
-        throw refuse('score', 'not_resolved', 'You can rate a ticket once it is resolved.');
-      }
-      if (locked.csatScore !== null) throw refuse('score', 'already_rated', 'You already rated this ticket.');
-      // Rating is not activity the team has to look at: the ticket keeps its `updated_at`.
-      const rated = await updateTicket(tx, id, { csatScore: score, updatedAt: locked.updatedAt });
-      this.events.updated(id);
-      return rated;
-    });
-    return this.view(ticket, await listMessageRows(this.db.db, id, true));
   }
 
   /** The customer's view of a ticket with the attachments of its public messages. */

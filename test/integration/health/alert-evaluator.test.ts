@@ -3,7 +3,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { Job } from 'bullmq';
 import { eq } from 'drizzle-orm';
-import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { QueuesService } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
@@ -26,7 +25,6 @@ import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { eventually } from '../../support/infra';
 import { insertOrderRow, ordersWorld } from '../../support/orders';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
-import { insertDelivery, insertEndpoint } from '../../support/webhooks';
 
 const prefix = testBullPrefix();
 const clock = new TestClock('2026-11-07T10:00:00.000Z');
@@ -411,29 +409,6 @@ describe('the other metrics', () => {
       unit: 'count',
       subjectType: 'system',
     });
-  });
-
-  it('webhooks.success_rate: delivered over delivered plus failed inside the window', async () => {
-    const { db } = await testDb();
-    const world = await ordersWorld(db);
-    const endpoint = await insertEndpoint(t.app.get(EncryptionService, { strict: false }), db, world.merchant.id);
-    await insertRule(db, {
-      key: 'webhook_delivery',
-      metric: 'webhooks.success_rate',
-      comparator: 'lt',
-      threshold: '95.0000',
-      windowSeconds: 600,
-      severity: 'warning',
-    });
-    // Nothing delivered in the window: no data.
-    expect((await evaluator.evaluateAll()).fired).toBe(0);
-    for (let i = 0; i < 9; i += 1)
-      await insertDelivery(db, endpoint, { status: 'delivered', nextRetryAt: null, createdAt: ago(MINUTE) });
-    await insertDelivery(db, endpoint, { status: 'failed', nextRetryAt: null, createdAt: ago(MINUTE) });
-    // An old failure outside the window does not count.
-    await insertDelivery(db, endpoint, { status: 'failed', nextRetryAt: null, createdAt: ago(HOUR) });
-    expect((await evaluator.evaluateAll()).fired).toBe(1);
-    expect((await alerts())[0]).toMatchObject({ metric: 'webhooks.success_rate', value: '90.0000', unit: 'percent' });
   });
 
   it('queue.oldest_age: one alert per queue, named by the queue, subject id null (sent as 0)', async () => {

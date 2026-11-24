@@ -672,12 +672,8 @@ describe('credentials and maintenance', () => {
     );
   });
 
-  it('refuses a key without the dhru scope and a key of a merchant waiting for approval, in the envelope', async () => {
+  it('refuses a key of a merchant waiting for approval, in the envelope', async () => {
     const { db } = await testDb();
-    const noDhru = await credentialsFor(t, db, world.other.id, { scopes: ['orders:read', 'orders:write'] });
-    expect(messageOf(await dhruClient(t, noDhru).call('accountinfo'))).toBe(
-      'This API key cannot be used with the Dhru API.',
-    );
     await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, world.merchant.id));
     await clearApiKeyCaches(t);
     expect(messageOf(await dhru.call('accountinfo'))).toBe('This merchant account has not been approved yet.');

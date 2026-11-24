@@ -1,5 +1,5 @@
 // Public API of the orders module: the state machine (pure rules), the past-SLA predicate (the dashboard and System health use it), the
-// placement and transition services the Dhru, REST v1, supplier and risk features call, the outbox event types, and the modules.
+// placement and transition services the Dhru, supplier and risk features call, the outbox event types, and the modules.
 // Other modules import only this file.
 // Order matters (decision 032): the pure rules and SQL fragments come first, ahead of the modules whose providers lead into identity.
 export {
@@ -64,10 +64,7 @@ export {
   refusalError,
 } from './application/order-transitions';
 export type { TransitionOutcome, TransitionRequest } from './application/order-transitions';
-export { OrderCompletionListeners } from './application/order-completion-listeners';
-export type { OrderCompletionListener, OrderReversalReason } from './application/order-completion-listeners';
 export type { LedgerActor } from './application/order-ledger';
-export { OrderCompletionModule } from './order-completion.module';
 export { OrderReadService } from './application/order-read.service';
 export { OrderSupplierMoves } from './application/order-supplier-moves';
 export type {

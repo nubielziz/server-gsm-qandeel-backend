@@ -124,12 +124,13 @@ describe.skipIf(!frontendPresent)('the support seed', () => {
     expect(detail.body.slaDueAt).not.toBeNull();
 
     const resolved = (await staff.get('/admin/support-tickets?status=resolved&_end=100')).body as Array<{
-      csatScore: number | null;
       resolvedAt: string | null;
       slaDueAt: string | null;
     }>;
     expect(resolved.every((row) => row.resolvedAt !== null && row.slaDueAt === null)).toBe(true);
-    expect(resolved.map((row) => row.csatScore).sort()).toEqual([4, 4, 5, 5, 5]);
+    // The retired rating is neither seeded nor sent: the column stays empty and the row has no such field.
+    expect(resolved.length).toBeGreaterThan(0);
+    expect(resolved.every((row) => !('csatScore' in row))).toBe(true);
 
     const templates = await staff.get('/admin/reply-templates?_end=200');
     expect(templates.total).toBe(8);

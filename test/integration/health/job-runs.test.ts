@@ -140,7 +140,7 @@ describe('run (the wrapper processors use)', () => {
   });
 
   it('records "nothing to do" as skipped when the job says so', async () => {
-    const done = await jobRuns.run({ job: 'data_retention', trigger: 'schedule' }, () =>
+    const done = await jobRuns.run({ job: 'notification_retention', trigger: 'schedule' }, () =>
       Promise.resolve({ skipped: true, result: { reason: 'retention is switched off' } }),
     );
     expect(done).toMatchObject({ status: 'skipped', result: { reason: 'retention is switched off' } });

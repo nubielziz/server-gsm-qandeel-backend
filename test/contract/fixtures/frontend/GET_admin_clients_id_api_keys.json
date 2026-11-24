@@ -8,11 +8,6 @@
       "clientId": 1,
       "name": "Legacy integration",
       "prefix": "gsm_live_01xx",
-      "scopes": [
-        "orders:create",
-        "orders:read",
-        "account:read"
-      ],
       "allowedIps": [
         "203.0.113.55"
       ],
@@ -29,11 +24,6 @@
       "clientId": 1,
       "name": "Staging",
       "prefix": "gsm_test_08xx",
-      "scopes": [
-        "orders:create",
-        "orders:read",
-        "account:read"
-      ],
       "allowedIps": [],
       "rateLimitPerMin": 120,
       "lastUsedAt": null,
@@ -48,11 +38,6 @@
       "clientId": 1,
       "name": "Production",
       "prefix": "gsm_live_69xx",
-      "scopes": [
-        "orders:create",
-        "orders:read",
-        "account:read"
-      ],
       "allowedIps": [
         "203.0.113.55"
       ],

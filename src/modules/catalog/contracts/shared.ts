@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { zDecimal, zMoney } from '../../../common/contract';
 
-/** A money field that may be zero but not negative (`earnThreshold`, `depositLimit`, `minProfit`): wire `Money`. */
+/** A money field that may be zero but not negative (`depositLimit`, `minProfit`): wire `Money`. */
 export const NonNegativeMoney = zMoney.refine((value) => !value.startsWith('-'), 'Must be 0 or more.');
 
 /** A money field above zero (`basePrice`): wire `Money`. */

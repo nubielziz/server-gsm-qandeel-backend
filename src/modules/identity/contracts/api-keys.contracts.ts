@@ -2,7 +2,7 @@
 // and the staff's view and revocation under /admin (identity.md). The shape is the console's ApiKey (identity-platform-5).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
-import { MAX_ALLOWED_IPS, MAX_LIVE_KEYS, MERCHANT_KEY_SCOPES, RATE_LIMIT_PER_MIN_RANGE } from '../domain/api-key-input';
+import { MAX_ALLOWED_IPS, MAX_LIVE_KEYS, RATE_LIMIT_PER_MIN_RANGE } from '../domain/api-key-input';
 
 /** An API key as the portal and the console read it: never the hash, never the key itself after creation. */
 const ApiKeyRow = z.object({
@@ -10,7 +10,6 @@ const ApiKeyRow = z.object({
   clientId: zId,
   name: z.string(),
   prefix: z.string(),
-  scopes: z.array(z.string()),
   allowedIps: z.array(z.string()),
   rateLimitPerMin: z.number().int(),
   lastUsedAt: zIsoDateTime.nullable(),
@@ -34,7 +33,6 @@ const KEY_EXAMPLE = {
   clientId: 1,
   name: 'Production server',
   prefix: 'gsm_Qx4f',
-  scopes: ['orders:read', 'orders:write', 'account:read'],
   allowedIps: ['203.0.113.55', '198.51.100.0/24'],
   rateLimitPerMin: 60,
   lastUsedAt: '2026-11-01T09:30:00.000Z',
@@ -74,8 +72,7 @@ export const portalCreateApiKey = defineRoute({
   key: 'POST /client/api-keys',
   summary: 'New API key',
   description:
-    `\`scopes\` is a non-empty subset of ${MERCHANT_KEY_SCOPES.map((scope) => `\`${scope}\``).join(', ')} (an area wildcard such ` +
-    'as `orders:*` is allowed; `dhru` is matched exactly). `allowedIps` takes up to ' +
+    'A key is a Dhru credential: it carries no scope, and a `scopes` field in the body is ignored. `allowedIps` takes up to ' +
     `${MAX_ALLOWED_IPS} addresses or CIDR ranges (a bare address is stored as /32 or /128; bits after the prefix are refused); an ` +
     'empty list means any address. `expiresAt` must be in the future. The answer carries the full key once as `secret` ' +
     '(`Cache-Control: no-store`): only a keyed hash is stored, so a lost key cannot be shown again. The per-minute limit is the ' +
@@ -88,7 +85,6 @@ export const portalCreateApiKey = defineRoute({
   access: 'merchant-session',
   body: z.object({
     name: KeyName,
-    scopes: z.array(z.string().trim().min(1)).min(1, 'Choose at least one scope.').max(20),
     allowedIps: AllowedIps.optional(),
     expiresAt: zIsoDateTime.optional(),
   }),
@@ -105,7 +101,6 @@ export const portalCreateApiKey = defineRoute({
   examples: {
     request: {
       name: 'Production server',
-      scopes: ['orders:read', 'orders:write', 'account:read'],
       allowedIps: ['203.0.113.55'],
     },
     response: { key: KEY_EXAMPLE, secret: 'gsm_Qx4fD0nQ2hX8mV3vT9cKzY6bJ1aW5eRuLs7NpG4HtM0' },
@@ -196,7 +191,6 @@ export const adminCreateClientApiKey = defineRoute({
   params: z.object({ id: zIdParam }),
   body: z.object({
     name: KeyName,
-    scopes: z.array(z.string().trim().min(1)).min(1, 'Choose at least one scope.').max(20),
     allowedIps: AllowedIps.optional(),
     expiresAt: zIsoDateTime.optional(),
     rateLimitPerMin: RateLimitPerMin.optional(),
@@ -206,7 +200,6 @@ export const adminCreateClientApiKey = defineRoute({
   examples: {
     request: {
       name: 'Production server',
-      scopes: ['orders:read', 'orders:write', 'account:read'],
       allowedIps: ['203.0.113.55'],
       rateLimitPerMin: 120,
     },

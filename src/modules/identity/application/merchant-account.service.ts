@@ -21,10 +21,8 @@ export interface MerchantMe {
   readonly phone: string;
   readonly country: string;
   readonly status: Client['status'];
-  readonly kycStatus: Client['kycStatus'];
   readonly emailVerifiedAt: Date | null;
   readonly twofaEnabled: boolean;
-  readonly referralCode: string;
   readonly group: { readonly id: number; readonly name: string; readonly discountPercent: string };
   readonly createdAt: Date;
   readonly address: string;
@@ -97,10 +95,8 @@ export class MerchantAccountService {
       phone: client.phone,
       country: client.country,
       status: client.status,
-      kycStatus: client.kycStatus,
       emailVerifiedAt: client.emailVerifiedAt,
       twofaEnabled: client.twofaEnabled,
-      referralCode: client.referralCode,
       group: { id: group.id, name: group.name, discountPercent: group.discountPercent },
       createdAt: client.createdAt,
       address: client.address,

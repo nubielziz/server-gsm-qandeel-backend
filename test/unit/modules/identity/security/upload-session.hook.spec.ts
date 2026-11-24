@@ -20,7 +20,7 @@ describe('uploadSessionSubject', () => {
   });
 
   it('leaves the routes that sign in another way to their own bounds', () => {
-    expect(uploadSessionSubject('/v1/files', 'POST', MULTIPART)).toBeUndefined();
+    expect(uploadSessionSubject('/api/index.php', 'POST', MULTIPART)).toBeUndefined();
     expect(uploadSessionSubject('/api/index.php', 'POST', MULTIPART)).toBeUndefined();
     expect(uploadSessionSubject('/store/v1/tickets/:token/files', 'POST', MULTIPART)).toBeUndefined();
   });

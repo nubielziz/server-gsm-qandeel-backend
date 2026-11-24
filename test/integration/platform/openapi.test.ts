@@ -38,7 +38,7 @@ describe('operations', () => {
     expect(op.tags).toEqual(['test']);
     expect(op['x-gsm-key']).toBe('GET /t/items/:id');
     expect(op['x-gsm-access']).toBe('public');
-    // The surface lets the documents be filtered (the public one keeps v1 and the Dhru reference, decision 017).
+    // The surface lets the documents be filtered (the public one keeps the Dhru reference, decision 017).
     expect(op['x-gsm-surface']).toBe('system');
     expect(doc.paths['/admin/t/secure'].get['x-gsm-surface']).toBe('admin');
     expect(doc.paths['/api/index.php'].post['x-gsm-surface']).toBe('dhru');
@@ -87,7 +87,7 @@ describe('session metadata (decision 018)', () => {
     for (const operation of [doc.paths['/t/items'].post, doc.paths['/health'].get, doc.paths['/metrics'].get]) {
       expect(operation['x-gsm-session-stages']).toBeUndefined();
     }
-    expect(doc.paths['/store/v1/t/sec/kind/api-key'].get['x-gsm-session-stages']).toBeUndefined();
+    expect(doc.paths['/store/v1/t/sec/kind/url-secret'].get['x-gsm-session-stages']).toBeUndefined();
     expect(doc.paths['/admin/t/sec/login'].post['x-gsm-session-stages']).toBeUndefined();
   });
 

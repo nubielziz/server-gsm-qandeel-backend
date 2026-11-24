@@ -1,5 +1,5 @@
 // The TAC catalog routes' use cases (map stage 14, routes /admin/tac-catalog): list, read, add and correct an entry, each write
-// audited. The TAC is the first 8 digits of an IMEI: the storefront's IMEI check (feature 14a) reads it to name the device.
+// audited. The TAC is the first 8 digits of an IMEI: the risk queue, the order tracking and the catalog read it to name the device.
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -9,8 +9,7 @@ import { DbService, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import type { TacEntrySchema } from '../contracts/tac-catalog.contracts';
 import type { TacCatalogEntry } from '../db/schema';
-import { checkReleaseYear, tacInUseMessage, wireReleaseYear } from '../domain/tac-input';
-import { imeiChecksUsingTac } from '../infra/tac-foreign-reads.repository';
+import { checkReleaseYear, wireReleaseYear } from '../domain/tac-input';
 import {
   type TacSortField,
   findTacByTac,
@@ -58,9 +57,8 @@ function snapshotOf(row: TacCatalogEntry): Record<string, unknown> {
 /**
  * Reads and changes TAC entries.
  *
- * Why: the TAC catalog tab of the Storefront page (RULES storefront, catalog-7, catalog-8). A TAC appears once (`409 TAC_TAKEN`
- * on `tac`); a TAC an IMEI check already used keeps its value (`422` on `tac`), because the check's TAC is history; the release
- * year follows the clock's year and an unknown year is stored null and sent as 0.
+ * Why: the TAC catalog tab of the Storefront page (RULES storefront, catalog-8). A TAC appears once (`409 TAC_TAKEN`
+ * on `tac`); the release year follows the clock's year and an unknown year is stored null and sent as 0.
  *
  * Side effects: `create` and `update` write `tac_catalog` and one audit row each.
  */
@@ -142,8 +140,7 @@ export class TacCatalogAdminService {
    * @param id the entry id
    * @param input the fields to change
    * @returns the entry after the change
-   * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422 on `releaseYear`, or on `tac` when IMEI checks use the old
-   *   one), `TAC_TAKEN` (409 on `tac`)
+   * @throws {AppError} `NOT_FOUND` (404), `VALIDATION_FAILED` (422 on `releaseYear`), `TAC_TAKEN` (409 on `tac`)
    */
   async update(id: number, input: UpdateTacInput): Promise<WireTacEntry> {
     const now = this.clock.now();
@@ -154,14 +151,6 @@ export class TacCatalogAdminService {
         if (!current) throw notFound();
         const changes: Partial<TacCatalogEntry> = {};
         if (input.tac !== undefined && input.tac !== current.tac) {
-          const used = await imeiChecksUsingTac(tx, current.tac);
-          if (used > 0) {
-            const message = tacInUseMessage(used, current.tac);
-            throw new AppError('VALIDATION_FAILED', {
-              detail: message,
-              errors: [{ field: 'tac', code: 'in_use', message }],
-            });
-          }
           if (await findTacByTac(tx, input.tac)) throw tacTaken(input.tac);
           changes.tac = input.tac;
         }

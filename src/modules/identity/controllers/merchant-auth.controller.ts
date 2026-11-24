@@ -4,8 +4,8 @@ import { Body, Controller, Header, Req, Res } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
 import { type MerchantMe, MerchantAccountService } from '../application/merchant-account.service';
+import { MerchantEmailVerificationService } from '../application/merchant-email-verification.service';
 import { MerchantPasswordService } from '../application/merchant-password.service';
-import { MerchantRegistrationService } from '../application/merchant-registration.service';
 import { MerchantSignInService } from '../application/merchant-sign-in.service';
 import { requestMetaOf } from '../application/request-meta';
 import {
@@ -14,7 +14,6 @@ import {
   merchantLogin,
   merchantLogout,
   merchantMe,
-  merchantRegister,
   merchantResendVerification,
   merchantResetPassword,
   merchantVerifyEmail,
@@ -40,11 +39,10 @@ export function wireMe(me: MerchantMe): ResultOf<typeof merchantMe> {
 /**
  * The merchant portal's sign-in routes.
  *
- * Why: the portal registers, verifies the email, signs in (with an optional authenticator code), recovers a forgotten password
- * and shows the merchant's approval status (B121 to B129). Every answer carries `Cache-Control: no-store`: these responses hold
+ * Why: the portal verifies the email, signs in (with an optional authenticator code), recovers a forgotten password
+ * and shows the merchant's own account (B121 to B129). Every answer carries `Cache-Control: no-store`: these responses hold
  * cookies, tokens or personal data.
  *
- * @route POST /client/auth/register
  * @route POST /client/auth/verify-email
  * @route POST /client/auth/login
  * @route POST /client/auth/2fa
@@ -58,26 +56,13 @@ export function wireMe(me: MerchantMe): ResultOf<typeof merchantMe> {
 @Controller()
 export class MerchantAuthController {
   constructor(
-    private readonly registration: MerchantRegistrationService,
+    private readonly emailVerification: MerchantEmailVerificationService,
     private readonly signIn: MerchantSignInService,
     private readonly passwords: MerchantPasswordService,
     private readonly account: MerchantAccountService,
     private readonly cookies: SessionCookies,
     private readonly csrf: CsrfService,
   ) {}
-
-  /**
-   * Registers a merchant.
-   *
-   * @param body the registration form
-   * @param request the request (address for the rate limit and the link record)
-   * @route POST /client/auth/register
-   */
-  @Route(merchantRegister)
-  @Header('Cache-Control', 'no-store')
-  async register(@Body() body: BodyOf<typeof merchantRegister>, @Req() request: FastifyRequest): Promise<void> {
-    await this.registration.register(body, requestMetaOf(request));
-  }
 
   /**
    * Verifies the email address with the emailed token.
@@ -89,7 +74,7 @@ export class MerchantAuthController {
   @Route(merchantVerifyEmail)
   @Header('Cache-Control', 'no-store')
   async verifyEmail(@Body() body: BodyOf<typeof merchantVerifyEmail>, @Req() request: FastifyRequest): Promise<void> {
-    await this.registration.verifyEmail(body.token, request, requestMetaOf(request));
+    await this.emailVerification.verifyEmail(body.token, request, requestMetaOf(request));
   }
 
   /**
@@ -191,7 +176,7 @@ export class MerchantAuthController {
     @CurrentMerchant() merchant: MerchantPrincipal,
     @Req() request: FastifyRequest,
   ): Promise<void> {
-    await this.registration.resendVerification(merchant, requestMetaOf(request));
+    await this.emailVerification.resendVerification(merchant, requestMetaOf(request));
   }
 
   /**
@@ -231,7 +216,7 @@ export class MerchantAuthController {
    *
    * @param merchant the full session's merchant
    * @param reply the reply, to repeat the CSRF token in `X-CSRF-Token`
-   * @returns the merchant, its approval status and its group
+   * @returns the merchant, its status and its group
    * @route GET /client/auth/me
    */
   @Route(merchantMe)

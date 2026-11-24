@@ -55,7 +55,6 @@ export function dollars(wire: string): string {
 /** The label of a placement source in the first timeline line (the demo's "Order received via Dhru API"). */
 const SOURCE_LABELS: Readonly<Record<string, string>> = {
   dhru: 'Dhru API',
-  v1: 'REST API',
   portal: 'Portal',
   store: 'Storefront',
   admin: 'the admin console',
@@ -64,7 +63,7 @@ const SOURCE_LABELS: Readonly<Record<string, string>> = {
 /**
  * The first line of a new order.
  *
- * @param source the placement source (`portal`, `dhru`, `v1`, `store`, `admin`)
+ * @param source the placement source (`portal`, `dhru`, `store`, `admin`)
  * @param actor who placed it
  * @returns the `created` line
  */

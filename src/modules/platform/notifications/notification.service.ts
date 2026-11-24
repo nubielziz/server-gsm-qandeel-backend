@@ -35,9 +35,7 @@ export interface NotificationInput {
   readonly channel: NotificationChannel;
   /** The values of the event's placeholders. They are stored on the row and shown in the log: no secret goes here. */
   readonly variables?: Readonly<Record<string, string>>;
-  /** A Telegram chat to use instead of the recipient's linked chat. */
-  readonly chatId?: string;
-  /** Names the occurrence, so a repeat makes no second row (`outbox-<id>:email`, `telegram-update-<id>`). */
+  /** Names the occurrence, so a repeat makes no second row (`outbox-<id>:email`). */
   readonly dedupeKey?: string;
   /**
    * The address to write to instead of the recipient's current one. Only an event registered with `namedAddress` takes it (decision 047:
@@ -136,7 +134,6 @@ export class NotificationService {
     const now = this.clock.now();
     const payload: NotificationPayload = {
       variables: { ...(input.variables ?? {}) },
-      ...(input.chatId === undefined ? {} : { chatId: input.chatId }),
       ...(input.to === undefined ? {} : { to: input.to }),
     };
     const { row, created } = await insertNotificationOnce(work.tx, {
@@ -174,10 +171,7 @@ export class NotificationService {
    * @returns the row, or why nothing was made (`recipient_gone`, `recipient_suspended`)
    * @throws {RangeError} when the event is not registered for the recipient's audience, has a template, or lacks the channel
    */
-  async enqueueInline(
-    work: { readonly tx: DbExecutor },
-    input: Omit<NotificationInput, 'chatId' | 'to'>,
-  ): Promise<EnqueueResult> {
+  async enqueueInline(work: { readonly tx: DbExecutor }, input: Omit<NotificationInput, 'to'>): Promise<EnqueueResult> {
     const recipient = await recipientOf(work.tx, input.recipient.type, input.recipient.id);
     if (!recipient) return { status: 'skipped', reason: 'recipient_gone' };
     const definition = this.registry.get(input.event, recipient.audience);
@@ -339,23 +333,6 @@ export class NotificationService {
   }
 
   /**
-   * Tells whether a message can be written right now: its template exists and is switched on.
-   *
-   * Why: feature 19: a job that picks the people to mail (the recovery reminder) must pick nobody while the message cannot be written,
-   * or it would pick the same ones on every run. The rule is the one `check` applies to every recipient of the audience: one template
-   * per event, channel and audience (decision 039), so the answer is the same for all of them.
-   *
-   * @param db the database or a transaction
-   * @param key the event, channel and audience
-   * @returns true when a message can be written: the template exists and is on (for a link email without a shipped text, also keeps the
-   *   link rules), or the event protects accounts and has a shipped text (decision 047)
-   */
-  async templateIsOn(db: DbExecutor, key: TemplateKey): Promise<boolean> {
-    const template = await findTemplateFor(db, key);
-    return this.verdictOf(template, key, this.registry.get(key.event, key.audience)) === 'ok';
-  }
-
-  /**
    * Marks a still-queued notification failed with a reason, when its job gave up without sending.
    *
    * Why: an earlier attempt of a retried job made the row and failed in a way that may be retried; when a later attempt finds the mail no
@@ -367,7 +344,7 @@ export class NotificationService {
    * @param dedupeKey the key the row was made with
    * @param reason why nothing was sent (a short code; no address or secret)
    * @param db the database or a transaction to write with (default: the pool); a caller that must finish other work together with the
-   *   row (the recovery mail takes its claim off) passes its `tx`
+   *   row passes its `tx`
    * @returns true when a queued row was marked failed
    */
   async abandon(dedupeKey: string, reason: string, db: DbExecutor = this.db.db): Promise<boolean> {
@@ -425,7 +402,7 @@ export class NotificationService {
    * Judges the stored template of an event: usable, missing or switched off.
    *
    * Why: decision 047: a security email is never stopped by its template (a missing or switched-off one is stood in for by the shipped
-   * text), and a reminder-like link email whose active template breaks the link rules and has no shipped text counts as switched off,
+   * text), and a link email whose active template breaks the link rules and has no shipped text counts as switched off,
    * so nothing queues a row the delivery could only fail.
    *
    * @param template the stored template of the event, channel and audience, if any

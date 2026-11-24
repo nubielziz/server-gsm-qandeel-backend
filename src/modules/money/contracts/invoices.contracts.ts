@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { INVOICE_KINDS, INVOICE_STATUSES } from '../db/schema';
+import { INVOICE_FILTER_KINDS } from '../domain/invoice-rules';
 
 /** An invoice as the console shows it: a merchant's top-up or manual invoice, or a storefront customer's tax receipt. */
 export const InvoiceSchema = z.object({
@@ -83,7 +84,7 @@ export const listInvoices = defineRoute({
     defaultSort: { field: 'createdAt', order: 'desc' },
     filters: {
       status: { type: 'enum', values: INVOICE_STATUSES },
-      kind: { type: 'enum', values: INVOICE_KINDS },
+      kind: { type: 'enum', values: INVOICE_FILTER_KINDS },
       clientId: { type: 'id', ops: ['eq'] },
     },
     search: ['number', 'client.name', 'customer.name'],
@@ -113,7 +114,7 @@ export const createInvoice = defineRoute({
   summary: 'Issue a manual invoice',
   description:
     'Issues a manual invoice to a merchant: kind manual, status open, no fee, tax at the B2B VAT rate (setting, 0 for now), due in ' +
-    '14 days, in the base currency. It is a top-up invoice: when it is paid the wallet is credited and `invoice.paid` is sent. No ' +
+    '14 days, in the base currency. It is a top-up invoice: when it is paid the wallet is credited and the merchant is told. No ' +
     'ledger entry at issue. A merchant without a billing country is 422 on `clientId`. Audited. The invoice records who issued it: ' +
     'that staff member cannot approve its payment unless they are an Owner (decision 049).',
   tags: ['finance'],

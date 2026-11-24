@@ -16,7 +16,6 @@ import { OrderSupplierMoves } from './application/order-supplier-moves';
 import { StorefrontOrderPortImpl } from './application/storefront-order-port';
 import { OrderTransitions } from './application/order-transitions';
 import { StorefrontPolicies } from '../storefront';
-import { OrderCompletionModule } from './order-completion.module';
 import { OrdersOutboxModule } from './orders-outbox.module';
 
 /**
@@ -28,7 +27,7 @@ import { OrdersOutboxModule } from './orders-outbox.module';
  * and orders modules, simply gets a second copy.
  */
 @Module({
-  imports: [OrdersOutboxModule, MoneyOutboxModule, OrderCompletionModule, StorefrontMailsModule],
+  imports: [OrdersOutboxModule, MoneyOutboxModule, StorefrontMailsModule],
   providers: [
     LedgerPoster,
     B2cRefunds,

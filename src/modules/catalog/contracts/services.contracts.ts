@@ -443,7 +443,7 @@ export const deleteService = defineRoute({
   summary: 'Delete a service',
   description:
     'Answers `204` in both cases. A service that anything refers to (orders, supplier links, storefront listings, inventory ' +
-    'codes, checkout sessions, help articles, IMEI checks) is archived: disabled, hidden from every list and reader, its ' +
+    'codes, checkout sessions, help articles) is archived: disabled, hidden from every list and reader, its ' +
     'service pricing rules switched off, its history kept, its code freed. Any other service is deleted with its fields, ' +
     'options, prices and its service pricing rules. There is no restore route. The audit action is `archived service` or ' +
     '`deleted service`.',

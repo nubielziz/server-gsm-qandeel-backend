@@ -1,6 +1,6 @@
 // Integration tests of the customer status fix in `recipientOf` and of the mail an event template makes (feature 23, plan sections 9.3-9.5,
 // S6; decision 039): an anonymized customer gets nothing, a blocked or suspended one still gets the transactional mails (order, ticket) and
-// not the others (survey, checkout reminder), and every customer gets the event's one template as rendered, or nothing when it is off or gone.
+// not the others (the checkout reminder), and every customer gets the event's one template as rendered, or nothing when it is off or gone.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { DbService, type Database, schema as s } from '@src/infra/db';
@@ -87,31 +87,6 @@ describe('a customer who is not active', () => {
         .sent.map((mail) => mail.to)
         .sort(),
     ).toHaveLength(2);
-  });
-
-  it('no longer gets the satisfaction survey or the checkout reminder: they are not transactional', async () => {
-    const suspended = await insertCustomer(db, { status: 'suspended' });
-    expect(await enqueue(ticket('support.csat_survey', suspended))).toEqual({
-      status: 'skipped',
-      reason: 'recipient_suspended',
-    });
-    expect(
-      await enqueue({
-        event: 'checkout.abandoned',
-        recipient: { type: 'customer', id: suspended },
-        channel: 'email',
-        variables: { customerName: 'Dana', device: 'iPhone', link: 'https://shop.example.com/x' },
-        dedupeKey: 'recovery-1:email',
-      }),
-    ).toEqual({ status: 'skipped', reason: 'recipient_suspended' });
-    expect(await notificationRows(db)).toHaveLength(0);
-  });
-
-  it('judges a row again at send time: a customer suspended after the survey was queued gets no survey', async () => {
-    const customerId = await insertCustomer(db);
-    expect(await enqueue(ticket('support.csat_survey', customerId))).toMatchObject({ status: 'queued' });
-    await db.update(s.customers).set({ status: 'suspended' }).where(eq(s.customers.id, customerId));
-    expect(await sendAllQueued(t)).toEqual([{ outcome: 'failed', reason: 'The recipient is suspended.' }]);
   });
 });
 

@@ -1,5 +1,5 @@
 // The merchant audience of notification campaigns (identity module, feature 23, plan section 5.3): merchants by status, group and
-// country, plus listed people; the email and Telegram flags are the SQL twin of `choiceFor` for `broadcast.announcement`.
+// country, plus listed people; the email flag is the SQL twin of `choiceFor` for `broadcast.announcement`.
 import { Injectable } from '@nestjs/common';
 import { type SQL, and, asc, gt, inArray, notInArray, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
@@ -17,20 +17,19 @@ import {
 import { clients } from '../db/schema';
 
 /**
- * A merchant's saved switch of `broadcast.announcement` for one channel, else the event's default (on).
+ * A merchant's saved email switch of `broadcast.announcement`, else the event's default (on).
  *
  * Why: B165 and O4/O11: the merchant's preferences decide; a value that is not a JSON boolean reads as "never saved", exactly like
  * `savedChoices` + `choiceFor` (a test walks a matrix of stored preferences and keeps the two equal).
  */
-function switchSql(channel: 'email' | 'telegram'): SQL {
-  const path = sql.raw(`'{events,broadcast.announcement,${channel}}'`);
+function emailSwitchSql(): SQL {
+  const path = sql.raw(`'{events,broadcast.announcement,email}'`);
   return sql`(case when jsonb_typeof(${clients.notificationPrefs} #> ${path}) = 'boolean' then (${clients.notificationPrefs} #>> ${path})::boolean else true end)`;
 }
 
 const FLAGS: AudienceFlagsSql = {
   inApp: sql`true`,
-  email: switchSql('email'),
-  telegram: sql`(${clients.telegramChatId} is not null and ${switchSql('telegram')})`,
+  email: emailSwitchSql(),
 };
 
 /**
@@ -101,18 +100,12 @@ export class MerchantAudience implements AudienceProvider {
       .select({
         id: clients.id,
         email: FLAGS.email.mapWith(Boolean),
-        telegram: FLAGS.telegram.mapWith(Boolean),
       })
       .from(clients)
       .where(and(merchantAudienceSql(query), gt(clients.id, afterId)))
       .orderBy(asc(clients.id))
       .limit(limit);
-    return rows.map((row) => ({
-      id: row.id,
-      inApp: true,
-      email: row.email,
-      telegram: row.telegram,
-    }));
+    return rows.map((row) => ({ id: row.id, inApp: true, email: row.email }));
   }
 
   /**

@@ -10,9 +10,9 @@ const zChannel = z.enum(CAMPAIGN_CHANNELS);
 const zChannels = z
   .array(zChannel)
   .min(1)
-  .max(3)
+  .max(2)
   .refine((list) => new Set(list).size === list.length, 'A channel is listed twice.')
-  .describe('`in_app`, `email`, `telegram` (Telegram reaches merchants only).');
+  .describe('`in_app` and `email`.');
 
 const zContent = z.strictObject({
   title: z.string().min(1).max(MAX_TITLE_LENGTH).describe('Plain text; `{{name}}` is the only placeholder.'),
@@ -54,7 +54,7 @@ const zCampaign = z.object({
   cancelledAt: zIsoDateTime.nullable(),
   expectedRecipients: z.number().int().nullable().describe('The reachable count when it was sent or scheduled.'),
   recipients: z.number().int().describe('People the fan-out made at least one message for.'),
-  planned: z.object({ inApp: z.number().int(), email: z.number().int(), telegram: z.number().int() }),
+  planned: z.object({ inApp: z.number().int(), email: z.number().int() }),
   error: z.string().nullable(),
   createdBy: zStaffRef,
   createdAt: zIsoDateTime,
@@ -67,13 +67,11 @@ const zCampaignDetail = zCampaign.extend({
   link: zLink.nullable(),
   skipped: z.object({
     optedOut: z.number().int(),
-    noTelegram: z.number().int(),
     noAccount: z.number().int(),
   }),
   delivery: z.object({
     inApp: z.object({ delivered: z.number().int(), read: z.number().int() }),
     email: zCounters,
-    telegram: zCounters,
   }),
   updatedBy: zStaffRef.nullable(),
   cancelledBy: zStaffRef.nullable(),
@@ -83,11 +81,10 @@ const zAudiencePreview = z.object({
   total: z.number().int().describe('Eligible people in the audience.'),
   reachable: z.number().int().describe('People at least one chosen channel reaches.'),
   byType: z.object({ staff: z.number().int(), client: z.number().int(), customer: z.number().int() }),
-  byChannel: z.object({ inApp: z.number().int(), email: z.number().int(), telegram: z.number().int() }),
+  byChannel: z.object({ inApp: z.number().int(), email: z.number().int() }),
   excluded: z.object({
     noConsent: z.number().int(),
     optedOut: z.number().int(),
-    noTelegram: z.number().int(),
     noAccount: z.number().int(),
   }),
 });
@@ -126,7 +123,7 @@ const CAMPAIGN_EXAMPLE = {
   cancelledAt: null,
   expectedRecipients: null,
   recipients: 0,
-  planned: { inApp: 0, email: 0, telegram: 0 },
+  planned: { inApp: 0, email: 0 },
   error: null,
   createdBy: { id: 1, name: 'Rami K.' },
   createdAt: '2026-11-10T09:00:00.000Z',
@@ -137,11 +134,10 @@ const DETAIL_EXAMPLE = {
   audience: AUDIENCE_EXAMPLE,
   content: CONTENT_EXAMPLE,
   link: null,
-  skipped: { optedOut: 0, noTelegram: 0, noAccount: 0 },
+  skipped: { optedOut: 0, noAccount: 0 },
   delivery: {
     inApp: { delivered: 0, read: 0 },
     email: { queued: 0, sent: 0, failed: 0 },
-    telegram: { queued: 0, sent: 0, failed: 0 },
   },
   updatedBy: null,
   cancelledBy: null,
@@ -209,7 +205,7 @@ export const showCampaign = defineRoute({
   summary: 'One campaign',
   description:
     'The campaign with its audience, content, what the fan-out planned and skipped, and live delivery numbers: in-app items made ' +
-    'and read, email and Telegram messages queued, sent and failed.',
+    'and read, email messages queued, sent and failed.',
   permission: 'broadcasts:read',
   params: ID,
   success: { status: 200, schema: zCampaignDetail },
@@ -277,8 +273,8 @@ export const previewAudience = defineRoute({
       total: 1208,
       reachable: 1208,
       byType: { staff: 6, client: 402, customer: 800 },
-      byChannel: { inApp: 1208, email: 1190, telegram: 0 },
-      excluded: { noConsent: 0, optedOut: 18, noTelegram: 0, noAccount: 0 },
+      byChannel: { inApp: 1208, email: 1190 },
+      excluded: { noConsent: 0, optedOut: 18, noAccount: 0 },
     },
   },
 });
@@ -290,7 +286,7 @@ export const previewCampaign = defineRoute({
   summary: 'Preview a campaign',
   description:
     'Renders the campaign for one channel and audience with a sample name. `body` is the HTML part for email and the ' +
-    'text for in-app and Telegram; `note` says the preview uses sample data. Nothing is sent or written.',
+    'text for in-app; `note` says the preview uses sample data. Nothing is sent or written.',
   permission: 'broadcasts:read',
   audit: false,
   params: ID,
@@ -419,7 +415,7 @@ export const listCampaignRecipients = defineRoute({
   key: 'GET /admin/notification-campaigns/:id/recipients',
   summary: 'Campaign recipients',
   description:
-    'The people of a campaign on one channel (`channel` is required): in-app items are `delivered` or `read`, email and Telegram ' +
+    'The people of a campaign on one channel (`channel` is required): in-app items are `delivered` or `read`, email ' +
     'messages `queued`, `sent` or `failed`. `recipient` is masked by the server.',
   permission: 'broadcasts:read',
   params: ID,

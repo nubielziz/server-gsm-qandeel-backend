@@ -64,7 +64,7 @@ describe('GET /store/v1/config', () => {
       taxType: 'vat',
       label: 'UK VAT',
     });
-    expect(config.policies).toEqual({ guestCheckout: true, withdrawalWaiver: true, imeiPrecheck: true });
+    expect(config.policies).toEqual({ guestCheckout: true, withdrawalWaiver: true });
     expect(config.paymentMethods).toEqual([]);
     expect(config.legalDocuments.map((doc: { type: string; version: string }) => `${doc.type} ${doc.version}`)).toEqual(
       ['privacy 2.1', 'refund 1.4', 'terms 3.2'],
@@ -76,7 +76,7 @@ describe('GET /store/v1/config', () => {
     await storefrontWorld(db);
     await db.insert(s.settings).values([
       { key: 'guestCheckout', value: false },
-      { key: 'imeiPrecheck', value: 'nope' },
+      { key: 'withdrawalWaiver', value: 'nope' },
     ]);
     await db.insert(s.paymentGateways).values([
       { code: 'card', driver: 'stripe', name: 'Card gateway', audience: 'b2c', supports3ds: true },
@@ -89,7 +89,7 @@ describe('GET /store/v1/config', () => {
       { code: 'mystery', driver: 'nobody', name: 'No driver', audience: 'b2c' },
     ]);
     const config = body(await get('/store/v1/config'));
-    expect(config.policies).toEqual({ guestCheckout: false, withdrawalWaiver: true, imeiPrecheck: true });
+    expect(config.policies).toEqual({ guestCheckout: false, withdrawalWaiver: true });
     // Feature 32: each method also says the ready-made method it was made from and its uploaded logo (both null for these rows).
     expect(config.paymentMethods).toEqual([
       { code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null },

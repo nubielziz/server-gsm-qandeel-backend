@@ -5,7 +5,7 @@
 // DEVIATION to resolve when those modules export a read: decision 016 wants these reads through the owning module's public
 // service. Catalog exports the price resolver and `RetailPrices` (used for every price figure and every write; the retail price
 // itself is never read here) but no join that can be filtered, sorted and searched by service name and code, and no list of the TAC
-// catalogue's brands and model names (`TacDirectory` finds one TAC), and orders and customers export no counts yet, so this file reads
+// catalogue's brands and model names, and orders and customers export no counts yet, so this file reads
 // `services`, `service_categories`, `service_fields`, `client_groups`, `orders`, `consent_records`, `tac_catalog` and `staff_users`
 // with plain selects, like catalog's foreign-reads file. Replace the bodies with calls to their services;
 // nothing outside this file knows.

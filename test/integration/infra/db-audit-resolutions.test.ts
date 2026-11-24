@@ -188,12 +188,10 @@ describe('money', () => {
   it('limit refund methods to original and manual, and give a storefront refund its payment and order', async () => {
     const { db } = await testDb();
     await insertUsd(db);
-    const parents = await insertOrderParents(db);
     const insert = (method: string) =>
-      run(
-        `insert into refunds (amount, currency, method, requested_by_type, client_id) values (5, 'USD', $1, 'system', $2)`,
-        [method, parents.clientId],
-      );
+      run(`insert into refunds (amount, currency, method, requested_by_type) values (5, 'USD', $1, 'system')`, [
+        method,
+      ]);
     await insert('original');
     await insert('manual');
     await refuses(
@@ -713,28 +711,6 @@ describe('customers, storefront, support and risk', () => {
       `insert into support_tickets (number, subject, requester_type, requester_id, status) values ('T-9', 's', 'client', 1, 'closed')`,
       [],
       'support_tickets_status_check',
-    );
-  });
-
-  it('keep an IMEI check country as two capital letters, and erase the IMEI as a pair', async () => {
-    const base = `insert into imei_checks (imei_hash, imei_enc, check_type, source, country) values ('h', 'e', 'basic', 'pre_order', $1)`;
-    await run(base, ['US']);
-    await run(base, [null]);
-    for (const bad of ['us', 'USA', 'U1']) await refuses(base, [bad], 'imei_checks_country_check');
-
-    // an anonymised customer's check has no IMEI at all, never one half of it
-    await run(
-      `insert into imei_checks (imei_hash, imei_enc, check_type, source) values (null, null, 'basic', 'pre_order')`,
-    );
-    await refuses(
-      `insert into imei_checks (imei_hash, imei_enc, check_type, source) values ('h', null, 'basic', 'pre_order')`,
-      [],
-      'imei_checks_imei_erased_check',
-    );
-    await refuses(
-      `insert into imei_checks (imei_hash, imei_enc, check_type, source) values (null, 'e', 'basic', 'pre_order')`,
-      [],
-      'imei_checks_imei_erased_check',
     );
   });
 

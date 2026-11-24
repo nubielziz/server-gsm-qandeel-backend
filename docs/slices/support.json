@@ -4,14 +4,14 @@
   "domain": "J",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 26,
-    "endpoints": 32,
+    "rows": 23,
+    "endpoints": 29,
     "bySurface": {
-      "store": 11,
-      "admin": 14,
-      "client": 7
+      "store": 10,
+      "admin": 13,
+      "client": 6
     },
-    "frontendCalled": 14
+    "frontendCalled": 13
   },
   "stages": [
     17,
@@ -294,7 +294,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 34,
+        "line": 33,
         "fn": "listSupportTickets"
       }
     },
@@ -328,7 +328,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 47,
+        "line": 46,
         "fn": "getSupportTicket"
       }
     },
@@ -362,7 +362,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 57,
+        "line": 56,
         "fn": "updateSupportTicket"
       }
     },
@@ -397,7 +397,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 68,
+        "line": 67,
         "fn": "replyToTicket"
       }
     },
@@ -430,7 +430,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 78,
+        "line": 77,
         "fn": "addTicketNote"
       }
     },
@@ -635,41 +635,6 @@
       "successStatus": 200
     },
     {
-      "key": "POST /store/v1/tickets/:token/typing",
-      "method": "POST",
-      "path": "/store/v1/tickets/:token/typing",
-      "op": "action",
-      "surface": "store",
-      "kind": "http",
-      "group": "support",
-      "descriptionAr": "الزبون يكتب الآن",
-      "access": "ticket-token",
-      "permission": null,
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "رمز التذكرة",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "store POST /store/v1/tickets/:token/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/store/v1/tickets/:token/typing"
-      },
-      "module": "support",
-      "description": "The requester is typing.",
-      "frontend": null,
-      "addition": {
-        "file": "scripts/map-additions/28.mjs",
-        "spec": "B218"
-      },
-      "successStatus": 204
-    },
-    {
       "key": "POST /store/v1/tickets/:token/read",
       "method": "POST",
       "path": "/store/v1/tickets/:token/read",
@@ -806,47 +771,8 @@
       "description": "Mark the requester's messages as seen.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 89,
+        "line": 88,
         "fn": "markTicketRead"
-      },
-      "addition": {
-        "file": "scripts/map-additions/28.mjs",
-        "spec": "B218"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "POST /admin/support-tickets/:id/typing",
-      "method": "POST",
-      "path": "/admin/support-tickets/:id/typing",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "support",
-      "descriptionAr": "الموظف يكتب ردًا أو ملاحظة",
-      "access": "staff-permission",
-      "permission": "support:reply",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "support:reply",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin POST /admin/support-tickets/:id/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/admin/support-tickets/:id/typing"
-      },
-      "module": "support",
-      "description": "A staff member is typing a reply or a note.",
-      "frontend": {
-        "file": "src/features/support/api/tickets.ts",
-        "line": 99,
-        "fn": "sendTicketTyping"
       },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
@@ -886,7 +812,7 @@
       "description": "Upload an attachment for a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 110,
+        "line": 99,
         "fn": "uploadTicketFile"
       },
       "addition": {
@@ -926,7 +852,7 @@
       "description": "Download an attachment of the ticket (presigned link).",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 123,
+        "line": 112,
         "fn": "ticketFileUrl"
       },
       "addition": {
@@ -1175,41 +1101,6 @@
       },
       "module": "support",
       "description": "Mark support's messages of one of the merchant’s tickets as seen.",
-      "frontend": null,
-      "addition": {
-        "file": "scripts/map-additions/28b.mjs",
-        "spec": "B217"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "POST /client/tickets/:id/typing",
-      "method": "POST",
-      "path": "/client/tickets/:id/typing",
-      "op": "action",
-      "surface": "client",
-      "kind": "http",
-      "group": "growth",
-      "descriptionAr": "التاجر يكتب الآن",
-      "access": "merchant-session",
-      "permission": null,
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "جلسة",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "client POST /client/tickets/:id/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/client/tickets/:id/typing"
-      },
-      "module": "support",
-      "description": "The merchant is typing on one of its tickets.",
       "frontend": null,
       "addition": {
         "file": "scripts/map-additions/28b.mjs",

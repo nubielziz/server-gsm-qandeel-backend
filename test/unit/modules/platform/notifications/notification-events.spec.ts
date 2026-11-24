@@ -26,6 +26,22 @@ describe('the built-in events', () => {
     }
   });
 
+  it('leave Telegram to the staff messages of the operations alerts: no merchant or customer event has the channel', () => {
+    const registry = new NotificationEventRegistry();
+    const withTelegram = registry.list().filter((definition) => definition.channels.includes('telegram'));
+    expect(withTelegram.map((definition) => `${definition.audience}:${definition.key}`).sort()).toEqual([
+      'staff:alert.fired',
+      'staff:alert.resolved',
+      'staff:retail.prices_followed',
+    ]);
+    // The bot's answers of the retired chat link are gone, and no module registers a Telegram event of its own.
+    expect(registry.has('telegram.linked')).toBe(false);
+    expect(registry.has('telegram.unlinked')).toBe(false);
+    for (const list of [SUPPORT_EVENTS, BROADCAST_EVENTS, IDENTITY_MAIL_EVENTS, CUSTOMER_WALLET_EVENTS]) {
+      for (const definition of list) expect(definition.channels, definition.key).not.toContain('telegram');
+    }
+  });
+
   it('list the merchant events 12a wires and the customer events of the console', () => {
     const registry = new NotificationEventRegistry();
     const merchant = registry
@@ -39,12 +55,14 @@ describe('the built-in events', () => {
         'merchant.invited',
         'wallet.low_balance',
         'service.price_changed',
-        'deposit.approved',
         'invoice.paid',
         'order.completed',
         'order.failed',
       ]),
     );
+    // The deposit event is retired.
+    expect(merchant).not.toContain('deposit.approved');
+    expect(registry.has('deposit.approved')).toBe(false);
     expect(registry.get('order.completed', 'customer')?.variables).toContain('customerName');
     expect(registry.get('order.completed', 'merchant')?.variables).toContain('merchantName');
     expect(registry.get('order.completed', 'staff')).toBeUndefined();
@@ -112,13 +130,12 @@ describe('the built-in events', () => {
       )
       .map((definition) => [definition.key, definition.transactional]);
     // Feature 23, S6: the events that report on the customer's own purchase or ticket are transactional (a suspended or blocked
-    // customer still hears about an order they paid for); the abandoned-checkout reminder is marketing and is not.
+    // customer still hears about an order they paid for).
     expect(consoleEvents).toEqual([
       ['order.received', true],
       ['order.completed', true],
       ['order.failed', true],
       ['support.reply', true],
-      ['checkout.abandoned', false],
       ['payment.failed', true],
       ['refund.declined', true],
       // Decision 047: the notice of a staff change of an account's email, which goes to the address before the change.
@@ -131,7 +148,6 @@ describe('the built-in events', () => {
     expect(keys).toEqual([
       'wallet.low_balance',
       'service.price_changed',
-      'deposit.approved',
       'invoice.paid',
       'order.completed',
       'order.failed',
@@ -150,7 +166,6 @@ describe('NotificationEventRegistry.register', () => {
     sample: { title: 'Queue is late' },
     transactional: false,
     defaultEmail: true,
-    defaultTelegram: false,
   };
 
   it('lets a later feature add an event, once', () => {
@@ -184,7 +199,7 @@ describe('the flags of decision 047', () => {
       .map((definition) => `${definition.audience}:${definition.key}`)
       .sort();
 
-  it('marks exactly the link mails of accounts, the ticket links and the reminder as secret links', () => {
+  it('marks exactly the link mails of accounts and the ticket links as secret links', () => {
     expect(keysOf(booted(), 'secretLink')).toEqual(
       [
         'merchant:merchant.email_verification',
@@ -198,8 +213,6 @@ describe('the flags of decision 047', () => {
         'staff:staff.password_reset',
         'customer:support.reply',
         'customer:support.ticket_received',
-        'customer:support.csat_survey',
-        'customer:checkout.abandoned',
       ].sort(),
     );
     // The merchant's reply link is a portal page by id, and the retail message links a console page.
@@ -230,12 +243,10 @@ describe('the flags of decision 047', () => {
       'customer:customer.security_notice',
       'merchant:merchant.security_notice',
     ]);
-    // Ticket mails and the reminder stay switchable.
+    // Ticket mails stay switchable.
     for (const [key, audience] of [
       ['support.ticket_received', 'customer'],
-      ['support.csat_survey', 'customer'],
       ['support.reply', 'customer'],
-      ['checkout.abandoned', 'customer'],
     ] as const) {
       expect(registry.get(key, audience)?.security, key).toBeUndefined();
     }
@@ -254,10 +265,6 @@ describe('the flags of decision 047', () => {
       if ((definition.secretLink === true || definition.security === true) && shipped !== undefined)
         expect(protectedTemplateProblems(definition, shipped), label).toEqual([]);
     }
-    // The reminder is the one link event without a shipped text (no marketing words the owner never chose).
-    expect(
-      registry.builtInTemplate({ event: 'checkout.abandoned', channel: 'email', audience: 'customer' }),
-    ).toBeUndefined();
   });
 
   it('classifies every event whose variables include a link: a secret link, or one of two named exceptions', () => {
@@ -299,7 +306,6 @@ describe('the flags of decision 047', () => {
         sample: {},
         transactional: false,
         defaultEmail: true,
-        defaultTelegram: false,
         security: true,
       }),
     ).toThrow(/must be transactional/);

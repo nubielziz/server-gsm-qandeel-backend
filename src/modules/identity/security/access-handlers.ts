@@ -36,7 +36,7 @@ export interface AccessHandler {
 }
 
 /**
- * The machine access kinds: capability tokens (checkout, tracking, ticket, link), API keys, Dhru credentials, gateway
+ * The machine access kinds: capability tokens (checkout, tracking, ticket, link), Dhru credentials, gateway
  * signatures and URL secrets.
  *
  * Why: the table starts with a fail-closed placeholder for each (every request refused), so a kind that has no guard
@@ -44,7 +44,6 @@ export interface AccessHandler {
  * which are still unreplaced (an app built without the security module's machine part).
  */
 export const PLACEHOLDER_ACCESS_KINDS = [
-  'api-key',
   'dhru-credentials',
   'gateway-signature',
   'url-secret',
@@ -124,7 +123,6 @@ export class AccessHandlers {
             },
           });
           break;
-        case 'api-key':
         case 'dhru-credentials':
         case 'gateway-signature':
         case 'url-secret':

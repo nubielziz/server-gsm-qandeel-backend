@@ -15,14 +15,11 @@
       "country": "JO",
       "groupId": 3,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0001",
       "emailVerifiedAt": "2025-09-16T13:00:00.000Z",
       "createdAt": "2025-09-16T12:00:00.000Z",
       "address": "Abdali Boulevard, Amman",
       "taxId": "JO-1234567",
       "internalNotes": "Pays by bank transfer on Sundays.",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -48,7 +45,6 @@
         "name": "VIP",
         "discountPercent": "8.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "1209.7500",
         "reserved": "71.2300",
@@ -66,14 +62,11 @@
       "country": "SA",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0002",
       "emailVerifiedAt": "2025-11-15T13:00:00.000Z",
       "createdAt": "2025-11-15T12:00:00.000Z",
       "address": "Olaya Street, Riyadh",
       "taxId": "SA-300112233400003",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -99,7 +92,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "620.9100",
         "reserved": "21.8700",
@@ -117,14 +109,11 @@
       "country": "AE",
       "groupId": 3,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0003",
       "emailVerifiedAt": "2026-01-04T13:00:00.000Z",
       "createdAt": "2026-01-04T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -150,7 +139,6 @@
         "name": "VIP",
         "discountPercent": "8.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "2260.0900",
         "reserved": "23.7200",
@@ -168,14 +156,11 @@
       "country": "IQ",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0004",
       "emailVerifiedAt": "2026-02-13T13:00:00.000Z",
       "createdAt": "2026-02-13T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -201,7 +186,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "219.7400",
         "reserved": "0.0000",
@@ -219,14 +203,11 @@
       "country": "EG",
       "groupId": 3,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0005",
       "emailVerifiedAt": "2026-03-05T13:00:00.000Z",
       "createdAt": "2026-03-05T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -252,7 +233,6 @@
         "name": "VIP",
         "discountPercent": "8.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "1223.7700",
         "reserved": "15.3100",
@@ -270,14 +250,11 @@
       "country": "IQ",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0006",
       "emailVerifiedAt": "2026-04-04T13:00:00.000Z",
       "createdAt": "2026-04-04T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -303,7 +280,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "141.1300",
         "reserved": "9.1700",
@@ -321,14 +297,11 @@
       "country": "LY",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0007",
       "emailVerifiedAt": "2026-04-24T13:00:00.000Z",
       "createdAt": "2026-04-24T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -354,7 +327,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "42.1700",
         "reserved": "7.4100",
@@ -372,14 +344,11 @@
       "country": "MA",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0008",
       "emailVerifiedAt": "2026-06-03T13:00:00.000Z",
       "createdAt": "2026-06-03T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -405,10 +374,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": {
-        "id": 1,
-        "name": "Zain Mobile Hub"
-      },
       "wallet": {
         "balance": "310.9300",
         "reserved": "0.0000",
@@ -426,14 +391,11 @@
       "country": "NG",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0009",
       "emailVerifiedAt": "2026-07-03T13:00:00.000Z",
       "createdAt": "2026-07-03T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -459,10 +421,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": {
-        "id": 1,
-        "name": "Zain Mobile Hub"
-      },
       "wallet": {
         "balance": "95.5700",
         "reserved": "71.7300",
@@ -480,14 +438,11 @@
       "country": "PK",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0010",
       "emailVerifiedAt": "2026-07-13T13:00:00.000Z",
       "createdAt": "2026-07-13T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -513,7 +468,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "480.4300",
         "reserved": "16.2600",
@@ -531,14 +485,11 @@
       "country": "TR",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0011",
       "emailVerifiedAt": "2026-07-28T13:00:00.000Z",
       "createdAt": "2026-07-28T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -564,10 +515,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": {
-        "id": 1,
-        "name": "Zain Mobile Hub"
-      },
       "wallet": {
         "balance": "265.9600",
         "reserved": "7.9800",
@@ -585,14 +532,11 @@
       "country": "SA",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0012",
       "emailVerifiedAt": "2026-08-12T13:00:00.000Z",
       "createdAt": "2026-08-12T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -618,10 +562,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": {
-        "id": 5,
-        "name": "Cairo GSM Lab"
-      },
       "wallet": {
         "balance": "177.7300",
         "reserved": "48.4000",
@@ -639,14 +579,11 @@
       "country": "OM",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0013",
       "emailVerifiedAt": "2026-10-09T13:00:00.000Z",
       "createdAt": "2026-10-09T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -672,7 +609,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "74.7500",
         "reserved": "26.5000",
@@ -690,14 +626,11 @@
       "country": "KW",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0014",
       "emailVerifiedAt": "2026-10-13T13:00:00.000Z",
       "createdAt": "2026-10-13T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -723,7 +656,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "131.1100",
         "reserved": "8.9700",
@@ -741,14 +673,11 @@
       "country": "QA",
       "groupId": 2,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0015",
       "emailVerifiedAt": "2026-09-01T13:00:00.000Z",
       "createdAt": "2026-09-01T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -774,10 +703,6 @@
         "name": "Wholesale",
         "discountPercent": "4.0000"
       },
-      "referredBy": {
-        "id": 5,
-        "name": "Cairo GSM Lab"
-      },
       "wallet": {
         "balance": "357.0900",
         "reserved": "0.0000",
@@ -795,14 +720,11 @@
       "country": "LB",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0016",
       "emailVerifiedAt": "2026-10-20T13:00:00.000Z",
       "createdAt": "2026-10-20T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -828,7 +750,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "58.8100",
         "reserved": "0.0000",
@@ -846,14 +767,11 @@
       "country": "YE",
       "groupId": 1,
       "status": "active",
-      "kycStatus": "approved",
-      "referralCode": "GSM0017",
       "emailVerifiedAt": "2026-10-22T13:00:00.000Z",
       "createdAt": "2026-10-22T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -879,7 +797,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "-81.9500",
         "reserved": "23.1100",
@@ -896,15 +813,12 @@
       "phone": "",
       "country": "DZ",
       "groupId": 1,
-      "status": "pending",
-      "kycStatus": "pending",
-      "referralCode": "GSM0018",
+      "status": "active",
       "emailVerifiedAt": null,
       "createdAt": "2026-10-29T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": false,
         "mustChangePassword": false,
@@ -930,7 +844,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "0.0000",
         "reserved": "0.0000",
@@ -948,14 +861,11 @@
       "country": "TN",
       "groupId": 1,
       "status": "suspended",
-      "kycStatus": "approved",
-      "referralCode": "GSM0019",
       "emailVerifiedAt": "2026-06-13T13:00:00.000Z",
       "createdAt": "2026-06-13T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": true,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -988,7 +898,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "20.1800",
         "reserved": "1.5300",
@@ -1006,14 +915,11 @@
       "country": "GH",
       "groupId": 1,
       "status": "pending",
-      "kycStatus": "pending",
-      "referralCode": "GSM0020",
       "emailVerifiedAt": null,
       "createdAt": "2026-10-30T12:00:00.000Z",
       "address": "",
       "taxId": "",
       "internalNotes": "",
-      "telegramLinked": false,
       "security": {
         "hasPassword": true,
         "mustChangePassword": false,
@@ -1039,7 +945,6 @@
         "name": "Standard",
         "discountPercent": "0.0000"
       },
-      "referredBy": null,
       "wallet": {
         "balance": "0.0000",
         "reserved": "0.0000",

@@ -89,7 +89,7 @@ export class ResultsService {
       });
     }
     if (imeiIntent(query.q) !== null) {
-      // An IMEI is no search: the page shows the "Check this IMEI" link, and nothing is counted (plan section 5.2).
+      // An IMEI is no search: nothing is counted or recorded (plan section 5.2).
       return {
         ...base,
         engine: this.matches.enabled ? 'typesense' : 'fallback',

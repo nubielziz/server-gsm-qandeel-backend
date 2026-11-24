@@ -49,7 +49,7 @@ const REFERENCE_PATH = /^\/reference(?:\/|$)/;
  * Why: decision 045: staff surfaces trust the console's origins, merchant and shop surfaces the shop's, machine surfaces none.
  *
  * @param surface the surface of a route contract
- * @returns `console` for admin; `shop` for client and store; `undefined` for v1, dhru, hooks and system
+ * @returns `console` for admin; `shop` for client and store; `undefined` for dhru, hooks and system
  */
 export function audienceOfSurface(surface: Surface): BrowserAudience | undefined {
   if (surface === 'admin') return 'console';

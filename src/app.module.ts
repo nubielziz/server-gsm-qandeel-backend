@@ -23,7 +23,6 @@ import { SearchModule } from './infra/search';
 import { StorageModule } from './infra/storage';
 import { TurnstileModule } from './infra/turnstile';
 import { CatalogAdminModule, CatalogModule, CatalogPricesModule } from './modules/catalog';
-import { CommissionsModule } from './modules/commissions';
 import { CustomersModule } from './modules/customers';
 import { HealthModule } from './modules/health';
 import { IdentityModule } from './modules/identity';
@@ -80,7 +79,6 @@ import { SupportModule } from './modules/support';
     OrdersModule,
     SuppliersModule,
     HealthModule,
-    CommissionsModule,
     CustomersModule,
     StorefrontModule,
     StorefrontContentModule,

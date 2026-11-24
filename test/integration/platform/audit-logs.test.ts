@@ -79,11 +79,11 @@ async function history() {
       action: 'changed settings',
       entityType: 'setting',
       entityId: 0,
-      entityLabel: 'imeiRetentionDays',
+      entityLabel: 'support.attachmentRetentionDays',
       createdAt: new Date('2026-10-31T12:00:00.000Z'),
     },
     {
-      action: 'ran the nightly promotion',
+      action: 'changed discount of',
       entityType: 'client_group',
       entityId: 2,
       actorType: 'system',
@@ -153,7 +153,7 @@ describe('GET /admin/audit-logs', () => {
     });
     const setting = (await rami.get(`/admin/audit-logs/${h.setting}`)).body;
     // A settings change has no numeric record: 0, and the label names the key.
-    expect(setting).toMatchObject({ entityId: 0, entityLabel: 'imeiRetentionDays', ip: null });
+    expect(setting).toMatchObject({ entityId: 0, entityLabel: 'support.attachmentRetentionDays', ip: null });
     const client = (await rami.get(`/admin/audit-logs/${h.client}`)).body;
     expect(client).toMatchObject({ actorType: 'client', actorId: 9, actorName: 'Zain Mobile Hub' });
   });
@@ -179,7 +179,7 @@ describe('GET /admin/audit-logs', () => {
     expect(ids((await rami.get('/admin/audit-logs?q=yusuf')).body)).toEqual([h.suspend]);
     // The actor name and the label are both searched.
     expect(ids((await rami.get('/admin/audit-logs?q=lina')).body)).toEqual([h.rename, h.ipRule]);
-    expect(ids((await rami.get('/admin/audit-logs?q=imeiretention')).body)).toEqual([h.setting]);
+    expect(ids((await rami.get('/admin/audit-logs?q=attachmentretention')).body)).toEqual([h.setting]);
     expect((await rami.get('/admin/audit-logs?q=rami')).total).toBe(3);
     expect(ids((await rami.get('/admin/audit-logs?q=admin&actorType=staff')).body)).toEqual([h.rename, h.suspend]);
     expect((await rami.get('/admin/audit-logs?q=no-such-text')).total).toBe(0);

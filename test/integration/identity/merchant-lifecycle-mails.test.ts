@@ -1,4 +1,4 @@
-// Integration tests of the transactional emails staff actions send a merchant (feature 20, slice B): approval, suspension, reactivation,
+// Integration tests of the transactional emails staff actions send a merchant (feature 20, slice B): suspension, reactivation,
 // the security notice and the one English template of each (decision 039), plus what a suspension does to open links and to the merchant's
 // sign-in.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
@@ -64,25 +64,15 @@ const tokensOf = async (clientId: number) =>
     .from(s.authTokens)
     .where(and(eq(s.authTokens.subjectType, 'client'), eq(s.authTokens.subjectId, clientId)));
 
-describe('approval and reactivation', () => {
-  it('approving a pending merchant writes one merchant.approved notification and mails it in English', async () => {
+describe('activation and reactivation', () => {
+  it('activating a merchant that is still pending sends no mail: nobody applied', async () => {
     const merchant = await makeMerchant(t, { status: 'pending', name: 'Zain Mobile Hub' });
     const api = await staff();
     expect((await api.patch(`/admin/clients/${merchant.id}`, { status: 'active' })).status).toBe(200);
-    const sent = await rows();
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({
-      event: 'merchant.approved',
-      recipientType: 'client',
-      recipientId: merchant.id,
-      channel: 'email',
-    });
-
+    expect(await rows()).toEqual([]);
     await sendAllQueued(t);
-    const [mail] = mailbox(t).sent;
-    expect(mail).toMatchObject({ to: merchant.email, subject: 'Your merchant account is approved' });
-    expect(mail!.text).toContain('Hi Zain Mobile Hub,');
-    expect(mail!.text).toContain(t.config.http.portalBaseUrl);
+    expect(mailbox(t).sent).toEqual([]);
+    expect((await clientRow(merchant.id)).status).toBe('active');
   });
 
   it('reactivating a suspended merchant writes one merchant.reactivated notification, and every merchant gets the one template', async () => {
@@ -104,15 +94,17 @@ describe('approval and reactivation', () => {
 
   it('a missing or switched-off template sends nothing while the request still succeeds (nothing stands in for it)', async () => {
     const { db } = await testDb();
-    const merchant = await makeMerchant(t, { status: 'pending' });
     const api = await staff();
-    // The approval's one template is gone: no notification, and the approval itself goes through.
-    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'merchant.approved'));
-    expect((await api.patch(`/admin/clients/${merchant.id}`, { status: 'active' })).status).toBe(200);
+    // The suspension's one template is gone: no notification, and the suspension itself goes through.
+    const gone = await makeMerchant(t);
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'merchant.suspended'));
+    expect((await api.patch(`/admin/clients/${gone.id}`, { status: 'suspended', reason: 'Under review' })).status).toBe(
+      200,
+    );
     expect(await rows()).toEqual([]);
     await sendAllQueued(t);
     expect(mailbox(t).sent).toEqual([]);
-    expect((await clientRow(merchant.id)).status).toBe('active');
+    expect((await clientRow(gone.id)).status).toBe('suspended');
 
     // Switched off: nothing is queued at all.
     const other = await makeMerchant(t, { status: 'suspended' });
@@ -156,7 +148,7 @@ describe('suspension', () => {
     expect(JSON.stringify(await rows())).not.toContain(reason);
   });
 
-  it('a pending applicant can be suspended (declined) and then cannot sign in; pending to pending and active to pending stay refused', async () => {
+  it('a merchant that is still pending can be suspended and then cannot sign in; pending to pending and active to pending stay refused', async () => {
     const applicant = await makeMerchant(t, { status: 'pending' });
     const api = await staff();
     const refused = await api.patch(`/admin/clients/${applicant.id}`, { status: 'pending' });
@@ -164,7 +156,7 @@ describe('suspension', () => {
     expect(refused.body.code).toBe('INVALID_TRANSITION');
     const declined = await api.patch(`/admin/clients/${applicant.id}`, {
       status: 'suspended',
-      reason: 'Documents are missing',
+      reason: 'Under review',
     });
     expect(declined.status).toBe(200);
     expect(declined.body.status).toBe('suspended');
@@ -276,27 +268,19 @@ describe('the templates of merchant mail', () => {
     const merchant = await makeMerchant(t, { name: 'Zain Mobile Hub' });
     const mails = t.app.get(MerchantLifecycleMails);
     await t.app.get(DbService).runInTransaction(async (work) => {
-      await mails.approved(work, merchant.row);
       await mails.suspended(work, merchant.row);
       await mails.reactivated(work, merchant.row);
-      await mails.kycDecided(work, merchant.row, 'approved', '');
-      await mails.kycDecided(work, merchant.row, 'rejected', 'The photo is not readable.');
       await mails.securityNotice(work, merchant.row, 'twofa_reset');
     });
     await sendAllQueued(t);
     const sent = mailbox(t).sent;
     expect(sent.map((mail) => mail.subject)).toEqual([
-      'Your merchant account is approved',
       'Your merchant account is suspended',
       'Your merchant account is active again',
-      'Your identity verification is approved',
-      'Your identity verification needs attention',
       'A security change on your merchant account',
     ]);
     // Plain text mails: no HTML part, and no placeholder is left unfilled.
     expect(sent.every((mail) => mail.html === undefined)).toBe(true);
     expect(sent.some((mail) => /\{\{/.test(mail.text) || /\{\{/.test(mail.subject))).toBe(false);
-    const rejected = sent.find((mail) => mail.subject === 'Your identity verification needs attention');
-    expect(rejected?.text).toContain('Reason: The photo is not readable.');
   });
 });

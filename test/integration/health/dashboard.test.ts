@@ -91,19 +91,17 @@ describe('the dashboard on an empty system', () => {
       last30Days: { b2b: '0.0000', b2c: '0.0000' },
     });
     expect(body.storefront).toEqual({
-      funnel: { visitorsEstimated: 0, imeiChecks: 0, checkoutsStarted: 0, paid: 0, delivered: 0 },
+      funnel: { visitorsEstimated: 0, checkoutsStarted: 0, paid: 0, delivered: 0 },
       averageOrder: null,
       refundRate: null,
       disputeRate: null,
       firstReplySeconds: null,
-      satisfaction: null,
       heldForReview: 0,
     });
     expect(body.topCustomers).toEqual([]);
     expect(body.navCounts).toEqual({
       orders: { open: 0, pastSla: 0 },
       finance: { pendingDeposits: 0 },
-      merchants: { pendingApproval: 0 },
       support: { open: 0, late: 0 },
       refunds: { open: 0, disputesDueSoon: 0 },
       risk: { held: 0 },
@@ -307,7 +305,7 @@ describe('suppliers', () => {
 });
 
 describe("attention from the other modules' tables", () => {
-  it('raises merchants pending, a negative wallet, a service below its floor and a stale exchange rate', async () => {
+  it('raises a negative wallet, a service below its floor and a stale exchange rate, and nothing for a merchant that is still pending', async () => {
     const api = await adminWith(t, ['dashboard:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
@@ -330,11 +328,8 @@ describe("attention from the other modules' tables", () => {
       .insert(s.currencies)
       .values({ code: 'EUR', name: 'Euro', rateToBase: '0.9200', rateUpdatedAt: ago(3 * DAY) });
     const body = await dashboard(api);
-    expect(attention(body, 'merchants_pending')).toMatchObject({
-      count: 1,
-      names: ['Erbil Mobile Parts'],
-      severity: 'low',
-    });
+    // A merchant row that was never activated raises no item and no sidebar count: nothing waits for an approval any more.
+    expect(attention(body, 'merchants_pending')).toBeUndefined();
     expect(attention(body, 'services_below_floor')).toMatchObject({
       count: 1,
       serviceNames: ['AT&T USA Premier Unlock'],
@@ -345,7 +340,7 @@ describe("attention from the other modules' tables", () => {
       oldestUpdatedAt: ago(3 * DAY).toISOString(),
       severity: 'medium',
     });
-    expect(body.navCounts.merchants.pendingApproval).toBe(1);
+    expect(body.navCounts).not.toHaveProperty('merchants');
     // The only wallet below zero, with its balance in the ledger's sign; the other merchant's funded wallet is not listed.
     expect(attention(body, 'wallets_negative')).toEqual({
       id: 'wallets_negative',
@@ -453,7 +448,6 @@ describe('the storefront block', () => {
     const body = await dashboard(api, 'scope=b2c&days=7');
     expect(body.storefront.funnel).toEqual({
       visitorsEstimated: 3,
-      imeiChecks: 0,
       checkoutsStarted: 3,
       paid: 2,
       delivered: 1,

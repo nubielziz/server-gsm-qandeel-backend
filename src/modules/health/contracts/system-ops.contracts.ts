@@ -1,4 +1,4 @@
-// Route contracts of the background work pages: BullMQ queues and failed jobs, scheduled jobs and their runs, and webhook delivery
+// Route contracts of the background work pages: BullMQ queues and failed jobs, scheduled jobs and their runs, and incoming webhook
 // health (`/admin/system/queues*`, `/jobs*`, `/webhooks`; docs/contract/endpoints/health.md, ANSWERS system-health Q6, Q7).
 import { z } from 'zod';
 import { defineRoute, listQuery, zIsoDateTime, zJsonObject } from '../../../common/contract';
@@ -168,7 +168,7 @@ export const runJob = defineRoute({
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'NOT_FOUND', 'JOB_ALREADY_RUNNING', 'UNAVAILABLE'],
 });
 
-const WebhookDirection = z.object({
+const IncomingWebhookHealth = z.object({
   successRate: zMeasure,
   delivered: z.number().int(),
   failed: z.number().int(),
@@ -177,18 +177,17 @@ const WebhookDirection = z.object({
   oldestAge: zMeasure,
 });
 
-/** `GET /admin/system/webhooks`: delivery health of outgoing and incoming webhooks. */
+/** `GET /admin/system/webhooks`: health of the incoming webhooks (payment and dispute callbacks). */
 export const getWebhooksHealth = defineRoute({
   key: 'GET /admin/system/webhooks',
-  summary: 'Webhook delivery health',
+  summary: 'Incoming webhook health',
   description:
-    'Last 24 hours. `outgoing` summarises `webhook_deliveries` to merchants: `delivered`, `failed` (gave up), `retrying` (pending with a retry time), `successRate` = delivered / (delivered + failed) (null without deliveries), ' +
-    '`oldestUndeliveredAt` (the oldest pending delivery) and its `oldestAge` in seconds (`{value 0, state ok}` when none). `incoming` counts gateway callbacks from hourly counters in the cache Redis (accepted, refused, queued for reprocessing) and ' +
-    'the oldest unrelayed outbox event of a callback. During a database outage the route answers `503 DATABASE_UNAVAILABLE`.',
+    'Last 24 hours. `incoming` counts gateway callbacks from hourly counters in the cache Redis (accepted as `delivered`, refused as `failed`, queued for reprocessing as `retrying`), `successRate` = delivered / (delivered + failed) (null without callbacks), ' +
+    '`oldestUndeliveredAt` (the oldest unrelayed outbox event of a callback) and its `oldestAge` in seconds (`{value 0, state ok}` when none). During a database outage the route answers `503 DATABASE_UNAVAILABLE`.',
   tags: ['system-health'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'system:read',
-  success: { status: 200, schema: z.object({ outgoing: WebhookDirection, incoming: WebhookDirection }) },
+  success: { status: 200, schema: z.object({ incoming: IncomingWebhookHealth }) },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'DATABASE_UNAVAILABLE'],
 });

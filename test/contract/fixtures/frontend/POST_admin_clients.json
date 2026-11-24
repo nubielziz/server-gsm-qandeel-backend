@@ -11,15 +11,12 @@
     "phone": "",
     "country": "GB",
     "groupId": 1,
-    "status": "pending",
-    "kycStatus": "none",
-    "referralCode": "GSMMVWCMTC0",
+    "status": "active",
     "emailVerifiedAt": null,
     "createdAt": "2026-10-31T12:00:00.000Z",
     "address": "",
     "taxId": "",
     "internalNotes": "",
-    "telegramLinked": false,
     "security": {
       "hasPassword": false,
       "mustChangePassword": false,
@@ -46,7 +43,6 @@
       "name": "Standard",
       "discountPercent": "0.0000"
     },
-    "referredBy": null,
     "wallet": {
       "balance": "0.0000",
       "reserved": "0.0000",

@@ -1,7 +1,7 @@
 // Field schemas the customers routes share (store and admin): the customer's email, name and country as they are cleaned
 // on the way in, and the closed vocabularies of the wire (docs/contract/endpoints/customers.md).
 import { z } from 'zod';
-import { CUSTOMER_STATUSES, RISK_LEVELS } from '../db/schema';
+import { CUSTOMER_STATUSES } from '../db/schema';
 import {
   MAX_NAME_LENGTH,
   MAX_NOTES_LENGTH,
@@ -12,9 +12,6 @@ import {
 
 /** The status words of a customer on the wire. */
 export const CustomerStatusWire = z.enum(CUSTOMER_STATUSES);
-
-/** The risk words of a customer on the wire. */
-export const RiskLevelWire = z.enum(RISK_LEVELS);
 
 /** An email: trimmed, lower-cased and shaped like an address (the account email is case-insensitive). */
 export const EmailField = z

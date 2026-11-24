@@ -28,7 +28,7 @@ async function build(): Promise<FastifyInstance> {
   registerRaisedBodyLimits(fastify, GENERAL);
   const echo = (request: { body?: unknown }) => ({ body: request.body });
   fastify.post('/api/index.php', echo);
-  fastify.post('/v1/orders', echo);
+  fastify.post('/client/orders', echo);
   await fastify.ready();
   app = fastify;
   return fastify;
@@ -83,14 +83,14 @@ describe('registerRaisedBodyLimits', () => {
     const fastify = await build();
     const res = await fastify.inject({
       method: 'POST',
-      url: '/v1/orders',
+      url: '/client/orders',
       headers: FORM,
       payload: 'a'.repeat(GENERAL + 1),
     });
     expect(res.statusCode).toBe(413);
     const fits = await fastify.inject({
       method: 'POST',
-      url: '/v1/orders',
+      url: '/client/orders',
       headers: FORM,
       payload: 'a'.repeat(GENERAL),
     });

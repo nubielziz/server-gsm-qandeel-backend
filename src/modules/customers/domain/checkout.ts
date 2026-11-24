@@ -38,8 +38,7 @@ export const LEGAL_TYPE_OF_PURPOSE = {
  * The status a session has now.
  *
  * Why: RESOLUTIONS b2c-14: the stored status is `open`, `paid` or `expired`; an open session past `expires_at` is expired for every
- * reader at once, without a job having to flip the column first (the abandoned-checkouts report reads open sessions past their
- * expiry). Judged on the injected clock (decision 031).
+ * reader at once, without a job having to flip the column first. Judged on the injected clock (decision 031).
  *
  * @param status the stored status
  * @param expiresAt when the session runs out
@@ -147,7 +146,7 @@ export function isShopAddress(url: string, baseUrls: readonly string[]): boolean
  * Hides most of an email address: `ab•••@domain`.
  *
  * Why: the session link is a capability, but it can be forwarded or shown on a shared screen; the buyer knows their own address and
- * needs only enough to recognise it (the abandoned-checkouts rows use the same mask, ANSWERS customers).
+ * needs only enough to recognise it.
  *
  * @param email the address
  * @returns the first two characters of the local part, three bullets and the domain

@@ -32,8 +32,8 @@ Frontend features covering this module: `customers`, `checkouts` (rules in `RULE
 | `POST /admin/customers/:id/block` | admin | staff-permission `customers:block` | 18 | `blockCustomer` |
 | `GET /admin/customers/:id/export` | admin | staff-permission `customers:privacy` | 18 | `exportCustomerData` |
 | `POST /admin/customers/:id/anonymize` | admin | staff-permission `customers:privacy` | 18 | `anonymizeCustomer` |
-| `GET /admin/checkouts/abandoned` | admin | staff-permission `growth:read` | 19 | `listAbandonedCheckouts` |
-| `POST /admin/checkouts/recover` | admin | staff-permission `growth:send` | 19 | `recoverCheckouts` |
+| `GET /admin/checkouts/abandoned` | admin | staff-permission `growth:read` | 19 |  |
+| `POST /admin/checkouts/recover` | admin | staff-permission `growth:send` | 19 |  |
 | `GET /admin/reports/funnel` | admin | staff-permission `reports:growth` | 19 | `getFunnel` |
 | `POST /store/v1/checkout-sessions/:token/balance-payment` | store | checkout-token | 21 |  |
 | `POST /store/v1/marketing/unsubscribe/:token` | store | public | 23 |  |
@@ -256,7 +256,8 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## GET /admin/checkouts/abandoned
 
 - **Map**: Abandoned carts, including who has marketing consent. (السلات المتروكة ومن عنده موافقة تسويق) · staff-permission `growth:read` · stage 19 · tables checkout_sessions, consent_records
-- **Frontend**: `listAbandonedCheckouts` (src/features/checkouts/api/checkouts.ts:14) · params `query?: ListQuery` · returns `ListResult<AbandonedCheckout>` · success 200 · assumed contract
+- **Retired** (decision 062): The list of abandoned checkouts and the recovery emails were retired: no reminder is sent to people who left a checkout. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: _start/_end, 12 per page. _sort createdAt|grossAmount|recoveryEmailedAt, default createdAt desc (lib/filters.ts:54-57, 105-115). 'Needs a reminder' sends canRecover=true; 'All' sends no filter. q: case-insensitive contains over the FULL email, since rows carry it masked (mocks/handlers.ts:63-69).
 - **Response**: JSON array + x-total-count. Row:
 - id.
@@ -278,7 +279,8 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## POST /admin/checkouts/recover
 
 - **Map**: Send a recovery email once, only to customers with marketing consent. (إرسال إيميل استرجاع مرة واحدة لمن وافق على التسويق) · staff-permission `growth:send` · stage 19 · tables checkout_sessions, notifications
-- **Frontend**: `recoverCheckouts` (src/features/checkouts/api/checkouts.ts:28) · params `body: RecoverCheckoutsBody` · returns `RecoverCheckoutsResult` · success 200 · assumed contract
+- **Retired** (decision 062): The list of abandoned checkouts and the recovery emails were retired: no reminder is sent to people who left a checkout. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {ids: number[]}: the ticked rows with canRecover, at most a page. The server checks each id again: exists, not already emailed, not paid, marketing consent granted, and due. Each eligible checkout gets one recovery email (a notification with a one-click link back to the saved basket) and recovery_emailed_at is set. Duplicate ids are ignored.
 - **Response**: 200 with {sent, skipped: [{id, reason}]}. Reasons: no_marketing_consent|already_emailed|already_paid|not_found; any new code is shown with underscores as spaces. Check in the mock's order: not_found, already_emailed, already_paid, no_marketing_consent (mocks/handlers.ts:14-20). A send that reached someone toasts; any skip opens the summary dialog (M133).
 - **Errors**: 422 VALIDATION_FAILED (empty or invalid ids, errors[{field: 'ids'}] (mocks/handlers.ts:39-40)); 403 FORBIDDEN (caller lacks growth:send)
@@ -288,7 +290,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 ## GET /admin/reports/funnel
 
 - **Map**: Sales funnel: check, then payment started, then paid, then delivered. (قمع المبيعات: فحص ثم بدء دفع ثم مدفوع ثم مسلَّم) · staff-permission `reports:growth` · stage 19 · tables imei_checks, checkout_sessions, orders
-- **Frontend**: `getFunnel` (src/features/checkouts/api/funnel.ts:12) · params `query?: FunnelQuery` · returns `FunnelReport` · success 200 · assumed contract
+- **Frontend**: `getFunnel` (src/features/finance/api/reports.ts:56) · params `query?: FunnelQuery` · returns `FunnelReport` · success 200 · assumed contract
 - **Query**: days=7|30|90, always sent; default 30 (lib/filters.ts:24, 71-74).
 - **Response**: {days, imeiChecks, paymentStarted, paid, delivered}, all integers. Storefront only, over the last `days` days. The console shows each step's share of the one before (display only). Window [now - days x 24 h, now]. imeiChecks = count(imei_checks) with source IN (storefront_free, pre_order) and created_at in the window. paymentStarted = count(checkout_sessions) created in the window, any status. paid = those sessions with order_id IS NOT NULL (status paid). delivered = those sessions whose order (orders.id = order_id) has status completed. One read-only function storefrontFunnel(days) in the customers module's public index; the dashboard storefront block (feature 9, fixed 30 days) calls the same function; feature 9 builds it and feature 19 reuses it.
 - **Errors**: 422 VALIDATION_FAILED (days not in 7|30|90, errors[{field: 'days'}] (mocks/handlers.ts:27-30)); 403 FORBIDDEN (caller lacks reports:growth)

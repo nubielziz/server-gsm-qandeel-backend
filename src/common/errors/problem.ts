@@ -1,5 +1,5 @@
 // The problem+json document (decision 028, RFC 9457 style) and the helper that stashes the code of a failed request.
-// Every error on the admin, client, v1, store, hooks and system surfaces is sent in this shape.
+// Every error on the admin, client, store, hooks and system surfaces is sent in this shape.
 import { AppError, type FieldError } from './app-error';
 import { problemSlug } from './catalog';
 

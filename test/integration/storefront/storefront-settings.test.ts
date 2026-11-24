@@ -1,4 +1,4 @@
-// Integration tests of the storefront policies route (feature 16, `PATCH /admin/storefront/settings`, ANSWERS settings Q1, B68, M169): the eight keys,
+// Integration tests of the storefront policies route (feature 16, `PATCH /admin/storefront/settings`, ANSWERS settings Q1, B68, M169): the five keys,
 // the value rules, the answer, the audit rows in the demo's words, all-or-nothing, and the policies reaching the checkout that reads them.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { type Database, schema as s } from '@src/infra/db';
@@ -52,29 +52,19 @@ describe('PATCH /admin/storefront/settings', () => {
       require3ds: true,
       withdrawalWaiver: true,
       autoRefundFailed: false,
-      imeiPrecheck: true,
-      abandonedMinutes: 60,
-      imeiRetentionDays: 90,
     });
     expect(all.body).toEqual({
       guestCheckout: false,
       require3ds: true,
       withdrawalWaiver: true,
       autoRefundFailed: false,
-      imeiPrecheck: true,
       refundHoursBeforeDispatch: 24,
-      abandonedMinutes: 60,
-      imeiRetentionDays: 90,
     });
     expect((await staff.get('/admin/settings')).body).toMatchObject(all.body);
   });
 
   it('accepts the edges of each number and refuses a value outside them, naming the key', async () => {
-    for (const [key, ok, bad] of [
-      ['refundHoursBeforeDispatch', [0, 72], [-1, 73]],
-      ['abandonedMinutes', [5, 1440], [4, 1441]],
-      ['imeiRetentionDays', [0, 3650], [-1, 3651]],
-    ] as const) {
+    for (const [key, ok, bad] of [['refundHoursBeforeDispatch', [0, 72], [-1, 73]]] as const) {
       for (const value of ok) expect((await patch({ [key]: value })).body[key]).toBe(value);
       for (const value of bad) {
         const res = await patch({ [key]: value });
@@ -94,7 +84,7 @@ describe('PATCH /admin/storefront/settings', () => {
   });
 
   it('wants a JSON boolean for each switch and refuses any other key', async () => {
-    for (const key of ['guestCheckout', 'require3ds', 'withdrawalWaiver', 'autoRefundFailed', 'imeiPrecheck']) {
+    for (const key of ['guestCheckout', 'require3ds', 'withdrawalWaiver', 'autoRefundFailed']) {
       for (const value of ['true', 1, 0, null, 'on', {}]) {
         const res = await patch({ [key]: value });
         expect(res.status, `${key} ${JSON.stringify(value)}`).toBe(422);
@@ -107,7 +97,23 @@ describe('PATCH /admin/storefront/settings', () => {
       field: 'maintenance',
       message: 'This is not a storefront setting.',
     });
+    // The delay of the retired checkout reminder is no policy any more.
+    const retired = await patch({ abandonedMinutes: 60 });
+    expect(retired.status).toBe(422);
+    expect(retired.body.errors[0]).toMatchObject({
+      field: 'abandonedMinutes',
+      message: 'This is not a storefront setting.',
+    });
     expect((await patch({ 'payments.auto_credit_delay_minutes': 5 })).status).toBe(422);
+    // The two policies of the retired IMEI check are not storefront settings any more.
+    for (const [key, value] of [
+      ['imeiPrecheck', true],
+      ['imeiRetentionDays', 90],
+    ] as const) {
+      const retired = await patch({ [key]: value });
+      expect(retired.status, key).toBe(422);
+      expect(retired.body.errors[0], key).toMatchObject({ field: key, message: 'This is not a storefront setting.' });
+    }
     expect((await patch({})).status).toBe(422);
     expect((await patch({})).body.errors[0]).toMatchObject({ field: 'body' });
     expect((await patch([])).status).toBe(422);
@@ -115,11 +121,11 @@ describe('PATCH /admin/storefront/settings', () => {
   });
 
   it('is all or nothing: a call with one bad key writes none of its keys', async () => {
-    const res = await patch({ guestCheckout: false, abandonedMinutes: 2, maintenance: true });
+    const res = await patch({ guestCheckout: false, refundHoursBeforeDispatch: 100, maintenance: true });
     expect(res.status).toBe(422);
     expect(res.body.errors.map((error: { field: string }) => error.field).sort()).toEqual([
-      'abandonedMinutes',
       'maintenance',
+      'refundHoursBeforeDispatch',
     ]);
     expect(await db.select().from(s.settings)).toHaveLength(0);
     expect(await audit()).toHaveLength(0);
@@ -129,17 +135,27 @@ describe('PATCH /admin/storefront/settings', () => {
     await patch({ guestCheckout: false });
     // The same save twice answers 200 (the audit enforcement needs a row for every staff write): one row, before equal to after.
     expect((await patch({ guestCheckout: false })).status).toBe(200);
-    await patch({ require3ds: true, abandonedMinutes: 60 });
+    await patch({ require3ds: true, refundHoursBeforeDispatch: 24 });
     await patch({ require3ds: false });
-    await patch({ abandonedMinutes: 30 });
+    await patch({ refundHoursBeforeDispatch: 12 });
     const rows = (await audit()).filter((row) => row.entityType === 'setting');
     expect(rows.map((row) => [row.action, row.entityLabel, row.before, row.after])).toEqual([
       ['turned off policy', 'Guest checkout', { guestCheckout: null }, { guestCheckout: false }],
       ['turned off policy', 'Guest checkout', { guestCheckout: false }, { guestCheckout: false }],
       ['turned on policy', 'Require 3D Secure', { require3ds: null }, { require3ds: true }],
-      ['changed policy', 'Abandoned checkout reminder', { abandonedMinutes: null }, { abandonedMinutes: 60 }],
+      [
+        'changed policy',
+        'Free cancellation window',
+        { refundHoursBeforeDispatch: null },
+        { refundHoursBeforeDispatch: 24 },
+      ],
       ['turned off policy', 'Require 3D Secure', { require3ds: true }, { require3ds: false }],
-      ['changed policy', 'Abandoned checkout reminder', { abandonedMinutes: 60 }, { abandonedMinutes: 30 }],
+      [
+        'changed policy',
+        'Free cancellation window',
+        { refundHoursBeforeDispatch: 24 },
+        { refundHoursBeforeDispatch: 12 },
+      ],
     ]);
     expect(rows.every((row) => row.actorId === staff.staffId)).toBe(true);
   });

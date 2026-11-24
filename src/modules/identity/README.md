@@ -1,6 +1,6 @@
 # Identity & access module (`identity`)
 
-Map domain A. Who can sign in and what they may do: staff accounts and roles, merchants (clients), sessions, one-time tokens, API keys, KYC submissions and IP rules. It owns the authentication and authorization building blocks every surface uses: sessions, CSRF, API keys and the permission check (decision 018).
+Map domain A. Who can sign in and what they may do: staff accounts and roles, merchants (clients), sessions, one-time tokens, API keys and IP rules. It owns the authentication and authorization building blocks every surface uses: sessions, CSRF, API keys and the permission check (decision 018).
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
@@ -8,7 +8,7 @@ Decisions that shape this module: 007 password hashing, 010 ids and tokens, 018 
 
 ## Status
 
-Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 6 API key routes of feature 7b (see "API keys (feature 7b)" below); the 4 notification routes of feature 12a (the merchant's preferences, the Telegram link and Telegram's update webhook, see "Notification settings and Telegram (feature 12a)" below); the 15 merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, `/client/sessions`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
+Built: the staff, role, permission, session, IP-rule and merchant routes of feature 2a (27 of its 31 routes; the other 4 are the platform's audit log and settings), the daily purge of ended sessions and the demo merchants of the seed (see "Staff access, merchants and sessions (feature 2a)" below); the 6 API key routes of feature 7b (see "API keys (feature 7b)" below); the 2 notification routes of feature 12a (the merchant's preferences, see "Notification settings (feature 12a)" below); the merchant portal routes of feature 2b (`/client/auth/*`, `/client/profile`, `/client/security/*`, see "Merchant portal sign-in (2b)" below) and the pending-merchant rule of B153. Built earlier (P2.5a, P2.5c and the P2.6 sign-in routes, code in `security/`): the session service, cookies and CSRF token, the guard dispatcher with the staff, merchant and customer session guards, the CSRF guard, the permission guard with the permissions catalog and the Owner helpers, the staff gate of the internal API reference, and the machine guards (`security/machine/`): capability tokens, URL secrets, merchant API keys (Dhru credentials) and gateway webhook signatures. The sign-in routes (P2.6) and the IP rules, maintenance and rate-limit hooks (P2.5b) are built too.
 
 ## Public API (`index.ts`)
 
@@ -28,9 +28,9 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `AccessHandlers` | `replace(kind, handler)`: P2.5c gave the machine kinds their real guards; a test installs a stand-in with it |
 | `ApiKeyDirectory` | `invalidate(keyHashes, work)` after a key is revoked or edited, `invalidateClient(clientId, work)` after a merchant's status changes; `findByKey` |
 | `CapabilityTokenResolvers` | `register({ kind, resolve })`: the owning module's lookup of a checkout, tracking, ticket or sign-in link token |
-| `UrlSecretVerifiers` | `register({ routeKey, load })`: where a URL-secret webhook (Telegram) finds its stored secret |
+| `UrlSecretVerifiers` | `register({ routeKey, load })`: where a URL-secret webhook finds its stored secret |
 | `WebhookVerifiers` | `register({ gateway, verify })`: one signature adapter per payment gateway (billing) |
-| `ApiKeyPrincipal`, `CapabilityPrincipal`, `WebhookPrincipal` | the caller of a machine route: merchant id, key id and scopes / the id a token opens / gateway, event id and `duplicate` |
+| `ApiKeyPrincipal`, `CapabilityPrincipal`, `WebhookPrincipal` | the caller of a machine route: merchant id and key id / the id a token opens / gateway, event id and `duplicate` |
 | `SessionPolicy`, `SESSION_SETTING_KEYS` | the lifetimes and their settings keys |
 | `StaffAuthTokens` | `issue(work, { staffId, purpose: 'invite' \| 'reset', createdBy?, ip? })`: the one-hour, single-use link token of `POST /admin/auth/password/set` (feature 2a calls it when it adds a member by invitation or sends a reset; it voids the account's older links) |
 | `checkPasswordPolicy`, `MIN_PASSWORD_LENGTH` | the staff password policy (also for a temporary password the server generates) |
@@ -42,13 +42,12 @@ Exports `IdentityModule` and the security stack (`SecurityModule`, global). Othe
 | `MerchantAuthTokens` | `issue(work, { clientId, purpose: 'verify_email' \| 'reset' \| 'invite', createdBy?, ip?, keepEarlier? })`: the one-hour, single-use link token of a merchant (feature 2a calls it with `invite` for `POST /admin/clients`); it voids the merchant's older unused links of the same family (with `keepEarlier`, only the visitor's own forgot request, all but the two newest: decision 052) and returns `{ token, id, expiresAt }` |
 | `MerchantMailOutbox`, `MERCHANT_MAIL_EVENTS` | `enqueue(work, { kind: 'email_verification' \| 'password_reset' \| 'invited', clientId, tokenId })`: writes the outbox event of a merchant mail (ids only, never the token) in the caller's transaction; feature 2a writes `invited` with it |
 | `StaffMailModule`, `StaffMailOutbox`, `STAFF_MAIL_EVENTS` | feature 20: `enqueue(work, { kind: 'invited' \| 'password_reset', staffId, tokenId })` writes the outbox event of a staff mail (ids only); the module is loaded by the API (through `AccessAdminModule`) and by the worker |
-| `MerchantNotificationsModule` | the merchant's notification preferences, the Telegram link and the Telegram webhook (feature 12a) |
+| `MerchantNotificationsModule` | the merchant's notification preferences (feature 12a) |
 | `CustomerAuthTokens`, `CUSTOMER_TOKEN_TTL_MS`, `isUsableLink`, `CustomerTokenRecord` | the one-time links of storefront customers (feature 14b; `auth_tokens` rows of subject type `customer`): `issue(work, { customerId, purpose: 'magic_link' \| 'invite' \| 'reset' \| 'verify_email', createdBy?, ip?, keepEarlier?, browserKey? })` returns `{ token, id, expiresAt }` (256 random bits, only the keyed hash stored, valid one hour, one use; it voids the customer's older unused links of the same family: `invite` and `reset` are one family; with `keepEarlier`, for the links a visitor asks for, all but the two newest, decision 052), `find(token)`, `findById(id)`, `rotate(id)` (the customer mail job: a new token's hash on the same unused, unexpired row, the clear value returned), `consume(work, id)` (false when a parallel request used it first), `voidOpen(work, customerId, purposes, exceptId?)`, `passwordLinkSentAt(customerId)` and `askedFrom(record, browserKey)` (whether the link stored the keyed hash of that asking-browser cookie value; `browserKey` on `issue` stores it); `isUsableLink(record, nowMs)` is the unused-and-not-expired test the link resolver and the use cases share |
 | `CustomerTokensModule` | provides and exports `CustomerAuthTokens` on its own (database, token hasher, clock), so the worker loads the customer mail job without the security stack; the customers module's `CustomersAccountsModule` and `CustomerMailModule` import it |
 | `CUSTOMER_TOKEN_PURPOSES`, `CUSTOMER_PASSWORD_LINK_PURPOSES`, `CustomerTokenPurpose` | the link purposes of a customer, and the two (`invite`, `reset`) that choose a password |
 | `CurrentMerchant` | parameter decorator: the signed-in merchant (`MerchantPrincipal`) of a `merchant-session` route |
 | `MerchantGroupMembers` | `countByGroup(db, groupIds)` (the `merchantCount` of the catalog's group routes and their delete guard) and `countInGroup(db, groupId, clientIds)` (the overdraft rule); read-only, no dependencies, exported in the leaf block of `index.ts` (decision 032) |
-| `GroupPromotionModule`, `GroupPromotion`, `decidePromotion`, `breaksCreditRule` | the nightly promotion job of feature 4a (worker only) and its pure decision |
 | `StreamRoutesModule` | the three live event stream routes (feature 27, decision 037), loaded by the API only; the hub it uses is `RealtimeHubModule` of `src/infra/realtime` |
 
 ## The security stack (decision 018)
@@ -64,7 +63,6 @@ route's own pipes and interceptors. A route without a contract is refused (`500`
 | `staff-session`, `staff-permission` | the staff session cookie; `staff-permission` adds the contract's `permission` (`403 FORBIDDEN`, the detail names it) |
 | `merchant-session`, `customer-session` | the same mechanics with their own cookie, table and statuses |
 | `internal-or-token` | the network-or-token rule of `/metrics` (`MetricsAccessGuard`) |
-| `api-key` | `Authorization: Bearer <key>` (REST v1): see "Machine guards" below |
 | `dhru-credentials` | `username` + `apiaccesskey` in the JSON or form body of `POST /api/index.php`; every refusal is the Dhru envelope with HTTP 200 |
 | `gateway-signature` | the adapter of the `:gateway` in the URL, the 5 minute window, the replay filter |
 | `url-secret` | a secret in the URL path, compared in constant time with the stored hash or decrypted value |
@@ -90,12 +88,14 @@ sign-in session has a principal without permissions. `403 FORBIDDEN`, `403 CSRF_
 **Merchants waiting for approval (user decision B153).** A merchant with `clients.status = 'pending'` may sign in, but a
 `merchant-session` route answers it `403 ACCOUNT_PENDING_APPROVAL` unless its contract says `pendingMerchant: 'allow'` (default
 `deny`, like `sessionStages`; the OpenAPI operation carries `x-gsm-pending-merchant`). The routes of feature 2b all allow it (a
-pending merchant reads its approval status with `GET /client/auth/me` and manages its own profile, password, 2FA and sessions);
-the KYC routes (feature 8) will too. The check runs in the session access handler, after the suspension and stage checks, from the
+pending merchant reads its approval status with `GET /client/auth/me` and manages its own profile, password and 2FA).
+The check runs in the session access handler, after the suspension and stage checks, from the
 `approved` flag of the cached session view (`SubjectSnapshot.approved`, true when the status is `active`; a view cached without
 the flag counts as not approved). **A route that changes a merchant's status calls `SessionService.invalidateSubject('client', id,
 work)` and `ApiKeyDirectory.invalidateClient(id, work)` after its commit**, or the old view is served for up to a minute. API-key
-and Dhru calls of a pending merchant answer `403 ACCOUNT_PENDING_APPROVAL` as well (Dhru: its message in the envelope).
+and Dhru calls of a pending merchant answer `403 ACCOUNT_PENDING_APPROVAL` as well (Dhru: its message in the envelope). Since decision 062 nothing
+creates a `pending` merchant any more (staff-made merchants are `active`, and there is no public sign-up), so the guard is dormant: it only meets
+rows written before, until the migration of the accounts model removes the status.
 
 **Cookies.** `gsm_admin_session`, `gsm_client_session`, `gsm_store_session` (httpOnly, `Secure` from `COOKIE_SECURE`, `SameSite=Lax`,
 `Path=/`, `__Host-` prefix when secure) and the readable CSRF cookies `csrf_token` (staff), `csrf_token_client`, `csrf_token_store`
@@ -111,9 +111,9 @@ cookies keep their names and are not host-locked (the console and the storefront
 
 **One "live session" predicate** (lead resolution identity-platform-6, built by feature 2a in the sessions repository):
 `revoked_at IS NULL AND expires_at > $now AND (stage <> 'active' OR last_seen_at > $now - the idle limit of the subject
-type)`, where `$now` is the injected clock's time passed in (decision 031), never the database's `now()`. `GET /admin/sessions` (still limited to fully signed-in staff and merchant sessions, B9), `StaffMember.activeSessions`
-(which enables "Sign out all devices"), the `DELETE /admin/sessions/:id` 404 (an idle-dead session reads as already ended) and
-the merchant `GET /client/sessions` all use it; `SessionService.revokeAllOf` keeps revoking every non-revoked row, idle-dead ones
+type)`, where `$now` is the injected clock's time passed in (decision 031), never the database's `now()`. `GET /admin/sessions` (limited to fully signed-in staff sessions, B9), `StaffMember.activeSessions` and the merchant's
+`security.activeSessions` (which enable "Sign out all devices") and the `DELETE /admin/sessions/:id` 404 (an idle-dead session reads
+as already ended) all use it; `SessionService.revokeAllOf` keeps revoking every non-revoked row, idle-dead ones
 included.
 
 **What a feature does when an account changes** (always pass the transaction so the cache is cleaned after the commit):
@@ -145,34 +145,35 @@ routes arrive with their features.
 It does so in its constructor, before any `onModuleInit`, so a test module that installs its own stand-in handler in
 `onModuleInit` (`test/support/pipeline-routes.ts`) wins and is never overwritten.
 
-**API keys** (`api-keys/`). `Authorization: Bearer <key>` (REST v1) or `username` + `apiaccesskey` (Dhru, scope `dhru`, the username
+**API keys** (`api-keys/`). `username` + `apiaccesskey` (Dhru; the username
 is `clients.username` compared case-insensitively) resolve an `api_keys` row by `HMAC-SHA256(TOKEN_PEPPER, key)` (decision 019: only
 the hash and the 8 character display `prefix` are stored; the key is shown once when the merchant creates it). The checks, in this
 order, with the answer of each:
 
-| Check | REST v1 (problem+json) | Dhru (HTTP 200, envelope) |
-|---|---|---|
-| no key, unknown key, malformed, wrong Dhru username | `401 UNAUTHORIZED` | `Authentication Failed` |
-| revoked or expired (`revoked_at`, `expires_at <= now`) | `401 UNAUTHORIZED` ("revoked or has expired") | `Authentication Failed` |
-| merchant `suspended` | `403 ACCOUNT_SUSPENDED` | the message |
-| merchant `pending` (not approved, B153) | `403 ACCOUNT_PENDING_APPROVAL` | the message |
-| `allowed_ips` non-empty and the client address (`request.ip`, `TRUST_PROXY`) is outside every CIDR, IPv4 or IPv6 (empty = any) | `403 IP_NOT_ALLOWED` | the message |
-| the key's `scopes` do not cover the contract's `permission` by the permission grammar (decision 018): the permission itself, its `area:*`, or `*`; Dhru needs `dhru` listed exactly (`*` does not open it) | `403 FORBIDDEN` naming it | the message |
-| more than `rate_limit_per_min` accepted calls in a minute (limiter `api-key`, key = key id) | `429 RATE_LIMITED` + `Retry-After` | the message |
+| Check | Dhru (HTTP 200, envelope) |
+|---|---|
+| no key, unknown key, malformed, wrong Dhru username | `Authentication Failed` |
+| revoked or expired (`revoked_at`, `expires_at <= now`) | `Authentication Failed` |
+| merchant `suspended` | the message |
+| merchant `pending` (not approved, B153) | the message |
+| `allowed_ips` non-empty and the client address (`request.ip`, `TRUST_PROXY`) is outside every CIDR, IPv4 or IPv6 (empty = any) | the message |
+| more than `rate_limit_per_min` accepted calls in a minute (limiter `api-key`, key = key id) | the message (`Too many requests`) |
+
+A key carries no scope: every live key of an active merchant is a Dhru credential (the `api_keys.scopes` column is unread and unwritten).
 
 Only accepted calls count against the key's limit. Unknown keys and wrong usernames are counted per client address (the `ip` limiter,
-300 a minute, under the key `api-key-failures:<ip>`; IPv6 by /64): REST v1 and Dhru have no per-IP stage in the pipeline and an unknown
+300 a minute, under the key `api-key-failures:<ip>`; IPv6 by /64): Dhru has no per-IP stage in the pipeline and an unknown
 key has no limit of its own; that budget is peeked before the lookup (decision 053), so an address that used it up costs no database lookup: its keys are
 looked up in the key cache only (`ApiKeyDirectory.findCached`), a key whose view is cached is judged as usual, and a key the cache does not hold gets `429` (a
 username that is not the cached key's is still charged, and answered `429` then). A key in use keeps its view cached: a view read with less than 30 s left is
 loaded again in the background, the once-a-minute "last used" write loads it again over the old view (`CacheService.reload`), and the cache-only lookup answers a view for 60 s (the budget window,
 `API_KEY_CACHE_GRACE_SECONDS`) after its freshness and loads it again then, so a key used at least every 90 s stays served, also when it sends calls side by side.
-A bulk placement costs more than one point: `ApiKeyCredentials.points` (default 1; `requestPoints` in `api-keys/request-points.ts`: the length of `orders` of `POST /v1/orders/bulk`,
-the item ids of a Dhru `placeimeiorderbulk`, clamped to 1 to 100; `getimeiorderbulk` stays one) is charged in the one `consume`, at most the key's own limit, so the `RateLimit-*` headers stay true. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
+A bulk placement costs more than one point: `ApiKeyCredentials.points` (default 1; `requestPoints` in `api-keys/request-points.ts`:
+the item ids of a Dhru `placeimeiorderbulk`, clamped to 1 to 100; `getimeiorderbulk` stays one) is charged in the one `consume`, at most the key's own limit. A request without any key is refused without a lookup and without counting. A stored `rate_limit_per_min`
 below 1 is a data error: the limiter's default (60) applies. `last_used_at` / `last_used_ip` are written at most once a minute (best
-effort). The principal is `{ kind: 'api-key', clientId, keyId, scopes, ip }`; the request context actor is the merchant (`client`).
+effort). The principal is `{ kind: 'api-key', clientId, clientName, keyId, ip }`; the request context actor is the merchant (`client`).
 
-The lookup is cached 60 s (a key that matches nothing 10 s). **The features that revoke a key, change its scopes or allowed IPs, or
+The lookup is cached 60 s (a key that matches nothing 10 s). **The features that revoke a key, change its allowed IPs, or
 change a merchant's status call, after their commit:** `afterCommit(() => directory.invalidate([keyHash]))` /
 `directory.invalidateClient(clientId, work)`; until then the old view is served for up to a minute.
 
@@ -190,15 +191,13 @@ nothing is always the same: `404 NOT_FOUND`, or `410 TOKEN_INVALID` for a sign-i
 follows an old link. Brute force is limited per client address by the pipeline's `token` limiter before the guard runs. The principal is
 `{ kind: 'capability', access, resourceId, ip }`.
 
-**URL secrets** (`url-secrets.ts`). `UrlSecretVerifiers.register({ routeKey: 'POST /webhooks/telegram/:secret', load })`; `load` returns
+**URL secrets** (`url-secrets.ts`). `UrlSecretVerifiers.register({ routeKey: 'POST /webhooks/<name>/:secret', load })`; `load` returns
 `{ form: 'hash', value: TokenService.hash(secret) }` or `{ form: 'secret', value }` (decrypted by the owning module for the comparison only).
 The comparison is constant time and always runs, so a missing configuration takes as long to refuse as a wrong secret. A route without a
 source, or without a stored secret, refuses every request with `401`. A source may also name a request `header` that must carry the same
 secret (both are compared, both always, so the time does not say which failed) and a `refusal` of `not_found` (404, so a scanner cannot tell
 the route exists); a stored `secret` may name a separate `header` value, which the header is then compared with instead of the path's
-(decision 054). Feature 12a's Telegram webhook uses all three: the path and `X-Telegram-Bot-Api-Secret-Token` carry two values derived from
-`TELEGRAM_WEBHOOK_SECRET` with two labels (`telegramWebhookPath`, `telegramWebhookHeader`), registered with Telegram by
-`scripts/telegram-webhook.ts`.
+(decision 054). No route uses the kind today (the one that did, a chat bot's webhook, was retired with decision 062).
 
 **Gateway signatures** (`webhooks/`). The `:gateway` of the URL (lower case; `^[a-z0-9][a-z0-9_-]{0,39}$`) picks the `WebhookVerifier` billing
 registers (feature 8): `verify({ gateway, headers, rawBody, nowSeconds })` checks the gateway's own scheme over the **exact bytes** of the
@@ -304,7 +303,7 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
 | `POST /admin/staff/:id/suspend`, `POST /admin/staff/:id/reactivate` | `staff:suspend` | `204` |
 | `GET /admin/roles`, `GET /admin/roles/:id`, `GET /admin/permissions` | `roles:read` | `RoleAdminService`, `PermissionsCatalog` |
 | `POST /admin/roles`, `PATCH /admin/roles/:id`, `DELETE /admin/roles/:id` | `roles:create`, `roles:update`, `roles:delete` | `409 ROLE_IN_USE` while any member holds the role |
-| `GET /admin/sessions`, `DELETE /admin/sessions/:id` | `sessions:read`, `sessions:revoke` (and `clients:security` for a merchant's session) | `SessionAdminService` |
+| `GET /admin/sessions`, `DELETE /admin/sessions/:id` | `sessions:read`, `sessions:revoke` | `SessionAdminService` (staff sessions only) |
 | `GET /admin/ip-rules`, `GET /admin/ip-rules/:id`, `POST /admin/ip-rules/check` | `access:read` | `IpRuleAdminService` |
 | `POST /admin/ip-rules`, `DELETE /admin/ip-rules/:id`, `PUT /admin/access/restriction` | `access:create`, `access:delete`, `access:update` | |
 | `GET /admin/clients`, `GET /admin/clients/:id` | `clients:read` (`wallet` and `stats` only with `wallet:read`) | `ClientAdminService` |
@@ -321,8 +320,8 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   or by a role change, and every action on another member's account (also `DELETE /admin/sessions/:id`) need the caller to hold each permission
   concerned (`403 FORBIDDEN`); only an Owner edits the role they hold (`409 CANNOT_CHANGE_OWN_ROLE` for everyone else).
   `GET /admin/sessions` masks the address and device (`•••`) of another member's session whose role the caller does not cover (an Owner's, for
-  everyone but an Owner), and a merchant's email unless the caller holds `clients:read`; `DELETE /admin/sessions/:id` on a merchant's session also
-  needs `clients:security` (decisions 046 and 047).
+  everyone but an Owner). A merchant's session is neither listed nor ended there: the per-device list of a merchant is retired, and a
+  merchant is signed out of every device by `POST /admin/clients/:id/sessions/revoke` (`clients:security`).
   **Money rules per person** (decision 049, `grantsPerPersonMoney`): the limits and the second-person rule of `wallet:adjust`,
   `wallet:credit_limit`, `payments:approve` and `invoices:create` count per staff account (`PER_PERSON_MONEY_PERMISSIONS`), so only an
   Owner adds a member whose role grants one of them, gives such a role to another member, sets a temporary password for another member
@@ -340,7 +339,7 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   forces a change, voids unused links and is shown once (never in the audit log). A change of the member's email voids their unused links
   in the same transaction (they were mailed to the old address); a queued mail of such a link is then skipped and staff send a new one.
 - **One live-session rule** (`liveSessionCondition`, `security/session.repository.ts`, resolution `identity-platform-6`): not revoked, not past
-  `expires_at`, and (for a full session) used within the idle limit of its subject type. `GET /admin/sessions` (staff and merchant sessions at
+  `expires_at`, and (for a full session) used within the idle limit of its subject type. `GET /admin/sessions` (staff sessions at
   stage `active` only), `StaffMember.activeSessions` and the `404` of `DELETE /admin/sessions/:id` all use it, with the clock's time as a
   parameter (decision 031).
 - **IP rules:** `cidr` is normalised on write (a single address is stored as `/32` or `/128`, a range with bits after the prefix is `422`, a
@@ -353,28 +352,28 @@ the lead's resolutions (`identity-platform-1` to `-7`, `-14`, `-15`) win over it
   last sign-in address) from allowed to refused for the console (`403 FORBIDDEN`, decision 046). `shutOutNowOrLater` judges the change as things are and at
   each later moment a rule of either state runs out: an Owner's address may not be refused at any moment at which it would have been allowed
   without the change.
-- **Merchants:** `POST /admin/clients` inserts the merchant as `pending` with a generated Dhru username and referral code, opens the wallet and
+- **Merchants:** `POST /admin/clients` inserts the merchant as `active` (decision 062: the owner makes every account, so nothing waits for an approval; the invitation is pending until the merchant chooses a password) with a generated Dhru username (the retired `clients.referral_code`, NOT NULL and unique until the accounts migration, carries the same value; `clients.referred_by_id` is unwritten), opens the wallet and
   hold accounts through `MerchantAccounts.open` (`overdraft_limit` = credit limit; user rule 2: credit above zero on a group without
   `overdraft_allowed` is `422` on `creditLimit`), issues the one-hour invite token (`auth_tokens`, purpose `invite`, subject type `client`, hash only)
   and writes the outbox event `merchant.invited` (`{ tokenId }`, through `MerchantMailOutbox`, see "Merchant mail"), all in one
-  transaction. `PATCH` does one action per call: approve
-  (`pending → active`), suspend (`active → suspended`, a reason of 3 to 140 characters, sessions ended), reactivate (`suspended → active`), or a
+  transaction. `PATCH` does one action per call: activate a row that is still `pending` from before decision 062
+  (`pending → active`, no mail), suspend (`active → suspended`, a reason of 3 to 140 characters, sessions ended), reactivate (`suspended → active`), or a
   group move (`422` on `groupId` for an unknown group, the storefront retail group, the same group, or a group without credit while the
   wallet's limit is above zero). Any other status change is `409 INVALID_TRANSITION`. A credit limit above zero at invitation also needs
   `wallet:credit_limit`, and a `groupId` other than the default group's `groups:update` (no `groupId`, or the default group's id, needs only
-  `clients:create`; checked after the group is found and before anything is written); suspending, declining and reactivating also need
+  `clients:create`; checked after the group is found and before anything is written); suspending and reactivating also need
   `clients:security`, a group move `groups:update` (decision 046).
 - **Times the API returns or decides on come from the clock** (decision 031): `createdAt` of staff, IP rules, merchants, sessions and
   invite/reset tokens is written by the service, not by the column default.
 
 **Seed** (`scripts/seed/identity.ts`): the 6 roles, 6 staff, the IP rules, the 4 demo client groups (ids 1 to 4 as the frontend mock; the
-catalog feature's seeder takes them over) and the 20 demo merchants (`m3` is id 3, referral code `GSM0003`, username the name's slug,
-group, status and referrer as the mock, no password). Their wallets are feature 3's seed. Open point for that seed: the frontend mock gives
+catalog feature's seeder takes them over) and the 20 demo merchants (`m3` is id 3, username the name's slug,
+group and status as the mock, no password and no referral link). Their wallets are feature 3's seed. Open point for that seed: the frontend mock gives
 the Standard group `overdraft_allowed = false` but its merchants a credit limit above zero, which user rule 2 forbids.
 
 ## Merchant portal sign-in (2b): `/client/*`
 
-Fifteen routes (`contracts/merchant-auth.contracts.ts`, `contracts/merchant-account.contracts.ts`, controllers `merchant-auth.controller.ts`
+The routes (`contracts/merchant-auth.contracts.ts`, `contracts/merchant-account.contracts.ts`, controllers `merchant-auth.controller.ts`
 and `merchant-account.controller.ts`; use cases in `application/merchant-*.ts`, queries in `infra/merchant-*.repository.ts`, pure rules in
 `domain/merchant-*.ts`), wired by `MerchantAuthModule`. No console screen calls them (the portal is another frontend): the specs are
 MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`, CSRF cookie `csrf_token_client` and the
@@ -382,34 +381,30 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
 
 | Route | Access | What it does |
 |---|---|---|
-| `POST /client/auth/register` | public (Origin check; Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | the form → `204`, the same for a new and a known email. A new email creates a `pending` merchant in the `is_default` group, opens its wallet and hold (`MerchantAccounts.open`, credit limit 0), a `verify_email` link and the event `merchant.email_verification`, in one transaction |
-| `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; the status stays `pending`; signs nobody in. The mailbox and the password holder prove the account together: without a full session of the same merchant on the request it also clears the password, turns two-factor sign-in off (secret forgotten), ends every session of the merchant and sends the password-reset mail to the address, in the same transaction (the verification after a staff change of the address, which ended every session, is such a request); that session without its `X-CSRF-Token` is `403 CSRF_FAILED` (the link stays usable) |
+| `POST /client/auth/verify-email` | public | `{ token }` → `204`; sets `email_verified_at`, uses the link; signs nobody in. The mailbox and the password holder prove the account together: without a full session of the same merchant on the request it also clears the password, turns two-factor sign-in off (secret forgotten), ends every session of the merchant and sends the password-reset mail to the address, in the same transaction (the verification after a staff change of the address, which ended every session, is such a request); that session without its `X-CSRF-Token` is `403 CSRF_FAILED` (the link stays usable) |
 | `POST /client/auth/login` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | email + password → `{ next: 'totp' \| 'done' }`; a `pending_totp` session (10 min) when 2FA is on, an `active` one otherwise; a pending merchant signs in; the session opens in a transaction that reads the merchant again under its row lock (`lockClientForSignIn`) and requires the account as it was when the password was checked (the same password, by its `password_changed_at`, which a hash upgrade keeps; the same 2FA and forced-change state; not suspended; `signInStillHolds`) and a stored hash that still holds the proven password (the hash it was proven against, or one the same password verifies against again under the lock, the upgrade of a parallel sign-in; `stillProven`), else the same `401` as a wrong password |
 | `POST /client/auth/2fa` | session, `pending_totp` | six digits → `204`; rotates the session to `active` |
 | `POST /client/auth/logout` | session, `pending_totp` or `active` | revokes the session, clears both cookies, `204` |
-| `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | `{ email }` → `204` for any email; a merchant that is not suspended (also one waiting for approval without a password) gets a `reset` link and the event `merchant.password_reset`, at most five an hour; the earlier links keep working (at most three) |
+| `POST /client/auth/password/forgot` | public (Turnstile while `TURNSTILE_MERCHANT_AUTH` is on, the default in production) | `{ email }` → `204` for any email; a merchant that is not suspended (also one without a password yet) gets a `reset` link and the event `merchant.password_reset`, at most five an hour; the earlier links keep working (at most three) |
 | `POST /client/auth/password/reset` | public | `{ token, password }` with a `reset` or `invite` link → `204`; sets the password, uses the link, ends every session, signs nobody in; an invitation also sets `email_verified_at` and voids the merchant's verification link; on a merchant whose email was not verified before, it also turns two-factor sign-in off (decision 052); clears `password_set_by_staff` (not `email_set_by_staff`) |
-| `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, kycStatus, emailVerifiedAt, twofaEnabled, referralCode, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
+| `GET /client/auth/me` | session, `active` | `Me`: id, username, email, name, company, phone, country, status, emailVerifiedAt, twofaEnabled, group, createdAt; `no-store`; repeats `X-CSRF-Token` |
 | `PATCH /client/profile` | session | name, company, phone, country (partial) → `Me` |
 | `POST /client/security/password` | session | `{ currentPassword, newPassword }` → `204`; ends the other sessions; `401` when the stored password changed or was ended since the current one was checked (nothing written) |
 | `POST /client/security/2fa/setup` | session | a pending secret (encrypted, `twofa_enabled` stays false) → `{ secret, otpauthUrl, qrSvg }`; `409 TWOFA_ALREADY_ENABLED` once on; `409 CONFLICT` while the email is not confirmed |
 | `POST /client/security/2fa/enable` | session | `{ code }` confirms the pending secret → `204`; ends the other sessions; `409 CONFLICT` while the email is not confirmed |
 | `POST /client/security/2fa/disable` | session | `{ code }` → `204`; forgets the secret, ends the other sessions; `409 TWOFA_NOT_ENABLED` |
-| `GET /client/sessions` | session | the caller's live `active` sessions, newest first, `current` marked, simple-rest range and `x-total-count` |
-| `DELETE /client/sessions/:id` | session | `204`; `404 NOT_FOUND` for a session that is not the caller's, unknown or no longer live; ending the current one clears the cookies |
 
 **Rules worth knowing**
 
-- **No enumeration.** `register` and `password/forgot` answer `204` whatever the email; `register` always hashes the password, and
-  both run the same statements for every email (decision 052: `DbService.runOrDiscard`; `forgot` writes for `NO_ACCOUNT_ID` and a known
-  email's `register` runs on a placeholder address, and the transaction is rolled back at its end when nothing may be kept). Both are
-  counted per network (`register`) or email + network (`forgot`) by the `sign-in` limiter, known email or not; `forgot` also spends one
+- **No enumeration.** `password/forgot` answers `204` whatever the email and runs the same statements for every email (decision 052:
+  `DbService.runOrDiscard`; `forgot` writes for `NO_ACCOUNT_ID`, and the transaction is rolled back at its end when nothing may be kept). It is
+  counted per email + network by the `sign-in` limiter, known email or not; `forgot` also spends one
   point of the merchant's `account-mail` budget (kind `forgot_password`, five an hour; beyond it nothing is sent). `login` is one `401` for an unknown email, a wrong password and a merchant with no password yet
   (each verifies one argon2 hash); `403 ACCOUNT_SUSPENDED` only follows a correct password.
 - **A wrong current password or code is `422` on its field (`currentPassword`, `code`), never `401`**, which would sign the caller
-  out (B121). `WEAK_PASSWORD` names `password` (register, reset) or `newPassword` (change).
+  out (B121). `WEAK_PASSWORD` names `password` (reset) or `newPassword` (change).
 - **Rate limits** (`MerchantSignInLimiter`, keys are `HMAC(TOKEN_PEPPER, ...)` hashes under the prefix `merchant-sign-in`, so
-  counters do not mix with the staff ones): login per email + network; registration per network; forgot per email + network;
+  counters do not mix with the staff ones): login per email + network; forgot per email + network;
   codes (sign-in, enable, disable; limiter `sign-in-code`, never counted in process memory), 2FA setups and password changes **per account**; emailed links (`verify-email`, `password/reset`)
   by the `token` limiter per address. The per-IP limit of the pipeline covers the public routes first.
 - **The sign-in code step closes after twenty wrong codes within 24 hours**, the staff rule (`CodeStepLock`, columns
@@ -441,9 +436,6 @@ MISMATCHES B121 to B136 and ALIGNMENT § 7. Session cookie `gsm_client_session`,
   affected.
 - **The database decides.** The code, password, 2FA, `me` and profile steps read the merchant from `clients`, not from the cached
   session view: a suspension applies at once (`403`, every session of the merchant revoked).
-- **Live sessions.** `GET /client/sessions` and `DELETE /client/sessions/:id` use the live rule of identity-platform-6 (not revoked,
-  not past `expires_at`, used within `sessions.client_idle_minutes`), implemented in `infra/merchant-sessions.repository.ts`
-  (the same rule as 2a's `liveSessionCondition` in `security/session.repository.ts`).
 - **Audit.** Merchant routes write no `audit_logs` rows (the audit log records staff writes, and `AUDIT_ENTITY_TYPES` has no
   merchant security type yet); failed attempts are logged without the email.
 
@@ -477,7 +469,7 @@ locked, with an id no account has when there is no account, so a locked email an
 key, `gsm:{env}:ratelimit:sign-in-familiar:{hash}`), and the sixth attempt is refused like any other one on a locked email, before its password
 is checked; nothing of this runs while no lock runs. A refused attempt's count goes back while a lock runs. Every `401` stays counted; `giveBack` (a Lua script, never below 0) takes back the attempt of a correct
 password, before a `403` too, and never the failures of other attempts: the two shop accounts of one email may belong to two people (a
-merchant registration proves no mailbox). `clear` (after the commit of a new password from a link, a staff member's own or forced
+a password chosen without the emailed link proves no mailbox). `clear` (after the commit of a new password from a link, a staff member's own or forced
 change, a customer's own change, a temporary password set by staff, a staff-created customer account, an anonymisation) deletes count and
 lock; a merchant's own or forced change does not. The state is the hash `gsm:{env}:identity:sign-in-failures:{hash}` (fields `n`, `until`; the hash is keyed on the scope and
 the email) on the cache Redis; while it cannot be reached each process counts in memory.
@@ -498,32 +490,27 @@ row is unused and unexpired) and sends the link `<PORTAL_BASE_URL>/set-password?
 arrived), and a repeat after a delivered mail is skipped before it can spoil the link that arrived. In development the mail lands in
 Mailpit (`http://localhost:8025`); the old "link in the log" convenience is gone, because a link is a credential.
 
-### Notification settings and Telegram (feature 12a)
+### Notification settings (feature 12a)
 
-Four routes (contracts `contracts/merchant-notifications.contracts.ts`; controller `controllers/merchant-notifications.controller.ts`; use cases
-`application/merchant-notification-settings.service.ts` and `application/telegram-linking.service.ts`; queries `infra/merchant-notification.repository.ts`;
-the webhook secret `application/telegram-webhook-secret.ts`; module `merchant-notifications.module.ts`). They live here because they need
-`CurrentMerchant` and the merchant's own columns (`notification_prefs`, `telegram_chat_id`); the delivery path itself is the platform's. Spec:
-MISMATCHES B165.
+Two routes (contracts `contracts/merchant-notifications.contracts.ts`; controller `controllers/merchant-notifications.controller.ts`; use case
+`application/merchant-notification-settings.service.ts`; queries `infra/merchant-notification.repository.ts`; module `merchant-notifications.module.ts`).
+They live here because they need `CurrentMerchant` and the merchant's own column (`notification_prefs`); the delivery path itself is the platform's.
+Spec: MISMATCHES B165. The Telegram link and the bot's webhook of the same feature were retired with decision 062.
 
 | Route | Access | What it does |
 |---|---|---|
-| `GET /client/notification-preferences` | merchant session | `{ email: { address }, telegram: { linked }, lowBalanceThreshold (money or null), events: [{ event, label, email, telegram }] }`: the non-transactional merchant events of the platform's registry; never saved reads as email on, Telegram off (the order results stay off until chosen) |
-| `PUT /client/notification-preferences` | merchant session | `{ lowBalanceThreshold?, events }` replaces the listed events, keeps the others and the keys it does not know; `422` on `events.N.event` (unknown, always-sent or repeated), on `events.N.telegram` ("Link Telegram first."; sending back the value the GET showed is accepted, so the announcements' default Telegram on saves without a chat) and on `lowBalanceThreshold` (negative or malformed); answers the GET body; the row is locked, so it takes turns with a Telegram link |
-| `POST /client/telegram/link` | merchant session | `201 { url: 'https://t.me/<bot>?start=<token>', expiresAt }`, `Cache-Control: no-store`: a single-use `telegram_link` token (hash only, 15 minutes); a new call voids the previous link; `503 UNAVAILABLE` without `TELEGRAM_BOT_USERNAME`; `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set (`MachineCredentialHold`; no token is written) |
-| `POST /webhooks/telegram/:secret` | url-secret | the path segment and `X-Telegram-Bot-Api-Secret-Token` carry two different values derived from `TELEGRAM_WEBHOOK_SECRET` (decision 054; `scripts/telegram-webhook.ts` registers both), compared in constant time, else `404`; always `200 {}`; a private-chat `/start <token>` with a live token links the chat (a chat of another merchant moves, that merchant's Telegram switches go off) and the bot answers "Linked to <merchant name>."; `/stop` unlinks the chat, turns the merchant's Telegram events off and the bot says so; anything else is ignored; a repeated `update_id` is processed once (the answer's dedupe key is `telegram-update-<id>`) |
+| `GET /client/notification-preferences` | merchant session | `{ email: { address }, lowBalanceThreshold (money or null), events: [{ event, label, email }] }`: the non-transactional merchant events of the platform's registry; never saved reads as email on (the order results stay off until chosen) |
+| `PUT /client/notification-preferences` | merchant session | `{ lowBalanceThreshold?, events }` replaces the listed events, keeps the others and the keys it does not know; `422` on `events.N.event` (unknown, always-sent or repeated) and on `lowBalanceThreshold` (negative or malformed); a `telegram` field in a row (an older portal still sends it) is dropped; answers the GET body; the row is locked, so two saves take turns |
 
-The merchant portal writes no audit rows (B121). The link token is the platform's delivery of one more purpose of `auth_tokens` (`telegram_link`, migration
-0009); `clients.telegram_chat_id` is unique (one chat, one merchant). The webhook is exempt from the refusal of U+0000 and unpaired surrogates by the validation guard (a `422` would make Telegram
-re-send the update and hold back the later ones, decision 053); it stores no text of the update (the token and the chat id must match fixed patterns, the update id a safe integer),
-so a character the pattern does not accept is just an update to ignore.
+The merchant portal writes no audit rows (B121). `clients.telegram_chat_id`, the `telegram_link` purpose of `auth_tokens` and the `telegram` keys that older
+saves put in `notification_prefs` are retired (decision 062): nothing reads or writes them.
 
 ### Merchant management (feature 20; plan `docs/briefs/20-merchant-management.md`)
 
 Staff tools, merchant sign-in changes, the staff link mails and staff-made API keys, all inside this module.
 
 - **Row.** `ClientViews` (`application/client-views.ts`) builds the console's merchant row for the list, `GET /admin/clients/:id` and every
-  change. New keys are optional in the schema and always sent: `address`, `taxId`, `internalNotes`, `telegramLinked`, `security`
+  change. New keys are optional in the schema and always sent: `address`, `taxId`, `internalNotes`, `security`
   (`hasPassword`, `mustChangePassword`, `passwordChangedAt`, `twofaEnabled`, `lastLoginAt`, `lastLoginIp`, `activeSessions`, `linkSentAt`,
   `verificationSentAt`) and `suspension` (`at`, `reason`, `by`). A merchant has no language (decision 039): every merchant mail
   is English.
@@ -547,21 +534,19 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   Every chosen password (reset link, invitation, security page) clears the flag.
 - **Machine credentials after a staff-set password** (`MachineCredentialHold`, decision 046). `password_set_by_staff` is set with a temporary
   password and cleared only by a password from a link mailed to the merchant's address (reset or invitation; the forced change and the
-  security page do not clear it). While it is set, `POST /client/api-keys`, `POST /client/webhooks`, `PATCH /client/webhooks/:id` and
-  `POST /client/telegram/link` answer `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest
-  of the portal work, the notification preferences included, and a Telegram chat that was connected before stays connected (the bot's
-  webhook `POST /webhooks/telegram/:secret` is not held). The Telegram link reads the hold under the merchant row lock, before it voids
-  or writes a token, so a refused call writes nothing. The check reads
+  security page do not clear it). While it is set, `POST /client/api-keys`
+  answers `403 FORBIDDEN` with a sentence that sends the merchant to "Forgot password"; signing in and the rest
+  of the portal work, the notification preferences included. The check reads
   the account and then the caller's session row (the link that clears the flag ends every session in the same commit). A change of the
   email address by a staff member who is not an Owner sets `email_set_by_staff`, with the same hold and its own sentence (contact support);
   a password from a link does not clear it, because the link goes to the address staff chose. An Owner's change of the address sets no
   mark and clears one, and so does an Owner's details edit that carries the stored address (the way support lifts the hold).
 - **Verification resend.** `POST /client/auth/verify-email/resend` (merchant session) and the staff action share the `account-mail` counter
   (5 an hour per merchant and kind); there is no public route. `verify-email` answers `410` for a suspended merchant.
-- **Suspension.** Voids every open link, accepts `pending -> suspended` (this is how an application is declined), and mails the merchant
+- **Suspension.** Voids every open link, accepts `pending -> suspended` (a row that was never activated), and mails the merchant
   (without the staff reason). API keys are refused while suspended and work again after reactivation.
-- **Lifecycle mails** (`MerchantLifecycleMails`): `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`,
-  `merchant.kyc_rejected`, `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English
+- **Lifecycle mails** (`MerchantLifecycleMails`): `merchant.suspended`, `merchant.reactivated`,
+  `merchant.security_notice` are transactional, registered at boot by `IdentityMailEventsModule`, with English
   default templates (`application/mail/identity-templates.ts` keeps the text; `drizzle/0025_merchant_management_templates.sql` shipped it, and a spec finds
   every default row of the code in the applied file). The module also registers those shipped texts with the event registry
   (`registerBuiltInTemplates`), the fallback of the security emails (decision 047). The security notice has five kinds, each one fixed sentence
@@ -572,7 +557,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
   created in your account's portal." (`PORTAL_API_KEY_NOTICE_PHRASE`) and what to do about a key the merchant did not make; the staff notice's wording
   ("Our support team made this change") does not fit it. No migration installs its text, so the shipped text is what is sent until staff add a template for the
   event (`IDENTITY_SHIPPED_TEXT_ONLY`).
-  KYC decisions and the end of one merchant session are audited under `merchant`.
+  The end of one merchant session is audited under `merchant`.
 - **Staff link mails** (`StaffMailModule`, loaded by the API through `AccessAdminModule` and by the worker): `POST /admin/staff` (onboarding `invite`) and
   `POST /admin/staff/:id/password` (`reset_link`) write `staff.invited` (while the member is `invited`) or `staff.password_reset` with `StaffMailOutbox.enqueue`
   (payload `{ tokenId }`, aggregate `staff_users`). `StaffMailJobs` does what `MerchantMailJobs` does for merchants: re-reads the member and the link,
@@ -598,8 +583,7 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 | Staff change the email (needs `clients:security`) | all ended | every open link voided | session and API key views dropped | `merchant.security_notice` to the address before the change; verification (or invitation) to the new address |
 | Suspension | all ended | every open link voided | session and API key views dropped | `merchant.suspended` (no reason) |
 | Reactivation | none (already ended) | none | API key views dropped | `merchant.reactivated` |
-| Approval | none | none | none | `merchant.approved` |
-| KYC decision | none | none | none | `merchant.kyc_approved` / `merchant.kyc_rejected` |
+| Activation of a row that is still `pending` | none | none | session and API key views dropped | none |
 | Staff create a key | none | none | none | `merchant.security_notice` |
 | The merchant creates a key in the portal | none | none | none | `merchant.portal_api_key_created` (its own notice: the key was made in the portal, and what to do if it was not the merchant) |
 | Staff edit a key's limits or revoke it | none | none | that key's view dropped | none |
@@ -610,8 +594,8 @@ Staff tools, merchant sign-in changes, the staff link mails and staff-made API k
 `notifications/` holds the staff and merchant audience providers of the platform's notification center (`StaffAudience`,
 `MerchantAudience`), registered with `NotificationAudiences` by `IdentityAudienceModule` at boot (imported by `IdentityModule` and the
 worker). Staff: active members, optionally of some roles. Merchants: by status (default active; a listed merchant may be pending),
-group and country, never suspended; their email and Telegram flags are the SQL twin of `choiceFor` for `broadcast.announcement`
-(a Telegram message also needs a linked chat). Merchants and staff read English. The providers only read `staff_users` and `clients`.
+group and country, never suspended; their email flag is the SQL twin of `choiceFor` for `broadcast.announcement`.
+Merchants and staff read English. The providers only read `staff_users` and `clients`.
 
 ### Live event streams and session doorbells (feature 27)
 
@@ -651,14 +635,14 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `sessions` | Sign-in sessions for staff, merchants and customers (magic link). |
 | `auth_tokens` | One-time tokens for invite and password-reset links for merchants, customers and staff, and for link sign-in and email verification: hash only, valid for one hour and one use. |
 | `api_keys` | Merchant API keys, stored as a hash. |
-| `kyc_submissions` | Merchant identity-verification (KYC) requests. |
+| `kyc_submissions` | Retired (decision 061): requests of merchant verification by documents. No code reads or writes it; its rows keep the stored documents referenced until the owner decides how long to keep them. |
 | `ip_rules` | Network rules checked before any other logic: allow addresses for the admin console, and block an address or range for one audience (storefront, API or admin) or for all. A block beats an allow. Restricting the console to the allowlist is a switch in settings. Active rules are loaded into Redis, so no query runs per request. |
 
 ## Routes
 
-70 endpoints (admin 45, client 24, store 1; the map has 59: feature 20 adds 8 routes beyond it and feature 27 adds the 3 live event streams). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
+62 endpoints (admin 42, client 19, store 1; the map has 59, eight of them retired by decisions 061 and 062 and not built: feature 20 adds 8 routes beyond it and feature 27 adds the 3 live event streams). Source: `docs/slices/identity.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built; the staff sign-in (6) and the 15 merchant portal routes of stage 2 (2b) are built.
 
-### Admin console (44)
+### Admin console (41)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
@@ -672,8 +656,6 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `GET /admin/clients/:id/api-keys` | staff-permission · `api_keys:read` | API keys of a merchant. | 7 |
 | `GET /admin/ip-rules` | staff-permission · `access:*` | Allowed and blocked addresses: range, audience, reason and duration. | 2 |
 | `GET /admin/ip-rules/:id` | staff-permission · `access:*` | Allowed and blocked addresses: range, audience, reason and duration. | 2 |
-| `GET /admin/kyc-submissions` | staff-permission · `kyc:read` | Verification (KYC) requests. | 8 |
-| `GET /admin/kyc-submissions/:id` | staff-permission · `kyc:read` | Verification (KYC) requests. | 8 |
 | `GET /admin/permissions` | staff-permission · `roles:read` | All available permissions. | 2 |
 | `GET /admin/roles` | staff-permission · `roles:*` | Roles and their permissions. | 2 |
 | `GET /admin/roles/:id` | staff-permission · `roles:*` | Roles and their permissions. | 2 |
@@ -697,7 +679,6 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/clients/:id/api-keys` | staff-permission · `api_keys:create` | Create an API key for a merchant; the key is shown once (feature 20). | 7 |
 | `POST /admin/ip-rules` | staff-permission · `access:*` | Allowed and blocked addresses: range, audience, reason and duration. | 2 |
 | `POST /admin/ip-rules/check` | staff-permission · `access:read` | Test an address before the change; it returns the decision and the matching rule. | 2 |
-| `POST /admin/kyc-submissions/:id/decide` | staff-permission · `kyc:decide` | Approve or reject the verification. | 8 |
 | `POST /admin/roles` | staff-permission · `roles:*` | Roles and their permissions. | 2 |
 | `POST /admin/staff` | staff-permission · `staff:*` | Staff members: add by invitation or temporary password, set the role, and edit details. | 2 |
 | `POST /admin/staff/:id/password` | staff-permission · `staff:update` | Send a link to set a new password, or set a temporary one; the current password is never readable and never enters the log. | 2 |
@@ -707,16 +688,13 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/staff/:id/suspend` | staff-permission · `staff:suspend` | Suspend a staff member with a reason, which ends their sessions; suspending yourself or the last Owner is rejected. | 2 |
 | `PUT /admin/access/restriction` | staff-permission · `access:update` | Turn the allow-list restriction on the admin panel on or off; turning it on is rejected if the address of the requester is outside the list. | 2 |
 
-### Merchant portal (21)
+### Merchant portal (19)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
 | `DELETE /client/api-keys/:id` | merchant-session | Revoke a key. | 7 |
-| `DELETE /client/sessions/:id` | merchant-session | End a session. | 2 |
 | `GET /client/api-keys` | merchant-session | My API keys (prefix only). | 7 |
 | `GET /client/auth/me` | merchant-session | The merchant's details and client group. | 2 |
-| `GET /client/kyc` | merchant-session | Verification (KYC) status. | 8 |
-| `GET /client/sessions` | merchant-session | Active devices and sessions. | 2 |
 | `PATCH /client/api-keys/:id` | merchant-session | Rename a key or change its allowed IPs. | 7 |
 | `PATCH /client/profile` | merchant-session | Update name, company, phone, country, address and tax id. | 2 |
 | `POST /client/api-keys` | merchant-session | New API key, shown once, with allowed IPs. | 7 |
@@ -726,10 +704,8 @@ Only this module reads and writes these 8 tables (`scripts/module-map.mjs`); oth
 | `POST /client/auth/password/change` | merchant-session (`pending_password`) | Replace a temporary password during sign-in (feature 20). | 20 |
 | `POST /client/auth/password/forgot` | public | Send a password reset link. | 2 |
 | `POST /client/auth/password/reset` | public | Set a new password with the reset token. | 2 |
-| `POST /client/auth/register` | public | Register a new merchant and send the verification email. | 2 |
 | `POST /client/auth/verify-email` | public | Verify the email with the token. | 2 |
 | `POST /client/auth/verify-email/resend` | merchant-session | Send the signed-in merchant a new verification link (feature 20). | 20 |
-| `POST /client/kyc` | merchant-session | Upload verification documents. | 8 |
 | `POST /client/security/2fa/disable` | merchant-session | Disable 2FA with a code. | 2 |
 | `POST /client/security/2fa/enable` | merchant-session | Enable 2FA after confirming a code. | 2 |
 | `POST /client/security/2fa/setup` | merchant-session | A new TOTP secret with a QR code. | 2 |
@@ -761,7 +737,7 @@ End-to-end tests: `test/e2e/admin-team.e2e.test.ts` (steps 1 to 9) and `test/e2e
 
 Feature 20 adds `clients:security` (password links, temporary password, 2FA reset, end all sessions, verification resend) and, in slice D, `api_keys:create` and `api_keys:update`; a role that holds `clients:*` or `api_keys:*` receives them through the grammar.
 
-Staff permissions the map requires on this module's admin routes: `access:*`, `access:read`, `access:update`, `api_keys:read`, `api_keys:revoke`, `clients:*`, `kyc:decide`, `kyc:read`, `roles:*`, `roles:read`, `sessions:read`, `sessions:revoke`, `staff:*`, `staff:suspend`, `staff:update`.
+Staff permissions the map requires on this module's admin routes: `access:*`, `access:read`, `access:update`, `api_keys:read`, `api_keys:revoke`, `clients:*`, `roles:*`, `roles:read`, `sessions:read`, `sessions:revoke`, `staff:*`, `staff:suspend`, `staff:update`.
 
 The contracts of feature 2a name the concrete permissions: `access:read|create|update|delete`, `clients:read|create|update`, `roles:read|create|update|delete`, `sessions:read|revoke`, `staff:read|create|update|suspend` (a role may hold `area:*` for each area).
 
@@ -775,14 +751,14 @@ Owner. Some permissions still let one person move money or act for other account
 you trust an Owner, and remember that an area wildcard (`wallet:*`, `clients:*`, `payments:*`, ...) includes every permission of its
 area:
 
-- money: `wallet:adjust`, `wallet:credit_limit`, `payments:approve`, `invoices:create`, `refunds:approve`, `commissions:approve`, `orders:reopen`;
+- money: `wallet:adjust`, `wallet:credit_limit`, `payments:approve`, `invoices:create`, `refunds:approve`, `orders:reopen`;
 - other people's accounts: `clients:security`, `clients:update`, `customers:password`, `customers:update`, `staff:create`, `staff:update`,
   `roles:create`, `roles:update` (the last four only up to the holder's own permissions); `clients:security` and `customers:password` also guard the change of
   an account's email address (and `customers:password` the creation of an account with a temporary password), because the address is where the account's
   sign-in and password links go (decision 047);
 - who reaches the console: `access:create`, `access:update`, `access:delete`, `sessions:revoke`;
-- personal data: `kyc:read` (identity documents), `payments:read` (payment receipts), `customers:read` (customers' addresses in every staff page),
-  `customers:privacy` (exports), `risk:decide` (IMEI digits), `reports:read` (the order export); `files:read` alone opens only files nothing uses yet and
+- personal data: `clients:read` (the identity documents stored before decision 061 are opened with it), `payments:read` (payment receipts), `customers:read` (customers' addresses in every staff page),
+  `customers:privacy` (exports), `reports:read` (the order export); `files:read` alone opens only files nothing uses yet and
   public pictures (decision 047);
 - configuration that steers money or messages: `payments:gateways`, `suppliers:update`, `settings:update`, `currencies:update`,
   `notifications:update`, `system:manage`.
@@ -831,16 +807,16 @@ except `/health` and `/metrics`, and refuses with **`403 IP_NOT_ALLOWED`** (prob
 
 ## Events
 
-Feature 20's merchant lifecycle mails are not outbox types of this module: they are `notifications` rows with a `notification.send` event written by `MerchantLifecycleMails` in the transaction of the staff action (events `merchant.approved`, `merchant.suspended`, `merchant.reactivated`, `merchant.kyc_approved`, `merchant.kyc_rejected`, `merchant.security_notice`, `merchant.portal_api_key_created`).
+Feature 20's merchant lifecycle mails are not outbox types of this module: they are `notifications` rows with a `notification.send` event written by `MerchantLifecycleMails` in the transaction of the staff action (events `merchant.suspended`, `merchant.reactivated`, `merchant.security_notice`, `merchant.portal_api_key_created`).
 
 Outbox events produced (types, payload ids; all on the `notifications` queue, registered by `MerchantMailOutbox`):
-`merchant.email_verification` (`POST /client/auth/register`, token purpose `verify_email`) and `merchant.password_reset`
+`merchant.email_verification` (`POST /client/auth/verify-email/resend` and a staff change of the address, token purpose `verify_email`) and `merchant.password_reset`
 (`POST /client/auth/password/forgot`, purpose `reset`), both built by feature 2b; `merchant.invited` (`POST /admin/clients`, purpose
 `invite`), written by feature 2a with `MerchantMailOutbox`. The payload is `{ tokenId }` (the `auth_tokens` row), the aggregate is
 the merchant: ids only, never a token. Feature 12a made the mail real: the job rotates the link's token and sends the mail through the platform's
 notification delivery (see "Merchant mail"). The links are built from the config key `PORTAL_BASE_URL`
 (`<PORTAL_BASE_URL>/set-password?token=<token>`). `auth_tokens.purpose` is closed to `invite | reset | verify_email |
-magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is the Telegram link of feature 12a); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Feature 20 adds `staff.invited` and `staff.password_reset` (`StaffMailOutbox`, payload `{ tokenId }`, aggregate `staff_users`; written by `POST /admin/staff` and `POST /admin/staff/:id/password`, consumed by `jobs/staff-mail.processors.ts`; links `<CONSOLE_BASE_URL>/set-password?token=`). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
+magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is only in rows written before decision 062); `POST /client/auth/password/reset` accepts `reset` and `invite`. Consumed: the three types above, by `jobs/merchant-mail.processors.ts` (worker). Feature 20 adds `staff.invited` and `staff.password_reset` (`StaffMailOutbox`, payload `{ tokenId }`, aggregate `staff_users`; written by `POST /admin/staff` and `POST /admin/staff/:id/password`, consumed by `jobs/staff-mail.processors.ts`; links `<CONSOLE_BASE_URL>/set-password?token=`). Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
 ## Jobs and schedules
 
@@ -863,13 +839,8 @@ magic_link | telegram_link` (exported `AUTH_TOKEN_PURPOSES`; `telegram_link` is 
   imported by the API and by `src/worker.module.ts`; feature 20). Same design and retry policy as the merchant mails (`StaffMailJobs`); a suspended or deleted member, a used or
   expired link send nothing and leave no `queued` row; a missing or switched-off template does not stop the mail, the shipped text is sent (decision 047). Listed in `docs/queues.md`.
 
-- `client_group_promotion` on the `maintenance` queue, scheduler `client-group-promotion`, nightly at 03:30 UTC (`GroupPromotionModule`,
-  imported by `src/worker.module.ts` only; processor `GroupPromotionProcessor`, use case `GroupPromotion`, pure decision
-  `domain/group-promotion.ts`; feature 4a, user rule 1). Promotes `active` merchants, never demotes, to the merchant group with the
-  highest `earn_threshold` above zero that their completed-order spend (money's `MerchantSpend`) reaches and that is above their
-  group's threshold; a group at 0 and the storefront group are never targets; a target without overdraft is skipped while the merchant
-  has credit (ip-3). One transaction per merchant (lock, re-read, update `clients.group_id`, audit row with actor `system`,
-  `SessionService.invalidateSubject`); safe to repeat or run in parallel; every run writes a `job_runs` row. Listed in `docs/queues.md`.
+- The nightly promotion by spend (`client_group_promotion`, scheduler `client-group-promotion`) is retired: ranks are set by hand. `SessionPurgeModule`
+  lists its scheduler id with `JobSchedulerRegistry.retire`, so the worker removes it from Redis at boot (`docs/queues.md`).
 
 Add the next job here and in `docs/queues.md` (see `CONTRIBUTING.md` → "Add a job").
 
@@ -887,7 +858,7 @@ Feature 2a added no key family: its routes clear the existing ones after their c
 |---|---|---|---|
 | `gsm:{env}:identity:ip-rules:active` | live IP rules + `adminAllowlistOnly` | 60 s, then stale for 5 min while one refresh runs | `IpRuleCache.invalidate()` after the commit of any rule or restriction change |
 | `gsm:{env}:identity:ip-rule-hits:pending` | hash of hit counters (`<rule id>`, `<rule id>:at`) | 24 h, renewed by every hit | emptied by the flush job every minute |
-| `gsm:{env}:identity:api-key:{keyHash}` | cached view of an API key and its merchant's status | 60 s (a key that matches nothing: 10 s) | `ApiKeyDirectory.invalidate(keyHashes)` / `invalidateClient(clientId)` after the commit of a revoke, an edit or a merchant status change |
+| `gsm:{env}:identity:api-key:{keyHash}:v2` | cached view of an API key and its merchant's status; the version (decision 062) keeps the new code from reading a view cached under the old access rule | 60 s (a key that matches nothing: 10 s) | `ApiKeyDirectory.invalidate(keyHashes)` / `invalidateClient(clientId)` after the commit of a revoke, an edit or a merchant status change |
 | `gsm:{env}:identity:webhook-event:{gateway}:{eventHash}` | mark that a gateway event was accepted (replay filter) | 15 min | released after a `5xx` reply; otherwise expires |
 
 All four are registered in `docs/cache-keys.md`.
@@ -904,7 +875,7 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `identity-platform-6` · GET /admin/sessions
 - `identity-platform-7` · GET /admin/audit-logs
 - `identity-platform-14` · POST /admin/staff/:id/password
-- `identity-platform-16` · POST /client/* , /v1/files, /webhooks/telegram/:secret (the 15 sign-in routes are specified by B121 to B136 and built by feature 2b)
+- `identity-platform-16` · POST /client/* (the 15 sign-in routes are specified by B121 to B136 and built by feature 2b)
 
 ## API keys (feature 7b)
 
@@ -915,7 +886,7 @@ Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controll
 | Route | Access | What it does |
 |---|---|---|
 | `GET /client/api-keys` | merchant | the merchant's keys, live first then revoked, newest first, `x-total-count`; the console's `ApiKey` (never the hash) |
-| `POST /client/api-keys` | merchant | `{ name 1-60, scopes, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races); a `merchant.portal_api_key_created` mail (the notice says the key was made in the portal; a key staff make sends `merchant.security_notice`, kind `api_key_created`); `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set |
+| `POST /client/api-keys` | merchant | `{ name 1-60, allowedIps?, expiresAt? }` → `201 { key, secret }`, `no-store`; `secret` is `gsm_` + 32 random bytes in base64url, shown once; stored: keyed hash (decision 019) and the first 8 characters; limit `60` a minute; at most 10 live keys (`422` on `name`, advisory lock against races); a `merchant.portal_api_key_created` mail (the notice says the key was made in the portal; a key staff make sends `merchant.security_notice`, kind `api_key_created`); `403 FORBIDDEN` while `password_set_by_staff` or `email_set_by_staff` is set |
 | `PATCH /client/api-keys/:id` | merchant | `{ name?, allowedIps? }`; a revoked key is `409 INVALID_TRANSITION`; drops the cached view after the commit |
 | `DELETE /client/api-keys/:id` | merchant | `204`, a second delete too; drops the cached view after the commit |
 | `GET /admin/clients/:id/api-keys` | `api_keys:read` | every key of the merchant, plain array, newest first |
@@ -923,26 +894,64 @@ Eight routes (contracts `contracts/api-keys.contracts.ts`, controllers `controll
 | `PATCH /admin/api-keys/:id` | `api_keys:update` | feature 20: `{ rateLimitPerMin?, allowedIps? }` (at least one); `403 FORBIDDEN` for a non-Owner when the change widens the key (an empty list, an address not stored, a higher limit); `409 ALREADY_REVOKED`; drops the cached view; a changed value mails the merchant a security notice; audited `changed limits of API key of <merchant>` with before and after |
 | `DELETE /admin/api-keys/:id` | `api_keys:revoke` | `204`; `409 ALREADY_REVOKED`; drops the cached view; audited `revoked API key of <merchant>` (entity `merchant`, as the demo logs it) |
 
-Scopes a merchant may give: `dhru`, `account:read`, `orders:read`, `orders:write`, `services:read` and the area wildcards `account:*`, `orders:*`, `services:*`
-(`*` is never offered). B155 lists the first four; `services:read` is added because `GET /v1/services` needs it. `allowedIps` entries are an address or a CIDR range checked like the
+A key has no scopes: the body of a creation may still carry a `scopes` list (older clients send one), which is ignored, and no answer or audit entry
+shows one. `allowedIps` entries are an address or a CIDR range checked like the
 IP rules (`normaliseCidr`: host bits and ranges wider than /16 are refused, a bare address is stored as `/32` or `/128`); the wire drops the host prefix (`cidrToWire`);
 `lastUsedIp` is `''` for a key never used.
 
-## Verification, KYC (feature 8)
+## Merchant verification by documents, retired (decision 061)
 
-Five routes (contracts `contracts/kyc.contracts.ts`, controllers `controllers/kyc.controller.ts`, use cases `application/kyc.service.ts`, queries
-`infra/kyc.repository.ts`, pure rules `domain/kyc-rules.ts`), wired by `KycModule`. Spec: MISMATCHES B161 (portal) and identity.md (staff).
+Merchant verification by documents was retired: the owner creates merchant accounts and no documents are collected. The module that
+served it (`KycModule`, its contracts, controllers, use case, queries and rules) is gone, with `kycStatus` on the merchant row of
+`GET /admin/clients` and `GET /admin/clients/:id` and on `GET /client/auth/me`, the two mail events and their templates, and the two
+staff permissions of its routes. The five routes are rows of the read-only map, so they are listed in `test/contract/retired.ts`
+and are not built:
 
-| Route | Access | What it does |
-|---|---|---|
-| `GET /client/kyc` | merchant, a pending merchant too (B153) | `{ status, submission }`: `clients.kyc_status` and the latest request (`documents`, `note` only for a rejection, `submittedAt`, `reviewedAt`) or `null` |
-| `POST /client/kyc` | merchant, a pending merchant too | `{ fileIds 1-5, note? ≤ 500 }` → `201` the same view; the files must be the merchant's own uploads of type PDF, JPEG or PNG (`422 fileIds.<n>`); one request under review at a time (`409 CONFLICT`, a partial unique index backs it), `409 ALREADY_DECIDED` once approved; a rejected merchant may submit again; sets `kyc_status` to `pending`; no audit row (B121) |
-| `GET /admin/kyc-submissions`, `GET /admin/kyc-submissions/:id` | `kyc:read` | the console's `KycSubmission` with the merchant, the reviewer and the documents joined from `files`; filters `status`, `clientId`; sort `createdAt` |
-| `POST /admin/kyc-submissions/:id/decide` | `kyc:decide` | `{ decision: approve \| reject, note? ≤ 300 }`, a note required for a rejection; locks the request, sets it and `clients.kyc_status` to the same word (never `clients.status`); `409 ALREADY_DECIDED`; audited `approved verification of` / `rejected verification of` (entity `kyc_submission`) |
+| Route | Replaced by |
+|---|---|
+| `GET /client/kyc`, `POST /client/kyc` | nothing |
+| `GET /admin/kyc-submissions`, `GET /admin/kyc-submissions/:id` | nothing |
+| `POST /admin/kyc-submissions/:id/decide` | nothing |
 
-Schema addition (migration `0009`): `kyc_submissions.submitted_note` (what the merchant wrote; B161 has a `note` the console column does not hold) and the unique index
-`kyc_submissions_one_pending_uq` on `client_id` where `status = 'pending'`. The files are read through the platform's `StoredFiles` (`findOwned`, `metaOf`).
-The merchant is not notified of a decision yet (the mail event of the decision arrives with feature 12a); the rejection note reaches it through `GET /client/kyc`.
+What stays, unread and unwritten, until the migration of the accounts model drops it: the table `kyc_submissions` and the column
+`clients.kyc_status` (it keeps its default). The files module still names `kyc_submissions.file_ids` in its reference SQL, so the
+documents stored earlier stay referenced and the janitor does not delete them. Migration `0064_merchant_verification_retired.sql`
+(data only) removes `kyc:read`, `kyc:decide` and `kyc:*` from every stored role and deletes the stored templates of
+`merchant.kyc_approved` and `merchant.kyc_rejected`. The error codes `KYC_REQUIRED` and `ALREADY_DECIDED` left the catalog. The
+approval status of a merchant (`pending` and its guard) is a separate rule and did not change here; decision 062 below stops creating such rows.
+
+## Merchant sign-up and approval, retired (decision 062)
+
+The owner creates every merchant account, so nothing waits for an approval and nobody signs up. A merchant made by staff
+(`POST /admin/clients`) is inserted `active` at once, with its wallet and its one-hour invitation link; until it follows the link and chooses a
+password the console reads the invitation as pending from `security.hasPassword` and `security.linkSentAt`. The mail of the approval
+(`merchant.approved`, `MerchantLifecycleMails.approved`) and its stored template are gone, and so are the dashboard item
+`merchants_pending` and the sidebar count `navCounts.merchants`. `POST /client/auth/register` is gone with its limiter bucket, its Turnstile
+row and the referral code at sign-up (the read-only map still has its row, so it is listed in `test/contract/retired.ts`). What stays:
+
+- the status `pending`, its guard (`ACCOUNT_PENDING_APPROVAL`, `pendingMerchant`) and the pending upload quota, dormant, for rows written before;
+  the transition `pending → active` is still valid (the console keeps one "Activate account" action; it sends no mail) and so is
+  `pending → suspended`; the data step of the accounts migration turns every row that is still `pending` into `suspended` with a fixed reason;
+- the email-verification routes (`POST /client/auth/verify-email` and `/verify-email/resend`): a staff change of the address uses them
+  (`MerchantEmailVerificationService`, formerly the registration service) and the invitation flow.
+
+
+## Telegram for merchants, retired (decision 062)
+
+A merchant's Telegram chat was retired: email and the inbox stay. The use case that linked and unlinked chats (`TelegramLinking`), the secret of
+the bot's webhook (`TelegramWebhookSecret`), their contracts and controller methods, `telegramLinked` on the merchant row of `GET /admin/clients` and
+`GET /admin/clients/:id`, the `telegram` switches of `GET` and `PUT /client/notification-preferences`, the setup script `scripts/telegram-webhook.ts` and the
+environment variables `TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET` are gone. The two routes are rows of the read-only map, so they are listed
+in `test/contract/retired.ts` and are not built:
+
+| Route | Replaced by |
+|---|---|
+| `POST /client/telegram/link` | nothing |
+| `POST /webhooks/telegram/:secret` | nothing |
+
+What stays, unread and unwritten, until the migration of the accounts model drops it: the column `clients.telegram_chat_id` (with its unique index)
+and the purpose `telegram_link` that the CHECK of `auth_tokens` still allows for the rows an older version wrote. The `url-secret` access kind has no route
+of its own left; it stays as part of the machine guards.
 
 ## Gateway webhook adapters (feature 8)
 

@@ -10,7 +10,6 @@ import { TicketEvents } from './application/ticket-events';
 import { TicketMailOutbox } from './application/ticket-mail-outbox';
 import { TicketReadService } from './application/ticket-read.service';
 import { TicketThreadService } from './application/ticket-thread.service';
-import { TicketTypingService } from './application/ticket-typing.service';
 import { ClientTicketsController } from './controllers/client-tickets.controller';
 import { MyTicketsController } from './controllers/my-tickets.controller';
 
@@ -19,10 +18,10 @@ import { MyTicketsController } from './controllers/my-tickets.controller';
  *
  * Why: these use cases need the global database, crypto, rate-limit, cache, storage, real-time publisher and clock providers and the outbox
  * (a customer's receipt), which a database-less test app does not have. The merchant portal and the signed-in customer write, mark and
- * download through the same chat-engine services as the ticket page (`TicketThreadService`, `TicketReadService`, `TicketTypingService`,
+ * download through the same chat-engine services as the ticket page (`TicketThreadService`, `TicketReadService`,
  * `TicketAttachmentService`), so every requester behaves alike. Like `SupportAdminModule` the module lists them itself instead of importing
  * `SupportStoreModule`: it then does not depend on the ticket-link module (a test that stands in for the ticket token resolver replaces that
- * one), and the services are stateless apart from a log throttle.
+ * one), and the services are stateless.
  */
 @Module({
   controllers: [MyTicketsController, ClientTicketsController],
@@ -36,7 +35,6 @@ import { MyTicketsController } from './controllers/my-tickets.controller';
     TicketAttachmentService,
     TicketThreadService,
     TicketReadService,
-    TicketTypingService,
   ],
 })
 export class SupportClientModule {}

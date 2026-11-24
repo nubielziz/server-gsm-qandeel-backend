@@ -1,6 +1,7 @@
 // Pure comparisons between the built route contracts and the route manifest (decision 009, decision 035): the keys that must
 // exist, method/path/surface, the anti-bot flag, and the access and permission of each row. No app import: the tests pass in a
 // snapshot, and manifest-parity.test.ts passes hand-written rows.
+import type { RetiredRoute } from '../retired';
 import type { ManifestEndpoint } from './inputs';
 import type { RouteSnapshot } from './snapshot';
 
@@ -28,23 +29,103 @@ export function difference(label: string, actual: Iterable<string>, expected: It
 }
 
 /**
+ * The manifest keys that have no contract on purpose: the ones still owed and the ones retired.
+ *
+ * Why: decision 061. A route the product gave up stays a row of the read-only map, so the registry is compared with the manifest minus
+ * both lists: `pending.ts` (owed, shrinking to nothing) and `retired.ts` (given up, with its decision).
+ *
+ * @param pending the keys still owed (`test/contract/pending.ts`)
+ * @param retired the retired keys with their decisions (`test/contract/retired.ts`)
+ * @returns every key that must not be built
+ */
+export function unbuiltKeys(
+  pending: readonly string[],
+  retired: Readonly<Record<string, RetiredRoute>>,
+): ReadonlySet<string> {
+  return new Set([...pending, ...Object.keys(retired)]);
+}
+
+/**
  * The manifest keys of one kind that must be built.
  *
  * @param manifest the manifest endpoints (the map's and the backend's additions)
  * @param kind `http`, `dhru-action`, `supplier-call` or `event`
- * @param pending the keys still owed (`test/contract/pending.ts`)
- * @returns the keys of that kind that are not pending
+ * @param unbuilt the keys that must not be built: pending and retired ({@link unbuiltKeys})
+ * @returns the keys of that kind that are not in `unbuilt`
  */
 export function expectedKeys(
   manifest: readonly ManifestEndpoint[],
   kind: string,
-  pending: ReadonlySet<string>,
+  unbuilt: ReadonlySet<string>,
 ): string[] {
-  return manifest.filter((row) => row.kind === kind && !pending.has(row.key)).map((row) => row.key);
+  return manifest.filter((row) => row.kind === kind && !unbuilt.has(row.key)).map((row) => row.key);
 }
 
 const rowsByKey = (manifest: readonly ManifestEndpoint[]): Map<string, ManifestEndpoint> =>
   new Map(manifest.map((row) => [row.key, row]));
+
+/**
+ * What is wrong with the retired list (decision 061).
+ *
+ * Why: a retired key must name a row of the map (the map is read-only and still has it; a row of `scripts/map-additions` is deleted
+ * instead, so the loader no longer sees it), no contract may be built for it, it is not also owed, and it carries the decision that
+ * retired it and a reason. Without these checks a typo in the list would hide a route that is really missing.
+ *
+ * @param retired the retired keys with their decisions
+ * @param manifest the manifest endpoints
+ * @param built every key that has a contract, a Dhru action, a supplier call or an event schema
+ * @param pending the keys still owed
+ * @returns one line per problem, sorted by key; empty when the list is sound
+ */
+export function retiredProblems(
+  retired: Readonly<Record<string, RetiredRoute>>,
+  manifest: readonly ManifestEndpoint[],
+  built: ReadonlySet<string>,
+  pending: ReadonlySet<string>,
+): string[] {
+  const rows = rowsByKey(manifest);
+  const problems: string[] = [];
+  for (const [key, entry] of Object.entries(retired)) {
+    const row = rows.get(key);
+    if (row === undefined) problems.push(`${key}: retired, but the manifest has no row with this key`);
+    else if (row.addition !== undefined)
+      problems.push(`${key}: retired, but it is a row of ${row.addition.file}: delete that row instead`);
+    if (built.has(key)) problems.push(`${key}: retired, but a contract is built for it`);
+    if (pending.has(key)) problems.push(`${key}: retired and pending at once`);
+    if (!/^\d{3}$/.test(entry.decision))
+      problems.push(
+        `${key}: the decision must be the three digits of a file of docs/decisions, got "${entry.decision}"`,
+      );
+    if (entry.reason.trim() === '') problems.push(`${key}: no reason`);
+  }
+  return problems.sort();
+}
+
+/**
+ * What is wrong between the retired list and the decisions it cites.
+ *
+ * Why: decision 061. `retiredProblems` proves that a decision number is well formed, not that the decision is about the route. Without this
+ * check a route that is still owed (a client or store route, which no console function guards) could be listed under any existing
+ * decision and route parity and coverage would read the missing route as given up. The cited decision must exist and must name the key in
+ * backticks, so the key of a shorter route is not found inside the key of a longer one (`GET /a` inside `GET /a/:id`).
+ *
+ * @param retired the retired keys with their decisions
+ * @param decisions the text of each decision file of `docs/decisions`, by its three digits (`loadDecisionTexts` in inputs.ts)
+ * @returns one line per problem, sorted by key; empty when every cited decision exists and names its route
+ */
+export function retiredDecisionProblems(
+  retired: Readonly<Record<string, RetiredRoute>>,
+  decisions: ReadonlyMap<string, string>,
+): string[] {
+  const problems: string[] = [];
+  for (const [key, entry] of Object.entries(retired)) {
+    const text = decisions.get(entry.decision);
+    if (text === undefined) problems.push(`${key}: decision ${entry.decision} has no file in docs/decisions`);
+    else if (!text.includes(`\`${key}\``))
+      problems.push(`${key}: docs/decisions/${entry.decision}-*.md does not name this route (write it as \`${key}\`)`);
+  }
+  return problems.sort();
+}
 
 /**
  * Contracts whose method, path or surface differ from their manifest row.

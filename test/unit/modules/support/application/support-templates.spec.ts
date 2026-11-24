@@ -1,7 +1,8 @@
 // Unit tests of the support events and their default templates (feature 17): every template belongs to a registered event and channel and
 // uses only that event's placeholders, every event is covered, every row of the code is found in migration 0016 or made by an update of
-// migration 0032 or of the feature-43 migration (the files keep the shape they shipped with), and `supportTemplatesSql()`,
-// `supportReplyLinkSql()` and `supportReceiptTextSql()` write today's shape.
+// migration 0032 or of the feature-43 migration (the files keep the shape they shipped with; the one row the ticket-extras migration
+// deletes is the only one of 0016 the code no longer has), and `supportTemplatesSql()`, `supportReplyLinkSql()` and
+// `supportReceiptTextSql()` write today's shape.
 import { describe, expect, it } from 'bun:test';
 import { bodyUpdates, insertedTemplates } from '../../../../support/applied-templates';
 import { migrationFileName, migrationSql } from '../../../../support/migration-files';
@@ -18,6 +19,7 @@ import {
 } from '@src/modules/support/application/support-templates';
 
 const ABUSE_LIMITS_MIGRATION = '_public_abuse_limits.sql';
+const TICKET_EXTRAS_MIGRATION = '_retired_features.sql';
 
 /** The `{{placeholders}}` of a text, once each (the platform's own reader is not part of its public API). */
 const placeholdersOf = (text: string): string[] => [
@@ -35,8 +37,13 @@ describe('SUPPORT_EVENTS', () => {
   it('register next to the platform events, and each variable has a sample for the preview', () => {
     const events = registry();
     expect(events.get('support.ticket_received', 'customer')).toBeDefined();
-    expect(events.get('support.csat_survey', 'customer')).toBeDefined();
-    expect(events.get('support.reply', 'merchant')?.channels).toEqual(['email', 'telegram']);
+    // The survey mail that migration 0016 shipped is not an event any more.
+    expect(events.get('support.csat_survey', 'customer')).toBeUndefined();
+    expect(SUPPORT_EVENTS.map((definition) => definition.key).sort()).toEqual([
+      'support.reply',
+      'support.ticket_received',
+    ]);
+    expect(events.get('support.reply', 'merchant')?.channels).toEqual(['email']);
     for (const definition of SUPPORT_EVENTS) {
       for (const name of definition.variables) expect(definition.sample[name], name).toBeTruthy();
     }
@@ -47,13 +54,6 @@ describe('SUPPORT_EVENTS', () => {
     expect(receipt?.variables).toEqual(['ticketNumber', 'link']);
     expect(receipt?.channels).toEqual(['email']);
     expect(receipt?.description).toContain('repeats nothing the customer typed');
-    // The survey is sent later, to an address of a proven ticket, and keeps its own variables.
-    expect(registry().get('support.csat_survey', 'customer')?.variables).toEqual([
-      'customerName',
-      'ticketNumber',
-      'subject',
-      'link',
-    ]);
   });
 
   it('keeps a merchant’s support reply out of their preferences (the answer to their own ticket is always sent)', () => {
@@ -100,7 +100,7 @@ describe('SUPPORT_DEFAULT_TEMPLATES', () => {
       }
     }
     expect(has('support.reply', 'email', 'customer')).toBe(true);
-    for (const key of ['support.reply', 'support.ticket_received', 'support.csat_survey']) {
+    for (const key of ['support.reply', 'support.ticket_received']) {
       const template = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === key && t.audience === 'customer')!;
       expect(template.body, key).toContain('{{link}}');
     }
@@ -123,7 +123,10 @@ describe('the receipt of a new ticket (decision 053)', () => {
 describe('migrations 0016_support_tickets, 0032_support_reply_link and the feature-43 migration', () => {
   // The English rows of 0016 as they shipped, and the guarded updates of 0032 (the files also hold the Arabic rows migration 0035 deletes)
   // and of the feature-43 migration (found by its suffix, never by its number: migrations are renumbered when branches merge).
-  const shipped = insertedTemplates('0016_support_tickets.sql').filter((row) => row.locale === 'en');
+  // The survey row is the one 0016 shipped that the code no longer has: the ticket-extras migration deletes it (tested below).
+  const RETIRED = ['support.csat_survey|email|customer'];
+  const everyShipped = insertedTemplates('0016_support_tickets.sql').filter((row) => row.locale === 'en');
+  const shipped = everyShipped.filter((row) => !RETIRED.includes(keyOf(row)));
   const abuseFile = migrationFileName(ABUSE_LIMITS_MIGRATION);
   const updates = [
     ...bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en'),
@@ -131,7 +134,15 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
   ];
 
   it('ship every template of the code: as 0016 inserted it, or with the body 0032 gives the row 0016 shipped', () => {
-    expect(shipped.map(keyOf).sort()).toEqual(SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort());
+    // Migration 0016 also inserted the merchant's reply on the retired Telegram channel: the code leaves it out (a data step deletes the stored row).
+    const retired = 'support.reply|telegram|merchant';
+    expect(shipped.map(keyOf)).toContain(retired);
+    expect(
+      shipped
+        .map(keyOf)
+        .filter((key) => key !== retired)
+        .sort(),
+    ).toEqual(SUPPORT_DEFAULT_TEMPLATES.map(keyOf).sort());
     for (const template of SUPPORT_DEFAULT_TEMPLATES) {
       const first = shipped.find((row) => keyOf(row) === keyOf(template))!;
       expect(first.subject, keyOf(template)).toBe(template.subject);
@@ -144,7 +155,7 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
         expect(update.to, keyOf(template)).toBe(template.body);
       }
     }
-    // The updates are the merchant's two replies and the customer's receipt.
+    // The updates are the merchant's two replies (the Telegram one is the retired row) and the customer's receipt.
     expect(updates.map(keyOf).sort()).toEqual([
       'support.reply|email|merchant',
       'support.reply|telegram|merchant',
@@ -154,6 +165,14 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
     expect(receipt.from).toBe(shipped.find((row) => keyOf(row) === keyOf(receipt))!.body);
     expect(receipt.to).toBe(RECEIPT_BODY);
     expect(receipt.locale).toBeNull();
+  });
+
+  it('is the only row of 0016 the code dropped, and the ticket-extras migration deletes every stored row of that event', () => {
+    expect(everyShipped.filter((row) => RETIRED.includes(keyOf(row))).map(keyOf)).toEqual(RETIRED);
+    expect(SUPPORT_DEFAULT_TEMPLATES.map(keyOf)).not.toContain(RETIRED[0]!);
+    const deletes = migrationSql(TICKET_EXTRAS_MIGRATION);
+    expect(deletes).toContain('DELETE FROM "notification_templates"');
+    expect(deletes).toContain("'support.csat_survey'");
   });
 
   it('holds exactly the statement supportReceiptTextSql() writes', () => {
@@ -172,9 +191,10 @@ describe('migrations 0016_support_tickets, 0032_support_reply_link and the featu
 });
 
 describe('the conversation link of the merchant reply (feature 28, migration 0032)', () => {
-  it('ends the merchant email and Telegram reply with the portal link, and leaves every other template alone', () => {
+  it('ends the merchant email reply with the portal link, and leaves every other template alone', () => {
     const merchant = SUPPORT_DEFAULT_TEMPLATES.filter((t) => t.event === 'support.reply' && t.audience === 'merchant');
-    expect(merchant).toHaveLength(2);
+    expect(merchant).toHaveLength(1);
+    expect(merchant[0]?.channel).toBe('email');
     for (const template of merchant) expect(template.body.endsWith(CONVERSATION_LINK_LINE)).toBe(true);
     const customer = SUPPORT_DEFAULT_TEMPLATES.find((t) => t.event === 'support.reply' && t.audience === 'customer')!;
     expect(withConversationLink(customer)).toBe(customer);
@@ -183,7 +203,7 @@ describe('the conversation link of the merchant reply (feature 28, migration 003
 
   it('is written by supportReplyLinkSql() as two guarded updates, without a language, that 0032 holds for English', () => {
     const sql = supportReplyLinkSql();
-    // Two rows (email and Telegram), each only where the body is still the shipped one.
+    // Two rows (email, and the Telegram one that 0032 shipped and that is retired now), each only where the body is still the shipped one.
     expect(sql.match(/AND "body" = /g)).toHaveLength(2);
     expect(sql).not.toContain('locale');
     for (const update of bodyUpdates('0032_support_reply_link.sql').filter((row) => row.locale === 'en')) {

@@ -115,7 +115,6 @@ describe('block rules by scope', () => {
     'admin console': { audience: 'admin', send: (ip) => get('/admin/t/session', ip, AUTH) },
     'storefront route': { audience: 'store', send: (ip) => get('/store/v1/t/ping', ip, AUTH) },
     'unknown storefront path': { audience: 'store', send: (ip) => get('/store/v1/nope', ip) },
-    'REST v1': { audience: 'api', send: (ip) => get('/v1/t/ping', ip, AUTH) },
     Dhru: { audience: 'api', send: (ip) => call(t, 'POST', '/api/index.php', ip) },
     'merchant portal': { audience: 'other', send: (ip) => get('/client/t/ping', ip, AUTH) },
     // Never judged: signed gateway webhooks must not be lost to a broad block (B118).
@@ -171,9 +170,11 @@ describe('the admin allowlist (setting adminAllowlistOnly)', () => {
     expect(isIpRefusal(refused)).toBe(true);
     expect(refused.json().detail).toContain('is not on the list of addresses allowed to use the admin console');
     // The other audiences do not ask for an allow rule.
-    for (const url of ['/store/v1/t/ping', '/v1/t/ping', '/client/t/ping']) {
+    for (const url of ['/store/v1/t/ping', '/client/t/ping']) {
       expect((await get(url, stranger, AUTH)).statusCode, url).toBe(200);
     }
+    // The machine audience is Dhru alone since the REST API v1 was retired (decision 062).
+    expect(isIpRefusal(await call(t, 'POST', '/api/index.php', stranger)), 'Dhru').toBe(false);
     expect((await get('/health', stranger)).statusCode).toBe(200);
   });
 
@@ -520,13 +521,14 @@ describe.skipIf(!existsSync(demoStatePath()))('the demo seed (roles, staff, IP r
     expect(isIpRefusal(await get('/admin/t/session', '203.0.113.99', AUTH))).toBe(true);
     // Blocks: 192.0.2.0/24 store (auto), 198.51.100.200 admin (auto), 203.0.113.160/28 api, 198.51.100.231 everywhere.
     expect(isIpRefusal(await get('/store/v1/t/ping', '192.0.2.5', AUTH))).toBe(true);
-    expect((await get('/v1/t/ping', '192.0.2.5', AUTH)).statusCode).toBe(200);
-    expect(isIpRefusal(await get('/v1/t/ping', '203.0.113.170', AUTH))).toBe(true);
+    expect(isIpRefusal(await call(t, 'POST', '/api/index.php', '192.0.2.5'))).toBe(false);
+    expect(isIpRefusal(await call(t, 'POST', '/api/index.php', '203.0.113.170'))).toBe(true);
     expect((await get('/store/v1/t/ping', '203.0.113.170', AUTH)).statusCode).toBe(200);
     expect(isIpRefusal(await get('/admin/t/session', '198.51.100.200', AUTH))).toBe(true);
-    for (const url of ['/store/v1/t/ping', '/v1/t/ping', '/admin/t/session', '/client/t/ping']) {
+    for (const url of ['/store/v1/t/ping', '/admin/t/session', '/client/t/ping']) {
       expect(isIpRefusal(await get(url, '198.51.100.231', AUTH)), url).toBe(true);
     }
+    expect(isIpRefusal(await call(t, 'POST', '/api/index.php', '198.51.100.231')), 'Dhru').toBe(true);
   }, 60_000);
 });
 

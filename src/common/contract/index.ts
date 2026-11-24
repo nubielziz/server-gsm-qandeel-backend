@@ -1,4 +1,4 @@
-// Public surface of the contract layer (decision 008): defineRoute, defineEvent, defineSupplierCall, @Route, list queries, shared schemas, registry.
+// Public surface of the contract layer (decision 008): defineRoute, defineSupplierCall, @Route, list queries, shared schemas, registry.
 export {
   ACCESS_KINDS,
   ContractRegistry,
@@ -32,8 +32,6 @@ export type {
   SuccessStatus,
   TurnstileRollout,
 } from './define-route';
-export { EventRegistry, defineEvent, eventRegistry } from './define-event';
-export type { EventContract, EventKey, EventSpec } from './define-event';
 export { SupplierCallRegistry, defineSupplierCall, supplierCallRegistry, zSupplierError } from './define-supplier-call';
 export type {
   AnySupplierCall,
@@ -43,16 +41,6 @@ export type {
   SupplierCallParamsOf,
   SupplierCallSpec,
 } from './define-supplier-call';
-export {
-  CURSOR_DEFAULT_LIMIT,
-  CURSOR_MAX_LIMIT,
-  cutPage,
-  decodeCursor,
-  encodeCursor,
-  zCursor,
-  zCursorLimit,
-  zCursorPage,
-} from './cursor';
 export {
   FORBIDDEN_TEXT_CODE,
   FORBIDDEN_TEXT_DHRU_MESSAGE,

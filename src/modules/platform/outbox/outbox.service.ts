@@ -13,7 +13,7 @@ import type { OutboxBacklog, OutboxEventInput, OutboxEventTrace, OutboxPayload }
 /**
  * Writes outbox events and reports the backlog.
  *
- * Why: decision 020 keeps the API fast and consistent: a state change that needs async work (a supplier call, a webhook,
+ * Why: decision 020 keeps the API fast and consistent: a state change that needs async work (a supplier call,
  * an email) writes an `outbox_events` row in the same database transaction, and the worker's relay turns the row into a
  * BullMQ job. No job is created for a rolled-back change, and no committed change loses its job.
  *

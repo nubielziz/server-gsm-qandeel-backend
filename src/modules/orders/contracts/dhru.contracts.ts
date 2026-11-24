@@ -164,7 +164,7 @@ export const dhruPlaceFileOrder = defineDhruAction({
   summary: 'Place a file order',
   description:
     'Orders a File service. The file is `FILENAME` and `FILEDATA` (base64) in `parameters`, or a file part of a `multipart/form-data` ' +
-    'request; it is stored like `POST /v1/files` (up to 25 MiB). A form body of this endpoint may be up to 25 MiB (every other route ' +
+    'request; it is stored like `POST /client/files` (up to 25 MiB). A form body of this endpoint may be up to 25 MiB (every other route ' +
     'keeps 1 MiB); `FILEDATA` is base64 inside the base64 `parameters`, so about 13 MiB of file fits a form: send a larger file as a ' +
     'multipart file part. Everything else is as `placeimeiorder`. A service that is not a File service is refused. If the order is ' +
     'refused (changed price, not enough credits), the uploaded file is not kept.',
@@ -179,7 +179,7 @@ export const dhruGetFileOrder = defineDhruAction({
   key: 'DHRU getfileorder',
   summary: 'Result of a file order',
   description:
-    'As `getimeiorder`; when the result is a file, `FILEID` is its id: download it with `GET /v1/files/:id`.',
+    'As `getimeiorder`; when the result is a file, `FILEID` is its id: the merchant opens the file from its portal (`GET /client/files/:id`).',
   params: GetOrderParams,
   success: StatusSchema.extend({ FILEID: z.number().int().positive().optional() }),
   errors: [...GET_ERRORS],
@@ -189,7 +189,7 @@ export const dhruGetFileOrder = defineDhruAction({
 /** The form fields of a Dhru request (`application/x-www-form-urlencoded`, multipart or JSON). */
 const DhruRequest = z.looseObject({
   username: z.string().optional().describe('The merchant username (`clients.username`).'),
-  apiaccesskey: z.string().optional().describe('A merchant API key with the `dhru` scope.'),
+  apiaccesskey: z.string().optional().describe('A merchant API key.'),
   action: z.string().optional().describe('One of the eight actions below.'),
   requestformat: z.string().optional().describe('Ignored: every answer is JSON.'),
   parameters: z
@@ -211,7 +211,7 @@ export const dhruEndpoint = defineRoute({
     'HTTP 200 with the headers `X-Powered-By: DHRU-FUSION` and `dhru-fusion-api-version: 6.1` and the body `{ "SUCCESS": [ ... ], ' +
     '"apiversion": "6.1" }` or `{ "ERROR": [ { "MESSAGE": "..." } ], "apiversion": "6.1" }`; a bulk action answers `{ "<request id>": ' +
     '{ "SUCCESS" | "ERROR": [ ... ] }, ..., "apiversion": "6.1" }`. A wrong credential is "Authentication Failed", an unknown action ' +
-    '"Invalid Action". The key must carry the `dhru` scope; the allowed addresses and the per-minute limit of the key apply. A text in the ' +
+    '"Invalid Action". The allowed addresses and the per-minute limit of the key apply. A text in the ' +
     'decoded `parameters` or `CUSTOMFIELD` may not hold the character U+0000 or an unpaired surrogate.',
   tags: ['dhru'],
   surface: 'dhru',

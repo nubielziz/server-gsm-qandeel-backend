@@ -1,5 +1,5 @@
 // MerchantCatalog: the services a merchant may see, at the prices that merchant pays. The portal routes (GET /client/services,
-// /client/services/:id, /client/prices/export) use it here; the Dhru and REST v1 lists (7a) and the storefront reuse it.
+// /client/services/:id, /client/prices/export) use it here; the Dhru list (7a) and the storefront reuse it.
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { Money } from '../../../common/money';
@@ -9,8 +9,6 @@ import {
   findVisibleService,
   listVisibleServices,
   pageVisibleServices,
-  pageVisibleServicesAfter,
-  type ServiceCursorFilter,
   type VisibleServiceRow,
 } from '../infra/merchant-catalog.repository';
 import { PriceResolver } from './price-resolver';
@@ -35,7 +33,7 @@ export type CatalogSort = 'category' | 'name' | 'type' | 'id';
 /**
  * Lists the services a merchant may see with their prices.
  *
- * Why: user rule 9 and B117 (3): the portal catalog, the Dhru and REST v1 lists and the price export all show the real price,
+ * Why: user rule 9 and B117 (3): the portal catalog, the Dhru list and the price export all show the real price,
  * resolved for the signed-in merchant by the one resolver (catalog-4). Visibility: live (not archived), `active`, in an active
  * category whose allowed groups are empty or include the merchant's group (RULES services 10, categories 5). It does not record
  * the listed prices: the caller does, with `ListedPrices.record`, because only the caller knows which rows the merchant was
@@ -62,27 +60,6 @@ export class MerchantCatalog {
   ): Promise<{ entries: CatalogEntry[]; total: number }> {
     const { rows, total } = await pageVisibleServices(db, merchant.groupId, query);
     return { entries: await this.priced(db, merchant, rows), total };
-  }
-
-  /**
-   * Reads one page of the catalog by cursor, in id order (REST v1).
-   *
-   * @param db the database or a transaction
-   * @param merchant the merchant and its group
-   * @param options the page size (the page holds at most `limit` entries; one more is read to know whether another page follows),
-   *   where to continue and the filters
-   * @returns up to `limit + 1` entries; the extra one only says there is a next page
-   */
-  async pageAfter(
-    db: DbExecutor,
-    merchant: CatalogMerchant,
-    options: { readonly limit: number; readonly afterId?: number } & ServiceCursorFilter,
-  ): Promise<CatalogEntry[]> {
-    return this.priced(
-      db,
-      merchant,
-      await pageVisibleServicesAfter(db, merchant.groupId, { ...options, limit: options.limit + 1 }),
-    );
   }
 
   /**

@@ -263,15 +263,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     expect(body(await legacy(LEGACY_DEMO_GONE_SLUG))).toEqual({ path: '/services', slug: null });
   });
 
-  it('lets a buyer open a checkout and a check an IMEI against the seeded catalogue, end to end', async () => {
-    const check = await t.app.inject({
-      method: 'POST',
-      url: '/store/v1/imei/check',
-      headers: TURNSTILE_HEADERS,
-      remoteAddress: freshClientIp(),
-      payload: { imei: '353890110000004' },
-    });
-    expect(body(check).device).toMatchObject({ brand: 'Apple', model: 'A2633', marketingName: 'iPhone 13' });
+  it('lets a buyer open a checkout against the seeded catalogue, end to end', async () => {
     const opened = await t.app.inject({
       method: 'POST',
       url: '/store/v1/checkout-sessions',
@@ -298,7 +290,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
     expect(body(consents).records[0].document).toEqual({ type: 'terms', version: '3.2' });
   });
 
-  it('refuses to check out or pre-check a seeded service whose page is switched off (the demo locks id 11)', async () => {
+  it('refuses to check out a seeded service whose page is switched off (the demo locks id 11)', async () => {
     const { db } = await testDb();
     const [retail] = await db.select().from(s.clientGroups).where(eq(s.clientGroups.kind, 'b2c_retail'));
     const off = await db.select().from(s.serviceListings).where(eq(s.serviceListings.isListed, false));
@@ -317,14 +309,6 @@ describe.skipIf(!frontendPresent)('the storefront seed through the public API', 
       });
       expect(opened.statusCode, String(serviceId)).toBe(422);
       expect(body(opened).errors[0]).toMatchObject({ field: 'serviceId', code: 'not_available' });
-      const checked = await t.app.inject({
-        method: 'POST',
-        url: '/store/v1/imei/check',
-        headers: TURNSTILE_HEADERS,
-        remoteAddress: freshClientIp(),
-        payload: { imei: '353890110000004', serviceId },
-      });
-      expect(checked.statusCode, String(serviceId)).toBe(422);
     }
   });
 

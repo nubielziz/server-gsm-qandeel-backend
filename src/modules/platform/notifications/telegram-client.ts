@@ -14,7 +14,8 @@ export const TELEGRAM_NOT_CONFIGURED = 'Telegram is not configured.';
 /**
  * Sends Telegram messages.
  *
- * Why: decision 033: `sendMessage` to a linked chat through the Bot API. With no `TELEGRAM_BOT_TOKEN` (development) a send is recorded
+ * Why: decision 033: `sendMessage` to a chat through the Bot API; since decision 062 the only chat is the operations chat of the alerts
+ * (`ALERTS_TELEGRAM_CHAT_ID`), no merchant has one. With no `TELEGRAM_BOT_TOKEN` (development) a send is recorded
  * as `failed` with the reason "Telegram is not configured." and nothing is called.
  *
  * Side effects: one Bot API call per message (never under `NODE_ENV=test`, where the driver is in memory).

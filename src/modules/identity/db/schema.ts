@@ -1,4 +1,4 @@
-// Identity tables (map domain A): staff, roles, merchants, sessions, one-time tokens, API keys, KYC, IP rules.
+// Identity tables (map domain A): staff, roles, merchants, sessions, one-time tokens, API keys, IP rules.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
@@ -38,9 +38,10 @@ export const STAFF_STATUSES = ['invited', 'active', 'suspended'] as const;
 export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
 /**
- * Merchant account states: `pending` after the invitation, `active`, or `suspended`.
+ * Merchant account states: `active`, `suspended`, or `pending`.
  *
- * Why: the console's merchant wire enum (GET /admin/clients).
+ * Why: the console's merchant wire enum (GET /admin/clients). Since decision 062 no code writes `pending` (staff-made merchants are inserted
+ * `active`, and there is no public sign-up): the value stays for the rows written before, until the migration of the accounts model removes it.
  */
 export const CLIENT_STATUSES = ['active', 'suspended', 'pending'] as const;
 
@@ -48,9 +49,10 @@ export const CLIENT_STATUSES = ['active', 'suspended', 'pending'] as const;
 export type ClientStatus = (typeof CLIENT_STATUSES)[number];
 
 /**
- * A merchant's identity-verification state: `none` until a request is sent.
+ * The values the CHECK of the retired column `clients.kyc_status` still allows.
  *
- * Why: the console's `kycStatus` wire enum (GET /admin/clients).
+ * Why: decision 061 retired merchant verification by documents. No code reads or writes the column; it keeps its default until the
+ * migration of the accounts model drops it, so the CHECK keeps its list.
  */
 export const KYC_STATUSES = ['none', 'pending', 'approved', 'rejected'] as const;
 
@@ -58,9 +60,9 @@ export const KYC_STATUSES = ['none', 'pending', 'approved', 'rejected'] as const
 export type KycStatus = (typeof KYC_STATUSES)[number];
 
 /**
- * States of one KYC request.
+ * The values the CHECK of the retired table `kyc_submissions` still allows.
  *
- * Why: the console's KYC queue wire enum (GET /admin/kyc-submissions).
+ * Why: decision 061 (see {@link kycSubmissions}); the CHECK keeps its list until the table is dropped.
  */
 export const KYC_SUBMISSION_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
@@ -79,11 +81,11 @@ export type SubjectType = (typeof SUBJECT_TYPES)[number];
 
 /**
  * What a one-time token is for: a staff or merchant invitation, a password reset, an email verification, a magic sign-in
- * link or the link that connects a merchant's Telegram chat.
+ * link (and, in rows written before decision 062, the link that connected a merchant's Telegram chat).
  *
  * Why: RESOLUTIONS identity-platform-2 settles the vocabulary: the invite link of POST /admin/clients uses `invite`
- * (decisions 010 and 019); staff use `invite` and `reset` today. `telegram_link` is feature 12a's (MISMATCHES B165): the token
- * of `POST /client/telegram/link`, spent when the merchant sends `/start <token>` to the bot.
+ * (decisions 010 and 019); staff use `invite` and `reset` today. `telegram_link` stays in the list because the column's CHECK still
+ * allows it for the rows an older version wrote; nothing writes or reads it any more.
  */
 export const AUTH_TOKEN_PURPOSES = ['invite', 'reset', 'verify_email', 'magic_link', 'telegram_link'] as const;
 
@@ -221,7 +223,7 @@ export type NewRole = typeof roles.$inferInsert;
 /**
  * B2B merchants; username is the Dhru username.
  *
- * Why: The B2B merchants who order through Dhru, REST v1 and the portal (routes /admin/clients, /client/*).
+ * Why: The B2B merchants who order through Dhru and the portal (routes /admin/clients, /client/*).
  */
 export const clients = pgTable(
   'clients',
@@ -238,9 +240,16 @@ export const clients = pgTable(
     phone: text().notNull().default(''),
     country: text().notNull().default(''),
     groupId: fk((): AnyPgColumn => clientGroups.id).notNull(),
+    /** every writer passes it (`active` for a merchant staff make, decision 062); the default is the old one and nothing relies on it */
     status: text().$type<ClientStatus>().notNull().default('pending'),
+    /** retired (decision 061): unread and unwritten, it keeps its default until the migration of the accounts model drops it */
     kycStatus: text().$type<KycStatus>().notNull().default('none'),
+    /** retired (decision 062): unread and unwritten, dropped by the migration of the accounts model */
     referredById: fk((): AnyPgColumn => clients.id),
+    /**
+     * retired (decision 062): read by nothing; it stays NOT NULL and unique until the migration of the accounts model drops it, so a
+     * new row still carries a value (its own username)
+     */
     referralCode: text().notNull(),
     /** optional TOTP for merchants (decision 018); while `twofa_enabled` is false it is the pending secret of a setup */
     totpSecretEnc: text(),
@@ -264,7 +273,7 @@ export const clients = pgTable(
     /** when the merchant last chose or changed the password; null until the first one; schema addition B116 (feature 2b) */
     passwordChangedAt: timestampTz(),
     emailVerifiedAt: timestampTz(),
-    /** external id from Telegram, kept as text */
+    /** retired (decision 062): external id from Telegram, kept as text; unread and unwritten, dropped by the migration of the accounts model */
     telegramChatId: text(),
     notificationPrefs: jsonObject(),
     /** schema addition B116 */
@@ -277,13 +286,13 @@ export const clients = pgTable(
     mustChangePassword: boolean().notNull().default(false),
     /**
      * true from the moment staff set a temporary password until the merchant chooses a password from a link mailed to its address
-     * (reset or invitation); while true, a portal session creates no API key and creates or changes no webhook endpoint (decision 046)
+     * (reset or invitation); while true, a portal session creates no API key (decision 046)
      */
     passwordSetByStaff: boolean().notNull().default(false),
     /**
      * true from the moment a staff member who is not an Owner changes the merchant's email address until an Owner changes it or sends it
      * unchanged in a details edit; a password from a link does not clear it (the link goes to the address staff chose); while true, a
-     * portal session creates no API key and creates or changes no webhook endpoint (decision 046)
+     * portal session creates no API key (decision 046)
      */
     emailSetByStaff: boolean().notNull().default(false),
     /** written when a session of the merchant becomes fully signed in (feature 20) */
@@ -303,7 +312,7 @@ export const clients = pgTable(
     uniqueIndex('clients_username_uq').on(lower(t.username)),
     uniqueIndex('clients_email_uq').on(lower(t.email)),
     uniqueIndex('clients_referral_code_uq').on(t.referralCode),
-    // One chat belongs to one merchant (B165: a chat linked to another merchant moves); two parallel links cannot both win.
+    // Retired with the column (decision 062); it goes with it.
     uniqueIndex('clients_telegram_chat_uq')
       .on(t.telegramChatId)
       .where(sql`${t.telegramChatId} is not null`),
@@ -413,7 +422,7 @@ export type NewAuthToken = typeof authTokens.$inferInsert;
 /**
  * Merchant API keys, stored as a hash.
  *
- * Why: Merchant credentials for REST v1 and Dhru: looked up by hash, shown by prefix (decisions 018, 019).
+ * Why: Merchant credentials for Dhru: looked up by hash, shown by prefix (decisions 018, 019).
  */
 export const apiKeys = pgTable(
   'api_keys',
@@ -424,6 +433,7 @@ export const apiKeys = pgTable(
     /** first 8 characters of the key, safe to display */
     prefix: text().notNull(),
     keyHash: text().notNull(),
+    /** Retired with REST API v1 (decision 062): unread and unwritten (every key is a Dhru credential); the accounts migration drops it. */
     scopes: textList(),
     /** empty means any address */
     allowedIps: cidr().array().notNull().default([]),
@@ -451,9 +461,12 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type NewApiKey = typeof apiKeys.$inferInsert;
 
 /**
- * Merchant identity-verification (KYC) requests.
+ * Retired: the requests of merchant verification by documents (decision 061).
  *
- * Why: Merchant identity-verification queue reviewed by staff (routes /admin/kyc-submissions, /client/kyc).
+ * Why: the routes that wrote and read this table were retired, and no code reads or writes it now. The table stays, with its rows,
+ * because `file_ids` still keeps the documents stored earlier referenced (the files module's reference SQL names it), so the
+ * unreferenced-file janitor does not delete them before the owner decides how long to keep them. The migration of the accounts
+ * model drops it.
  */
 export const kycSubmissions = pgTable(
   'kyc_submissions',
@@ -483,12 +496,6 @@ export const kycSubmissions = pgTable(
     index('kyc_submissions_reviewed_by_idx').on(t.reviewedBy),
   ],
 );
-
-/** A row read from `kyc_submissions`. */
-export type KycSubmission = typeof kycSubmissions.$inferSelect;
-
-/** A row to insert into `kyc_submissions`. */
-export type NewKycSubmission = typeof kycSubmissions.$inferInsert;
 
 /**
  * Network rules checked before any other logic: allow addresses for the admin console, and block an address or range

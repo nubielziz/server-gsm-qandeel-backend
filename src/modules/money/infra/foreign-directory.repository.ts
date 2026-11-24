@@ -34,7 +34,7 @@ export function ownerKey(ownerType: string, ownerId: number): string {
  * Why: user rule 2 must hold when staff turn `overdraftAllowed` off for a group at the same moment as another request gives
  * one of its merchants a credit limit; the group routes lock the row `FOR UPDATE` (catalog module), so one of the two waits and
  * then sees the other's result. With `lockMerchant` the merchant row is locked `FOR SHARE` first, in its own statement: a group move
- * (and the nightly promotion) locks that row `FOR UPDATE`, so a move and a credit-limit change wait for each other, and the group is
+ * locks that row `FOR UPDATE`, so a move and a credit-limit change wait for each other, and the group is
  * read only once the lock is held, after any move that held it. Called inside a transaction, as the locks last until it ends.
  *
  * @param db the database or a transaction
@@ -84,29 +84,23 @@ export async function findStatementMerchant(db: DbExecutor, id: number): Promise
   return row;
 }
 
-/** What REST v1 and Dhru say about the merchant behind an API key. */
+/** What Dhru says about the merchant behind an API key. */
 export interface MerchantProfile {
   readonly email: string;
-  readonly group: { readonly id: number; readonly name: string };
 }
 
 /**
- * Reads the email and the group of a merchant.
+ * Reads the email of a merchant.
  *
- * Why: `GET /v1/account` names the merchant's client group and Dhru's `accountinfo` its email (decision 026, the map rows).
+ * Why: Dhru's `accountinfo` names the merchant's email (decision 026, the map row).
  *
  * @param db the database or a transaction
  * @param id the merchant id
  * @returns the profile, or `undefined` when there is no such merchant
  */
 export async function findMerchantProfile(db: DbExecutor, id: number): Promise<MerchantProfile | undefined> {
-  const [row] = await db
-    .select({ email: s.clients.email, groupId: s.clientGroups.id, groupName: s.clientGroups.name })
-    .from(s.clients)
-    .innerJoin(s.clientGroups, eq(s.clientGroups.id, s.clients.groupId))
-    .where(eq(s.clients.id, id))
-    .limit(1);
-  return row ? { email: row.email, group: { id: row.groupId, name: row.groupName } } : undefined;
+  const [row] = await db.select({ email: s.clients.email }).from(s.clients).where(eq(s.clients.id, id)).limit(1);
+  return row;
 }
 
 /**

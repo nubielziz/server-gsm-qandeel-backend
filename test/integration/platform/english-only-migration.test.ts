@@ -64,11 +64,36 @@ async function rowsById(pool: Pool, table: string): Promise<Map<number, Record<s
   );
 }
 
+/**
+ * The ids of the templates that later data steps delete with the features they belonged to, read where the rows still carry their
+ * event: the two merchant verification mails (0064, decision 061), and the five retired mail events and every merchant Telegram text
+ * (0065, decision 062). The English-only step keeps them; the newest file no longer does.
+ */
+async function retiredLater(pool: Pool): Promise<number[]> {
+  const { rows } = await pool.query<{ id: string }>(
+    `select id from notification_templates
+      where event in ('merchant.kyc_approved', 'merchant.kyc_rejected', 'merchant.approved', 'webhook.endpoint_disabled',
+                      'checkout.abandoned', 'support.csat_survey', 'deposit.approved')
+         or (channel = 'telegram' and audience = 'merchant')
+      order by id`,
+  );
+  return rows.map((row) => Number(row.id));
+}
+
+/** The English templates at 0034 that the newest file keeps, and those a later data step deletes (never empty: 0011 ships some). */
+async function englishSplit(pool: Pool, english: number[]): Promise<{ kept: number[]; retired: number[] }> {
+  const later = new Set(await retiredLater(pool));
+  const retired = english.filter((id) => later.has(id));
+  expect(retired.length).toBeGreaterThan(0);
+  return { kept: english.filter((id) => !later.has(id)), retired };
+}
+
 describe('a database with content in other languages, filled at 0034 (case b)', () => {
   let url = '';
   let pool: Pool;
   let filled: Filled;
   let templates: { english: number[]; other: number[] };
+  let english: { kept: number[]; retired: number[] };
   let legalBefore: Map<number, Record<string, unknown>>;
   let consentsBefore: Map<number, Record<string, unknown>>;
   let campaignsBefore: Map<number, Record<string, unknown>>;
@@ -77,6 +102,7 @@ describe('a database with content in other languages, filled at 0034 (case b)', 
   beforeAll(async () => {
     ({ url, pool, filled } = await filledAt0034());
     templates = await idsByLanguage(pool, 'notification_templates');
+    english = await englishSplit(pool, templates.english);
     legalBefore = await rowsById(pool, 'legal_documents');
     consentsBefore = await rowsById(pool, 'consent_records');
     campaignsBefore = await rowsById(pool, 'notification_campaigns');
@@ -117,8 +143,10 @@ describe('a database with content in other languages, filled at 0034 (case b)', 
       // migrations 0023, 0025 and 0027 insert 42 default templates in Arabic (fact 7)
       expect(templates.other.length).toBe(43);
       const left = await idsOf(pool, 'notification_templates');
-      expect(left).toEqual(expect.arrayContaining(templates.english));
+      expect(left).toEqual(expect.arrayContaining(english.kept));
       for (const id of templates.other) expect(left).not.toContain(id);
+      // English, but of a feature retired later (0064, 0065): gone with that feature, not with the language.
+      for (const id of english.retired) expect(left).not.toContain(id);
     });
 
     it('deletes the listings, pages, help articles and reply templates in another language', async () => {
@@ -401,6 +429,7 @@ describe('a fresh database (case a)', () => {
     pools.push(before);
     const templates = await idsByLanguage(before, 'notification_templates');
     expect(templates.other.length).toBe(42);
+    const english = await englishSplit(before, templates.english);
 
     const fresh = await scratch.create();
     await migrateDatabase(fresh.url);
@@ -412,7 +441,8 @@ describe('a fresh database (case a)', () => {
     );
     expect(rows[0]?.markers).toBe(0);
     const left = await idsOf(pool, 'notification_templates');
-    expect(left).toEqual(expect.arrayContaining(templates.english));
+    expect(left).toEqual(expect.arrayContaining(english.kept));
     for (const id of templates.other) expect(left).not.toContain(id);
+    for (const id of english.retired) expect(left).not.toContain(id);
   });
 });

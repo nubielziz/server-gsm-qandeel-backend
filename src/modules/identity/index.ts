@@ -44,12 +44,6 @@ export type { ClientStats, ClientStatsSource } from './application/client-stats'
 export { MERCHANT_INVITED_EVENT } from './application/client-admin.service';
 export { cidrToWire } from './domain/ip-rule-input';
 export { SessionPurgeModule, SESSION_PURGE_SCHEDULER } from './jobs/session-purge.module';
-export { GroupPromotionModule, GROUP_PROMOTION_SCHEDULER } from './jobs/group-promotion.module';
-export { GROUP_PROMOTION_JOB } from './jobs/group-promotion.processor';
-export { GroupPromotion, PROMOTION_BATCH_SIZE } from './jobs/group-promotion';
-export type { PromotionSummary } from './jobs/group-promotion';
-export { breaksCreditRule, decidePromotion } from './domain/group-promotion';
-export type { CurrentGroup, PromotionTarget } from './domain/group-promotion';
 export { SESSION_PURGE_JOB } from './jobs/session-purge.processor';
 export { PURGE_BATCH_SIZE, SESSION_RETENTION_DAYS, SessionPurge } from './jobs/session-purge';
 export { MerchantAuthModule } from './merchant-auth.module';
@@ -59,8 +53,6 @@ export type { MerchantCandidate } from './application/merchant-password-sign-in'
 export type { MerchantLoginResult } from './application/merchant-sign-in.service';
 export type { MerchantSignInStep } from './domain/merchant-sign-in-step';
 export { ApiKeysModule } from './api-keys.module';
-export { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
-export { KycModule } from './kyc.module';
 export { MerchantNotificationsModule } from './merchant-notifications.module';
 export { MerchantMailModule } from './merchant-mail.module';
 export { IdentityMailEventsModule } from './identity-mail-events.module';
@@ -73,13 +65,6 @@ export {
   IDENTITY_TEMPLATES_MIGRATION,
   identityTemplatesSql,
 } from './application/mail/identity-templates';
-// The two values Telegram's webhook is registered with, derived from the configured secret (decision 054); plain functions.
-export {
-  TELEGRAM_HEADER_LABEL,
-  TELEGRAM_PATH_LABEL,
-  telegramWebhookHeader,
-  telegramWebhookPath,
-} from './application/telegram-webhook-secret';
 export { STAFF_TOKEN_TTL_MS, StaffAuthTokens } from './application/staff-auth-tokens';
 export type { IssueStaffTokenInput, IssuedStaffToken } from './application/staff-auth-tokens';
 export { STAFF_TOKEN_PURPOSES } from './infra/auth-token.repository';
@@ -138,7 +123,7 @@ export {
   ApiKeyDirectory,
   UNKNOWN_API_KEY_TTL_SECONDS,
 } from './security/machine/api-keys/api-key.directory';
-export { DHRU_SCOPE, checkApiKey, ipAllowedForKey } from './security/machine/api-keys/api-key.rules';
+export { checkApiKey, ipAllowedForKey } from './security/machine/api-keys/api-key.rules';
 export type { ApiKeyRefusalReason, ApiKeyView } from './security/machine/api-keys/api-key.rules';
 export { CAPABILITY_ACCESS_KINDS, CapabilityTokenResolvers } from './security/machine/capability-tokens';
 export type {

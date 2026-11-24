@@ -102,9 +102,9 @@ export type OrderAction =
   | { readonly kind: 'reopen' }
   /** Staff decide a verification request (`verification`). */
   | { readonly kind: 'verification'; readonly decision: 'accept' | 'refund' }
-  /** The merchant asks to verify a completed order (`/client` or `/v1` verify). */
+  /** The merchant asks to verify a completed order (`/client` verify). */
   | { readonly kind: 'requestVerification' }
-  /** The merchant cancels an order that was never claimed for a supplier call (`/client` or `/v1` cancel). */
+  /** The merchant cancels an order that was never claimed for a supplier call (`/client` cancel). */
   | { readonly kind: 'cancel' }
   /**
    * Staff send the order to a supplier again (`dispatch`, feature 6). `requestLive` = a dispatch request of this order is still on

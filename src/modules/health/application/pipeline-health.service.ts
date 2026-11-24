@@ -1,5 +1,5 @@
-// The order pipeline, supplier and webhook health views (`GET /admin/system/orders-health`, `/suppliers`, `/webhooks`): what an outage
-// costs in orders, how each supplier is doing and whether webhooks arrive. Postgres-sourced, so valid while Prometheus is down.
+// The order pipeline, supplier and incoming webhook health views (`GET /admin/system/orders-health`, `/suppliers`, `/webhooks`): what an
+// outage costs in orders, how each supplier is doing and whether payment callbacks arrive. Postgres-sourced, so valid while Prometheus is down.
 import { Inject, Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -14,7 +14,6 @@ import {
   dispatchP95Seconds,
   lastOkCalls,
   oldestIncomingEvent,
-  outgoingWebhooks,
   stuckOrders,
   stuckTrend,
   supplierCalls,
@@ -44,10 +43,10 @@ export interface IntakeCounts {
 }
 
 /**
- * Builds the pipeline, supplier and webhook views.
+ * Builds the pipeline, supplier and incoming webhook views.
  *
  * Why: the Orders tab shows orders past SLA with the money held for them, the pipeline's dispatch time and outcomes, and each
- * supplier's health; the Queues tab shows webhook delivery. The past-SLA rule is feature 5's exported predicate (B92); the supplier
+ * supplier's health; the Queues tab shows how the payment callbacks arrive. The past-SLA rule is feature 5's exported predicate (B92); the supplier
  * health word is feature 6's shared computation (orders-suppliers-5), with error and timeout rates from `supplier_api_logs.outcome`
  * (health-commissions-8).
  *
@@ -211,26 +210,23 @@ export class PipelineHealthService {
   /**
    * `GET /admin/system/webhooks`.
    *
-   * @returns delivery health of outgoing and incoming webhooks over the last 24 hours
+   * @returns the health of the incoming webhooks (payment and dispute callbacks) over the last 24 hours
    * @throws {AppError} `DATABASE_UNAVAILABLE` when Postgres is down
    */
   webhooksHealth() {
     return orUnavailable(async () => {
       const now = this.clock.now();
-      const [out, oldestIn, intake] = await Promise.all([
-        outgoingWebhooks(this.db.db, now),
-        oldestIncomingEvent(this.db.db),
-        this.intake(now),
-      ]);
-      const direction = (counts: IntakeCounts, oldest: Date | null) => ({
-        successRate: measure(SPEC.webhookSuccess, rate(counts.delivered, counts.delivered + counts.failed)),
-        delivered: counts.delivered,
-        failed: counts.failed,
-        retrying: counts.retrying,
-        oldestUndeliveredAt: oldest?.toISOString() ?? null,
-        oldestAge: measure(SPEC.webhookAge, oldest ? Math.max(0, (now.getTime() - oldest.getTime()) / 1000) : 0),
-      });
-      return { outgoing: direction(out, out.oldestUndelivered), incoming: direction(intake, oldestIn) };
+      const [oldest, counts] = await Promise.all([oldestIncomingEvent(this.db.db), this.intake(now)]);
+      return {
+        incoming: {
+          successRate: measure(SPEC.webhookSuccess, rate(counts.delivered, counts.delivered + counts.failed)),
+          delivered: counts.delivered,
+          failed: counts.failed,
+          retrying: counts.retrying,
+          oldestUndeliveredAt: oldest?.toISOString() ?? null,
+          oldestAge: measure(SPEC.webhookAge, oldest ? Math.max(0, (now.getTime() - oldest.getTime()) / 1000) : 0),
+        },
+      };
     });
   }
 

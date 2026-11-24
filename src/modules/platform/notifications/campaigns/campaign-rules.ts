@@ -13,10 +13,10 @@ import type { AudienceMember, CampaignChannel } from './notification-audiences';
 /**
  * The channels a campaign can use.
  *
- * Why: L5: in-app, email and Telegram (merchants with a linked chat). Not `NOTIFICATION_CHANNELS`: that list is the log's wire
- * enum; the in-app channel is its own table.
+ * Why: L5: in-app and email (Telegram for merchants was retired, decision 062). Not `NOTIFICATION_CHANNELS`: that list is the log's wire
+ * enum; the in-app channel is its own table. A campaign stored with the old channel still reads: the value is dropped and never sent.
  */
-export const CAMPAIGN_CHANNELS = ['in_app', 'email', 'telegram'] as const satisfies readonly CampaignChannel[];
+export const CAMPAIGN_CHANNELS = ['in_app', 'email'] as const satisfies readonly CampaignChannel[];
 
 /** The outbox event (and job name on the `notifications` queue) that starts and continues a campaign's fan-out. */
 export const CAMPAIGN_FANOUT_EVENT = 'notification.campaign_fanout';
@@ -58,14 +58,14 @@ export interface CampaignLink {
 
 /** What the fan-out counted, stored in `notification_campaigns.stats`. */
 export interface CampaignStats {
-  readonly planned: { readonly inApp: number; readonly email: number; readonly telegram: number };
-  readonly skipped: { readonly optedOut: number; readonly noTelegram: number; readonly noAccount: number };
+  readonly planned: { readonly inApp: number; readonly email: number };
+  readonly skipped: { readonly optedOut: number; readonly noAccount: number };
 }
 
 /** Stats with every counter at zero. */
 export const EMPTY_STATS: CampaignStats = {
-  planned: { inApp: 0, email: 0, telegram: 0 },
-  skipped: { optedOut: 0, noTelegram: 0, noAccount: 0 },
+  planned: { inApp: 0, email: 0 },
+  skipped: { optedOut: 0, noAccount: 0 },
 };
 
 const count = (value: unknown): number => (typeof value === 'number' && Number.isInteger(value) ? value : 0);
@@ -73,7 +73,7 @@ const record = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 /**
- * Reads the stored stats, tolerating a missing or partial object.
+ * Reads the stored stats, tolerating a missing or partial object (counters of a retired channel in an older row are ignored).
  *
  * @param value `notification_campaigns.stats`
  * @returns the counters (zero where missing)
@@ -82,12 +82,8 @@ export function statsOf(value: unknown): CampaignStats {
   const planned = record(record(value)['planned']);
   const skipped = record(record(value)['skipped']);
   return {
-    planned: { inApp: count(planned['inApp']), email: count(planned['email']), telegram: count(planned['telegram']) },
-    skipped: {
-      optedOut: count(skipped['optedOut']),
-      noTelegram: count(skipped['noTelegram']),
-      noAccount: count(skipped['noAccount']),
-    },
+    planned: { inApp: count(planned['inApp']), email: count(planned['email']) },
+    skipped: { optedOut: count(skipped['optedOut']), noAccount: count(skipped['noAccount']) },
   };
 }
 
@@ -103,11 +99,9 @@ export function addStats(a: CampaignStats, b: CampaignStats): CampaignStats {
     planned: {
       inApp: a.planned.inApp + b.planned.inApp,
       email: a.planned.email + b.planned.email,
-      telegram: a.planned.telegram + b.planned.telegram,
     },
     skipped: {
       optedOut: a.skipped.optedOut + b.skipped.optedOut,
-      noTelegram: a.skipped.noTelegram + b.skipped.noTelegram,
       noAccount: a.skipped.noAccount + b.skipped.noAccount,
     },
   };
@@ -115,7 +109,7 @@ export function addStats(a: CampaignStats, b: CampaignStats): CampaignStats {
 
 /**
  * Any HTML-like tag (`<b>`, `</p>`, `<script src=...>`, `<br/>`), stricter than the templates' `looksLikeHtml`, which knows only the
- * common layout tags: campaign text is plain text everywhere (inbox, Telegram, the escaped email part), so no tag is ever meant.
+ * common layout tags: campaign text is plain text everywhere (inbox, the escaped email part), so no tag is ever meant.
  */
 const CAMPAIGN_HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?\/?>/;
 
@@ -161,7 +155,7 @@ const MERCHANT_PATH = /^\/merchant(?:[/?#]|$)/;
  *
  * Why: a link is a path on our own site (one leading `/`, no scheme, no host), so a campaign cannot carry a phishing URL (13.1).
  * A merchant link must be a page of the merchant portal (`/merchant/...`): the inbox shows the path as it is and the email and
- * Telegram join it to the site's root, so a path outside the portal (`/orders`) would be wrong on both.
+ * join it to the site's root, so a path outside the portal (`/orders`) would be wrong on both.
  *
  * @param link the links per audience, or null
  * @returns the field errors, named `link.<audience>`
@@ -236,8 +230,7 @@ export function categoryOf(purpose: NotificationCampaignPurpose): NotificationIn
 export interface MemberRows {
   readonly inApp: boolean;
   readonly email: boolean;
-  readonly telegram: boolean;
-  readonly skipped: { readonly noAccount: boolean; readonly optedOut: boolean; readonly noTelegram: boolean };
+  readonly skipped: { readonly noAccount: boolean; readonly optedOut: boolean };
 }
 
 /**
@@ -250,33 +243,30 @@ export interface MemberRows {
 export function rowsFor(member: AudienceMember, channels: readonly CampaignChannel[]): MemberRows {
   const wantsInApp = channels.includes('in_app');
   const wantsEmail = channels.includes('email');
-  const wantsTelegram = channels.includes('telegram');
   return {
     inApp: wantsInApp && member.inApp,
     email: wantsEmail && member.email,
-    telegram: wantsTelegram && member.telegram,
     skipped: {
       noAccount: wantsInApp && !member.inApp,
       optedOut: wantsEmail && !member.email,
-      noTelegram: wantsTelegram && !member.telegram,
     },
   };
 }
 
 /**
- * The dedupe key of a campaign's email or Telegram row.
+ * The dedupe key of a campaign's email row.
  *
  * Why: the fan-out inserts with `ON CONFLICT (dedupe_key) DO NOTHING`, so a chunk that runs twice makes each message once.
  *
  * @param campaignId the campaign
- * @param channel `email` or `telegram`
+ * @param channel `email`
  * @param type the recipient type
  * @param recipientId the recipient
  * @returns `campaign-<id>:<channel>:<type>-<recipientId>`
  */
 export function campaignDedupeKey(
   campaignId: number,
-  channel: 'email' | 'telegram',
+  channel: 'email',
   type: NotificationRecipientType,
   recipientId: number,
 ): string {

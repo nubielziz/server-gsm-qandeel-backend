@@ -1,4 +1,4 @@
-// TicketMailJobs: the job that sends a ticket's message (feature 17): the receipt of a new ticket, a staff reply, the satisfaction survey.
+// TicketMailJobs: the job that sends a ticket's message (feature 17): the receipt of a new ticket and a staff reply.
 // It re-reads the ticket, builds the link with the ticket token as a secret and sends through the platform's NotificationService. Feature
 // 28 adds the batched reply mail of the email fallback (every unseen reply in one email) and the merchant's portal link.
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -12,7 +12,7 @@ import type { ReplyChannel } from '../domain/reply-channels';
 import { type MailedReply, replyMailText } from '../domain/reply-mail';
 import { findRequester } from '../infra/support-foreign-reads';
 import { findMessage, findTicket, unseenEmailReplies } from '../infra/ticket.repository';
-import { SUPPORT_CSAT_SURVEY_EVENT, SUPPORT_REPLY_EVENT, SUPPORT_TICKET_RECEIVED_EVENT } from './support-events';
+import { SUPPORT_REPLY_EVENT, SUPPORT_TICKET_RECEIVED_EVENT } from './support-events';
 import { TICKET_MAIL_EVENT, TICKET_MAIL_KINDS, type TicketMailKind } from './ticket-mail-outbox';
 
 /** What a ticket mail job answers (kept briefly with the BullMQ job). */
@@ -28,6 +28,8 @@ export interface TicketMailJobResult {
     | 'template_off'
     | 'already_sent'
     | 'already_failed'
+    /** The event names a channel that is retired: it was written before and nothing sends it any more. */
+    | 'channel_retired'
     /** Every reply of a batched mail was seen on the ticket page before the job ran (feature 28). */
     | 'seen';
   /** The reason of a message that could not be delivered for good (it is also on the `notifications` row). */
@@ -38,6 +40,8 @@ export interface TicketMailJobResult {
 interface MailPayload {
   readonly kind: TicketMailKind;
   readonly channel: ReplyChannel;
+  /** True for an event written before a channel was retired (it names the old channel): it is skipped, not sent. */
+  readonly retired: boolean;
   readonly messageId: number | undefined;
   /** The oldest reply of a batched reply mail (feature 28). */
   readonly fromMessageId: number | undefined;
@@ -60,7 +64,7 @@ export type TicketMailJob = Pick<Job<OutboxJobData>, 'data'> & {
  * repeat of a job whose message already went out is skipped by its notification row.
  *
  * Side effects: reads `support_tickets`, `ticket_messages`, `customers` and `clients`; the notification delivery writes a `notifications`
- * row and sends one email or Telegram message; a retry that ends skipped marks the row of an earlier attempt `failed`.
+ * row and sends one email; a retry that ends skipped marks the row of an earlier attempt `failed`.
  *
  * @see docs/queues.md (notifications)
  */
@@ -82,12 +86,14 @@ export class TicketMailJobs {
    *   reply, and `payload.fromMessageId` for one email that carries every unseen reply from that message to `messageId`, feature 28)
    * @returns whether the message was sent, and why not
    * @throws {UnrecoverableError} when the payload is malformed (a programming error: retrying cannot help)
-   * @throws {DeliveryError} when the mail server or Telegram did not take the message and a retry may help (the queue retries)
+   * @throws {DeliveryError} when the mail server did not take the message and a retry may help (the queue retries)
    */
   async handle(job: TicketMailJob): Promise<TicketMailJobResult> {
-    const { kind, messageId, channel, fromMessageId } = this.readPayload(job.data);
+    const { kind, messageId, channel, retired, fromMessageId } = this.readPayload(job.data);
+    // An event written before the channel was retired is recorded as not sent: no row, no retry.
+    if (retired) return { sent: false, skipped: 'channel_retired' };
     const key = `outbox-${job.data.eventId}:${channel}`;
-    const result = await this.send(job, { kind, channel, messageId, fromMessageId }, key);
+    const result = await this.send(job, { kind, channel, retired, messageId, fromMessageId }, key);
     // A retry that ends skipped must not leave the row an earlier attempt made `queued` for ever.
     if (result.skipped && result.skipped !== 'already_sent' && result.skipped !== 'already_failed') {
       await this.notifications.abandon(key, result.skipped);
@@ -100,7 +106,9 @@ export class TicketMailJobs {
     if (typeof kind !== 'string' || !(TICKET_MAIL_KINDS as readonly string[]).includes(kind)) {
       throw new UnrecoverableError(`${TICKET_MAIL_EVENT} job with an unknown kind`);
     }
-    if (kind === 'reply' && (typeof messageId !== 'number' || (channel !== 'email' && channel !== 'telegram'))) {
+    // The only other word a stored event may carry is the retired channel (`telegram`): it passes the check and is skipped by `handle`.
+    const retired = channel === 'telegram';
+    if (kind === 'reply' && (typeof messageId !== 'number' || (channel !== 'email' && !retired))) {
       throw new UnrecoverableError(`${TICKET_MAIL_EVENT} reply job without a message or a channel`);
     }
     if (fromMessageId !== undefined && (typeof fromMessageId !== 'number' || channel !== 'email')) {
@@ -109,7 +117,8 @@ export class TicketMailJobs {
     return {
       kind: kind as TicketMailKind,
       messageId: typeof messageId === 'number' ? messageId : undefined,
-      channel: channel === 'telegram' ? 'telegram' : 'email',
+      channel: 'email',
+      retired,
       fromMessageId: typeof fromMessageId === 'number' ? fromMessageId : undefined,
     };
   }
@@ -175,14 +184,14 @@ export class TicketMailJobs {
         },
       };
     } else {
-      // The receipt and the survey are for a customer: a merchant's ticket has no ticket page.
+      // The receipt is for a customer: a merchant's ticket has no ticket page.
       if (!customer) return { sent: false, skipped: 'recipient_gone' };
       input = {
-        event: kind === 'received' ? SUPPORT_TICKET_RECEIVED_EVENT : SUPPORT_CSAT_SURVEY_EVENT,
+        event: SUPPORT_TICKET_RECEIVED_EVENT,
         recipient: { type: 'customer', id: ticket.requesterId },
         channel: 'email',
         // Decision 053: the receipt holds the ticket number and the link and nothing a visitor typed (no name, no subject).
-        variables: kind === 'received' ? { ticketNumber: ticket.number } : { ...common, ...customerName },
+        variables: { ticketNumber: ticket.number },
       };
     }
 

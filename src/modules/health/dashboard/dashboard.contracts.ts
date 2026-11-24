@@ -63,14 +63,6 @@ export const AttentionItem = z.discriminatedUnion('kind', [
     count: z.number().int(),
     clients: z.array(z.object({ id: zId, name: z.string(), balance: zSignedMoney })),
   }),
-  z.object({ ...base, kind: z.literal('merchants_pending'), count: z.number().int(), names: z.array(z.string()) }),
-  z.object({
-    ...base,
-    kind: z.literal('commissions_accrued'),
-    count: z.number().int(),
-    total: zMoney,
-    agents: z.number().int(),
-  }),
   z.object({
     ...base,
     kind: z.literal('orders_held'),
@@ -162,7 +154,6 @@ const Dashboard = z.object({
     .object({
       funnel: z.object({
         visitorsEstimated: z.number().int(),
-        imeiChecks: z.number().int(),
         checkoutsStarted: z.number().int(),
         paid: z.number().int(),
         delivered: z.number().int(),
@@ -171,7 +162,6 @@ const Dashboard = z.object({
       refundRate: z.number().nullable(),
       disputeRate: z.number().nullable(),
       firstReplySeconds: z.number().nullable(),
-      satisfaction: z.object({ average: z.number(), ratings: z.number().int() }).nullable(),
       heldForReview: z.number().int(),
     })
     .nullable(),
@@ -181,7 +171,6 @@ const Dashboard = z.object({
   navCounts: z.object({
     orders: z.object({ open: z.number().int(), pastSla: z.number().int() }),
     finance: z.object({ pendingDeposits: z.number().int() }),
-    merchants: z.object({ pendingApproval: z.number().int() }),
     support: z.object({ open: z.number().int(), late: z.number().int() }),
     refunds: z.object({ open: z.number().int(), disputesDueSoon: z.number().int() }),
     risk: z.object({ held: z.number().int() }),

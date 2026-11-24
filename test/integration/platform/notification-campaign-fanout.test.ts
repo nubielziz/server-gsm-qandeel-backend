@@ -34,9 +34,9 @@ let t: TestApp;
 let owner: AdminApi;
 let db: Database;
 
-/** Everyone, on every channel: 2 staff, 2 merchants (one with a chat), 3 customers with an account (one Arabic), 1 guest left out. */
+/** Everyone, on every channel: 2 staff, 2 merchants, 3 customers with an account, 1 guest left out. */
 const EVERYONE = {
-  channels: ['in_app', 'email', 'telegram'],
+  channels: ['in_app', 'email'],
   audience: { staff: {}, merchants: {}, customers: { hasAccount: true } },
 };
 const PACE = { chunkSize: 3, timeBudgetMs: 60_000, highWater: 20_000, waitMs: 15_000 };
@@ -60,7 +60,7 @@ async function queuedCampaign(changes: Record<string, unknown> = {}): Promise<nu
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
   db = (await testDb()).db;
 });
@@ -74,7 +74,7 @@ beforeEach(async () => {
   fanOutWith(t, PACE);
   owner = await adminWith(t, ['*'], { name: 'Rami K.' });
   await insertStaff(db, owner.roleId);
-  await insertMerchant(db, { telegramChatId: '555' });
+  await insertMerchant(db);
   await insertMerchant(db);
   await insertCustomer(db);
   await insertCustomer(db);
@@ -90,10 +90,10 @@ afterAll(async () => {
 });
 
 describe('the fan-out', () => {
-  it('ends sent with one in-app item per person, the email and Telegram rows, the counters and one send job per row', async () => {
+  it('ends sent with one in-app item per person, the email rows, the counters and one send job per row', async () => {
     const id = await queuedCampaign();
     const results = await fanOutAll(t, id);
-    expect(results).toEqual([{ chunks: 4, rows: 8, outcome: 'sent' }]);
+    expect(results).toEqual([{ chunks: 4, rows: 7, outcome: 'sent' }]);
 
     const row = await campaignRow(db, id);
     expect(row).toMatchObject({
@@ -103,7 +103,7 @@ describe('the fan-out', () => {
       fanoutCursor: null,
       startedAt: clock.now(),
       finishedAt: clock.now(),
-      stats: { planned: { inApp: 7, email: 7, telegram: 1 }, skipped: { optedOut: 0, noTelegram: 6, noAccount: 0 } },
+      stats: { planned: { inApp: 7, email: 7 }, skipped: { optedOut: 0, noAccount: 0 } },
     });
     const items = await campaignItems(db, id);
     expect(items).toHaveLength(7);
@@ -118,26 +118,39 @@ describe('the fan-out', () => {
       'customer',
     ]);
     const messages = await campaignMessages(db, id);
-    expect(messages.map((m) => m.channel).sort()).toEqual([...Array(7).fill('email'), 'telegram'].sort());
+    expect(messages.map((m) => m.channel)).toEqual(Array(7).fill('email'));
     expect(messages.every((m) => m.status === 'queued' && m.event === 'broadcast.announcement')).toBe(true);
     expect(messages[0]?.dedupeKey).toBe(`campaign-${id}:email:staff-${owner.staffId}`);
 
     const jobs = await broadcastJobs();
     expect(jobs.map((job) => job.id).sort()).toEqual(messages.map((m) => `notification-${m.id}`).sort());
-    const telegram = messages.find((m) => m.channel === 'telegram')!;
-    expect(jobs.find((job) => job.id === `notification-${telegram.id}`)?.data).toMatchObject({
-      notificationId: telegram.id,
-      channel: 'telegram',
-    });
+    expect(jobs.every((job) => (job.data as { channel: string }).channel === 'email')).toBe(true);
 
     // The detail shows the live numbers.
     const detail = await owner.get(`/admin/notification-campaigns/${id}`);
     expect(detail.body).toMatchObject({
       status: 'sent',
       recipients: 7,
-      planned: { inApp: 7, email: 7, telegram: 1 },
-      skipped: { noTelegram: 6 },
-      delivery: { inApp: { delivered: 7, read: 0 }, email: { queued: 7 }, telegram: { queued: 1 } },
+      planned: { inApp: 7, email: 7 },
+      delivery: { inApp: { delivered: 7, read: 0 }, email: { queued: 7 } },
+    });
+    expect(detail.body.delivery).not.toHaveProperty('telegram');
+  });
+
+  it('sends a campaign that an older version stored with the retired channel by email and in the app only', async () => {
+    const draft = await createDraft(owner, EVERYONE);
+    await db
+      .update(s.notificationCampaigns)
+      .set({ channels: ['in_app', 'email', 'telegram'] })
+      .where(eq(s.notificationCampaigns.id, draft.id));
+    // The route never shows the retired value, and the preview that the send confirms counts the two real channels.
+    expect((await owner.get(`/admin/notification-campaigns/${draft.id}`)).body.channels).toEqual(['in_app', 'email']);
+    expect((await sendNow(owner, draft.id)).status).toBe(202);
+    expect(await fanOutAll(t, draft.id)).toEqual([{ chunks: 4, rows: 7, outcome: 'sent' }]);
+    expect((await campaignMessages(db, draft.id)).map((m) => m.channel)).toEqual(Array(7).fill('email'));
+    expect((await campaignRow(db, draft.id)).stats).toEqual({
+      planned: { inApp: 7, email: 7 },
+      skipped: { optedOut: 0, noAccount: 0 },
     });
   });
 
@@ -175,7 +188,8 @@ describe('the fan-out', () => {
     }
     expect((await campaignRow(db, id)).status).toBe('sent');
     expect(await campaignItems(db, id)).toHaveLength(7);
-    expect(await campaignMessages(db, id)).toHaveLength(8);
+    // One email per person (in the app and by email only, decision 062).
+    expect(await campaignMessages(db, id)).toHaveLength(7);
     expect((await campaignRow(db, id)).recipients).toBe(7);
   });
 
@@ -193,9 +207,10 @@ describe('the fan-out', () => {
       fanoutCursor: { type: 'client', afterId: 0 },
     });
     expect(await campaignItems(db, id)).toHaveLength(2);
-    expect(await fanOutAll(t, id)).toEqual([{ chunks: 3, rows: 6, outcome: 'sent' }]);
+    // The two merchants and the three customers left: one email each.
+    expect(await fanOutAll(t, id)).toEqual([{ chunks: 3, rows: 5, outcome: 'sent' }]);
     expect(await campaignItems(db, id)).toHaveLength(7);
-    expect(await campaignMessages(db, id)).toHaveLength(8);
+    expect(await campaignMessages(db, id)).toHaveLength(7);
     expect(await campaignRow(db, id)).toMatchObject({ recipients: 7, chunksDone: 4 });
   });
 
@@ -275,8 +290,8 @@ describe('the fan-out', () => {
     const id = await queuedCampaign({ audience: { merchants: {}, customers: {} } });
     await fanOutAll(t, id);
     expect((await campaignRow(db, id)).stats).toEqual({
-      planned: { inApp: 6, email: 6, telegram: 1 },
-      skipped: { optedOut: 1, noTelegram: 6, noAccount: 1 },
+      planned: { inApp: 6, email: 6 },
+      skipped: { optedOut: 1, noAccount: 1 },
     });
   });
 });
@@ -315,8 +330,8 @@ describe('GET /admin/notification-campaigns/:id/recipients', () => {
     );
     expect(page.total).toBe(7);
     expect(page.body).toHaveLength(2);
-    const telegram = await owner.get(`/admin/notification-campaigns/${id}/recipients?channel=telegram`);
-    expect(telegram.body[0].recipient).not.toBe('555');
+    // The retired channel has no list any more.
+    expect((await owner.get(`/admin/notification-campaigns/${id}/recipients?channel=telegram`)).status).toBe(422);
   });
 
   it('needs the channel, and answers 404 for an unknown campaign', async () => {

@@ -125,9 +125,9 @@ export class SystemOverviewController {
   }
 
   /**
-   * Webhook delivery health.
+   * Incoming webhook health.
    *
-   * @returns outgoing and incoming delivery figures
+   * @returns the figures of the incoming callbacks
    * @route GET /admin/system/webhooks
    */
   @Route(getWebhooksHealth)

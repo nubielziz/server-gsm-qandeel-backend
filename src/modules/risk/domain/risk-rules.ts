@@ -1,5 +1,5 @@
-// The risk rules and their thresholds (feature 18, GET and PUT /admin/risk/rules): the eight rule ids of the console, their
-// defaults (the demo's rr1..rr8), what each rule's number means, and the validation of a saved set. Pure, no database.
+// The risk rules and their thresholds (feature 18, GET and PUT /admin/risk/rules): the seven rule ids of the console, their
+// defaults (the demo's rr2..rr8), what each rule's number means, and the validation of a saved set. Pure, no database.
 import type { FieldError } from '../../../common/errors';
 
 /**
@@ -19,7 +19,6 @@ export const REQUIRE_3DS_KEY = 'require3ds';
  * Why: the console's words (M110): the ids are part of the wire, the labels and hints are the demo's.
  */
 export const RISK_RULE_IDS = [
-  'blockBlacklistedImei',
   'reviewThreshold',
   'blockThreshold',
   'maxOrdersPerEmail',
@@ -53,17 +52,11 @@ interface RuleDefinition {
 }
 
 /**
- * The definition of each rule: the demo's label, hint, unit and default (`S.risk.rules`, rr1 to rr8).
+ * The definition of each rule: the demo's label, hint, unit and default (`S.risk.rules`, rr2 to rr8).
  *
  * Why: the console prefers the server's wording, and a shop that never saved a rule must behave like the demo.
  */
 export const RULE_DEFINITIONS: Readonly<Record<RiskRuleId, RuleDefinition>> = {
-  blockBlacklistedImei: {
-    label: 'Block blacklisted IMEIs before payment',
-    hint: 'Looked up in the GSMA blacklist at checkout. The customer sees why and is not charged.',
-    defaultValue: null,
-    defaultOn: true,
-  },
   reviewThreshold: {
     label: 'Hold orders scoring at least',
     hint: 'Held orders wait in the risk queue and are not sent to a supplier.',
@@ -124,7 +117,7 @@ export const NUMERIC_RULE_IDS: readonly RiskRuleId[] = RISK_RULE_IDS.filter(
  * Tells whether a text is a rule id.
  *
  * @param id any text
- * @returns true for one of the eight ids
+ * @returns true for one of the seven ids
  */
 export function isRiskRuleId(id: string): id is RiskRuleId {
   return (RISK_RULE_IDS as readonly string[]).includes(id);
@@ -144,8 +137,9 @@ export function defaultRuleSet(): RiskRuleSet {
 /**
  * Reads the stored rules, filling what is missing or damaged with the defaults.
  *
- * Why: a rule row that was never saved, or holds something unexpected (a hand-edited setting), must not stop the shop from
- * selling: the default applies, as it does for the storefront switches.
+ * Why: a rule row that was never saved, or holds something unexpected (a hand-edited setting, or the row of a rule that no longer
+ * exists), must not stop the shop from selling: the default applies, as it does for the storefront switches, and a key that is no rule
+ * id is ignored.
  *
  * @param stored the JSON of the `riskRules` setting (any value)
  * @param require3ds the storefront policy `require3ds` (any value; the rule mirrors it)

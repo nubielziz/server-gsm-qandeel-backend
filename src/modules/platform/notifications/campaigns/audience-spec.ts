@@ -75,14 +75,12 @@ export const AUDIENCE_TYPE_ORDER: readonly NotificationRecipientType[] = ['staff
 /**
  * Checks the rules of an audience that one field alone cannot say.
  *
- * Why: plan 5.1: an audience must target someone, Telegram exists only for merchants (`clients.telegram_chat_id`), and a person
- * listed twice in `include` or `exclude` is a mistake staff should see.
+ * Why: plan 5.1: an audience must target someone, and a person listed twice in `include` or `exclude` is a mistake staff should see.
  *
  * @param spec the parsed spec
- * @param channels the campaign's channels
  * @returns the field errors (empty when the audience is acceptable)
  */
-export function audienceProblems(spec: AudienceSpec, channels: readonly string[]): FieldError[] {
+export function audienceProblems(spec: AudienceSpec): FieldError[] {
   const errors: FieldError[] = [];
   const include = spec.include ?? [];
   if (!spec.staff && !spec.merchants && !spec.customers && include.length === 0) {
@@ -102,13 +100,6 @@ export function audienceProblems(spec: AudienceSpec, channels: readonly string[]
       }
       seen.add(id);
     }
-  }
-  if (channels.includes('telegram') && !spec.merchants && !include.some((person) => person.type === 'client')) {
-    errors.push({
-      field: 'channels',
-      code: 'telegram_needs_merchants',
-      message: 'Telegram reaches merchants only: target merchants or remove Telegram.',
-    });
   }
   return errors;
 }

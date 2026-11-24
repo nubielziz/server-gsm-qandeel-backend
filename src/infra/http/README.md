@@ -1,6 +1,6 @@
 # Outbound HTTP (`src/infra/http`)
 
-Every call to a supplier, a payment gateway, a merchant webhook URL or the FX provider goes through one helper (decision
+Every call to a supplier, a payment gateway or the FX provider goes through one helper (decision
 023): native `fetch`, a required timeout, no retries, no redirects, and only public hosts.
 
 | What                                                        | Where                      |

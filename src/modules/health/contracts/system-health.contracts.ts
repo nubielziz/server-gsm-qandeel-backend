@@ -141,7 +141,7 @@ export const setMaintenance = defineRoute({
   key: 'PUT /admin/system/maintenance',
   summary: 'Set maintenance mode',
   description:
-    'Body `{ enabled: true, scope, message, expectedEndAt }` or `{ enabled: false }`. `scope` is `store` (the storefront API), `checkout` (starting a storefront checkout only), `api_orders` (placing orders over REST v1 and Dhru) or `all`; ' +
+    'Body `{ enabled: true, scope, message, expectedEndAt }` or `{ enabled: false }`. `scope` is `store` (the storefront API), `checkout` (starting a storefront checkout only), `api_orders` (placing orders over Dhru) or `all`; ' +
     'requests in scope answer `503 MAINTENANCE`; the admin console and the merchant portal are never affected. Enabling while on changes scope, message and end but keeps `startedAt` and `startedBy`; switching off resets the other fields to `null`. ' +
     '`expectedEndAt` must be in the future and only informs customers. Writes the audit entries `turned on maintenance`, `changed maintenance` and `turned off maintenance`.',
   tags: ['system-health'],

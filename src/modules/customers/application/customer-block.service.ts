@@ -26,12 +26,12 @@ export interface BlockInput {
 /**
  * Blocks and unblocks customers.
  *
- * Why: scenario b2c-account and b2c-chargeback. A block is for fraud (a pause is `suspend`): the customer becomes `blocked` with
- * `risk_level` high, every session ends, and the blocklist gets, with source manual, the reason, the caller and `customer_id` set:
+ * Why: scenario b2c-account and b2c-chargeback. A block is for fraud (a pause is `suspend`): the customer becomes `blocked`,
+ * every session ends, and the blocklist gets, with source manual, the reason, the caller and `customer_id` set:
  * the customer's email, each distinct card fingerprint of their payments and each distinct IMEI still stored on their orders and
  * checkout sessions (a device is its IMEI, B77). Each insert is `ON CONFLICT DO NOTHING`, so an entry that already exists (a risk
  * refund, a chargeback, a manual add, another customer's block) is kept unchanged and not linked. The reason is appended to the
- * internal notes (B48). Lifting moves `blocked` to `active`, `high` risk to `medium`, and deletes only the entries
+ * internal notes (B48). Lifting moves `blocked` to `active` and deletes only the entries
  * `WHERE customer_id = :id AND source = 'manual'`. Both are one transaction with their audit row (`blocked customer`, `unblocked
  * customer`).
  *
@@ -86,7 +86,6 @@ export class CustomerBlockService {
     const added = await this.blocklist.add(tx, requests);
     await updateCustomerRow(tx, customer.id, {
       status: 'blocked',
-      riskLevel: 'high',
       // A suspension ends here: the customer is blocked now, and a later unblock must not show a stale suspension.
       suspendedAt: null,
       suspendedBy: null,
@@ -111,7 +110,6 @@ export class CustomerBlockService {
     const removed = await this.blocklist.removeAddedByBlockOf(tx, customer.id);
     await updateCustomerRow(tx, customer.id, {
       status: 'active',
-      riskLevel: customer.riskLevel === 'high' ? 'medium' : customer.riskLevel,
       updatedAt: now,
     });
     await this.audit.record(tx, {

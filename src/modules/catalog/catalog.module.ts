@@ -11,15 +11,15 @@ import { MerchantCatalog } from './application/merchant-catalog';
 import { PriceResolver } from './application/price-resolver';
 import { RetailPrices } from './application/retail-prices';
 import { RetailPricing } from './application/retail-pricing';
-import { StorefrontServices, TacDirectory } from './application/storefront-services';
+import { StorefrontServices } from './application/storefront-services';
 import { ServiceImporter } from './application/service-importer';
 
 /**
  * Nest module for Catalog & pricing (map domain B).
  *
  * Why: one module per map domain, each owning its tables and exposing a public service through `index.ts`
- * (decision 016). It is global so identity (merchant creation, group moves, the promotion job) can inject the directory, and
- * orders, the Dhru and REST v1 lists and the storefront can inject the resolver, the listed prices, the merchant catalog and the
+ * (decision 016). It is global so identity (merchant creation, group moves) can inject the directory, and
+ * orders, the Dhru list and the storefront can inject the resolver, the listed prices, the merchant catalog and the
  * code stock, without importing the module. Everything here needs only the clock and the encryption service (both global
  * infrastructure) and a database handle passed by the caller, so
  * the module imports nothing that leads back into identity (the admin routes are `CatalogAdminModule`, which the root module
@@ -38,7 +38,6 @@ import { ServiceImporter } from './application/service-importer';
     ServiceImporter,
     InventoryStock,
     StorefrontServices,
-    TacDirectory,
   ],
   exports: [
     CatalogSignals,
@@ -51,7 +50,6 @@ import { ServiceImporter } from './application/service-importer';
     ServiceImporter,
     InventoryStock,
     StorefrontServices,
-    TacDirectory,
   ],
 })
 export class CatalogModule {}

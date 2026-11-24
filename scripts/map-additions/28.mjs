@@ -1,6 +1,6 @@
 // Feature 28 (support as a live chat, slice B1): the routes beyond the map (decisions 035 and 037, plan
-// docs/briefs/28-support-live-chat.md § 3.2 and § 5): the ticket link's live stream, typing, read mark and attachments, and the console's
-// read mark, typing and attachments. The account routes (signed-in customer, merchant) are 28b.mjs.
+// docs/briefs/28-support-live-chat.md § 3.2 and § 5): the ticket link's live stream, read mark and attachments, and the console's
+// read mark and attachments. The account routes (signed-in customer, merchant) are 28b.mjs.
 import { R } from '../lib/map-additions.mjs';
 
 const CHAT = 'B218';
@@ -24,12 +24,6 @@ export const rows = [
       successStatus: 200,
     },
   ),
-  R('store', 'support', 'POST', '/store/v1/tickets/:token/typing', 'الزبون يكتب الآن', 'رمز التذكرة', 28, THREAD, {
-    en: 'The requester is typing.',
-    module: 'support',
-    spec: CHAT,
-    successStatus: 204,
-  }),
   R(
     'store',
     'support',
@@ -69,22 +63,6 @@ export const rows = [
     THREAD,
     {
       en: "Mark the requester's messages as seen.",
-      module: 'support',
-      spec: CHAT,
-      successStatus: 204,
-    },
-  ),
-  R(
-    'admin',
-    'support',
-    'POST',
-    '/admin/support-tickets/:id/typing',
-    'الموظف يكتب ردًا أو ملاحظة',
-    'support:reply',
-    28,
-    THREAD,
-    {
-      en: 'A staff member is typing a reply or a note.',
       module: 'support',
       spec: CHAT,
       successStatus: 204,

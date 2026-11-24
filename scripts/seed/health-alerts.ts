@@ -1,4 +1,4 @@
-// Seeder of the alert side of the health module (feature 12b): the ten alert rules, a month of resolved alerts, four resolved incidents and two
+// Seeder of the alert side of the health module (feature 12b): the nine alert rules, a month of resolved alerts, four resolved incidents and two
 // weeks of nightly integrity runs, shaped like the frontend mock's calm story (src/features/system-health/mocks/seedRules.ts, seedAlerts.ts,
 // seedIncidents.ts, seedIntegrity.ts). Nothing is open: the console opens on Operational.
 //
@@ -40,7 +40,7 @@ interface RuleSeed {
   mutedHours?: number;
 }
 
-/** The ten rules, ids 1 to 10 in this order (the mock's). */
+/** The nine rules, ids 1 to 9 in this order (the mock's, without its webhook rule). */
 const RULES: readonly RuleSeed[] = [
   {
     key: 'supplier_timeout_rate',
@@ -143,17 +143,6 @@ const RULES: readonly RuleSeed[] = [
     createdDaysAgo: 60,
     isActive: false,
   },
-  {
-    key: 'webhook_failures',
-    name: 'Webhook delivery',
-    metric: 'webhooks.success_rate',
-    comparator: 'lt',
-    threshold: 95,
-    windowSeconds: 600,
-    severity: 'warning',
-    channels: ['email'],
-    createdDaysAgo: 45,
-  },
 ];
 
 interface Subject {
@@ -203,7 +192,6 @@ const HISTORY: readonly AlertSeed[] = [
     startedAgo: 8 * DAY,
     lasted: 2 * HOUR + 40 * MINUTE,
   },
-  { rule: 'webhook_failures', subject: SYSTEM, value: 91.8, startedAgo: 10 * DAY + 3 * HOUR, lasted: 33 * MINUTE },
   { rule: 'api_rate5xx', subject: SYSTEM, value: 3.1, startedAgo: 12 * DAY + 9 * HOUR, lasted: 9 * MINUTE },
   { rule: 'db_connections', subject: SYSTEM, value: 93, startedAgo: 15 * DAY + 2 * HOUR, lasted: 14 * MINUTE },
   { rule: 'orders_past_sla', subject: SYSTEM, value: 26, startedAgo: 17 * DAY + 11 * HOUR, lasted: 38 * MINUTE },
@@ -316,7 +304,7 @@ async function knownStaff(db: DbExecutor): Promise<Map<number, string>> {
 }
 
 /**
- * Seeds the ten alert rules and a month of resolved alerts.
+ * Seeds the nine alert rules and a month of resolved alerts.
  *
  * Why: the Alerts tab shows rules and history through the real API in the shape of the mock's calm story; every alert carries the snapshot of its rule
  * as the evaluator writes it (health-commissions-5) and the subject key the unique index uses.

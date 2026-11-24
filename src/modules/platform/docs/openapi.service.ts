@@ -38,7 +38,7 @@ export class OpenApiService {
    * registered and before the app listens. It needs the application, which Nest does not inject.
    *
    * @param app the Nest application, created but not necessarily initialised
-   * @param options the events to publish (defaults to the process-wide registry)
+   * @param options the Dhru actions and supplier calls to describe (defaults to the process-wide registries)
    * @returns the published documents
    * @throws {Error} when a contract's documentation is inconsistent (for example an undefined security scheme)
    */

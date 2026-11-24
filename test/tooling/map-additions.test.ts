@@ -15,6 +15,7 @@ import {
   expectedKeys,
   turnstileMismatches,
 } from '../contract/lib/manifest-parity';
+import { RETIRED } from '../contract/retired';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = 'test/tooling/fixtures/map-additions';
@@ -124,7 +125,6 @@ describe('the guards of the loader', () => {
   });
 
   it('accepts a row of every other surface, and a row equal to an R() call written as a plain object', () => {
-    expect(message(good({ s: 'v1', g: null, p: '/v1/w0-x', a: 'orders:read' }))).toBe('');
     expect(message(good({ s: 'hooks', g: null, p: '/webhooks/w0/:gateway', a: 'توقيع البوابة' }))).toBe('');
     expect(message(good({ s: 'system', g: null, m: 'GET', p: '/w0-status', a: 'عام' }))).toBe('');
     expect(
@@ -151,7 +151,17 @@ describe('the guards of the loader', () => {
     ['the surface dhru', good({ s: 'dhru' }), 'surface "dhru" must be one of'],
     ['the surface events', good({ s: 'events' }), 'surface "events" must be one of'],
     ['an unknown group', good({ g: 'nope' }), 'group "nope" must be one of'],
-    ['a group on v1', good({ s: 'v1', g: 'ops', p: '/v1/w0-x', a: 'orders:read' }), 'group must be null on surface v1'],
+    // The REST API v1 surface is retired (decision 062): no addition joins its retired map rows.
+    [
+      'the retired surface v1',
+      good({ s: 'v1', g: null, p: '/v1/w0-x', a: 'orders:read' }),
+      'surface "v1" must be one of',
+    ],
+    [
+      'a group on hooks',
+      good({ s: 'hooks', g: 'ops', p: '/webhooks/w0-x', a: 'توقيع البوابة' }),
+      'group must be null on surface hooks',
+    ],
     ['/client/x on admin', good({ p: '/client/x' }), 'path must start with /admin on surface admin'],
     ['/admin/x on system', good({ s: 'system', g: null, p: '/admin/x', a: 'عام' }), 'belongs to another surface'],
     [
@@ -331,11 +341,10 @@ describe('the row flags (feature 24A)', () => {
     expect(map.checkRowFlags([{ file: 'scripts/map-additions/x.mjs' }])).toEqual([]);
   });
 
-  it('flags exactly the three merchant auth rows from the real folder', () => {
+  it('flags exactly the two merchant auth rows from the real folder', () => {
     expect(map.rowFlags.map((entry) => entry.row).sort()).toEqual([
       'client POST /client/auth/login',
       'client POST /client/auth/password/forgot',
-      'client POST /client/auth/register',
     ]);
   });
 
@@ -440,7 +449,7 @@ describe('the surface prefixes', () => {
         expect(surfaceOfPath(`${prefix}/w0-x`), surface).toBe(surface as 'admin');
       }
     }
-    expect(Object.keys(lib.ADDITION_SURFACES).sort()).toEqual(['admin', 'client', 'hooks', 'store', 'system', 'v1']);
+    expect(Object.keys(lib.ADDITION_SURFACES).sort()).toEqual(['admin', 'client', 'hooks', 'store', 'system']);
   });
 
   it('list the success statuses a route may promise', () => {
@@ -639,7 +648,8 @@ describe('the route tools pick the sample rows up', () => {
   it('coverage counts the additions under their stage', async () => {
     const text = await readFile(join(docs, 'COVERAGE.md'), 'utf8');
     expect(text).toMatch(/\| stage 99 \| 5 \| 5 \| 0 \| 100 % \| 1 of 1 \|/);
-    const total = map.EXPECTED.endpoints! + realEndpoints + 5;
+    // A retired row of the map (decision 061) stays in the manifest but is left out of the counts.
+    const total = map.EXPECTED.endpoints! + realEndpoints + 5 - Object.keys(RETIRED).length;
     expect(text).toContain(`**${total} of ${total} endpoints built`);
   });
 

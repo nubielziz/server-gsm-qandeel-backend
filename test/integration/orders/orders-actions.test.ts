@@ -5,7 +5,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
-import { MerchantSpend } from '@src/modules/money';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
@@ -24,6 +23,7 @@ import {
   ordersWorld,
   outboxOf,
   portalFor,
+  settledOf,
   systemBalance,
   walletOf,
 } from '../../support/orders';
@@ -180,10 +180,8 @@ describe('POST /admin/orders/:id/reply', () => {
       toStatus: 'completed',
     });
     expect((await auditOf(db, id)).map((row) => row.action)).toEqual(['completed order']);
-    // The merchant's own spend counts it (MerchantSpend reads the settlement).
-    expect((await t.app.get(MerchantSpend).completedSpend(db, [merchant.id])).get(merchant.id)?.toWire()).toBe(
-      '17.2800',
-    );
+    // The settlement is on the merchant's books.
+    expect(await settledOf(db, merchant.id)).toBe('17.2800');
   });
 
   it('books the supplier cost when a supplier executed the order', async () => {
@@ -315,10 +313,8 @@ describe('POST /admin/orders/:id/reopen and /refund', () => {
       .from(s.ledgerTransactions)
       .where(eq(s.ledgerTransactions.idempotencyKey, settle.key));
     expect(ledger.at(-1)).toEqual({ kind: 'adjustment', key: `reverse:${settleTx!.id}` });
-    // The reversed settlement no longer counts as the merchant's spend (MerchantSpend reads the reversal key).
-    expect((await t.app.get(MerchantSpend).completedSpend(db, [merchant.id])).get(merchant.id)?.toWire()).toBe(
-      '0.0000',
-    );
+    // The reversed settlement no longer counts as settled (the reversal key `reverse:<settlement id>`).
+    expect(await settledOf(db, merchant.id)).toBe('0.0000');
     const shown = await staff.get(`/admin/orders/${id}`);
     expect(shown.body).toMatchObject({ status: 'processing', queue: null, completedAt: null });
     expect((await eventsOf(db, id)).at(-1)).toMatchObject({
@@ -338,9 +334,7 @@ describe('POST /admin/orders/:id/reopen and /refund', () => {
     expect(await systemBalance(db, 'revenue')).toBe('17.2800');
     expect(await systemBalance(db, 'cogs')).toBe('13.5000');
     expect(await walletOf(db, merchant.id)).toEqual({ wallet: '82.7200', hold: '0.0000' });
-    expect((await t.app.get(MerchantSpend).completedSpend(db, [merchant.id])).get(merchant.id)?.toWire()).toBe(
-      '17.2800',
-    );
+    expect(await settledOf(db, merchant.id)).toBe('17.2800');
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 
@@ -375,9 +369,7 @@ describe('POST /admin/orders/:id/reopen and /refund', () => {
     expect((await ledgerOf(db, id)).at(-1)!.key).toMatch(/^reverse:\d+$/);
     expect((await eventsOf(db, id)).slice(-2).map((event) => event.type)).toEqual(['rejected', 'refund']);
     expect((await auditOf(db, id)).at(-1)!.action).toBe('refunded order');
-    expect((await t.app.get(MerchantSpend).completedSpend(db, [merchant.id])).get(merchant.id)?.toWire()).toBe(
-      '0.0000',
-    );
+    expect(await settledOf(db, merchant.id)).toBe('0.0000');
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
     // Final: neither a second refund nor a reopen is possible.
     expect((await staff.post(`/admin/orders/${id}/refund`, { reason: 'x' })).body).toMatchObject({

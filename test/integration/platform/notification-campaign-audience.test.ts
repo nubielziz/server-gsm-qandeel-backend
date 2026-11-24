@@ -1,5 +1,5 @@
 // Integration tests of the audience preview (feature 23, route 6, plan section 5): every segment and filter, `include` and `exclude`,
-// marketing consent, the merchant switches and linked chats, suspended, pending and anonymized people, the SQL twin of `choiceFor`,
+// marketing consent, the merchant switches, suspended, pending and anonymized people, the SQL twin of `choiceFor`,
 // `count` equal to the pages of each provider, and an answer of counts only.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -39,8 +39,8 @@ interface World {
   readonly merchantPending: number;
   readonly merchantSuspended: number;
   readonly merchantNoEmail: number;
-  readonly merchantChat: number;
-  readonly merchantChatOff: number;
+  readonly merchantPlain: number;
+  readonly merchantOldSwitch: number;
   readonly customerJo: number;
   readonly customerSa: number;
   readonly guest: number;
@@ -80,11 +80,9 @@ beforeEach(async () => {
     merchantPending: await merchant({ status: 'pending' }),
     merchantSuspended: await merchant({ status: 'suspended' }),
     merchantNoEmail: await merchant({ notificationPrefs: announcement({ email: false }) }),
-    merchantChat: await merchant({ telegramChatId: '1001' }),
-    merchantChatOff: await merchant({
-      telegramChatId: '1002',
-      notificationPrefs: announcement({ telegram: false }),
-    }),
+    merchantPlain: await merchant(),
+    // A Telegram switch that an older save stored: it is ignored, so the merchant is a plain one.
+    merchantOldSwitch: await merchant({ notificationPrefs: announcement({ telegram: false }) }),
     customerJo: await insertCustomer(db, { country: 'JO' }),
     customerSa: await insertCustomer(db, { country: 'SA' }),
     guest: await insertCustomer(db, { hasAccount: false }),
@@ -115,13 +113,13 @@ async function preview(audience: unknown, channels: CampaignChannel[] = ['in_app
 describe('POST /admin/notification-campaigns/audience-preview', () => {
   it('counts "everyone": active staff, active merchants and active customers with an account', async () => {
     const res = await preview({ staff: {}, merchants: {}, customers: { hasAccount: true } });
-    // Staff: owner, A, B. Merchants: Jo, Vip, NoEmail, Chat, ChatOff. Customers with an account: Jo, Sa, Consent, Withdrawn.
+    // Staff: owner, A, B. Merchants: Jo, Vip, NoEmail, Plain, OldSwitch. Customers with an account: Jo, Sa, Consent, Withdrawn.
     expect(res).toEqual({
       total: 12,
       reachable: 12,
       byType: { staff: 3, client: 5, customer: 4 },
-      byChannel: { inApp: 12, email: 11, telegram: 0 },
-      excluded: { noConsent: 0, optedOut: 1, noTelegram: 0, noAccount: 0 },
+      byChannel: { inApp: 12, email: 11 },
+      excluded: { noConsent: 0, optedOut: 1, noAccount: 0 },
     });
   });
 
@@ -147,17 +145,16 @@ describe('POST /admin/notification-campaigns/audience-preview', () => {
     expect((await preview({ merchants: { countries: ['JO', 'AE'] } })).total).toBe(2);
   });
 
-  it('honours the merchant announcement switches and linked chats for email and Telegram', async () => {
-    const res = await preview({ merchants: {} }, ['email', 'telegram']);
-    // The merchant who switched email off and has no chat is in the audience but reachable by neither channel.
+  it('honours the merchant announcement email switch, and ignores a Telegram switch that an older save stored', async () => {
+    const res = await preview({ merchants: {} }, ['email']);
+    // The merchant who switched email off is in the audience but not reachable.
     expect(res).toMatchObject({
       total: 5,
       reachable: 4,
-      byChannel: { inApp: 0, email: 4, telegram: 1 },
-      excluded: { optedOut: 1, noTelegram: 4, noAccount: 0 },
+      byChannel: { inApp: 0, email: 4 },
+      excluded: { optedOut: 1, noAccount: 0 },
     });
-    const telegramOnly = await preview({ merchants: {} }, ['telegram']);
-    expect(telegramOnly).toMatchObject({ total: 5, reachable: 1 });
+    expect(res.byChannel).not.toHaveProperty('telegram');
   });
 
   it('filters customers by account and country, and has no language filter any more', async () => {
@@ -203,7 +200,7 @@ describe('POST /admin/notification-campaigns/audience-preview', () => {
     expect(res.byType).toEqual({ staff: 2, client: 1, customer: 1 });
   });
 
-  it('refuses an audience that targets nobody and Telegram without merchants, naming the field', async () => {
+  it('refuses an audience that targets nobody, naming the field, and the retired Telegram channel', async () => {
     const empty = await owner.post('/admin/notification-campaigns/audience-preview', {
       audience: {},
       channels: ['email'],
@@ -216,7 +213,8 @@ describe('POST /admin/notification-campaigns/audience-preview', () => {
       channels: ['telegram'],
       purpose: 'service',
     });
-    expect(telegram.body.errors.map((e: { field: string }) => e.field)).toEqual(['channels']);
+    expect(telegram.status).toBe(422);
+    expect(telegram.body.errors[0].field).toMatch(/^channels/);
   });
 
   it('writes nothing', async () => {
@@ -247,7 +245,7 @@ describe('the providers', () => {
     for (const { audience, purpose } of SPECS) {
       const spec = zAudienceSpec.parse(audience);
       for (const selection of selectionsOf(spec)) {
-        const query: AudienceQuery = { ...selection, purpose, channels: ['in_app', 'email', 'telegram'] };
+        const query: AudienceQuery = { ...selection, purpose, channels: ['in_app', 'email'] };
         const provider = audiences.get(selection.type);
         const counts = await provider.count(db, query);
         const members = [];
@@ -260,7 +258,6 @@ describe('the providers', () => {
         }
         expect(members.length, `${selection.type} ${JSON.stringify(audience)}`).toBe(counts.total);
         expect(members.filter((m) => m.email).length).toBe(counts.email);
-        expect(members.filter((m) => m.telegram).length).toBe(counts.telegram);
         expect(members.filter((m) => m.inApp).length).toBe(counts.inApp);
         for (const member of members) expect(await provider.member(db, purpose, member.id)).toEqual(member);
       }
@@ -284,16 +281,12 @@ describe('the providers', () => {
     const { db } = await testDb();
     const audiences = t.app.get(NotificationAudiences);
     for (const prefs of matrix) {
-      for (const chat of [null, '777']) {
-        const id = await insertMerchant(db, { notificationPrefs: prefs ?? {}, telegramChatId: chat });
-        const member = await audiences.get('client').member(t.app.get(DbService).db, 'service', id);
-        const choice = choiceFor(definition, prefs ?? {});
-        expect(member, JSON.stringify(prefs)).toMatchObject({
-          email: choice.email,
-          telegram: choice.telegram && chat !== null,
-        });
-        await db.delete(s.clients).where(eq(s.clients.id, id));
-      }
+      const id = await insertMerchant(db, { notificationPrefs: prefs ?? {} });
+      const member = await audiences.get('client').member(t.app.get(DbService).db, 'service', id);
+      const choice = choiceFor(definition, prefs ?? {});
+      expect(member, JSON.stringify(prefs)).toMatchObject({ email: choice.email });
+      expect(member).not.toHaveProperty('telegram');
+      await db.delete(s.clients).where(eq(s.clients.id, id));
     }
   });
 
@@ -308,7 +301,7 @@ describe('the providers', () => {
     expect(await audiences.get('customer').member(db, 'marketing', w.customerConsent)).toMatchObject({ email: true });
     expect(await audiences.get('customer').member(db, 'service', 99_999_999)).toBeUndefined();
     const member = await audiences.get('customer').member(db, 'service', w.customerSa);
-    expect(member).toMatchObject({ inApp: true, email: true, telegram: false });
+    expect(member).toMatchObject({ inApp: true, email: true });
     expect(member).not.toHaveProperty('locale');
   });
 });

@@ -1,5 +1,5 @@
 // Read-only queries behind the dashboard, in one file: the orders figures, the supplier rows, and the counts and sums over the tables
-// of the modules that have no reader yet (payments, refunds, disputes, tickets, commissions, merchants, wallets, currencies).
+// of the modules that have no reader yet (payments, refunds, disputes, tickets, merchants, wallets, currencies).
 //
 // DEVIATION to resolve when those modules export readers: decision 016 wants these reads through the owning module's public service.
 // Orders export the SQL fragments `pastSlaPredicate` and `queueSql` (used here, so the age-only past-SLA rule of B92 stays in one place);
@@ -264,8 +264,6 @@ export async function servicesBelowFloor(db: DbExecutor, now: Date): Promise<{ c
 export interface MoneyFacts {
   readonly depositsPending: { count: number; total: string; oldestAt: Date | null };
   readonly walletsNegative: { count: number; clients: Array<{ id: number; name: string; balance: string }> };
-  readonly merchantsPending: { count: number; names: string[] };
-  readonly commissions: { count: number; total: string; agents: number };
   readonly held: { count: number; captured: string; oldestAt: Date | null };
   /** Every dispute that needs a response: `dueSoon` of them are due within 3 days; the first (earliest deadline) gives the rest. */
   readonly disputesDue: {
@@ -298,26 +296,20 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
   const { isRateStale } = await moneyApi();
   const one = async <T>(query: SQL): Promise<T> => (await db.execute<T & Record<string, unknown>>(query)).rows[0] as T;
   const rate = sql`coalesce(cs.fx_rate, cur.rate_to_base)`;
-  const [deposits, wallets, merchants, commissions, held, dispute, late, ticketsOpen, refunds, failed, fx] =
-    await Promise.all([
-      one<{ n: number; total: string; oldest: Date | null }>(sql`
+  const [deposits, wallets, held, dispute, late, ticketsOpen, refunds, failed, fx] = await Promise.all([
+    one<{ n: number; total: string; oldest: Date | null }>(sql`
       select count(*)::int as n, coalesce(sum(p.amount / ${rate}), 0)::numeric(20,4)::text as total, min(p.created_at) as oldest
       from payments p join currencies cur on cur.code = p.currency
       left join orders po on po.id = p.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
       where p.purpose = 'topup' and p.status = 'pending'`),
-      db.execute<{ id: number; name: string; balance: string; n: number }>(sql`
+    db.execute<{ id: number; name: string; balance: string; n: number }>(sql`
       select c.id, c.name, a.balance::text as balance, count(*) over ()::int as n
       from ledger_accounts a join clients c on c.id = a.owner_id
       where a.kind = 'client_wallet' and a.balance < 0 order by a.balance, c.id limit 5`),
-      db.execute<{ name: string; n: number }>(sql`
-      select name, count(*) over ()::int as n from clients where status = 'pending' order by created_at, id limit 5`),
-      one<{ n: number; total: string; agents: number }>(sql`
-      select count(*)::int as n, coalesce(sum(amount), 0)::numeric(20,4)::text as total, count(distinct beneficiary_id)::int as agents
-      from commission_accruals where status = 'accrued'`),
-      one<{ n: number; captured: string; oldest: Date | null }>(sql`
+    one<{ n: number; captured: string; oldest: Date | null }>(sql`
       select count(*)::int as n, coalesce(sum(total_price + tax_amount), 0)::numeric(20,4)::text as captured, min(placed_at) as oldest
       from orders where client_id is null and dispatch_state = 'held' and status in ('pending', 'processing')`),
-      one<{ n: number; soon: number; id: number | null; due: Date | null; amount: string; fee: string }>(sql`
+    one<{ n: number; soon: number; id: number | null; due: Date | null; amount: string; fee: string }>(sql`
       with open_disputes as (
         select d.id, d.evidence_due_at, d.amount / ${rate} as usd_amount, d.fee / ${rate} as usd_fee
         from disputes d join currencies cur on cur.code = d.currency
@@ -331,25 +323,25 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
         (select id from earliest) as id, (select evidence_due_at from earliest) as due,
         coalesce((select usd_amount from earliest), 0)::numeric(20,4)::text as amount,
         coalesce((select usd_fee from earliest), 0)::numeric(20,4)::text as fee`),
-      one<{ n: number; id: number | null; since: Date | null; subject: string | null }>(sql`
+    one<{ n: number; id: number | null; since: Date | null; subject: string | null }>(sql`
       with late as (select * from support_tickets where status in ('new', 'open') and sla_due_at is not null and sla_due_at < ${now})
       select (select count(*) from late)::int as n, (select id from late order by created_at, id limit 1) as id,
         (select created_at from late order by created_at, id limit 1) as since, (select subject from late order by created_at, id limit 1) as subject`),
-      one<{ n: number }>(sql`select count(*)::int as n from support_tickets where status <> 'resolved'`),
-      one<{ n: number; total: string }>(sql`
+    one<{ n: number }>(sql`select count(*)::int as n from support_tickets where status <> 'resolved'`),
+    one<{ n: number; total: string }>(sql`
       select count(*)::int as n, coalesce(sum(r.amount / ${rate}), 0)::numeric(20,4)::text as total
       from refunds r join currencies cur on cur.code = r.currency
       left join orders po on po.id = r.order_id left join checkout_sessions cs on cs.id = po.checkout_session_id
       where r.status = 'requested'`),
-      // The item links to the Refunds page, which lists customer refunds only; a failed automatic return of a held payment is a finding of
-      // the integrity check instead (decision 048).
-      one<{ n: number; id: number | null; reason: string | null }>(sql`
+    // The item links to the Refunds page, which lists customer refunds only; a failed automatic return of a held payment is a finding of
+    // the integrity check instead (decision 048).
+    one<{ n: number; id: number | null; reason: string | null }>(sql`
       select count(*)::int as n, (array_agg(id order by created_at, id))[1] as id, (array_agg(reason order by created_at, id))[1] as reason
       from refunds where status = 'failed' and customer_id is not null`),
-      // Active currencies only (a switched-off one needs no refresh); money's rule decides which are stale.
-      db.execute<{ code: string; updated: Date; held: Date | null }>(sql`
+    // Active currencies only (a switched-off one needs no refresh); money's rule decides which are stale.
+    db.execute<{ code: string; updated: Date; held: Date | null }>(sql`
       select code, rate_updated_at as updated, rate_held_at as held from currencies where is_active order by rate_updated_at, code`),
-    ]);
+  ]);
   // The 24 h rule and a held refresh (decision 049), as the currencies page (`isStale`), so the item and the page never disagree
   // (M166); oldest first.
   const staleRates = fx.rows.filter((row) =>
@@ -370,8 +362,6 @@ export async function moneyFacts(db: DbExecutor, now: Date): Promise<MoneyFacts>
       count: wallets.rows[0]?.n ?? 0,
       clients: wallets.rows.map((row) => ({ id: Number(row.id), name: row.name, balance: row.balance })),
     },
-    merchantsPending: { count: merchants.rows[0]?.n ?? 0, names: merchants.rows.map((row) => row.name) },
-    commissions: { count: commissions.n, total: commissions.total, agents: commissions.agents },
     held: { count: held.n, captured: held.captured, oldestAt: held.oldest ? new Date(held.oldest) : null },
     disputesDue: {
       count: dispute.n,
@@ -475,12 +465,11 @@ export interface StorefrontExtras {
   readonly refundRate: number | null;
   readonly disputeRate: number | null;
   readonly firstReplySeconds: number | null;
-  readonly satisfaction: { average: number; ratings: number } | null;
   readonly topCustomers: Array<{ id: number; name: string; country: string; orders: number; spend: string }>;
 }
 
 /**
- * The storefront figures that are not the funnel: average order, refund and dispute rates, support speed and satisfaction, top customers.
+ * The storefront figures that are not the funnel: average order, refund and dispute rates, support speed, top customers.
  *
  * @param db the database
  * @param now the clock's time
@@ -507,9 +496,8 @@ export async function storefrontExtras(
     db.execute<{ n: number }>(
       sql`select count(*)::int as n from disputes where created_at >= ${from} and created_at < ${now}`,
     ),
-    db.execute<{ median: number | null; avg: string | null; ratings: number }>(sql`
-      select percentile_cont(0.5) within group (order by extract(epoch from (first_response_at - created_at))) as median,
-        avg(csat_score)::numeric(4,2)::text as avg, (count(*) filter (where csat_score is not null))::int as ratings
+    db.execute<{ median: number | null }>(sql`
+      select percentile_cont(0.5) within group (order by extract(epoch from (first_response_at - created_at))) as median
       from support_tickets where requester_type = 'customer' and created_at >= ${from} and created_at < ${now}`),
     db.execute<{ id: number; name: string; country: string | null; orders: number; spend: string }>(sql`
       select c.id, c.name, c.country, count(*)::int as orders, sum(o.total_price + o.tax_amount)::numeric(20,4)::text as spend
@@ -529,10 +517,6 @@ export async function storefrontExtras(
     disputeRate: paidCount === 0 ? null : Math.round(((disputes.rows[0]?.n ?? 0) / paidCount) * 10_000) / 100,
     firstReplySeconds:
       ticketRow?.median === null || ticketRow?.median === undefined ? null : Math.round(Number(ticketRow.median)),
-    satisfaction:
-      ticketRow && ticketRow.ratings > 0 && ticketRow.avg !== null
-        ? { average: Number(ticketRow.avg), ratings: ticketRow.ratings }
-        : null,
     topCustomers: top.rows.map((row) => ({
       id: Number(row.id),
       name: row.name,

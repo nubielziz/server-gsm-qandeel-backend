@@ -13,11 +13,11 @@ import { type HttpRequestOptions, type HttpResult, HttpRequestError, httpRequest
  */
 export interface OutboundRequestOptions extends HttpRequestOptions {
   /**
-   * Who is called: `supplier`, `gateway`, `merchant_webhook`, `fx_provider`, `telegram`... A metric label, so keep the
+   * Who is called: `supplier`, `gateway`, `fx_provider`, `telegram`... A metric label, so keep the
    * set small and fixed (never a host name or an id).
    */
   readonly target: string;
-  /** What for, for the log only: `dhru.accountinfo`, `webhook.delivery`. No URLs, no ids. */
+  /** What for, for the log only: `dhru.accountinfo`, `openexchangerates.latest`. No URLs, no ids. */
   readonly operation?: string;
 }
 
@@ -30,7 +30,7 @@ function outcomeOf(result: HttpResult | undefined, error: unknown): string {
 /**
  * Makes outbound HTTP calls with the production defaults.
  *
- * Why: decision 023: suppliers, payment gateways, merchant webhooks and the FX provider are all called through
+ * Why: decision 023: suppliers, payment gateways and the FX provider are all called through
  * `httpRequest`; this service adds `https` only in production (unless the call opts out or is a private-network call), forwards the request id (so one id joins API, worker and
  * supplier logs, decision 012), records `outbound_http_request_duration_seconds{target,method,outcome}` and logs one
  * line per call with the host only (never the path, query, headers or body, which may hold secrets).
@@ -80,7 +80,7 @@ export class OutboundHttp {
       result = await httpRequest({
         ...options,
         headers: Object.fromEntries(headers),
-        // https only in production by default (merchant webhooks must be https, decision 023); an internal call
+        // https only in production by default (a call to a public host must be https, decision 023); an internal call
         // (allowPrivateNetwork, e.g. Prometheus) or a caller with an explicit setting decides for itself.
         httpsOnly: options.httpsOnly ?? (this.config.isProduction && !options.allowPrivateNetwork),
       });

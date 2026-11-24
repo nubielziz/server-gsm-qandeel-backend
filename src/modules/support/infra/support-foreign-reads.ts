@@ -71,8 +71,6 @@ export interface RequesterRecord {
   readonly name: string;
   /** The address to write to; `null` when the requester is anonymized or gone. */
   readonly email: string | null;
-  /** A merchant's linked Telegram chat; `null` for a customer. */
-  readonly telegramChatId: string | null;
   /** False for a customer that was anonymized or deleted: nothing may be sent to them. */
   readonly reachable: boolean;
 }
@@ -101,16 +99,15 @@ export async function findRequester(
     return {
       name: gone ? DELETED_CUSTOMER_NAME : row.name,
       email: gone ? null : row.email,
-      telegramChatId: null,
       reachable: !gone,
     };
   }
   const [row] = await db
-    .select({ name: s.clients.name, email: s.clients.email, telegramChatId: s.clients.telegramChatId })
+    .select({ name: s.clients.name, email: s.clients.email })
     .from(s.clients)
     .where(eq(s.clients.id, id))
     .limit(1);
-  return row && { name: row.name, email: row.email, telegramChatId: row.telegramChatId, reachable: true };
+  return row && { name: row.name, email: row.email, reachable: true };
 }
 
 /** A staff member as a ticket names them. */

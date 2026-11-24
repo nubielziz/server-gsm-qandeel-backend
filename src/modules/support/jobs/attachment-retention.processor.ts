@@ -20,7 +20,7 @@ export interface AttachmentRetentionData {
 /**
  * Deletes the attachments of tickets past the retention when the nightly tick arrives.
  *
- * Why: feature 28, rule 10. Recorded in `job_runs` like `data_retention` (every run, decision 020); `JobRunsService` skips it while a
+ * Why: feature 28, rule 10. Recorded in `job_runs` like the other jobs (every run, decision 020); `JobRunsService` skips it while a
  * previous run is still going. The job carries no data: it reads the setting and the clock itself, and a repeat only finds fewer rows.
  */
 @Injectable()

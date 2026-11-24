@@ -9,7 +9,7 @@ import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
 import { IdempotencyHeaders } from './idempotency-headers';
 import { MerchantEventSchema, MerchantOrderSchema, ORDER_SORTS } from './shared';
 
-/** The most IMEIs one bulk order may hold (the same limit as REST v1's `POST /v1/orders/bulk`). */
+/** The most IMEIs one bulk order may hold (the same limit as a Dhru bulk call). */
 export const MAX_BULK_IMEIS = 100;
 
 const MERCHANT_ORDER_QUERY = listQuery({
@@ -37,7 +37,6 @@ const ORDER_EXAMPLE = {
   source: 'portal',
   result: { code: 'Unlocked: code 8842 1113', comment: null, fileId: null },
   verificationStatus: null,
-  clientNote: null,
   inputFileId: null,
   canCancel: false,
   canVerify: false,
@@ -125,7 +124,7 @@ export const placeClientOrder = defineRoute({
     'again with the response header `idempotency-replayed: true` (nothing is placed); another body with the key is `409 ' +
     'IDEMPOTENCY_KEY_REUSED`, one still running `409 IDEMPOTENCY_IN_PROGRESS` (`Retry-After`). A refused request stores nothing, so the key ' +
     `may be sent again. The answer is kept ${IDEMPOTENCY_WINDOW_DAYS} days; a replay is the first answer as it was (the orders may have moved on). ` +
-    'A key used on REST v1 cannot be used here. Without the header nothing changes.',
+    'Without the header nothing changes.',
   tags: ['client-orders'],
   surface: 'client',
   access: 'merchant-session',

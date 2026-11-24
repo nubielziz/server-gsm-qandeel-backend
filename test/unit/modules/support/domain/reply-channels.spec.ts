@@ -1,34 +1,26 @@
 // Unit tests of the reply channels (RULES support 6, ANSWERS support Q2).
 import { describe, expect, it } from 'bun:test';
-import { pickReplyChannel, replyChannelsOf } from '@src/modules/support/domain/reply-channels';
+import { REPLY_CHANNELS, pickReplyChannel, replyChannelsOf } from '@src/modules/support/domain/reply-channels';
 
 describe('replyChannelsOf', () => {
-  it('is email for a customer, and email plus telegram for a merchant with a linked chat', () => {
-    expect(replyChannelsOf({ requesterType: 'customer', reachable: true, telegramChatId: null })).toEqual(['email']);
-    expect(replyChannelsOf({ requesterType: 'client', reachable: true, telegramChatId: null })).toEqual(['email']);
-    expect(replyChannelsOf({ requesterType: 'client', reachable: true, telegramChatId: '555' })).toEqual([
-      'email',
-      'telegram',
-    ]);
+  it('is email for any requester that can be reached', () => {
+    expect(REPLY_CHANNELS).toEqual(['email']);
+    expect(replyChannelsOf({ reachable: true })).toEqual(['email']);
   });
 
-  it('never offers telegram to a customer, and nothing to a requester that cannot be reached', () => {
-    expect(replyChannelsOf({ requesterType: 'customer', reachable: true, telegramChatId: '555' })).toEqual(['email']);
-    expect(replyChannelsOf({ requesterType: 'client', reachable: false, telegramChatId: '555' })).toEqual([]);
+  it('is nothing for a requester that cannot be reached', () => {
+    expect(replyChannelsOf({ reachable: false })).toEqual([]);
   });
 });
 
 describe('pickReplyChannel', () => {
   it('takes the named channel when the ticket allows it and refuses it otherwise', () => {
-    expect(pickReplyChannel('telegram', 'email', ['email', 'telegram'])).toBe('telegram');
-    expect(pickReplyChannel('telegram', 'email', ['email'])).toBeUndefined();
-    expect(pickReplyChannel('email', 'web', [])).toBeUndefined();
+    expect(pickReplyChannel('email', ['email'])).toBe('email');
+    expect(pickReplyChannel('email', [])).toBeUndefined();
   });
 
-  it('uses the ticket’s own channel when allowed, else email', () => {
-    expect(pickReplyChannel(undefined, 'telegram', ['email', 'telegram'])).toBe('telegram');
-    expect(pickReplyChannel(undefined, 'telegram', ['email'])).toBe('email');
-    expect(pickReplyChannel(undefined, 'web', ['email', 'telegram'])).toBe('email');
-    expect(pickReplyChannel(undefined, 'chat', [])).toBeUndefined();
+  it('uses email when no channel is named, and nothing when nothing is allowed', () => {
+    expect(pickReplyChannel(undefined, ['email'])).toBe('email');
+    expect(pickReplyChannel(undefined, [])).toBeUndefined();
   });
 });

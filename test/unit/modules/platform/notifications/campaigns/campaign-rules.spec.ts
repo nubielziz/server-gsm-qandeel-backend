@@ -2,6 +2,7 @@
 // the inbox category, which rows a member gets and the stats arithmetic.
 import { describe, expect, it } from 'bun:test';
 import {
+  CAMPAIGN_CHANNELS,
   CANCELLABLE_STATUSES,
   EDITABLE_STATUSES,
   EMPTY_STATS,
@@ -19,6 +20,7 @@ import {
   scheduleProblem,
   statsOf,
 } from '@src/modules/platform/notifications/campaigns/campaign-rules';
+import type { CampaignChannel } from '@src/modules/platform/notifications/campaigns/notification-audiences';
 
 const fields = (errors: Array<{ field: string }>) => errors.map((error) => error.field);
 
@@ -148,28 +150,27 @@ describe('rowsFor', () => {
   it('makes a row per chosen channel that reaches the member, and names the skip of each other chosen channel', () => {
     for (const inApp of [true, false]) {
       for (const email of [true, false]) {
-        for (const telegram of [true, false]) {
-          const member = { id: 1, inApp, email, telegram };
-          const all = rowsFor(member, ['in_app', 'email', 'telegram']);
-          expect(all).toEqual({
-            inApp,
-            email,
-            telegram,
-            skipped: { noAccount: !inApp, optedOut: !email, noTelegram: !telegram },
-          });
-          const none = rowsFor(member, []);
-          expect(none).toEqual({
-            inApp: false,
-            email: false,
-            telegram: false,
-            skipped: { noAccount: false, optedOut: false, noTelegram: false },
-          });
-          const emailOnly = rowsFor(member, ['email']);
-          expect(emailOnly.inApp || emailOnly.telegram).toBe(false);
-          expect(emailOnly.skipped).toEqual({ noAccount: false, optedOut: !email, noTelegram: false });
-        }
+        const member = { id: 1, inApp, email };
+        const all = rowsFor(member, ['in_app', 'email']);
+        expect(all).toEqual({ inApp, email, skipped: { noAccount: !inApp, optedOut: !email } });
+        const none = rowsFor(member, []);
+        expect(none).toEqual({ inApp: false, email: false, skipped: { noAccount: false, optedOut: false } });
+        const emailOnly = rowsFor(member, ['email']);
+        expect(emailOnly.inApp).toBe(false);
+        expect(emailOnly.skipped).toEqual({ noAccount: false, optedOut: !email });
       }
     }
+  });
+
+  it('knows only the two channels of a campaign: a stored campaign that lists a retired one is not planned for it', () => {
+    expect(CAMPAIGN_CHANNELS).toEqual(['in_app', 'email']);
+    // A channel that is not in the list (the CHECK of an older row may still allow it) never makes a row.
+    const stored = ['email', 'telegram'] as unknown as readonly CampaignChannel[];
+    expect(rowsFor({ id: 1, inApp: true, email: true }, stored)).toEqual({
+      inApp: false,
+      email: true,
+      skipped: { noAccount: false, optedOut: false },
+    });
   });
 });
 
@@ -177,14 +178,20 @@ describe('stats', () => {
   it('reads partial stored stats as zeros and adds stats', () => {
     expect(statsOf({})).toEqual(EMPTY_STATS);
     expect(statsOf({ planned: { inApp: 2, email: 'x' } })).toEqual({
-      planned: { inApp: 2, email: 0, telegram: 0 },
-      skipped: { optedOut: 0, noTelegram: 0, noAccount: 0 },
+      planned: { inApp: 2, email: 0 },
+      skipped: { optedOut: 0, noAccount: 0 },
     });
-    const one = { planned: { inApp: 1, email: 2, telegram: 3 }, skipped: { optedOut: 4, noTelegram: 5, noAccount: 6 } };
+    const one = { planned: { inApp: 1, email: 2 }, skipped: { optedOut: 4, noAccount: 6 } };
     expect(addStats(one, one)).toEqual({
-      planned: { inApp: 2, email: 4, telegram: 6 },
-      skipped: { optedOut: 8, noTelegram: 10, noAccount: 12 },
+      planned: { inApp: 2, email: 4 },
+      skipped: { optedOut: 8, noAccount: 12 },
     });
+  });
+
+  it('leaves out the counters of a retired channel that an older campaign stored', () => {
+    expect(
+      statsOf({ planned: { inApp: 5, email: 4, telegram: 3 }, skipped: { optedOut: 1, noTelegram: 2, noAccount: 0 } }),
+    ).toEqual({ planned: { inApp: 5, email: 4 }, skipped: { optedOut: 1, noAccount: 0 } });
   });
 
   it('keys a campaign row by campaign, channel and person', () => {

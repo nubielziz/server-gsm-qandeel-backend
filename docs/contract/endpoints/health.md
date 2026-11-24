@@ -44,7 +44,7 @@ Frontend features covering this module: `dashboard`, `system-health`, `system` (
 ## GET /admin/queues
 
 - **Map**: Bull Board UI for monitoring the queues. (Bull Board لمراقبة الـ queues (واجهة)) · staff-permission `queues:read` · stage 9 · tables -
-- **Frontend**: `queuesBoardUrl` (src/features/dashboard/api/dashboard.ts:37) · params none · returns `string` · success 200
+- **Frontend**: `queuesBoardUrl` (src/features/dashboard/api/dashboard.ts:57) · params none · returns `string` · success 200
 - **Request**: Never fetched: the console builds the absolute URL <API base>/admin/queues and opens it in a new tab for staff with queues:read (api/dashboard.ts:37-39, hooks/useDashboardGrants.ts:17-21, M8).
 - **Response**: The Bull Board HTML UI (text/html) with its assets and JSON calls under /admin/queues/*. Authenticated by the staff session cookie on a top-level navigation (no CSRF header, no Authorization header) and the queues:read permission; when not signed in, redirect to the console sign-in or answer an HTML 401.
 - **Errors**: 401 UNAUTHORIZED (no valid staff session cookie); 403 FORBIDDEN (caller lacks queues:read)
@@ -182,8 +182,8 @@ Frontend features covering this module: `dashboard`, `system-health`, `system` (
 
 ## GET /admin/system/webhooks
 
-- **Map**: Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message. (نجاح الـ webhooks الصادرة للتجار والواردة من البوابات: النسبة والفاشل والمحاولات وأقدم رسالة لم تُسلَّم) · staff-permission `system:read` · stage 9 · tables webhook_deliveries, outbox_events
-- **Frontend**: `getWebhooksHealth` (src/features/system-health/api/jobs.ts:33) · params none · returns `WebhooksHealth` · success 200 · assumed contract
+- **Map**: Health of the incoming webhooks from gateways: success rate, failures, attempts and the oldest undelivered message. (نجاح الـ webhooks الصادرة للتجار والواردة من البوابات: النسبة والفاشل والمحاولات وأقدم رسالة لم تُسلَّم) · staff-permission `system:read` · stage 9 · tables webhook_deliveries, outbox_events
+- **Frontend**: `getWebhooksHealth` (src/features/system-health/api/jobs.ts:34) · params none · returns `WebhooksHealth` · success 200 · assumed contract
 - **Response**: UI: polled every 30 s. Last 24 h. outgoing (webhook_deliveries to merchants): delivered, failed (gave up), retrying (pending with next_retry_at), successRate = delivered/(delivered + failed) x 100 (below 97 warn, 90 crit; null without deliveries), oldestUndeliveredAt = created_at of the oldest delivery not delivered yet (null when none), oldestAge = its age in s ({value 0, state ok} when none; warn 300, crit 1800) (mocks/buildQueues.ts:167-178). incoming (gateway callbacks POST /webhooks/payments|disputes/:gateway): delivered = accepted (2xx), failed = refused (non-2xx, signature failures included), retrying = callbacks queued for reprocessing (else 0), oldest* = oldest unprocessed outbox_events row created by a callback.
 - **Errors**: 401 UNAUTHORIZED (no or expired staff session); 403 FORBIDDEN (staff lacks system:read (detail must name it: 'You need the system:read permission.')); 503 DATABASE_UNAVAILABLE (Postgres not accepting connections: these reads need live rows, so during an outage they answer 503 through the shared database-error mapping)
 - **B97**: Map tables webhook_deliveries and outbox_events: nothing records incoming callbacks by outcome. Proposal: hourly outcome counters in the cache Redis (48 h TTL) written by the hooks controller, so the figures do not depend on Prometheus. → Proposal accepted.

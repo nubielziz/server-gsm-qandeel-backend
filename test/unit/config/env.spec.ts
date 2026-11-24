@@ -607,7 +607,7 @@ describe('HTTP_*_TIMEOUT_MS (decision 053)', () => {
   });
 });
 
-describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
+describe('MAIL_* and TELEGRAM_BOT_TOKEN (decision 033)', () => {
   it('defaults to the Mailpit of compose.yaml outside production and leaves Telegram unset', () => {
     const config = parseEnv({});
     expect(config.mail).toEqual({
@@ -615,7 +615,7 @@ describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
       from: 'IMEI-HUB <noreply@gsm.local>',
       requireTls: false,
     });
-    expect(config.telegram).toEqual({ botToken: undefined, botUsername: undefined, webhookSecret: undefined });
+    expect(config.telegram).toEqual({ botToken: undefined });
   });
 
   it('requires both mail settings in production, and nothing for Telegram', () => {
@@ -630,30 +630,26 @@ describe('MAIL_* and TELEGRAM_* (decision 033)', () => {
     const issues = issuesOf({
       MAIL_SMTP_URL: 'http://mail.example',
       MAIL_FROM: 'not an address',
-      TELEGRAM_BOT_USERNAME: '@bot',
-      TELEGRAM_WEBHOOK_SECRET: 'short secret!',
+      TELEGRAM_BOT_TOKEN: 'zzz9',
     });
-    expect(issues.map((i) => i.variable).sort()).toEqual([
-      'MAIL_FROM',
-      'MAIL_SMTP_URL',
-      'TELEGRAM_BOT_USERNAME',
-      'TELEGRAM_WEBHOOK_SECRET',
-    ]);
-    expect(JSON.stringify(issues)).not.toContain('short secret');
+    expect(issues.map((i) => i.variable).sort()).toEqual(['MAIL_FROM', 'MAIL_SMTP_URL', 'TELEGRAM_BOT_TOKEN']);
+    expect(JSON.stringify(issues)).not.toContain('zzz9');
     expect(issuesOf({ MAIL_FROM: 'noreply@gsm.example' })).toEqual([]);
   });
 
-  it('reads the Telegram settings and keeps every secret out of the summary', () => {
+  it('reads the bot token, keeps every secret out of the summary and ignores the variables of the retired webhook', () => {
     const config = parseEnv({
       TELEGRAM_BOT_TOKEN: '123456:ABC-secret-token',
       TELEGRAM_BOT_USERNAME: 'gsm_supply_bot',
       TELEGRAM_WEBHOOK_SECRET: 'w'.repeat(32),
       MAIL_SMTP_URL: 'smtp://user:smtp-password@mail.example:587',
     });
-    expect(config.telegram.botUsername).toBe('gsm_supply_bot');
+    // An .env.production written before the webhook was retired still boots: the two old variables are not read.
+    expect(config.telegram).toEqual({ botToken: '123456:ABC-secret-token' });
     const text = JSON.stringify(summarizeConfig(config));
     expect(text).not.toContain('ABC-secret-token');
     expect(text).not.toContain('smtp-password');
+    expect(text).not.toContain('gsm_supply_bot');
     expect(text).not.toContain('w'.repeat(32));
     expect(text).toContain('"botToken":"[set]"');
   });

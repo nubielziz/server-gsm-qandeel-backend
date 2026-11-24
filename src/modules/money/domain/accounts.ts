@@ -108,7 +108,7 @@ export interface WalletView {
  * Builds the wallet view from the two accounts' figures.
  *
  * Why: decision 024 "Wallet figures on the wire": `available = balance + creditLimit`, because a hold has already moved its
- * amount out of the wallet. One function so every route (admin, portal, v1, Dhru) answers the same numbers.
+ * amount out of the wallet. One function so every route (admin, portal, Dhru) answers the same numbers.
  *
  * @param figures wallet balance, hold balance and credit limit
  * @returns the four figures as wire strings

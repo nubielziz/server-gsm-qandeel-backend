@@ -96,7 +96,7 @@ const SuggestSchema = z.object({
     .max(4),
   didYouMean: z.string().nullable(),
   popular: z.array(z.string()).max(8).describe('Popular searches, only while the text is empty.'),
-  intent: z.enum(['imei']).nullable().describe('`imei`: the text is an IMEI: offer the IMEI check, no search ran.'),
+  intent: z.enum(['imei']).nullable().describe('`imei`: the text is an IMEI: no search ran and nothing was recorded.'),
 });
 
 /** `GET /store/v1/search/suggest`. */

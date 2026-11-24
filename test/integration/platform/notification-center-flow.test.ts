@@ -42,10 +42,7 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
   await t.app.get(QueuesService).queue(BROADCAST_QUEUE).obliterate({ force: true });
   await t.app.get(RedisService).cache.flushdb();
-  await db.insert(s.settings).values([
-    { key: 'notifications.broadcast_email_per_second', value: 30 },
-    { key: 'notifications.broadcast_telegram_per_second', value: 30 },
-  ]);
+  await db.insert(s.settings).values([{ key: 'notifications.broadcast_email_per_second', value: 30 }]);
   await t.app.get(SettingsReader).invalidate();
   await seedDefaultTemplates(db);
   mailbox(t).reset();
@@ -82,7 +79,7 @@ describe('the notification center, end to end', () => {
       total: 2,
       reachable: 2,
       byType: { staff: 0, client: 1, customer: 1 },
-      byChannel: { inApp: 2, email: 2, telegram: 0 },
+      byChannel: { inApp: 2, email: 2 },
     });
     const rendered = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
       channel: 'email',
@@ -163,13 +160,13 @@ describe('the notification center, end to end', () => {
       status: 'sent',
       recipients: 2,
       expectedRecipients: 2,
-      planned: { inApp: 2, email: 2, telegram: 0 },
+      planned: { inApp: 2, email: 2 },
       delivery: {
         inApp: { delivered: 2, read: 2 },
         email: { queued: 0, sent: 2, failed: 0 },
-        telegram: { queued: 0, sent: 0, failed: 0 },
       },
     });
+    expect(detail.delivery).not.toHaveProperty('telegram');
     const inApp = (await owner.get(`/admin/notification-campaigns/${draft.id}/recipients?channel=in_app`)).body;
     expect(inApp.map((row: { status: string }) => row.status)).toEqual(['read', 'read']);
     const email = await owner.get(`/admin/notification-campaigns/${draft.id}/recipients?channel=email`);

@@ -8,7 +8,6 @@ import { type PromMatrix, type PromVector, PrometheusClient } from './prometheus
 
 /** The surfaces of the API, in the order the console lists them, with the words it shows. */
 export const SURFACE_LABELS: Readonly<Record<string, string>> = {
-  v1: 'REST v1',
   dhru: 'Dhru',
   client: 'Merchant portal',
   store: 'Storefront',

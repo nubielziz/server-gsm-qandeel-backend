@@ -5,6 +5,9 @@ import type { FieldError } from '../../../common/errors';
 import { Money } from '../../../common/money';
 import type { InvoiceKind } from '../db/schema';
 
+/** The kinds a list filter accepts: every kind of an invoice but the retired `statement` (decision 062; old rows may still carry it). */
+export const INVOICE_FILTER_KINDS = ['topup', 'manual', 'receipt'] as const satisfies readonly InvoiceKind[];
+
 /** Setting key of the B2B VAT rate in percent (user rule 3: the rate stays a setting, default 0). */
 export const B2B_VAT_RATE_KEY = 'billing.b2b_vat_rate_percent';
 /** Setting key of the days an invoice is due after it is issued (B41: 14). */

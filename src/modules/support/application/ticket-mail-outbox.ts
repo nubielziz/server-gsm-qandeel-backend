@@ -1,4 +1,4 @@
-// TicketMailOutbox: writes the outbox event of a ticket's email or Telegram message (ids only) in the caller's transaction, and registers
+// TicketMailOutbox: writes the outbox event of a ticket's email (ids only) in the caller's transaction, and registers
 // its queue route. The job that sends it is TicketMailJobs; the reply-mail sweep of feature 28 writes the event of a batched reply mail.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import type { TransactionContext } from '../../../infra/db';
@@ -9,11 +9,11 @@ import type { ReplyChannel } from '../domain/reply-channels';
 /** The outbox event type, and the name of the job on the `notifications` queue, of every message a ticket causes. */
 export const TICKET_MAIL_EVENT = 'support.ticket_mail';
 
-/** The three messages a ticket causes: the receipt, a staff reply, the satisfaction survey. */
-export type TicketMailKind = 'received' | 'reply' | 'survey';
+/** The two messages a ticket causes: the receipt and a staff reply. */
+export type TicketMailKind = 'received' | 'reply';
 
 /** The values of {@link TicketMailKind}, to check an event's payload. */
-export const TICKET_MAIL_KINDS: readonly TicketMailKind[] = ['received', 'reply', 'survey'];
+export const TICKET_MAIL_KINDS: readonly TicketMailKind[] = ['received', 'reply'];
 
 /**
  * Registers the queue route of {@link TICKET_MAIL_EVENT}.
@@ -64,7 +64,7 @@ export class TicketMailOutbox {
    * @param work the caller's transaction
    * @param ticket the ticket
    * @param message the staff message just written, or the newest of the unseen replies
-   * @param channel `email`, or `telegram` for a merchant with a linked chat
+   * @param channel `email`
    * @param from the oldest of the unseen email replies the mail carries (the reply-mail sweep); without it the event is one message
    * @returns when the event is written
    */
@@ -81,17 +81,6 @@ export class TicketMailOutbox {
       channel,
       ...(from === undefined ? {} : { fromMessageId: from.id }),
     });
-  }
-
-  /**
-   * Queues the satisfaction survey of a resolved ticket.
-   *
-   * @param work the caller's transaction
-   * @param ticket the ticket just resolved
-   * @returns when the event is written
-   */
-  survey(work: Pick<TransactionContext, 'tx'>, ticket: Pick<SupportTicket, 'id'>): Promise<void> {
-    return this.add(work, ticket.id, { kind: 'survey' });
   }
 
   private async add(

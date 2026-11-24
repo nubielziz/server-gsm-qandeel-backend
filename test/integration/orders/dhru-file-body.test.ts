@@ -19,7 +19,6 @@ import {
   credentialsFor,
   dhruClient,
   dhruParameters,
-  v1Client,
 } from '../../support/machine-orders';
 import { type OrdersWorld, orderRow, ordersWorld } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
@@ -139,16 +138,20 @@ describe('a multipart body over the upload size', () => {
 });
 
 describe('every other body keeps the general 1 MiB limit', () => {
-  it('refuses a JSON body over 1 MiB on a REST v1 route, and a form body over 1 MiB on a route that takes none', async () => {
-    const v1 = v1Client(t, creds.key);
-    const json = await v1.post('/v1/orders', { serviceId: world.auto.serviceId, imei: 'x'.repeat(MIB + 1) });
+  it('refuses a JSON body over 1 MiB on a portal route, and a form body over 1 MiB on a route that takes none', async () => {
+    const json = await t.app.inject({
+      method: 'POST',
+      url: '/client/orders',
+      remoteAddress: freshClientIp(),
+      payload: { serviceId: world.auto.serviceId, imei: 'x'.repeat(MIB + 1) },
+    });
     expect(json.statusCode).toBe(413);
     expect(body(json).code).toBe('PAYLOAD_TOO_LARGE');
     const form = await t.app.inject({
       method: 'POST',
-      url: '/v1/orders',
+      url: '/client/orders',
       remoteAddress: freshClientIp(),
-      headers: { authorization: `Bearer ${creds.key}`, 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
       payload: `imei=${'x'.repeat(MIB + 1)}`,
     });
     expect(form.statusCode).toBe(413);

@@ -1,9 +1,13 @@
-// The pure rules of order placement for the merchant portal (and, later, Dhru and REST v1): IMEI format, quantity, custom field
+// The pure rules of order placement for the merchant portal (and, later, Dhru): IMEI format, quantity, custom field
 // values and totals. The use case asks these functions and turns their answers into `422` field errors; no database here.
 import { Money } from '../../../common/money';
 import type { FieldError } from '../../../common/errors';
 import { FIELD_VALUE_MAX_LENGTH, compileFieldPattern } from '../../../common/field-pattern';
+import type { OrderSource } from '../db/schema';
 import type { MainInputField } from './main-input';
+
+/** The sources an order can be placed with today: every value of `ORDER_SOURCES` but the retired `admin` (decision 062; old rows may still carry it). */
+export type PlacedOrderSource = Exclude<OrderSource, 'admin'>;
 
 /** A custom field of a service as placement validates it. */
 export interface PlacementField extends MainInputField {

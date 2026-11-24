@@ -40,7 +40,6 @@ interface DemoTicket {
   created: number;
   updated: number;
   firstReplyAt: number | null;
-  csat: number | null;
   msgs: DemoMessage[];
 }
 interface DemoMacro {
@@ -160,7 +159,6 @@ export async function seedSupport(db: DbExecutor, demo: DemoSeed, config?: AppCo
       ),
       firstResponseAt: toDate(ticket.firstReplyAt),
       resolvedAt: ticket.status === 'resolved' ? new Date(ticket.updated) : null,
-      csatScore: ticket.csat,
       token: ticket.who.type === 'customer' ? randomBytes(16).toString('base64url') : null,
       lastRequesterMessageId: lastRequester?.id ?? null,
       lastStaffMessageId: lastStaff?.id ?? null,

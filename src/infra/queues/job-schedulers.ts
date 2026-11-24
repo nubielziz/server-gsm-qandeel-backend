@@ -7,7 +7,7 @@ import { type QueueName, isQueueName } from './queue-definitions';
 /**
  * One repeating job.
  *
- * Why: scheduled work (the nightly integrity check, price sync, group promotion, the outbox relay tick) is declared next
+ * Why: scheduled work (the nightly integrity check, price sync, the outbox relay tick) is declared next
  * to the code that owns it and created in Redis by the worker at boot, so a fresh Redis or a new deploy needs no manual
  * step.
  */

@@ -24,37 +24,31 @@ describe('NEEDED_INPUT', () => {
 describe('rulesWithoutInput', () => {
   const rules = defaultRuleSet();
 
-  it('names every switched-on rule and every signal whose input this installation lacks', () => {
+  it('names the one switched-on rule whose input this installation lacks: the IP-country rule without the visitor-country header', () => {
     const gaps = rulesWithoutInput(rules, inputSourcesOf(undefined));
-    expect(gaps.map((gap) => gap.name)).toEqual(['blockBlacklistedImei', 'reviewIpCountryMismatch', 'proxyIp']);
     expect(gaps).toEqual([
-      {
-        name: 'blockBlacklistedImei',
-        label: 'Block blacklisted IMEIs before payment',
-        reason: 'No IMEI blacklist lookup is connected: only an IMEI check stored as blacklisted matches.',
-      },
       {
         name: 'reviewIpCountryMismatch',
         label: 'Hold when the IP country differs from the card country',
         reason: 'No visitor country: GEOIP_COUNTRY_HEADER is not set.',
       },
-      { name: 'proxyIp', label: 'VPN or proxy IP', reason: 'No VPN or proxy lookup is connected.' },
     ]);
   });
 
   it('stops naming the IP-country rule once the visitor-country header is configured', () => {
-    expect(rulesWithoutInput(rules, inputSourcesOf('cf-ipcountry')).map((gap) => gap.name)).toEqual([
-      'blockBlacklistedImei',
-      'proxyIp',
-    ]);
+    expect(rulesWithoutInput(rules, inputSourcesOf('cf-ipcountry'))).toEqual([]);
   });
 
   it('does not name a rule that is switched off', () => {
-    const merged = mergeRules(rules, [
-      { id: 'reviewIpCountryMismatch', on: false, value: null },
-      { id: 'blockBlacklistedImei', on: false, value: null },
-    ]);
+    const merged = mergeRules(rules, [{ id: 'reviewIpCountryMismatch', on: false, value: null }]);
     if (!merged.ok) throw new Error('unexpected');
-    expect(rulesWithoutInput(merged.next, inputSourcesOf(undefined)).map((gap) => gap.name)).toEqual(['proxyIp']);
+    expect(rulesWithoutInput(merged.next, inputSourcesOf(undefined))).toEqual([]);
+  });
+
+  it('knows no rule or signal for a VPN or proxy lookup or an IMEI blacklist lookup', () => {
+    expect(Object.keys(NEEDED_INPUT)).not.toContain('proxyIp');
+    expect(Object.keys(NEEDED_INPUT)).not.toContain('blacklistedBefore');
+    expect(Object.keys(NEEDED_INPUT)).not.toContain('blockBlacklistedImei');
+    expect(inputSourcesOf(undefined)).toEqual({ ipCountry: false });
   });
 });

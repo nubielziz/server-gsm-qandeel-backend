@@ -1,8 +1,7 @@
 // Seeder of billing (stage 8): the demo's four payment gateways, its 54 wallet top-ups with an invoice each (linked to the deposit
-// journals the money seed replayed: `ledger_transactions.ref_type = 'payment'`, `ref_id` = the payment id), three manual invoices,
-// and the verification requests of the merchants.
+// journals the money seed replayed: `ledger_transactions.ref_type = 'payment'`, `ref_id` = the payment id) and three manual invoices.
 // Mapped as the frontend mocks map them: src/features/settings/mocks/seedPayments.ts (gateways), src/features/finance/mocks/
-// paymentStore.ts and invoices.ts, src/features/merchants/mocks/kycSeed.ts.
+// paymentStore.ts and invoices.ts.
 import type { AppConfig } from '../../src/config';
 import { EncryptionService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
@@ -53,7 +52,6 @@ interface DemoMerchant {
   name: string;
   cc: string;
   status: string;
-  kyc: string;
 }
 
 const AUDIENCE: Record<string, 'b2c' | 'b2b' | 'both'> = { B2C: 'b2c', B2B: 'b2b', 'B2C and B2B': 'both' };
@@ -74,9 +72,9 @@ function parseFee(text: string): { percent: number; fixed: number } {
 }
 
 /**
- * Seeds the gateways, top-ups, invoices and verification requests of the demo.
+ * Seeds the gateways, top-ups and invoices of the demo.
  *
- * Why: seed = frontend mocks (decision 014): the Deposits, Invoices and Verification tabs and Settings > Payment methods show the demo
+ * Why: seed = frontend mocks (decision 014): the Deposits and Invoices tabs and Settings > Payment methods show the demo
  * through the real API. The gateway ids are the demo's (1 to 4) and so are the payment ids (`PAY-1000` is 1000, its invoice is 1). A
  * pending payment of an automatic gateway is sent to staff review (`review_required`), so the console can approve it. Approved payments
  * keep the staff member who approved them; the card and crypto ones the demo shows as `System` have no reviewer, as the real automatic
@@ -203,9 +201,8 @@ export async function seedBilling(db: DbExecutor, demo: DemoSeed, config?: AppCo
 
   const invoiceReport = await insertRows(db, s.invoices, invoiceRows);
   const paymentReport = await insertRows(db, s.payments, paymentRows);
-  const kycReport = await seedKyc(db, demo, merchants, present, staffIds);
-  for (const table of [s.paymentGateways, s.invoices, s.payments, s.kycSubmissions]) await syncIdentity(db, table);
-  return [gatewayReport, invoiceReport, paymentReport, kycReport];
+  for (const table of [s.paymentGateways, s.invoices, s.payments]) await syncIdentity(db, table);
+  return [gatewayReport, invoiceReport, paymentReport];
 }
 
 /** The demo's gateways as rows (ids 1 to 4), with development credentials when the keyring is known. */
@@ -242,37 +239,4 @@ function gatewayRowsOf(rows: DemoGateway[], encryption: EncryptionService | unde
       updatedAt: new Date(now - (30 - index) * DAY_MS),
     };
   });
-}
-
-/**
- * Seeds one verification request per merchant (identity seeds `clients.kyc_status` approved for the demo's "Verified" and pending
- * for "In review"), so the Verification tab and the merchant row agree. The documents are not seeded.
- */
-async function seedKyc(
-  db: DbExecutor,
-  demo: DemoSeed,
-  merchants: Map<string, DemoMerchant>,
-  present: Set<number>,
-  staffIds: Map<string, number>,
-): Promise<SeedReport> {
-  const reviewer = [...staffIds.values()][0] ?? null;
-  const rows: Array<typeof s.kycSubmissions.$inferInsert & { id: number }> = [];
-  [...merchants.values()].forEach((merchant, index) => {
-    const clientId = demoNumericId(merchant.id);
-    if (!present.has(clientId)) return;
-    const approved = merchant.kyc === 'Verified';
-    const created = new Date(demo.now - (approved ? 20 + index : 1) * DAY_MS);
-    rows.push({
-      id: clientId,
-      clientId,
-      status: approved ? 'approved' : 'pending',
-      fileIds: [],
-      reviewedBy: approved ? reviewer : null,
-      reviewedAt: approved ? new Date(created.getTime() + DAY_MS) : null,
-      note: approved ? 'Documents match the trade licence.' : '',
-      createdAt: created,
-      updatedAt: created,
-    });
-  });
-  return insertRows(db, s.kycSubmissions, rows);
 }

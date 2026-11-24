@@ -27,7 +27,7 @@
             "changed": 46
           },
           "triggeredBy": null,
-          "id": 136
+          "id": 96
         },
         "nextRunAt": "2026-10-31T12:15:00.000Z"
       },
@@ -52,7 +52,7 @@
             "lowBalance": 1
           },
           "triggeredBy": null,
-          "id": 132
+          "id": 92
         },
         "nextRunAt": "2026-10-31T12:30:00.000Z"
       },
@@ -76,7 +76,7 @@
             "sent": 12
           },
           "triggeredBy": null,
-          "id": 137
+          "id": 97
         },
         "nextRunAt": "2026-10-31T12:10:00.000Z"
       },
@@ -101,34 +101,9 @@
             "updated": 7
           },
           "triggeredBy": null,
-          "id": 128
+          "id": 88
         },
         "nextRunAt": "2026-10-31T12:05:00.000Z"
-      },
-      {
-        "name": "accruals",
-        "label": "Commission accruals",
-        "schedule": "0 1 * * *",
-        "scheduleText": "Every day at 01:00 UTC",
-        "state": "ok",
-        "running": false,
-        "lastRun": {
-          "job": "accruals",
-          "startedAt": "2026-10-31T01:00:02.017Z",
-          "finishedAt": "2026-10-31T01:00:43.001Z",
-          "durationMs": 40984,
-          "processed": 207,
-          "trigger": "schedule",
-          "status": "succeeded",
-          "error": null,
-          "result": {
-            "accruals": 207,
-            "clients": 18
-          },
-          "triggeredBy": null,
-          "id": 67
-        },
-        "nextRunAt": "2026-11-01T01:00:00.000Z"
       },
       {
         "name": "ledger_integrity",
@@ -154,34 +129,9 @@
             "failedChecks": 0
           },
           "triggeredBy": null,
-          "id": 70
+          "id": 31
         },
         "nextRunAt": "2026-11-01T02:30:00.000Z"
-      },
-      {
-        "name": "data_retention",
-        "label": "Expired data cleanup",
-        "schedule": "0 3 * * *",
-        "scheduleText": "Every day at 03:00 UTC",
-        "state": "ok",
-        "running": false,
-        "lastRun": {
-          "job": "data_retention",
-          "startedAt": "2026-10-31T03:00:03.812Z",
-          "finishedAt": "2026-10-31T03:01:26.397Z",
-          "durationMs": 82585,
-          "processed": 1804,
-          "trigger": "schedule",
-          "status": "succeeded",
-          "error": null,
-          "result": {
-            "imeiRecordsDeleted": 1804,
-            "sessionsDeleted": 601
-          },
-          "triggeredBy": null,
-          "id": 73
-        },
-        "nextRunAt": "2026-11-01T03:00:00.000Z"
       }
     ],
     "runs": []

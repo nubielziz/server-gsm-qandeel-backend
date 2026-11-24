@@ -8,7 +8,7 @@ import { DbService } from '../../../infra/db';
 import { CUSTOMER_TOKEN_PURPOSES, CustomerAuthTokens, SessionService, SignInLock } from '../../identity';
 import { CustomerWallets } from '../../money';
 import { AuditService } from '../../platform';
-import { DataRequestService, IMEI_CHECK_AAD, ImeiErasure } from '../../risk';
+import { DataRequestService } from '../../risk';
 import { CHECKOUT_IMEI_AAD } from '../domain/checkout';
 import { buildCustomerExport } from '../domain/customer-export';
 import { ANONYMIZED_NAME, anonymizedEmail, exportFilename } from '../domain/customer-privacy';
@@ -38,12 +38,12 @@ export interface ExportFile {
  * the customer's open or in-progress export request (`completed`, with the time and the staff member) and audits `exported data of`;
  * it keeps no copy of the file. *Anonymize* is irreversible: the customer becomes `anonymized` with the name `Deleted customer` and the
  * address `deleted-<id>@redacted.invalid` (free for a new customer, ANSWERS customers Q10), the phone and notes go, marketing is off,
- * the account is closed (credentials deleted, sessions revoked, links voided), the IMEI of their orders, checkout sessions and IMEI
- * checks is cut to the TAC (or erased), the erasure request is completed, and the hooks of other modules run (the support ticket
+ * the account is closed (credentials deleted, sessions revoked, links voided), the IMEI of their orders and checkout sessions is cut to
+ * the TAC (or erased), the erasure request is completed, and the hooks of other modules run (the support ticket
  * link). Payments, ledger entries and amounts stay for accounting. The audit row names the customer by number, never by the old name.
  *
  * Side effects: export updates `data_requests` and inserts `audit_logs`. Anonymize updates `customers`, `orders`, `checkout_sessions`,
- * `imei_checks`, `data_requests`; deletes `customer_credentials`; revokes `sessions`; voids `auth_tokens`; inserts `audit_logs`; clears
+ * `data_requests`; deletes `customer_credentials`; revokes `sessions`; voids `auth_tokens`; inserts `audit_logs`; clears
  * the sign-in lockout of the old address after the commit. Feature 21: anonymize is refused while the store balance is not zero or money
  * is in flight (a top-up, an open order paid from the balance, a refund to the balance waiting for staff), and voids the unpaid top-ups;
  * the export holds the store balance and its statement.
@@ -56,7 +56,6 @@ export class CustomerPrivacyService {
     private readonly db: DbService,
     private readonly encryption: EncryptionService,
     private readonly requests: DataRequestService,
-    private readonly imeiErasure: ImeiErasure,
     private readonly sessions: SessionService,
     private readonly authTokens: CustomerAuthTokens,
     private readonly lock: SignInLock,
@@ -83,13 +82,7 @@ export class CustomerPrivacyService {
       const closed = await this.requests.completePending(tx, id, 'export', staffId);
       const rows = await exportRowsOf(tx, id);
       const wallet = await this.wallets.exportOf(tx, id);
-      const document = buildCustomerExport(
-        customer,
-        rows,
-        now,
-        (kind, ciphertext) => this.imeiOf(kind, ciphertext),
-        wallet,
-      );
+      const document = buildCustomerExport(customer, rows, now, (ciphertext) => this.imeiOf(ciphertext), wallet);
       await this.audit.record(tx, {
         action: 'exported data of',
         entityType: 'customer',
@@ -138,7 +131,6 @@ export class CustomerPrivacyService {
       await this.authTokens.voidOpen(work, id, CUSTOMER_TOKEN_PURPOSES);
       await eraseOrderImeis(tx, id, now);
       await eraseCheckoutSessions(tx, id, anonymizedEmail(id), now);
-      await this.imeiErasure.forCustomer(tx, id);
       await this.requests.completePending(tx, id, 'erasure', staffId);
       await this.hooks.run(tx, id);
       // Last before the audit row: it locks the wallet row, which must come after every other row (plan 21 § 5.7).
@@ -156,11 +148,11 @@ export class CustomerPrivacyService {
     });
   }
 
-  /** The digits of a stored IMEI, or `null` when it was erased or cannot be read. */
-  private imeiOf(kind: 'checkout' | 'check', ciphertext: string | null): string | null {
+  /** The digits of the IMEI stored on a checkout session, or `null` when it was erased or cannot be read. */
+  private imeiOf(ciphertext: string | null): string | null {
     if (ciphertext === null) return null;
     try {
-      return this.encryption.decrypt(ciphertext, kind === 'checkout' ? CHECKOUT_IMEI_AAD : IMEI_CHECK_AAD);
+      return this.encryption.decrypt(ciphertext, CHECKOUT_IMEI_AAD);
     } catch {
       this.logger.error('A stored IMEI could not be decrypted for a customer export.');
       return null;

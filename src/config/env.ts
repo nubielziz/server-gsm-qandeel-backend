@@ -111,14 +111,13 @@ export interface AppConfig {
     /** STARTTLS is required on an `smtp://` URL; `smtps://` is TLS from the start (decision 055). On in production, off elsewhere. */
     readonly requireTls: boolean;
   };
-  /** Telegram Bot API (decision 033). Every value is optional: without a token, Telegram sends fail with a clear reason. */
+  /**
+   * Telegram Bot API (decision 033), for the messages of the operations alerts only (merchants lost the channel, decision 062). The value is
+   * optional: without a token, Telegram sends fail with a clear reason.
+   */
   readonly telegram: {
     /** Secret token of the bot; unset means "Telegram is not configured". */
     readonly botToken: string | undefined;
-    /** The bot's username without `@`, for the link `https://t.me/<username>?start=<token>`. */
-    readonly botUsername: string | undefined;
-    /** Secret of `POST /webhooks/telegram/:secret` (path segment and `X-Telegram-Bot-Api-Secret-Token` header); unset refuses every call. */
-    readonly webhookSecret: string | undefined;
   };
   /**
    * Where the messages of alerts go (feature 12b): the ops mailbox(es) and the ops Telegram chat. Both are optional: a channel with no recipient
@@ -173,8 +172,8 @@ export interface AppConfig {
     readonly cookieSecure: boolean;
     readonly tokenPepper: string;
     /**
-     * HMAC key of every hash stored for later matching (decision 054): the blocklist, the IMEI checks, inventory and open-order
-     * duplicates, unsubscribe links, Idempotency-Key requests, webhook event ids and the shop's link tokens. Outside production
+     * HMAC key of every hash stored for later matching (decision 054): the blocklist, inventory and open-order
+     * duplicates, unsubscribe links, Idempotency-Key requests and the shop's link tokens. Outside production
      * `TOKEN_PEPPER` when `LOOKUP_HASH_KEY` is unset; production requires it.
      */
     readonly lookupHashKey: string;
@@ -191,7 +190,7 @@ export interface AppConfig {
     /** Host names a verified token may have been issued for; empty = any. */
     readonly hostnames: readonly string[];
     /**
-     * `TURNSTILE_MERCHANT_AUTH`: enforce the check on the public merchant sign-up, sign-in and forgot-password routes (feature 24A,
+     * `TURNSTILE_MERCHANT_AUTH`: enforce the check on the public merchant sign-in and forgot-password routes (feature 24A,
      * `turnstileRollout: 'merchant-auth'`). On by default in production (the shop sends the token on its merchant forms, decision 052),
      * off by default elsewhere; `false` switches it off. The storefront routes are always checked.
      */
@@ -389,14 +388,6 @@ const rawSchema = z.object({
     .regex(/^(?:[^<>@\r\n]+<[^<>@\s]+@[^<>@\s]+>|[^<>@\s]+@[^<>@\s]+)$/, 'use an address or "Name <address>"')
     .optional(),
   TELEGRAM_BOT_TOKEN: z.string().min(10).optional(),
-  TELEGRAM_BOT_USERNAME: z
-    .string()
-    .regex(/^[A-Za-z0-9_]{5,32}$/, 'use the bot username without "@": 5-32 letters, digits or "_"')
-    .optional(),
-  TELEGRAM_WEBHOOK_SECRET: z
-    .string()
-    .regex(/^[A-Za-z0-9_-]{16,256}$/, 'use 16-256 letters, digits, "_" or "-" (Telegram allows nothing else)')
-    .optional(),
   ALERTS_EMAIL_TO: z.string().optional(),
   ALERTS_TELEGRAM_CHAT_ID: z
     .string()
@@ -1155,11 +1146,7 @@ function resolveConfig(raw: RawEnv, fail: (variable: string, message: string) =>
       requireTls: production,
     },
     // Telegram is optional everywhere: a missing token fails the send with a reason instead of stopping the boot.
-    telegram: {
-      botToken: raw.TELEGRAM_BOT_TOKEN,
-      botUsername: raw.TELEGRAM_BOT_USERNAME,
-      webhookSecret: raw.TELEGRAM_WEBHOOK_SECRET,
-    },
+    telegram: { botToken: raw.TELEGRAM_BOT_TOKEN },
     // The ops recipients of alert messages are optional everywhere: without them the message is recorded as failed, with the reason.
     alerts: {
       emailTo: alertEmails.ok ? alertEmails.value : [],
@@ -1371,11 +1358,7 @@ export function summarizeConfig(config: AppConfig): Record<string, unknown> {
     },
     fx: { provider: config.fx.provider, apiKey: flag(config.fx.apiKey), timeoutMs: config.fx.timeoutMs },
     mail: { smtpUrl: redactUrl(config.mail.smtpUrl), from: config.mail.from, requireTls: config.mail.requireTls },
-    telegram: {
-      botToken: flag(config.telegram.botToken),
-      botUsername: config.telegram.botUsername,
-      webhookSecret: flag(config.telegram.webhookSecret),
-    },
+    telegram: { botToken: flag(config.telegram.botToken) },
     // Addresses and the chat id are personal data: the summary says only how many and whether they are set.
     alerts: { emailRecipients: config.alerts.emailTo.length, telegramChat: flag(config.alerts.telegramChatId) },
     logLevel: config.log.level,

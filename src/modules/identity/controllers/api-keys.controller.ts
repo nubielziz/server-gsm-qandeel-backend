@@ -52,7 +52,7 @@ export class MerchantApiKeysController {
    * Creates a key and answers the full key once.
    *
    * @param merchant the signed-in merchant
-   * @param body the name, scopes, allowed addresses and expiry
+   * @param body the name, allowed addresses and expiry
    * @returns the key and its secret
    * @route POST /client/api-keys
    */
@@ -132,7 +132,7 @@ export class ApiKeysAdminController {
    *
    * @param staff the signed-in staff member
    * @param params the merchant id
-   * @param body the name, scopes, allowed addresses, expiry and limit
+   * @param body the name, allowed addresses, expiry and limit
    * @returns the key and its secret
    * @route POST /admin/clients/:id/api-keys
    */

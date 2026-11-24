@@ -1,5 +1,5 @@
 // Integration tests of postTransaction (decision 024, map money events): the only ledger writer, on real Postgres. Entries and
-// balance_after, idempotent replays, the credit-limit guard, the 13 events together, and concurrency (parallel posts on one
+// balance_after, idempotent replays, the credit-limit guard, the 12 events that can still be posted together, and concurrency (parallel posts on one
 // wallet never overspend, one key posts once, opposite postings do not deadlock).
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
@@ -16,8 +16,9 @@ import {
   b2cFee,
   b2cPay,
   b2cRefund,
-  commission,
   complete,
+  creditLine,
+  debitLine,
   deposit,
   order,
   payout,
@@ -257,11 +258,37 @@ describe('the credit limit guard (decision 024 step 4)', () => {
   });
 });
 
-describe('the 13 money events together', () => {
+describe('the journals of the retired commission event (decision 062)', () => {
+  it('stay valid: the kind, the reference type and the expense account are still accepted and read back', async () => {
+    const { db } = await testDb();
+    const merchant = await insertWalletMerchant(db);
+    await post({
+      kind: 'commission',
+      refType: 'accrual',
+      refId: 3,
+      idempotencyKey: 'legacy:commission:3',
+      currency: 'USD',
+      createdBy: SYSTEM,
+      lines: [
+        ...debitLine({ kind: 'commission_expense' }, m('0.20')),
+        ...creditLine({ kind: 'client_wallet', ownerType: 'client', ownerId: merchant.id }, m('0.20')),
+      ],
+    });
+    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: merchant.id })).toMatchObject({
+      balance: '0.2000',
+    });
+    expect(await accountFigures(db, 'commission_expense')).toMatchObject({ balance: '0.2000' });
+    expect((await ledgerTotals(db)).sum).toBe('0.0000');
+    const [row] = await db.select().from(s.ledgerTransactions);
+    expect(row).toMatchObject({ kind: 'commission', refType: 'accrual', refId: 3 });
+    expect(await findBalanceDifferences(db)).toEqual([]);
+  });
+});
+
+describe('the 12 money events that can still be posted, together', () => {
   it('post in sequence, keep the books at zero, and agree with the reconcile comparison', async () => {
     const { db } = await testDb();
     const merchant = await insertWalletMerchant(db);
-    const agent = await insertWalletMerchant(db, { name: 'Agent' });
     const c = merchant.id;
     const sequence: PostTransactionInput[] = [
       input(deposit({ clientId: c, amount: m('100'), fee: m('3') }), 1),
@@ -270,7 +297,6 @@ describe('the 13 money events together', () => {
       input(order({ clientId: c, amount: m('5') }), 12),
       input(reject({ clientId: c, amount: m('5') }), 12),
       input(topup({ supplierId: 2, amount: m('50') }), 2),
-      input(commission({ clientId: agent.id, amount: m('0.20') }), 3),
       input(adjust({ clientId: c, amount: m('10'), direction: 'credit' }), c),
       input(adjust({ clientId: c, amount: m('4'), direction: 'debit' }), c),
       input(b2cPay({ net: m('12.49'), vat: m('2.50') }), 21),
@@ -293,9 +319,6 @@ describe('the 13 money events together', () => {
     expect(await accountFigures(db, 'client_wallet', { type: 'client', id: c })).toMatchObject({ balance: '101.0000' });
     expect(await accountFigures(db, 'revenue')).toMatchObject({ balance: '29.9800' });
     expect(await accountFigures(db, 'fee_income')).toMatchObject({ balance: '3.0000' });
-    expect(await accountFigures(db, 'client_wallet', { type: 'client', id: agent.id })).toMatchObject({
-      balance: '0.2000',
-    });
     // 50 topup - 3 - 7.20 - 7.20 = 32.60 left at the supplier.
     expect(await accountFigures(db, 'supplier_prepaid', { type: 'supplier', id: 2 })).toMatchObject({
       balance: '32.6000',

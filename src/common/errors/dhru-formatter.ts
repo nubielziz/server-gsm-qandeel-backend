@@ -26,7 +26,7 @@ const STANDARD_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
  * Messages that replace the detail of the occurrence on the Dhru surface.
  *
  * Why: user rule 9 words the refusal of a changed price for Dhru exactly (a merchant's software matches on it to reload the service
- * list), and `Not enough credits` is the standard text whatever balance the ledger's own detail names. REST v1 keeps the details.
+ * list), and `Not enough credits` is the standard text whatever balance the ledger's own detail names.
  */
 const FIXED_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
   PRICE_CHANGED: 'Price changed. Please refresh the service list and order again.',

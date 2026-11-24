@@ -389,17 +389,17 @@ describe('OutboundHttp', () => {
   it('labels 4xx, 5xx, timeouts, network failures and blocked calls differently', async () => {
     await call({ url: `${base}/status/404` });
     await call({ url: `${base}/status/503`, target: 'gateway' });
-    await call({ url: `${base}/slow`, timeoutMs: 100, target: 'merchant_webhook' }).catch(() => undefined);
-    await call({ url: 'http://127.0.0.1:1/', timeoutMs: 500, target: 'merchant_webhook' }).catch(() => undefined);
-    await call({ url: `${base}/ok`, allowPrivateNetwork: false, target: 'merchant_webhook' }).catch(() => undefined);
+    await call({ url: `${base}/slow`, timeoutMs: 100, target: 'fx_provider' }).catch(() => undefined);
+    await call({ url: 'http://127.0.0.1:1/', timeoutMs: 500, target: 'fx_provider' }).catch(() => undefined);
+    await call({ url: `${base}/ok`, allowPrivateNetwork: false, target: 'fx_provider' }).catch(() => undefined);
     const text = await scrape();
     const count = (labels: Record<string, string>) =>
       metricValue(text, 'outbound_http_request_duration_seconds_count', labels);
     expect(count({ target: 'supplier', outcome: '4xx' })).toBeGreaterThanOrEqual(1);
     expect(count({ target: 'gateway', outcome: '5xx' })).toBe(1);
-    expect(count({ target: 'merchant_webhook', outcome: 'timeout' })).toBe(1);
-    expect(count({ target: 'merchant_webhook', outcome: 'network' })).toBe(1);
-    expect(count({ target: 'merchant_webhook', outcome: 'blocked' })).toBe(1);
+    expect(count({ target: 'fx_provider', outcome: 'timeout' })).toBe(1);
+    expect(count({ target: 'fx_provider', outcome: 'network' })).toBe(1);
+    expect(count({ target: 'fx_provider', outcome: 'blocked' })).toBe(1);
   });
 
   it('forwards the request id so one id joins API, worker and supplier logs', async () => {
@@ -452,13 +452,13 @@ describe('OutboundHttp', () => {
     try {
       const outbound = production.get(OutboundHttp);
       const before = seen.length;
-      // A public target (merchant webhook, supplier) over http is refused before any connection (decision 023).
+      // A public target (supplier, FX provider) over http is refused before any connection (decision 023).
       const publicHttp = await outbound
         .request({
           url: 'http://hooks.merchant.example/gsm',
           timeoutMs: 1_000,
           lookup: () => Promise.resolve(['93.184.216.34']),
-          target: 'merchant_webhook',
+          target: 'fx_provider',
         })
         .catch((e: unknown) => e);
       expect((publicHttp as HttpRequestError).kind).toBe('blocked');

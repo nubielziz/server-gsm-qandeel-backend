@@ -5,7 +5,7 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError } from '../../../common/errors';
 import { TokenService } from '../../../infra/crypto';
 import type { DbExecutor } from '../../../infra/db';
-import { MAX_LIVE_KEYS, checkAllowedIps, checkScopes, composeApiKey } from '../domain/api-key-input';
+import { MAX_LIVE_KEYS, checkAllowedIps, composeApiKey } from '../domain/api-key-input';
 import { countLiveKeys, insertKey, lockKeysOfClient } from '../infra/api-key-manage.repository';
 import type { ApiKey } from '../db/schema';
 
@@ -13,7 +13,6 @@ import type { ApiKey } from '../db/schema';
 export interface IssueApiKeyInput {
   readonly clientId: number;
   readonly name: string;
-  readonly scopes: readonly string[];
   readonly allowedIps: readonly string[];
   /** ISO time in the future, or `undefined` for a key that never expires. */
   readonly expiresAt: string | undefined;
@@ -33,7 +32,7 @@ export interface IssuedApiKey {
 /**
  * Checks and stores a new API key.
  *
- * Why: B155 and feature 20 (R5): the merchant and staff create keys under the same rules (known scopes, valid addresses, an expiry
+ * Why: B155 and feature 20 (R5): the merchant and staff create keys under the same rules (valid addresses, an expiry
  * in the future, at most 10 live keys per merchant, decision 019 for the secret), so the rules live once. Only the keyed hash of the
  * key and its first 8 characters are stored; the clear key is returned to the caller, which hands it to the person once.
  *
@@ -51,21 +50,20 @@ export class ApiKeyIssuer {
    * Validates the input, counts the live keys under the lock and inserts the key.
    *
    * @param tx the caller's transaction
-   * @param input the key's name, scopes, addresses, expiry, limit and who creates it
+   * @param input the key's name, addresses, expiry, limit and who creates it
    * @returns the stored row and the full key
-   * @throws {AppError} `VALIDATION_FAILED` (422) on `scopes.N`, `allowedIps.N`, `expiresAt` (not in the future) or `name` (10 live
+   * @throws {AppError} `VALIDATION_FAILED` (422) on `allowedIps.N`, `expiresAt` (not in the future) or `name` (10 live
    *   keys already)
    */
   async issue(tx: DbExecutor, input: IssueApiKeyInput): Promise<IssuedApiKey> {
-    const scopes = checkScopes(input.scopes);
     const allowed = checkAllowedIps(input.allowedIps);
-    const errors = [...(scopes.ok ? [] : scopes.errors), ...(allowed.ok ? [] : allowed.errors)];
+    const errors = allowed.ok ? [] : [...allowed.errors];
     const now = this.clock.now();
     const expiresAt = input.expiresAt === undefined ? null : new Date(input.expiresAt);
     if (expiresAt !== null && expiresAt.getTime() <= now.getTime()) {
       errors.push({ field: 'expiresAt', code: 'in_the_past', message: 'Choose a time in the future.' });
     }
-    if (errors.length > 0 || !scopes.ok || !allowed.ok) throw new AppError('VALIDATION_FAILED', { errors });
+    if (errors.length > 0 || !allowed.ok) throw new AppError('VALIDATION_FAILED', { errors });
 
     const { key, prefix } = composeApiKey(this.tokens.random(32));
     // Two requests at once would both see nine keys; the lock lets the second count after the first commits.
@@ -80,7 +78,6 @@ export class ApiKeyIssuer {
       name: input.name,
       prefix,
       keyHash: this.tokens.hash(key),
-      scopes: scopes.value,
       allowedIps: allowed.value,
       rateLimitPerMin: input.rateLimitPerMin,
       expiresAt,

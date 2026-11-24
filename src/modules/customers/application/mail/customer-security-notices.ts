@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import type { TransactionContext } from '../../../../infra/db';
 import { CUSTOMER_SECURITY_NOTICE_EVENT, NotificationService } from '../../../platform';
-import { greetingName } from '../../domain/recovery';
+import { greetingName } from '../../domain/customer-input';
 
 /** The staff actions a customer's security notice names. */
 export type CustomerSecurityNoticeKind =

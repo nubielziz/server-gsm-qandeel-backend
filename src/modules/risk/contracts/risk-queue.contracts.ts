@@ -34,7 +34,6 @@ export const HeldOrderSchema = z.object({
         "The customer's address; masked (`ja•••@example.com`) unless the caller holds `customers:read` (decision 047).",
       ),
     country: z.string(),
-    riskLevel: z.enum(['low', 'medium', 'high']),
     history: z.object({
       earlierOrders: z.number().int(),
       refunds: z.number().int(),
@@ -88,7 +87,6 @@ const QUEUE_EXAMPLE = {
         name: 'Jack Turner',
         email: 'jt@mailinator.com',
         country: 'GB',
-        riskLevel: 'medium',
         history: { earlierOrders: 0, refunds: 0, disputes: 0 },
       },
     },

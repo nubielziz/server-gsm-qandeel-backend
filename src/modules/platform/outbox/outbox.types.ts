@@ -67,7 +67,7 @@ export interface OutboxJobData {
  *
  * Why: a module that produces an event type registers the queue (and, if it wants, the job name) that handles it; the
  * relay reads this registry for every row. An event type may have one route per queue (decision 020, amended by feature 12a):
- * the relay adds one job per route, so the webhook fan-out and the notifications of one order change are independent jobs.
+ * the relay adds one job per route, so the consumers of one event are independent jobs.
  */
 export interface OutboxRoute {
   /** The event type, as passed to `OutboxService.add`. */

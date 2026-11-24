@@ -158,6 +158,23 @@ export function loadErrorCodesDocument(): readonly DocumentedError[] {
 }
 
 /**
+ * Reads the decision files.
+ *
+ * Why: the retired list cites a decision for each key and the decision must name it (`retiredDecisionProblems` in manifest-parity.ts).
+ *
+ * @returns the text of each file of `docs/decisions`, by the three digits its name starts with
+ */
+export function loadDecisionTexts(): ReadonlyMap<string, string> {
+  const dir = join(ROOT, 'docs', 'decisions');
+  const texts = new Map<string, string>();
+  for (const name of readdirSync(dir)) {
+    const number = /^(\d{3})-.*\.md$/.exec(name)?.[1];
+    if (number !== undefined) texts.set(number, `${texts.get(number) ?? ''}${readFileSync(join(dir, name), 'utf8')}`);
+  }
+  return texts;
+}
+
+/**
  * Reads the ids of the frontend/map mismatches.
  *
  * @returns the set of `B<n>` ids that exist in `docs/contract/MISMATCHES.md`

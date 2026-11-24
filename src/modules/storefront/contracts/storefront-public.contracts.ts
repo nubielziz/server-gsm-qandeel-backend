@@ -163,7 +163,7 @@ export const getStoreConfig = defineRoute({
   description:
     'What the storefront needs to start: the currencies on offer with their exchange rate (the markup included), the tax windows in ' +
     'force today (a country without one has no tax), the payment methods that are on, the policy switches (`guestCheckout`, ' +
-    '`withdrawalWaiver`, `imeiPrecheck`) and the current version of each legal document. Public; answers may be cached by the ' +
+    '`withdrawalWaiver`) and the current version of each legal document. Public; answers may be cached by the ' +
     'browser for 30 seconds. A currency whose rate is older than `fx.max_rate_age_hours` (default 48), or held by a refresh, is not ' +
     'on offer (decision 049).',
   tags: ['storefront'],
@@ -207,7 +207,7 @@ export const getStoreConfig = defineRoute({
             ),
         }),
       ),
-      policies: z.object({ guestCheckout: z.boolean(), withdrawalWaiver: z.boolean(), imeiPrecheck: z.boolean() }),
+      policies: z.object({ guestCheckout: z.boolean(), withdrawalWaiver: z.boolean() }),
       legalDocuments: z.array(
         z.object({
           type: z.enum(LEGAL_DOCUMENT_TYPES),
@@ -227,7 +227,7 @@ export const getStoreConfig = defineRoute({
       ],
       taxRates: [{ country: 'GB', region: '', ratePercent: '20.0000', taxType: 'vat', label: 'UK VAT' }],
       paymentMethods: [{ code: 'card', name: 'Card gateway', supports3ds: true, preset: null, logoUrl: null }],
-      policies: { guestCheckout: true, withdrawalWaiver: true, imeiPrecheck: true },
+      policies: { guestCheckout: true, withdrawalWaiver: true },
       legalDocuments: [{ type: 'terms', version: '3.2', effectiveFrom: '2025-11-22T12:00:00.000Z' }],
     },
   },

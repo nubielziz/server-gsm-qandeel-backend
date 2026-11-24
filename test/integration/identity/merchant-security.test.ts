@@ -1,15 +1,14 @@
-// Integration tests of the merchant portal's password links, security settings and devices (feature 2b, routes POST
-// /client/auth/password/forgot and /reset, POST /client/security/password and /2fa/*, GET /client/sessions, DELETE
-// /client/sessions/:id; MISMATCHES B127 and B128, B131 to B136) through HTTP on the real application.
+// Integration tests of the merchant portal's password links and security settings (feature 2b, routes POST
+// /client/auth/password/forgot and /reset, POST /client/security/password and /2fa/*; MISMATCHES B127 and B128, B131 to B134)
+// through HTTP on the real application, and of the retired per-device session list.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { asc, eq, isNull } from 'drizzle-orm';
 import { schema as s, DbService } from '@src/infra/db';
 import { CLIENT_TOTP_AAD, MerchantAuthTokens } from '@src/modules/identity';
 import { EncryptionService } from '@src/infra/crypto';
-import { SESSION_COOKIE_NAMES, CSRF_COOKIE_NAMES } from '@src/modules/identity';
 import { type TestApp, createTestApp } from '../../support/app';
-import { clearIdentityCaches, openSession } from '../../support/auth';
-import { DAY, HOUR, SECOND, TestClock } from '../../support/clock';
+import { clearIdentityCaches } from '../../support/auth';
+import { HOUR, SECOND, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { logSink } from '../../support/log-sink';
 import {
@@ -166,7 +165,7 @@ describe('POST /client/auth/password/reset', () => {
         t.app.get(MerchantAuthTokens).issue(work, { clientId: invited.id, purpose: 'invite' }),
       );
     const { db } = await testDb();
-    // A verification link from an earlier registration is moot once the invitation proved the email.
+    // A verification link from before is moot once the invitation proved the email.
     const verify = await t.app
       .get(DbService)
       .runInTransaction((work) =>
@@ -562,20 +561,13 @@ describe('two-step sign-in needs a confirmed email address (decision 052)', () =
     expect(await clientRow(merchant.id)).toMatchObject({ twofaEnabled: false, totpSecretEnc: null });
   });
 
-  it('from the registration to a reset by link: the address is never enrolled before it is confirmed, and the sign-in asks for no second step', async () => {
-    const email = 'registered-first@example.com';
+  it('from an unconfirmed address to a reset by link: the address is never enrolled before it is confirmed, and the sign-in asks for no second step', async () => {
+    const email = 'unconfirmed-first@example.com';
+    await makeMerchant(t, { email, name: 'Unconfirmed First', emailVerifiedAt: null, password: 'a-long-password' });
     const first = portal();
-    const registered = await first.register({
-      name: 'Registered First',
-      email,
-      password: 'a-long-password',
-      company: 'Some Co',
-      phone: '+962791234567',
-      country: 'jo',
-    });
-    expect(registered.statusCode).toBe(204);
-    const verification = emailedLinks().find((link) => link.kind === 'email_verification')!;
     expect((await first.login(email, 'a-long-password')).json()).toEqual({ next: 'done' });
+    expect((await first.resendVerification()).statusCode).toBe(204);
+    const verification = emailedLinks().find((link) => link.kind === 'email_verification')!;
 
     // Not confirmed yet: no enrolment.
     expect((await first.setupTwoFactor()).statusCode).toBe(409);
@@ -599,131 +591,17 @@ describe('two-step sign-in needs a confirmed email address (decision 052)', () =
   });
 });
 
-describe('GET /client/sessions and DELETE /client/sessions/:id', () => {
-  it("lists the caller's live sessions newest first, marks the current one and never shows a token", async () => {
-    const merchant = await makeMerchant(t);
-    const first = await signedIn(merchant.email);
-    clock.advance(1_000);
-    const second = await signedIn(merchant.email);
-    const stranger = await makeMerchant(t);
-    await signedIn(stranger.email);
-
-    const res = await second.sessions();
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['x-total-count']).toBe('2');
-    const rows = res.json<Array<Record<string, unknown>>>();
-    expect(rows.map((row) => row.current)).toEqual([true, false]);
-    expect(rows[0]).toEqual({
-      id: expect.any(Number),
-      ip: expect.any(String),
-      userAgent: expect.any(String),
-      lastSeenAt: expect.stringMatching(/Z$/),
-      createdAt: expect.stringMatching(/Z$/),
-      expiresAt: expect.stringMatching(/Z$/),
-      current: true,
-    });
-    expect(JSON.stringify(rows)).not.toContain(second.sessionToken!);
-    expect(JSON.stringify(rows)).not.toContain(first.sessionToken!);
-    expect(new Date(rows[0]!.createdAt as string).getTime()).toBeGreaterThan(
-      new Date(rows[1]!.createdAt as string).getTime(),
-    );
-
-    // Range and sort of the simple-rest dialect.
-    const page = await second.sessions('?_start=1&_end=2');
-    expect(page.headers['x-total-count']).toBe('2');
-    expect(page.json<Array<{ current: boolean }>>().map((row) => row.current)).toEqual([false]);
-    const sorted = await second.sessions('?_sort=createdAt&_order=asc');
-    expect(sorted.json<Array<{ current: boolean }>>().map((row) => row.current)).toEqual([false, true]);
-    expect(problem(await second.sessions('?_sort=ip')).code).toBe('VALIDATION_FAILED');
-  });
-
-  it('leaves out ended sessions, pending code steps and sessions that sat idle longer than the limit', async () => {
-    const merchant = await makeMerchant(t, { twofa: true });
-    const { db } = await testDb();
-    const idle = await openSession(t, { type: 'client', id: merchant.id });
-    clock.advance(6 * DAY);
-    const ended = await openSession(t, { type: 'client', id: merchant.id });
-    const pending = await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
-    const caller = portal();
-    await caller.login(merchant.email);
-    await caller.code(await codeNow(merchant.secret));
-    await db.update(s.sessions).set({ revokedAt: clock.now() }).where(eq(s.sessions.id, ended.sessionId));
-    clock.advance(2 * DAY);
-    // The first session was last used 8 days ago (the limit is 7); the caller's was created 2 days ago.
-    await caller.me();
-
-    const rows = (await caller.sessions()).json<Array<{ id: number; current: boolean }>>();
-    expect(rows.map((row) => row.current)).toEqual([true]);
-    expect(rows.map((row) => row.id)).not.toContain(idle.sessionId);
-    expect(rows.map((row) => row.id)).not.toContain(pending.sessionId);
-    expect(rows.map((row) => row.id)).not.toContain(ended.sessionId);
-    expect((await caller.sessions()).headers['x-total-count']).toBe('1');
-  });
-
-  it("ends another of the caller's sessions with 204, and then it is gone: 404 the second time, 401 for its owner", async () => {
-    const merchant = await makeMerchant(t);
-    const mine = await signedIn(merchant.email);
-    const other = await signedIn(merchant.email);
-    const target = (await mine.sessions()).json<Array<{ id: number; current: boolean }>>().find((row) => !row.current)!;
-
-    const res = await mine.endSession(target.id);
-    expect(res.statusCode).toBe(204);
-    expect(res.body).toBe('');
-    expect(res.cookies).toEqual([]);
-    expect((await other.me()).statusCode).toBe(401);
-    expect((await mine.me()).statusCode).toBe(200);
-    expect((await mine.sessions()).headers['x-total-count']).toBe('1');
-    const again = await mine.endSession(target.id);
-    expect(again.statusCode).toBe(404);
-    expect(problem(again).code).toBe('NOT_FOUND');
-  });
-
-  it('signs the caller out when it ends its own session, clearing the cookies', async () => {
-    const merchant = await makeMerchant(t);
-    const p = await signedIn(merchant.email);
-    const current = (await p.sessions()).json<Array<{ id: number; current: boolean }>>().find((row) => row.current)!;
-    const res = await p.endSession(current.id);
-    expect(res.statusCode).toBe(204);
-    expect(res.cookies.map((cookie) => [cookie.name, cookie.maxAge]).sort()).toEqual(
-      [
-        [CSRF_COOKIE_NAMES.client, 0],
-        [SESSION_COOKIE_NAMES.client, 0],
-      ].sort(),
-    );
-    expect(await liveSessionsOf(merchant.id)).toHaveLength(0);
-  });
-
-  it("answers 404 for another merchant's session, an unknown id, a revoked one and a pending code step; never touches them", async () => {
-    const merchant = await makeMerchant(t);
-    const stranger = await makeMerchant(t);
-    const mine = await signedIn(merchant.email);
-    const theirs = await openSession(t, { type: 'client', id: stranger.id });
-    const revoked = await openSession(t, { type: 'client', id: merchant.id });
-    const pending = await openSession(t, { type: 'client', id: merchant.id }, { stage: 'pending_totp' });
-    const { db } = await testDb();
-    await db.update(s.sessions).set({ revokedAt: clock.now() }).where(eq(s.sessions.id, revoked.sessionId));
-
-    for (const id of [theirs.sessionId, 999_999, revoked.sessionId, pending.sessionId]) {
-      const res = await mine.endSession(id);
-      expect(res.statusCode, String(id)).toBe(404);
-      expect(problem(res).code).toBe('NOT_FOUND');
-    }
-    expect(await liveSessionsOf(stranger.id)).toHaveLength(1);
-    expect((await liveSessionsOf(merchant.id)).some((row) => row.id === pending.sessionId)).toBe(true);
-    const bad = await mine.call('DELETE', '/client/sessions/abc');
-    expect(bad.statusCode).toBe(422);
-  });
-
-  it('needs a session, and the CSRF token to end one', async () => {
+describe('the per-device session list is retired', () => {
+  it('has no GET /client/sessions and no DELETE /client/sessions/:id: both answer 404 and no session is touched', async () => {
     const merchant = await makeMerchant(t);
     const mine = await signedIn(merchant.email);
     await signedIn(merchant.email);
-    const target = (await mine.sessions()).json<Array<{ id: number; current: boolean }>>().find((row) => !row.current)!;
-    const noToken = await mine.endSession(target.id, { csrf: false });
-    expect(noToken.statusCode).toBe(403);
-    expect(problem(noToken).code).toBe('CSRF_FAILED');
-    expect((await portal().sessions('', { cookies: false })).statusCode).toBe(401);
-    expect((await portal().endSession(target.id, { cookies: false })).statusCode).toBe(401);
-    expect((await mine.sessions()).headers['x-total-count']).toBe('2');
+    const before = await liveSessionsOf(merchant.id);
+    expect(before).toHaveLength(2);
+
+    expect((await mine.call('GET', '/client/sessions')).statusCode).toBe(404);
+    expect((await mine.call('DELETE', `/client/sessions/${before[0]!.id}`)).statusCode).toBe(404);
+    expect(await liveSessionsOf(merchant.id)).toHaveLength(2);
+    expect((await mine.me()).statusCode).toBe(200);
   });
 });

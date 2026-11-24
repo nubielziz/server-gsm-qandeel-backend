@@ -35,7 +35,6 @@ const boot = (env: Record<string, string>) =>
     env: {
       BULL_PREFIX: prefix,
       TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token',
-      TELEGRAM_BOT_USERNAME: 'gsm_test_bot',
       ...env,
     },
     imports: [HealthJobsModule],

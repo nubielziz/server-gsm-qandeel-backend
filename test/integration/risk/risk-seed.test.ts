@@ -1,4 +1,4 @@
-// The risk seed (feature 18): the demo's rules, blocklist, IMEI checks and data requests appear with the ids, kinds, displays and
+// The risk seed (feature 18): the demo's rules, blocklist and data requests appear with the ids, kinds, displays and
 // statuses of the frontend mocks, through the real API, and a second run changes nothing.
 import { afterAll, beforeAll, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
@@ -83,22 +83,6 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
     expect(blocked.signals).toEqual(['Email domain is on the blocklist', 'IMEI is on the blocklist']);
   });
 
-  it("writes the demo's IMEI checks with their ids, the TAC's device, the result by kind and the six oldest erased", async () => {
-    const list = await staff.get('/admin/imei-checks?_start=0&_end=20');
-    expect(list.total).toBeGreaterThan(800);
-    expect(list.body[0]).toMatchObject({
-      source: expect.stringMatching(/pre_order|storefront_free/),
-      cost: expect.any(String),
-      orderId: null,
-    });
-    expect(list.body[0].imei).toMatch(/^\d{15}$/);
-    const oldest = await staff.get('/admin/imei-checks?_sort=createdAt&_order=asc&_start=0&_end=8');
-    const masks = oldest.body.slice(0, 6).map((row: { imei: string }) => row.imei);
-    for (const mask of masks) expect(mask).toMatch(/^\d{8}•{7}$/);
-    expect(oldest.body[6].imei).toMatch(/^\d{15}$/);
-    expect((await staff.get('/admin/imei-checks?status=blacklisted')).total).toBeGreaterThan(0);
-  });
-
   it("writes the demo's two data requests (done becomes completed) and the rules with the demo's numbers", async () => {
     const requests = await staff.get('/admin/data-requests');
     expect(requests.total).toBe(2);
@@ -128,7 +112,8 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
     expect(queue.held[0]).toMatchObject({
       orderId: 20490,
       score: 67,
-      signals: ['IMEI was checked blacklisted before', 'New customer, first order above $40', 'VPN or proxy IP'],
+      // The demo's two signals that never fired ("VPN or proxy IP", "IMEI was checked blacklisted before") are retired (decision 062).
+      signals: ['New customer, first order above $40'],
       customer: { id: 10 },
     });
     expect(queue.held[3]).toMatchObject({ orderId: 20495, score: 87, customer: { id: 21 } });
@@ -201,7 +186,7 @@ describe.skipIf(!frontendPresent)('the risk seed', () => {
     const { db } = await testDb();
     const reports = await runSeed(db, await loadDemoState(), t.config);
     for (const report of reports.filter((r) =>
-      ['blocklist_entries', 'imei_checks', 'data_requests', 'risk_assessments'].includes(r.table),
+      ['blocklist_entries', 'data_requests', 'risk_assessments'].includes(r.table),
     )) {
       expect(report.inserted, report.table).toBe(0);
     }

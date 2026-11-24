@@ -3,7 +3,6 @@
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { schema as s } from '../../../infra/db';
 import {
   type NewSupplier,
   type Supplier,
@@ -147,18 +146,17 @@ export async function updateSupplier(
 export interface SupplierBlockers {
   readonly links: number;
   readonly orderCalls: number;
-  readonly imeiChecks: number;
 }
 
 /**
  * Counts the records other than orders that block a supplier delete.
  *
- * Why: orders-suppliers-8: a service link to one of its supplier services, a call log row of an order, or an IMEI check that used
- * the supplier keeps it (the foreign keys are `RESTRICT`).
+ * Why: orders-suppliers-8: a service link to one of its supplier services, or a call log row of an order, keeps the supplier (the
+ * foreign keys are `RESTRICT`).
  *
  * @param db the delete's transaction
  * @param supplierId the supplier
- * @returns the three counts
+ * @returns the two counts
  */
 export async function supplierBlockers(db: DbExecutor, supplierId: number): Promise<SupplierBlockers> {
   const [links] = await db
@@ -170,11 +168,7 @@ export async function supplierBlockers(db: DbExecutor, supplierId: number): Prom
     .select({ total: sql<number>`count(*)::int` })
     .from(supplierApiLogs)
     .where(and(eq(supplierApiLogs.supplierId, supplierId), sql`${supplierApiLogs.orderId} is not null`));
-  const [checks] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(s.imeiChecks)
-    .where(eq(s.imeiChecks.supplierId, supplierId));
-  return { links: links?.total ?? 0, orderCalls: calls?.total ?? 0, imeiChecks: checks?.total ?? 0 };
+  return { links: links?.total ?? 0, orderCalls: calls?.total ?? 0 };
 }
 
 /**

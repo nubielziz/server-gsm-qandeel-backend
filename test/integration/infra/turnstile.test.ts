@@ -38,25 +38,25 @@ describe('the check runs on the contract flag only', () => {
     apps.push(t);
     const read = await t.app.inject({ method: 'GET', url: '/store/v1/config' });
     expect(read.statusCode).toBe(200);
-    const refused = await t.app.inject({ method: 'POST', url: '/store/v1/imei/check', payload: { imei: 'x' } });
+    const refused = await t.app.inject({ method: 'POST', url: '/store/v1/checkout-sessions', payload: { imei: 'x' } });
     expect(refused.statusCode).toBe(403);
     const passed = await t.app.inject({
       method: 'POST',
-      url: '/store/v1/imei/check',
+      url: '/store/v1/checkout-sessions',
       headers: TURNSTILE_HEADERS,
       payload: { imei: 'x' },
     });
-    // The token passed: the body is judged next (the IMEI is not valid).
+    // The token passed: the body is judged next (it names no service).
     expect(passed.statusCode).toBe(422);
   });
 
   it('counts the refusals by reason', async () => {
     const t = await createTestApp();
     apps.push(t);
-    await t.app.inject({ method: 'POST', url: '/store/v1/imei/check', payload: { imei: 'x' } });
+    await t.app.inject({ method: 'POST', url: '/store/v1/checkout-sessions', payload: { imei: 'x' } });
     await t.app.inject({
       method: 'POST',
-      url: '/store/v1/imei/check',
+      url: '/store/v1/checkout-sessions',
       headers: { 'x-turnstile-token': 'wrong' },
       payload: { imei: 'x' },
     });

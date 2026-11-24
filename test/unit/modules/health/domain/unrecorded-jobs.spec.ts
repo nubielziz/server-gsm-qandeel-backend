@@ -12,7 +12,7 @@ describe('isRecordedJob', () => {
       'job_runs_reaper',
       'db_size_sample',
       'session_purge',
-      'client_group_promotion',
+      'ledger_integrity',
       'price_sync',
       'balance_check',
     ])

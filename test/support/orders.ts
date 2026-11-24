@@ -19,6 +19,27 @@ export const IMEIS = [
   '867412052327342',
 ] as const;
 
+/**
+ * What a merchant has settled, read from the ledger: the `order_settle` debits on its USD hold account, minus the settlements that a
+ * reversal cancelled (a transaction with the key `reverse:<settlement id>`, decision 024). The tests of the reopen and the B2B refund read it to
+ * see that a reversal takes the settlement back.
+ *
+ * @param db the test database
+ * @param clientId the merchant
+ * @returns a 4-decimal USD figure (`'0.0000'` when nothing is settled)
+ */
+export async function settledOf(db: Database, clientId: number): Promise<string> {
+  const result = await db.execute<{ settled: string | null }>(sql`
+    select coalesce(sum(entry.amount), 0)::numeric(18,4)::text as settled
+    from ${s.ledgerEntries} entry
+    join ${s.ledgerTransactions} tx on tx.id = entry.transaction_id
+    join ${s.ledgerAccounts} hold on hold.id = entry.account_id
+    where hold.kind = 'client_hold' and hold.owner_type = 'client' and hold.currency = 'USD' and hold.owner_id = ${clientId}
+      and tx.kind = 'order_settle' and entry.amount > 0
+      and not exists (select 1 from ${s.ledgerTransactions} reversal where reversal.idempotency_key = 'reverse:' || tx.id::text)`);
+  return result.rows[0]?.settled ?? '0.0000';
+}
+
 /** The wallet figures of a merchant as the ledger holds them. */
 export async function walletOf(db: Database, clientId: number): Promise<{ wallet: string; hold: string }> {
   const rows = await db

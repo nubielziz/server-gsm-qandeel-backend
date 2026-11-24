@@ -1,4 +1,4 @@
-// Route contracts of the risk rules (map domain K, stage 18): the eight rules and their thresholds. Shapes are the console's
+// Route contracts of the risk rules (map domain K, stage 18): the seven rules and their thresholds. Shapes are the console's
 // (src/features/risk/types: RiskRules, SaveRiskRulesBody).
 import { z } from 'zod';
 import { defineRoute } from '../../../common/contract';
@@ -8,7 +8,7 @@ export const RiskRuleSchema = z.object({
   id: z
     .string()
     .describe(
-      'blockBlacklistedImei, reviewThreshold, blockThreshold, maxOrdersPerEmail, reviewFirstOrderAbove, require3ds, reviewIpCountryMismatch or blockDisposableEmail.',
+      'reviewThreshold, blockThreshold, maxOrdersPerEmail, reviewFirstOrderAbove, require3ds, reviewIpCountryMismatch or blockDisposableEmail.',
     ),
   on: z.boolean(),
   value: z.number().int().nullable().describe('Points, orders per 24 hours or whole USD; null for a plain switch.'),
@@ -39,7 +39,7 @@ export const getRiskRules = defineRoute({
   key: 'GET /admin/risk/rules',
   summary: 'The risk rules',
   description:
-    'The eight rules in display order, each with its switch and, for the four numeric ones, its number: `reviewThreshold` and ' +
+    'The seven rules in display order, each with its switch and, for the four numeric ones, its number: `reviewThreshold` and ' +
     '`blockThreshold` (points), `maxOrdersPerEmail` (orders in 24 hours) and `reviewFirstOrderAbove` (whole USD). `label`, `hint` ' +
     'and `unit` are the demo’s words. `require3ds` is the storefront policy of the same name: one stored value.',
   tags: ['risk'],

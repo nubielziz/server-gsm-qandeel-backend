@@ -1,5 +1,5 @@
 // ClientTicketService: what a signed-in merchant does with their support tickets in the portal (feature 28, slice B2, rule 7): list, open,
-// read the conversation, write, mark read, type, and download an attachment. Every route starts by checking that the ticket is theirs.
+// read the conversation, write, mark read, and download an attachment. Every route starts by checking that the ticket is theirs.
 import { Injectable } from '@nestjs/common';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
@@ -16,7 +16,6 @@ import {
 import { TicketAttachmentService } from './ticket-attachment.service';
 import { TicketReadService } from './ticket-read.service';
 import { TicketThreadService, type ThreadMessageInput } from './ticket-thread.service';
-import { TicketTypingService } from './ticket-typing.service';
 import { type StoreMessageView } from './ticket-views';
 
 /**
@@ -25,13 +24,13 @@ import { type StoreMessageView } from './ticket-views';
  * Why: B217 and rule 7: merchants had no ticket route at all. A merchant's ticket has no link token: the session is the credential and the
  * routes take the ticket id, and a ticket of another merchant (or an unknown id) is `404`, never `403`, so ids cannot be probed. A merchant
  * waiting for approval may use all of it (B153; the route contracts say `pendingMerchant: 'allow'`), a suspended one never gets here (the
- * session guard refuses it). The merchant reads the public thread (no note, no system message, no staff name); its messages, read marks,
- * typing and downloads go through the chat engine's services, which the ticket page of a customer uses too, so both requesters behave alike.
+ * session guard refuses it). The merchant reads the public thread (no note, no system message, no staff name); its messages, read marks
+ * and downloads go through the chat engine's services, which the ticket page of a customer uses too, so both requesters behave alike.
  *
- * Side effects: reads `support_tickets`, `ticket_messages` and `files`; the writes are the engine's (a message, a seen mark, the typing key,
- * the doorbells) and {@link AccountTicketOpener}'s.
+ * Side effects: reads `support_tickets`, `ticket_messages` and `files`; the writes are the engine's (a message, a seen mark, the
+ * doorbells) and {@link AccountTicketOpener}'s.
  *
- * @see GET/POST /client/tickets, GET /client/tickets/:id, POST /client/tickets/:id/messages|read|typing, GET /client/tickets/:id/files/:fileId
+ * @see GET/POST /client/tickets, GET /client/tickets/:id, POST /client/tickets/:id/messages|read, GET /client/tickets/:id/files/:fileId
  */
 @Injectable()
 export class ClientTicketService {
@@ -40,7 +39,6 @@ export class ClientTicketService {
     private readonly opener: AccountTicketOpener,
     private readonly thread: TicketThreadService,
     private readonly reads: TicketReadService,
-    private readonly typing: TicketTypingService,
     private readonly attachments: TicketAttachmentService,
   ) {}
 
@@ -117,19 +115,6 @@ export class ClientTicketService {
   async read(clientId: number, ticketId: number, upToMessageId: number): Promise<void> {
     await this.owned(clientId, ticketId);
     await this.reads.mark(ticketId, 'requester', upToMessageId);
-  }
-
-  /**
-   * Rings "the merchant is typing".
-   *
-   * @param clientId the signed-in merchant
-   * @param ticketId the ticket of the route
-   * @throws {AppError} `NOT_FOUND` for an unknown ticket or another merchant's (the ping itself never fails; on a resolved ticket it rings
-   *   nothing)
-   */
-  async ping(clientId: number, ticketId: number): Promise<void> {
-    await this.owned(clientId, ticketId);
-    await this.typing.ping(ticketId, { by: 'requester' });
   }
 
   /**

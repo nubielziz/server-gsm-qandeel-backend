@@ -7,9 +7,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
-import { schema as s } from '@src/infra/db';
+import { DbService, schema as s } from '@src/infra/db';
 import { deposit, postTransaction } from '@src/modules/money';
-import { MaintenanceService, OutboxService } from '@src/modules/platform';
+import { MaintenanceService, NotificationService, OutboxService } from '@src/modules/platform';
 import { TICKET_MAIL_EVENT, TicketMailProcessor } from '@src/modules/support';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -17,22 +17,14 @@ import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { revealedToken } from '../../support/capability-tokens';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import {
-  body,
-  clearApiKeyCaches,
-  credentialsFor,
-  dhruClient,
-  v1Client,
-  type MachineCredentials,
-} from '../../support/machine-orders';
-import { mailbox, telegramOutbox } from '../../support/notifications';
+import { clearApiKeyCaches, credentialsFor, dhruClient, type MachineCredentials } from '../../support/machine-orders';
+import { mailbox, seedDefaultTemplates, sendAllQueued, telegramOutbox } from '../../support/notifications';
 import { IMEIS, insertOrderRow, ordersWorld, portalFor, type OrdersWorld } from '../../support/orders';
 import { insertWalletMerchant } from '../../support/money';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { insertRetailPrice, listingWorld, TURNSTILE_HEADERS } from '../../support/storefront';
 import {
   clearTicketEmailLimits,
-  insertClient,
   insertCustomer,
   insertSupportMessage,
   insertSupportTicket,
@@ -54,7 +46,7 @@ let t: TestApp;
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 beforeEach(async () => {
@@ -220,24 +212,35 @@ describe('plain-text mails and Telegram carry typed values unchanged (critic G6)
     expect(mail!.to).toBe('m@mail.example');
   });
 
-  it("a Telegram message carries a ticket's Arabic reply as typed", async () => {
+  it("the Telegram message of an alert carries a supplier's Arabic name as typed", async () => {
     const { db } = await testDb();
-    await seedSupportTemplates(db);
-    const merchant = await insertClient(db, { name: NAME, telegramChatId: '555001' });
-    const ticket = await insertSupportTicket(db, {
-      requesterType: 'client',
-      requesterId: merchant.id,
-      token: null,
-      subject: 'مشكلة في الطلب',
-    });
-    const staff = await staffMember(db);
-    const reply = await insertSupportMessage(db, ticket.id, { authorType: 'staff', authorId: staff.id, body: NOTE });
-    expect(await runTicketMail(ticket.id, { kind: 'reply', messageId: reply.id, channel: 'telegram' })).toEqual({
-      sent: true,
-    });
+    await seedDefaultTemplates(db);
+    const supplier = 'مورد فتح الشبكات';
+    await t.app.get(DbService).runInTransaction(({ tx }) =>
+      t.app.get(NotificationService).enqueueToAddress(
+        { tx },
+        {
+          event: 'alert.fired',
+          channel: 'telegram',
+          to: '-1001234567890',
+          noRecipientReason: 'No chat is configured.',
+          variables: {
+            ruleName: 'Supplier timeouts',
+            severity: 'critical',
+            metric: 'supplier.timeout_rate',
+            value: '25%',
+            threshold: '20%',
+            subject: supplier,
+            detail: 'The limit is above 20% over 3 min.',
+          },
+          dedupeKey: 'alert-arabic-1',
+        },
+      ),
+    );
+    expect(await sendAllQueued(t)).toEqual([{ outcome: 'sent' }]);
     const [message] = telegramOutbox(t).sent;
-    expect(message).toMatchObject({ chatId: '555001' });
-    expect(message!.text).toContain(`${ticket.number} (مشكلة في الطلب):\n${NOTE}`);
+    expect(message).toMatchObject({ chatId: '-1001234567890' });
+    expect(message!.text).toContain(`on ${supplier}.`);
   });
 });
 
@@ -245,7 +248,7 @@ describe("a supplier's service name with Arabic script is shown as it is (critic
   let world: OrdersWorld;
   let creds: MachineCredentials;
 
-  it('reads back unchanged from the Dhru service list, GET /v1/services and the console list', async () => {
+  it('reads back unchanged from the Dhru service list, the portal list and the console list', async () => {
     const { db } = await testDb();
     world = await ordersWorld(db);
     await db.update(s.services).set({ name: MIXED_SERVICE }).where(eq(s.services.id, world.auto.serviceId));
@@ -261,9 +264,11 @@ describe("a supplier's service name with Arabic script is shown as it is (critic
     expect(services).toContainEqual([world.auto.serviceId, MIXED_SERVICE]);
     expect(services).toContainEqual([world.manual.serviceId, ARABIC_SERVICE]);
 
-    const v1 = await v1Client(t, creds.key).get('/v1/services');
-    expect(v1.statusCode).toBe(200);
-    const names = new Map<number, string>(body(v1).data.map((row: { id: number; name: string }) => [row.id, row.name]));
+    const portalList = await (await portalFor(t, world.merchant.id)).get('/client/services');
+    expect(portalList.statusCode).toBe(200);
+    const names = new Map<number, string>(
+      portalList.json<Array<{ id: number; name: string }>>().map((row) => [row.id, row.name]),
+    );
     expect(names.get(world.auto.serviceId)).toBe(MIXED_SERVICE);
     expect(names.get(world.manual.serviceId)).toBe(ARABIC_SERVICE);
 

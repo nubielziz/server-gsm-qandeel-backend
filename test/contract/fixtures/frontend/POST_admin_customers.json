@@ -15,7 +15,6 @@
     "hasAccount": true,
     "createdBy": 1,
     "marketingOptIn": false,
-    "riskLevel": "low",
     "status": "active",
     "suspendedAt": null,
     "suspendedReason": null,
@@ -28,6 +27,6 @@
     "createdAt": "2026-10-31T12:00:00.000Z",
     "ordersCount": 0,
     "lastOrderAt": null,
-    "temporaryPassword": "xkdrkGaCYPKHTs"
+    "temporaryPassword": "HTsjZUNkShgw3d"
   }
 }

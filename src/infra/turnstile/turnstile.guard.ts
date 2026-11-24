@@ -27,7 +27,7 @@ const REFUSAL_DETAIL = 'The anti-bot check failed. Refresh the page and try agai
  * decision 021 has already run, so an outbound verification only happens inside the limits. A missing, empty, repeated or
  * over-long token is refused without an outbound call; otherwise the verifier decides. The refusal is always `403
  * TURNSTILE_FAILED` with one fixed detail; the log has the request id and the reason (and Cloudflare's error codes), never the
- * token, and `turnstile_failures_total{reason}` counts it. A route with a `turnstileRollout` (the merchant sign-up and sign-in forms,
+ * token, and `turnstile_failures_total{reason}` counts it. A route with a `turnstileRollout` (the merchant sign-in and forgot-password forms,
  * feature 24A) is checked only while its switch is on (`TURNSTILE_MERCHANT_AUTH`); while it is off the token is neither read nor
  * verified.
  *

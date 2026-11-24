@@ -52,7 +52,7 @@ interface DemoService {
   minProfit: number;
 }
 
-/** The demo's channel names as `orders.source` values (B12). */
+/** The demo's channel names as `orders.source` values (B12); `v1` is the value of the orders the retired REST API v1 placed. */
 const SOURCES: Readonly<Record<string, 'dhru' | 'v1' | 'portal' | 'store'>> = {
   'Dhru API': 'dhru',
   'REST API': 'v1',

@@ -644,7 +644,6 @@ describe('the guard dispatcher', () => {
     const handlers = t.app.get(AccessHandlers);
     // What each guard answers to a request that brings nothing it can use (the machine-auth tests cover the accepted cases).
     const expected: Record<string, [number, string]> = {
-      'api-key': [401, 'UNAUTHORIZED'],
       'url-secret': [401, 'UNAUTHORIZED'],
       'gateway-signature': [400, 'WEBHOOK_SIGNATURE_INVALID'],
       'checkout-token': [404, 'NOT_FOUND'],
@@ -676,9 +675,9 @@ describe('the guard dispatcher', () => {
     const own = await createTestApp({ controllers: [SecurityTestController] });
     try {
       const handlers = own.app.get(AccessHandlers);
-      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['api-key']! })).statusCode).toBe(401);
-      handlers.replace('api-key', { authenticate: () => ({}) });
-      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['api-key']! })).statusCode).toBe(200);
+      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['url-secret']! })).statusCode).toBe(401);
+      handlers.replace('url-secret', { authenticate: () => ({}) });
+      expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['url-secret']! })).statusCode).toBe(200);
       expect((await own.app.inject({ method: 'GET', url: PLACEHOLDER_URLS['link-token']! })).statusCode).toBe(410);
     } finally {
       await own.close();

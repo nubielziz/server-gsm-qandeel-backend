@@ -1,5 +1,5 @@
 // HTTP controller of a merchant's support tickets in the portal (feature 28, slice B2, routes beyond the map: scripts/map-additions/28b.mjs):
-// list, open, the conversation, reply, read mark, typing and the attachment download. Thin: the rules live in ClientTicketService. The
+// list, open, the conversation, reply, read mark and the attachment download. Thin: the rules live in ClientTicketService. The
 // merchant id comes from the session only.
 import { Body, Controller, Header, Param, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
@@ -7,7 +7,6 @@ import { type BodyOf, type ParamsOf, type QueryOf, type ResultOf, Route } from '
 import { CurrentMerchant, type MerchantPrincipal } from '../../identity';
 import { ClientTicketService } from '../application/client-ticket.service';
 import {
-  clientTicketTyping,
   listClientTickets,
   markClientTicketRead,
   openClientTicket,
@@ -30,7 +29,6 @@ const NO_STORE = 'no-store';
  * @route GET /client/tickets/:id
  * @route POST /client/tickets/:id/messages
  * @route POST /client/tickets/:id/read
- * @route POST /client/tickets/:id/typing
  * @route GET /client/tickets/:id/files/:fileId
  */
 @Controller()
@@ -128,24 +126,6 @@ export class ClientTicketsController {
     @Body() body: BodyOf<typeof markClientTicketRead>,
   ): Promise<void> {
     await this.tickets.read(merchant.clientId, params.id, body.upToMessageId);
-  }
-
-  /**
-   * Records that the merchant is typing.
-   *
-   * @param merchant the signed-in merchant
-   * @param params the ticket id
-   * @returns nothing (204), whatever happened to the ping
-   * @throws {AppError} `NOT_FOUND` for another merchant's ticket
-   * @route POST /client/tickets/:id/typing
-   */
-  @Route(clientTicketTyping)
-  @Header('Cache-Control', NO_STORE)
-  async typing(
-    @CurrentMerchant() merchant: MerchantPrincipal,
-    @Param() params: ParamsOf<typeof clientTicketTyping>,
-  ): Promise<void> {
-    await this.tickets.ping(merchant.clientId, params.id);
   }
 
   /**

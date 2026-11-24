@@ -1,4 +1,4 @@
-// MerchantLifecycleMails: the transactional emails staff actions send to a merchant (approval, suspension, reactivation, KYC decision, security
+// MerchantLifecycleMails: the transactional emails staff actions send to a merchant (suspension, reactivation, security
 // notice; feature 20) and the notice of an API key the merchant made in the portal. Each is a `notifications` row plus a
 // `notification.send` outbox event written in the caller's transaction.
 import { Inject, Injectable } from '@nestjs/common';
@@ -7,9 +7,6 @@ import type { TransactionContext } from '../../../../infra/db';
 import { NotificationService } from '../../../platform';
 import type { Client } from '../../db/schema';
 import {
-  MERCHANT_APPROVED_EVENT,
-  MERCHANT_KYC_APPROVED_EVENT,
-  MERCHANT_KYC_REJECTED_EVENT,
   MERCHANT_PORTAL_API_KEY_CREATED_EVENT,
   MERCHANT_REACTIVATED_EVENT,
   MERCHANT_SECURITY_NOTICE_EVENT,
@@ -49,11 +46,11 @@ type Recipient = Pick<Client, 'id' | 'name'>;
 /**
  * Writes the lifecycle emails of a merchant.
  *
- * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff approve, suspend or reactivate the account, decide a KYC request, or
+ * Why: LEAD-DECISIONS section 6 and O-6: a merchant is told when staff suspend or reactivate the account, or
  * change something security-relevant (a temporary password, a 2FA reset, a staff change of an API key's addresses or limit, a new email
  * address), and when an API key is created (by staff: the security notice; by the merchant in the portal: its own notice). All are transactional: always sent, whatever the
  * preferences, and also to a suspended merchant. The mail is the event's one English template (decision 039). The suspension
- * mail does not carry the staff reason (it is an internal note); the KYC rejection carries the note the merchant already reads in `GET /client/kyc`.
+ * mail does not carry the staff reason (it is an internal note).
  *
  * Side effects: each call inserts a `notifications` row and an `outbox_events` row in the caller's transaction. A missing or switched-off template
  * sends nothing and is not an error (RULES settings 10); the security notice is the exception: it is written from its shipped text (decision 047). No dedupe key: the guarded change a mail rides on happens once.
@@ -64,20 +61,6 @@ export class MerchantLifecycleMails {
     private readonly notifications: NotificationService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
-
-  /**
-   * `merchant.approved`: the account moved from `pending` to `active`.
-   *
-   * @param work the caller's transaction
-   * @param client the merchant
-   * @returns once the notification and its outbox event are written
-   */
-  approved(work: Pick<TransactionContext, 'tx'>, client: Recipient): Promise<void> {
-    return this.send(work, MERCHANT_APPROVED_EVENT, client, {
-      merchantName: client.name,
-      portalUrl: this.config.http.portalBaseUrl,
-    });
-  }
 
   /**
    * `merchant.suspended`: the account was suspended. The staff reason is not sent.
@@ -102,26 +85,6 @@ export class MerchantLifecycleMails {
       merchantName: client.name,
       portalUrl: this.config.http.portalBaseUrl,
     });
-  }
-
-  /**
-   * `merchant.kyc_approved` or `merchant.kyc_rejected`, by the decision.
-   *
-   * @param work the caller's transaction
-   * @param client the merchant
-   * @param decision what staff decided
-   * @param note the staff note shown to the merchant (rejection only)
-   * @returns once the notification and its outbox event are written
-   */
-  kycDecided(
-    work: Pick<TransactionContext, 'tx'>,
-    client: Recipient,
-    decision: 'approved' | 'rejected',
-    note: string,
-  ): Promise<void> {
-    return decision === 'approved'
-      ? this.send(work, MERCHANT_KYC_APPROVED_EVENT, client, { merchantName: client.name })
-      : this.send(work, MERCHANT_KYC_REJECTED_EVENT, client, { merchantName: client.name, reason: note });
   }
 
   /**

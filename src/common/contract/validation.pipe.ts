@@ -60,7 +60,7 @@ function forbiddenTextError(location: InputLocation, path: readonly (string | nu
  * Tells whether the character rule judges an input of a route.
  *
  * Why: decision 053. Headers are cut by the HTTP parser before they reach us. The incoming webhooks (`surface: 'hooks'`) are exempt:
- * a `422` makes a payment gateway repeat the event for days and Telegram hold back the later updates; their bodies are signed or
+ * a `422` makes a payment gateway repeat the event for days; their bodies are signed or
  * secret-bound and read field by field, and what they store has the character removed instead.
  */
 function scansText(contract: AnyRouteContract, location: InputLocation): boolean {

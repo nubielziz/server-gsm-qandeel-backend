@@ -30,7 +30,7 @@ let admin: AdminApi;
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 beforeEach(async () => {
@@ -134,7 +134,6 @@ describe('GET /admin/support-tickets', () => {
         slaDueAt: null,
         firstResponseAt: ago(HOUR / 2).toISOString(),
         resolvedAt: null,
-        csatScore: null,
         createdAt: ago(HOUR).toISOString(),
         updatedAt: ago(HOUR).toISOString(),
         // The internal note is newer than the public reply but does not count.
@@ -413,7 +412,7 @@ describe('GET /admin/support-tickets/:id', () => {
     expect(res.body).toMatchObject({ id: ticket.id, status: 'new', requester: { name: 'Victor Hale' } });
   });
 
-  it('offers Telegram only for a merchant with a linked chat, and no channel for an anonymized customer', async () => {
+  it('offers email only, for a merchant with a chat that is still stored too, and no channel for an anonymized customer', async () => {
     const { db } = await testDb();
     const linked = await insertClient(db, { telegramChatId: '555001' });
     const plain = await insertClient(db);
@@ -421,7 +420,7 @@ describe('GET /admin/support-tickets/:id', () => {
     const a = await insertSupportTicket(db, { requesterType: 'client', requesterId: linked.id, token: null });
     const b = await insertSupportTicket(db, { requesterType: 'client', requesterId: plain.id, token: null });
     const c = await insertSupportTicket(db, { requesterId: gone.id });
-    expect((await admin.get(`/admin/support-tickets/${a.id}`)).body.replyChannels).toEqual(['email', 'telegram']);
+    expect((await admin.get(`/admin/support-tickets/${a.id}`)).body.replyChannels).toEqual(['email']);
     expect((await admin.get(`/admin/support-tickets/${b.id}`)).body.replyChannels).toEqual(['email']);
     expect((await admin.get(`/admin/support-tickets/${c.id}`)).body.replyChannels).toEqual([]);
   });
@@ -514,18 +513,19 @@ describe('PATCH /admin/support-tickets/:id', () => {
     expect((await ticketRow(ticket.id)).updatedAt.toISOString()).toBe(ago(HOUR).toISOString());
   });
 
-  it('resolves: stamps resolved_at, writes the internal system message, clears the target, emails the survey and audits it', async () => {
+  it('resolves: stamps resolved_at, writes the internal system message, clears the target, sends no mail and audits it', async () => {
     const { ticket } = await waitingTicket({ status: 'open', slaDueAt: ahead(HOUR) });
     const res = await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: 'resolved', resolvedAt: NOW, slaDueAt: null, late: false });
+    expect(res.body).not.toHaveProperty('csatScore');
 
     const thread = await messagesOf(ticket.id);
     expect(thread.at(-1)).toMatchObject({
       authorType: 'system',
       authorId: null,
       isInternal: true,
-      body: 'Marked resolved by Lina S.. A satisfaction survey is emailed to the customer.',
+      body: 'Marked resolved by Lina S..',
     });
     expect((await auditRows())[0]).toMatchObject({
       action: 'resolved ticket',
@@ -533,55 +533,13 @@ describe('PATCH /admin/support-tickets/:id', () => {
       after: { status: 'resolved' },
     });
 
-    // The survey is an outbox event with ids only; the job makes the notification row and sends it.
-    const { db } = await testDb();
-    const events = await ticketMailEvents(db);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      aggregateType: 'support_tickets',
-      aggregateId: ticket.id,
-      payload: expect.objectContaining({ kind: 'survey' }),
-    });
-    expect(await notificationRows(db)).toHaveLength(0);
-    expect(await sendTicketMails(t)).toEqual([{ sent: true }]);
-    const [row] = await notificationRows(db);
-    expect(row).toMatchObject({
-      event: 'support.csat_survey',
-      recipientType: 'customer',
-      channel: 'email',
-      status: 'sent',
-    });
-    // The link holds the ticket token: it reaches the customer and never the stored row, which the notification log shows.
-    expect(JSON.stringify(row!.payload)).not.toContain(ticket.token!);
-    const mail = mailbox(t).sent;
-    expect(mail).toHaveLength(1);
-    expect(mail[0]!.subject).toBe(`How did we do? (${ticket.number})`);
-    expect(mail[0]!.text).toContain(`/support/tickets/${ticket.token}`);
-  });
-
-  it('sends no satisfaction survey when an unproven ticket is resolved', async () => {
-    // Decision 053: the survey would repeat the typed subject to an address nobody confirmed.
-    const { ticket } = await waitingTicket({ status: 'open', slaDueAt: ahead(HOUR), requesterProvenAt: null });
-    const res = await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
-    expect(res.status).toBe(200);
-    const thread = await messagesOf(ticket.id);
-    expect(thread.at(-1)).toMatchObject({
-      authorType: 'system',
-      isInternal: true,
-      body: 'Marked resolved by Lina S..',
-    });
+    // A resolve tells the customer nothing: no outbox event, no notification, no mail, and the retired columns stay empty.
     const { db } = await testDb();
     expect(await ticketMailEvents(db)).toHaveLength(0);
-    expect((await ticketRow(ticket.id)).surveySentAt).toBeNull();
-    // Once the address is proven the ticket is asked like any other when it is resolved again.
-    await db
-      .update(s.supportTickets)
-      .set({ requesterProvenAt: new Date(clock.nowMs()) })
-      .where(eq(s.supportTickets.id, ticket.id));
-    await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' });
-    await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
-    expect(await ticketMailEvents(db)).toHaveLength(1);
-    expect((await ticketRow(ticket.id)).surveySentAt?.toISOString()).toBe(NOW);
+    expect(await sendTicketMails(t)).toEqual([]);
+    expect(await notificationRows(db)).toHaveLength(0);
+    expect(mailbox(t).sent).toHaveLength(0);
+    expect(await ticketRow(ticket.id)).toMatchObject({ csatScore: null, surveySentAt: null });
   });
 
   it('reopens a resolved ticket to open, clears resolved_at and restarts the target from the customer’s last message', async () => {
@@ -621,91 +579,15 @@ describe('PATCH /admin/support-tickets/:id', () => {
     expect(closed.body.errors).toEqual([expect.objectContaining({ field: 'status' })]);
   });
 
-  it('sends the survey once per ticket: resolving again after a reopen asks nobody, rated or not', async () => {
+  it('sends no mail when a ticket is resolved again after a reopen, whoever the requester is, and leaves the retired columns alone', async () => {
     const { db } = await testDb();
     const patch = (id: number, status: string) => admin.patch(`/admin/support-tickets/${id}`, { status });
-    const surveys = async () =>
-      (await ticketMailEvents(db)).filter((event) => (event.payload as { kind: string }).kind === 'survey');
-
-    // Not rated: resolve, reopen, resolve again.
     const { ticket } = await waitingTicket({ status: 'open' });
-    expect((await ticketRow(ticket.id)).surveySentAt).toBeNull();
-    expect((await patch(ticket.id, 'resolved')).status).toBe(200);
-    expect(await surveys()).toHaveLength(1);
-    // The record of the survey is a column, set when it is queued.
-    expect((await ticketRow(ticket.id)).surveySentAt?.toISOString()).toBe(NOW);
-    // ... and the injected clock, not the wall clock, stays the ticket's updated time.
-    expect((await ticketRow(ticket.id)).updatedAt.toISOString()).toBe(NOW);
-    expect((await patch(ticket.id, 'open')).status).toBe(200);
-    await elapse(HOUR);
-    expect((await patch(ticket.id, 'resolved')).status).toBe(200);
-    expect(await surveys()).toHaveLength(1);
-    // The second resolve leaves the first time as it was.
-    expect((await ticketRow(ticket.id)).surveySentAt?.toISOString()).toBe(NOW);
-    // The thread says so: the first resolve announces the survey, the second only the resolve.
-    const notes = (await messagesOf(ticket.id)).filter((message) => message.authorType === 'system');
-    expect(notes.map((note) => note.body)).toEqual([
-      'Marked resolved by Lina S.. A satisfaction survey is emailed to the customer.',
-      'Marked resolved by Lina S..',
-    ]);
-
-    // Rated: the customer rated after the first resolve, then the ticket is reopened and resolved again.
-    const rated = await insertSupportTicket(db, { requesterId: ticket.requesterId, status: 'open' });
-    await patch(rated.id, 'resolved');
-    await db.update(s.supportTickets).set({ csatScore: 5 }).where(eq(s.supportTickets.id, rated.id));
-    await patch(rated.id, 'open');
-    await patch(rated.id, 'resolved');
-    expect((await surveys()).filter((event) => event.aggregateId === rated.id)).toHaveLength(1);
-
-    // A different ticket of the same customer is asked on its own.
-    const other = await insertSupportTicket(db, { requesterId: ticket.requesterId, status: 'open' });
-    await patch(other.id, 'resolved');
-    expect((await surveys()).filter((event) => event.aggregateId === other.id)).toHaveLength(1);
-  });
-
-  it('decides "already asked" from the survey column, not from the words of the system message or the name of the staff member', async () => {
-    const { db } = await testDb();
-    const patch = (id: number, status: string) => admin.patch(`/admin/support-tickets/${id}`, { status });
-    const surveys = async () =>
-      (await ticketMailEvents(db)).filter((event) => (event.payload as { kind: string }).kind === 'survey');
-    const { ticket } = await waitingTicket({ status: 'open' });
-    await patch(ticket.id, 'resolved');
-    expect(await surveys()).toHaveLength(1);
-
-    // The staff member is renamed to a name that ends with the survey sentence, and the old system message is reworded (a translation):
-    // neither changes the record, so the second resolve asks nobody and writes the plain note.
-    await db
-      .update(s.staffUsers)
-      .set({ name: 'Lina S. A satisfaction survey is emailed to the customer' })
-      .where(eq(s.staffUsers.id, admin.staffId));
-    await db
-      .update(s.ticketMessages)
-      .set({ body: 'Ticket gelöst. Eine Umfrage wurde gesendet.' })
-      .where(eq(s.ticketMessages.ticketId, ticket.id));
-    await patch(ticket.id, 'open');
-    await patch(ticket.id, 'resolved');
-    expect(await surveys()).toHaveLength(1);
-    expect((await ticketRow(ticket.id)).surveySentAt?.toISOString()).toBe(NOW);
-    const notes = (await messagesOf(ticket.id)).filter((message) => message.authorType === 'system');
-    expect(notes.at(-1)!.body).toBe('Marked resolved by Lina S. A satisfaction survey is emailed to the customer.');
-
-    // The other way round: a note that carries the sentence is not a record. A ticket that got no survey (no ticket page yet) keeps
-    // `survey_sent_at` empty, and is asked once it can be.
-    const quiet = await insertSupportTicket(db, { requesterId: ticket.requesterId, status: 'open', token: null });
-    await patch(quiet.id, 'resolved');
-    expect(await surveys()).toHaveLength(1);
-    expect((await ticketRow(quiet.id)).surveySentAt).toBeNull();
-    await db.update(s.supportTickets).set({ token: 'tok-later' }).where(eq(s.supportTickets.id, quiet.id));
-    await patch(quiet.id, 'open');
-    await patch(quiet.id, 'resolved');
-    expect((await surveys()).filter((event) => event.aggregateId === quiet.id)).toHaveLength(1);
-    expect((await ticketRow(quiet.id)).surveySentAt).not.toBeNull();
-  });
-
-  it('does not ask a rated ticket for a second survey, and sends none for a merchant’s ticket', async () => {
-    const { db } = await testDb();
-    const { ticket } = await waitingTicket({ status: 'open', csatScore: 4 });
-    await admin.patch(`/admin/support-tickets/${ticket.id}`, { status: 'resolved' });
+    const unproven = await insertSupportTicket(db, {
+      requesterId: ticket.requesterId,
+      status: 'open',
+      requesterProvenAt: null,
+    });
     const merchant = await insertClient(db);
     const merchantTicket = await insertSupportTicket(db, {
       requesterType: 'client',
@@ -713,9 +595,18 @@ describe('PATCH /admin/support-tickets/:id', () => {
       token: null,
       status: 'open',
     });
-    await admin.patch(`/admin/support-tickets/${merchantTicket.id}`, { status: 'resolved' });
+    for (const id of [ticket.id, unproven.id, merchantTicket.id]) {
+      expect((await patch(id, 'resolved')).status).toBe(200);
+      expect((await patch(id, 'open')).status).toBe(200);
+      await elapse(HOUR);
+      expect((await patch(id, 'resolved')).status).toBe(200);
+      // Every resolve writes the same plain note.
+      const notes = (await messagesOf(id)).filter((message) => message.authorType === 'system');
+      expect(notes.map((note) => note.body)).toEqual(['Marked resolved by Lina S..', 'Marked resolved by Lina S..']);
+      expect(await ticketRow(id)).toMatchObject({ csatScore: null, surveySentAt: null });
+    }
     expect(await ticketMailEvents(db)).toHaveLength(0);
-    expect((await messagesOf(merchantTicket.id)).at(-1)!.body).toBe('Marked resolved by Lina S..');
+    expect(mailbox(t).sent).toHaveLength(0);
   });
 
   it('validates the body and needs support:update', async () => {
@@ -830,7 +721,7 @@ describe('POST /admin/support-tickets/:id/reply', () => {
     expect(await ticketMailEvents((await testDb()).db)).toHaveLength(0);
   });
 
-  it('answers a merchant on Telegram when their chat is linked, and on the ticket’s own channel by default', async () => {
+  it('answers a merchant by email, also when its ticket came from Telegram and an old chat is still stored', async () => {
     const { db } = await testDb();
     const merchant = await insertClient(db, { name: 'Zain Mobile Hub', telegramChatId: '555001' });
     const ticket = await insertSupportTicket(db, {
@@ -848,23 +739,26 @@ describe('POST /admin/support-tickets/:id/reply', () => {
       channel: 'email',
     });
     expect(byEmail.status).toBe(201);
+    expect(byDefault.body).toMatchObject({ authorType: 'staff' });
     expect(await sendTicketMails(t)).toEqual([{ sent: true }, { sent: true }]);
-    expect(telegramOutbox(t).sent.map((sent) => sent.text)).toEqual([
-      `Support replied on ${ticket.number} (Invoice question):\nIssued in USD.\n\nOpen the conversation: http://localhost:5175/merchant/support/${ticket.id}`,
-    ]);
-    expect(telegramOutbox(t).sent[0]).toMatchObject({ chatId: '555001' });
-    expect(mailbox(t).sent).toHaveLength(1);
+    expect(telegramOutbox(t).sent).toEqual([]);
+    expect(mailbox(t).sent).toHaveLength(2);
     expect(mailbox(t).sent[0]).toMatchObject({ subject: `Re: Invoice question (${ticket.number})` });
     expect(mailbox(t).sent[0]!.text).toContain('Hi Zain Mobile Hub,');
+    expect(mailbox(t).sent[0]!.text).toContain(
+      `Open the conversation: http://localhost:5175/merchant/support/${ticket.id}`,
+    );
+    expect((await auditRows())[0]).toMatchObject({ after: { channel: 'email' } });
   });
 
-  it('refuses Telegram for a merchant with no linked chat', async () => {
+  it('refuses Telegram for every merchant, with or without a chat stored', async () => {
     const { db } = await testDb();
-    const merchant = await insertClient(db);
-    const ticket = await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
-    const res = await admin.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'Hello', channel: 'telegram' });
-    expect(res.status).toBe(422);
-    expect(res.body.errors).toEqual([expect.objectContaining({ field: 'channel' })]);
+    for (const merchant of [await insertClient(db), await insertClient(db, { telegramChatId: '555001' })]) {
+      const ticket = await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
+      const res = await admin.post(`/admin/support-tickets/${ticket.id}/reply`, { body: 'Hello', channel: 'telegram' });
+      expect(res.status).toBe(422);
+      expect(res.body.errors).toEqual([expect.objectContaining({ field: 'channel' })]);
+    }
   });
 
   it('cannot answer an anonymized customer: nothing is written or sent', async () => {

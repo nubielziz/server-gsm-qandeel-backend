@@ -10,7 +10,7 @@ import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client
  * templates, not URLs).
  */
 export interface HttpMetricLabels {
-  /** The API surface of the route (`admin`, `client`, `v1`, `store`, `dhru`, `hooks`, `system`): the System health traffic page groups by it. */
+  /** The API surface of the route (`admin`, `client`, `store`, `dhru`, `hooks`, `system`): the System health traffic page groups by it. */
   readonly surface: string;
   readonly method: string;
   /** The route template (`/admin/staff/:id`) or `unmatched`; never the raw path, so cardinality stays small. */

@@ -29,7 +29,6 @@ import type { SupportTicket, TicketMessage } from '../db/schema';
 import { hasUnread } from '../domain/seen';
 import { isRequesterProven } from '../domain/requester-proof';
 import { toWireStatus } from '../domain/ticket-status';
-import { findStaffName } from '../infra/support-foreign-reads';
 import {
   type MessageRow,
   type MessageScope,
@@ -44,15 +43,12 @@ import {
 import {
   TICKET_MESSAGE_CREATED_EVENT,
   TICKET_READ_EVENT,
-  TICKET_TYPING_EVENT,
   TICKET_UPDATED_EVENT,
   zRequesterMessageCreated,
   zRequesterTicketRead,
-  zRequesterTicketTyping,
   zRequesterTicketUpdated,
   zStaffMessageCreated,
   zStaffTicketRead,
-  zStaffTicketTyping,
   zStaffTicketUpdated,
 } from './ticket-realtime.events';
 
@@ -93,12 +89,12 @@ const LOG_INTERVAL_MS = 30_000;
  * The ticket source of the live streams.
  *
  * Why: owner request (2026-11-15): support is a live conversation. The doorbell carries ids only; this source re-reads the ticket and the
- * message once and renders two views: staff (`support:staff`, every message, the inbox row, colleagues' typing with their name) and the
- * requester (`ticket:<id>` of the ticket link's streams and the requester's account key: public messages only, the ticket page's fields,
- * "Support is typing…" only for a reply). Nothing of another ticket can be rendered: every read names the ticket, and a replay is scoped
- * by the viewer (all tickets for staff, the requester's own tickets, the one ticket of a link). A ticket whose requester address is not proven
- * yet (decision 053) reaches only the streams of its link, never the requester's account stream. Each frame is parsed by its schema first
- * (the requester views are strict), so a frame that does not fit is logged and skipped, never sent.
+ * message once and renders two views: staff (`support:staff`, every message, the inbox row) and the requester (`ticket:<id>` of the
+ * ticket link's streams and the requester's account key: public messages only, the ticket page's fields). Nothing of another ticket can be
+ * rendered: every read names the ticket, and a replay is scoped by the viewer (all tickets for staff, the requester's own tickets, the one
+ * ticket of a link). A ticket whose requester address is not proven yet (decision 053) reaches only the streams of its link, never the
+ * requester's account stream. Each frame is parsed by its schema first (the requester views are strict), so a frame that does not fit is
+ * logged and skipped, never sent.
  *
  * Side effects: reads `support_tickets`, `ticket_messages`, the files of a message and the requester's and author's names; registers
  * itself with the hub's source registry at module start.
@@ -185,7 +181,7 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
   /**
    * Turns a ticket doorbell into deliveries.
    *
-   * @param doorbell `message`, `updated`, `read`, `typing` or `revoked`, with `ticketId`
+   * @param doorbell `message`, `updated`, `read` or `revoked`, with `ticketId`
    * @param has whether an open stream listens to a key (nothing is read for a ticket nobody watches)
    * @returns the deliveries: the staff view to `support:staff`, the requester view to the ticket's link and account keys
    */
@@ -201,8 +197,6 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
         return doorbell['by'] === 'requester' || doorbell['by'] === 'staff'
           ? this.read(ticketId, doorbell['by'], has)
           : [];
-      case 'typing':
-        return this.typing(ticketId, doorbell, has);
       case 'revoked':
         return has(ticketStreamKey(ticketId)) ? [{ keys: [ticketStreamKey(ticketId)], close: 'session_ended' }] : [];
       default:
@@ -298,38 +292,6 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
     return deliveries;
   }
 
-  /** `typing`: staff see who types; the requester sees only that support types a reply (never a note, never who). */
-  private async typing(ticketId: number, doorbell: Doorbell, has: (key: string) => boolean): Promise<Delivery[]> {
-    const by = doorbell['by'];
-    const staffId = doorbell['staffId'];
-    const mode = doorbell['mode'];
-    if (by !== 'requester' && by !== 'staff') return [];
-    if (by === 'staff' && (!isId(staffId) || (mode !== 'reply' && mode !== 'note'))) return [];
-    const ticket = await findTicket(this.db.db, ticketId);
-    if (!ticket) return [];
-    const audience = this.audience(ticket, has);
-    const deliveries: Delivery[] = [];
-    if (audience.staff) {
-      const staffName = by === 'staff' ? ((await findStaffName(this.db.db, staffId as number)) ?? 'Staff') : null;
-      const frame = this.frame(TICKET_TYPING_EVENT, zStaffTicketTyping, {
-        ticketId,
-        by,
-        staffId: by === 'staff' ? (staffId as number) : null,
-        staffName,
-        mode: by === 'staff' ? (mode as 'reply' | 'note') : null,
-      });
-      if (frame) deliveries.push({ keys: [SUPPORT_STAFF_KEY], frame });
-    }
-    if (by === 'staff' && mode === 'reply' && audience.requester.length > 0) {
-      const frame = this.frame(TICKET_TYPING_EVENT, zRequesterTicketTyping, {
-        ticketId: requesterTicketId(ticket),
-        number: ticket.number,
-      });
-      if (frame) deliveries.push({ keys: audience.requester, frame });
-    }
-    return deliveries;
-  }
-
   /** The staff view of a message: the thread's shape (author name, internal flag, attachments). */
   private staffMessageFrame(
     ticketId: number,
@@ -384,8 +346,6 @@ export class TicketRealtimeSource implements RealtimeSource, OnModuleInit {
       status: toWireStatus(ticket.status),
       updatedAt: ticket.updatedAt.toISOString(),
       resolvedAt: iso(ticket.resolvedAt),
-      canRate: ticket.status === 'resolved' && ticket.csatScore === null,
-      csatScore: ticket.csatScore,
       hasUnread: hasUnread(ticket.lastStaffMessageId, ticket.requesterSeenMessageId),
     });
   }

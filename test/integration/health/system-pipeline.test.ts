@@ -1,9 +1,8 @@
 // Integration tests of the pipeline and data store pages of System health (feature 9): orders past SLA with the money held, supplier
-// health with call outcome rates, webhook delivery health, Postgres and the cache Redis (resolutions orders-suppliers-1, -5,
+// health with call outcome rates, incoming webhook health, Postgres and the cache Redis (resolutions orders-suppliers-1, -5,
 // health-commissions-8, -10; MISMATCHES B92, B93, B97, B98).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { CacheKeys } from '@src/infra/cache';
@@ -14,7 +13,6 @@ import { clearIdentityCaches } from '../../support/auth';
 import { DAY, HOUR, MINUTE, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertOrderRow, ordersWorld } from '../../support/orders';
-import { insertDelivery, insertEndpoint } from '../../support/webhooks';
 
 const clock = new TestClock();
 let t: TestApp;
@@ -249,26 +247,26 @@ describe('GET /admin/system/suppliers', () => {
 });
 
 describe('GET /admin/system/webhooks', () => {
-  it('summarises the last 24 hours of deliveries and the oldest still pending', async () => {
+  it('answers the incoming side only: the deliveries to merchants are retired and never read', async () => {
     const api = await adminWith(t, ['system:read']);
     const { db } = await testDb();
     const world = await ordersWorld(db);
-    const endpoint = await insertEndpoint(t.app.get(EncryptionService), db, world.merchant.id);
-    await insertDelivery(db, endpoint, { status: 'delivered', nextRetryAt: null, createdAt: ago(HOUR) });
-    await insertDelivery(db, endpoint, { status: 'delivered', nextRetryAt: null, createdAt: ago(2 * HOUR) });
-    await insertDelivery(db, endpoint, { status: 'failed', nextRetryAt: null, createdAt: ago(3 * HOUR) });
-    await insertDelivery(db, endpoint, { status: 'pending', createdAt: ago(10 * MINUTE) });
-    await insertDelivery(db, endpoint, { status: 'delivered', nextRetryAt: null, createdAt: ago(30 * HOUR) });
+    // A delivery row written before the retirement is never read: the answer is the same with one in the table.
+    const [endpoint] = await db
+      .insert(s.webhookEndpoints)
+      .values({ clientId: world.merchant.id, url: 'https://hooks.example.com/gsm', secretEnc: 'sealed' })
+      .returning({ id: s.webhookEndpoints.id });
+    await db.insert(s.webhookDeliveries).values({
+      endpointId: endpoint!.id,
+      event: 'order.status_changed',
+      eventId: 'evt_retired_row',
+      payload: {},
+      status: 'pending',
+      createdAt: ago(10 * MINUTE),
+    });
     const { body, status } = await api.get('/admin/system/webhooks');
     expect(status).toBe(200);
-    expect(body.outgoing).toMatchObject({
-      delivered: 2,
-      failed: 1,
-      retrying: 1,
-      oldestUndeliveredAt: ago(10 * MINUTE).toISOString(),
-    });
-    expect(body.outgoing.successRate.value).toBe(66.67);
-    expect(body.outgoing.oldestAge).toMatchObject({ value: 600, state: 'warn' });
+    expect(Object.keys(body)).toEqual(['incoming']);
     expect(body.incoming).toMatchObject({ delivered: 0, failed: 0, retrying: 0, oldestUndeliveredAt: null });
     expect(body.incoming.successRate).toMatchObject({ value: null, state: 'unknown' });
   });

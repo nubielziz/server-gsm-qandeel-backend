@@ -22,7 +22,7 @@ bun run dev                   # API on :3000
 bun run dev:worker            # worker process: queue workers, schedulers, outbox relay (its own /metrics on :9464)
 ```
 
-- API documentation: <http://localhost:3000/docs> (public: REST v1, Dhru, webhook events), <http://localhost:3000/reference>
+- API documentation: <http://localhost:3000/docs> (public: Dhru), <http://localhost:3000/reference>
   (internal: every route; `REFERENCE_DOCS=open` outside production, `staff` in production).
 - Run Bun entry points from the repository root: Bun reads `tsconfig.json` (decorator flags) from the working directory.
 - `scripts/ci.sh` is the whole pipeline in one command (install, services, `bun run check`); see the README.
@@ -82,7 +82,7 @@ document. The contract layer is explained in `src/common/contract/README.md`; th
    fixture and the OpenAPI examples (`test/contract/README.md` explains each failure and the allowlist).
 7. **Regenerate the documents:** `bun run docs:openapi`, then commit `docs/contract/openapi.json` and
    `openapi.public.json` with the change; the diff shows the contract change. `GET /reference` (internal) and, for REST
-   v1, Dhru and webhook events, `GET /docs` show the result.
+   v1 and Dhru, `GET /docs` show the result.
 8. **Update the module `README.md`** (routes built, permissions, jobs, events, cache keys) and the TSDoc, then run
    `bun run check`.
 
@@ -121,13 +121,6 @@ decorator metadata). `src/common` and `src/infra` never import from `src/modules
 `src/modules/<id>/index.ts`, with exactly two exceptions, both for the Drizzle schema: a module's `db/schema.ts` may
 import another module's `db/schema.ts` for foreign keys, and `src/infra/db/schema.ts` re-exports them all.
 
-### Outgoing webhook events
-
-An event a merchant receives is a contract too: `defineEvent({ key: 'EVENT order.status_changed', summary, payload,
-example })` (`src/common/contract/define-event.ts`) registers it, and the public document lists it under `webhooks` with
-the delivery envelope `{ id, type, createdAt, data }`, the `X-GSM-Signature` header and the retry rule. Regenerate the
-documents afterwards.
-
 ### Calls to a supplier
 
 A call this backend makes to a supplier's Dhru API is a contract as well: `defineSupplierCall({ key: 'SUPPLIER accountinfo',
@@ -161,11 +154,11 @@ in `src/infra/queues/` (its `README.md` has an example); every queue, job and sc
 
 ### Add an outbox event **(P2.4)**
 
-A state change that needs async work (a supplier call, a webhook, an email) writes an `outbox_events` row in the same
+A state change that needs async work (a supplier call, an email) writes an `outbox_events` row in the same
 transaction; the worker's relay turns it into a BullMQ job with the id `outbox-<event id>`.
 
-1. In the module's `onModuleInit`, register the event type: `outboxRoutes.register({ type: 'order.status_changed', queue:
-   'merchant-webhooks' })` (`OutboxRouteRegistry`, exported by `src/modules/platform`). `OutboxService.add` refuses a type
+1. In the module's `onModuleInit`, register the event type: `outboxRoutes.register({ type: 'order.dispatch_requested', queue:
+   'supplier-dispatch' })` (`OutboxRouteRegistry`, exported by `src/modules/platform`). `OutboxService.add` refuses a type
    that is not registered.
 2. In the use case, inside `runInTransaction`: `await outbox.add(tx, { type, aggregateType: 'orders', aggregateId,
    payload: { orderId } })`. The payload is ids and short codes only (whole numbers, strings up to 64 characters, no
@@ -202,7 +195,7 @@ Each has a README next to its code with the rules and an example:
   `limiters.ts` only; refuse with `RateLimitService.enforce` (429 `RATE_LIMITED` with `Retry-After`).
 - Encryption at rest, token hashes, passwords, webhook signatures: `src/infra/crypto/README.md`. Tune the argon2 cost on the
   production host with `bun run bench:argon2`.
-- Files: `src/infra/storage/README.md`. Outbound calls (suppliers, gateways, merchant webhooks): `src/infra/http/README.md`;
+- Files: `src/infra/storage/README.md`. Outbound calls (suppliers, gateways, the FX provider): `src/infra/http/README.md`;
   never call `fetch` directly.
 - Redis clients and health: `src/infra/redis/README.md`. Queues, workers and schedulers: `src/infra/queues/README.md`.
 - Checks that run on every request before authentication (IP rules, maintenance, the per-IP limit), their fixed order and how
@@ -254,7 +247,7 @@ float (decision 011).
 
 ## The API documentation pages
 
-- `GET /openapi.json` and `GET /docs` are map routes (public document: REST v1, the Dhru reference, webhook events).
+- `GET /openapi.json` and `GET /docs` are map routes (public document: the Dhru reference).
   `GET /reference/openapi.json` and `GET /reference` are the internal reference (every route); they are documentation
   routes without contracts (`DOCUMENTATION_ROUTES` in `src/modules/platform`).
 - `REFERENCE_DOCS` = `open` (default outside production), `off` (404) or `staff` (default in production). `staff`

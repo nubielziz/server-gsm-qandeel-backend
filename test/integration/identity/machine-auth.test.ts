@@ -1,5 +1,5 @@
 // Integration tests of the machine guards (decision 018, P2.5c) through real HTTP on the real application: capability tokens, URL
-// secrets, merchant API keys (REST v1 Bearer and Dhru credentials) and gateway webhook signatures. Real Postgres and Redis;
+// secrets, merchant API keys (Dhru credentials) and gateway webhook signatures. Real Postgres and Redis;
 // merchants and keys are inserted the way the feature that issues them will store them (keyed hash only).
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
@@ -222,7 +222,7 @@ describe('capability tokens', () => {
 describe('URL secrets', () => {
   const secret = 'tg-webhook-secret-0123456789abcdef';
   const call = (value: string) =>
-    t.app.inject({ method: 'POST', url: `/webhooks/t/mach/telegram/${value}`, payload: { update_id: 1 } });
+    t.app.inject({ method: 'POST', url: `/webhooks/t/mach/example/${value}`, payload: { update_id: 1 } });
 
   it('accepts the stored secret when it is kept as a keyed hash', async () => {
     stored = { form: 'hash', value: t.app.get(TokenService).hash(secret) };
@@ -252,7 +252,7 @@ describe('URL secrets', () => {
     try {
       const res = await bare.app.inject({
         method: 'POST',
-        url: `/webhooks/t/mach/telegram/${secret}`,
+        url: `/webhooks/t/mach/example/${secret}`,
         payload: { update_id: 1 },
       });
       refusedAs(res, 401, 'UNAUTHORIZED');
@@ -262,28 +262,23 @@ describe('URL secrets', () => {
   });
 });
 
-describe('API keys on REST v1', () => {
-  const get = (key: string | undefined, ip = freshClientIp(), url = '/v1/t/mach/read') =>
-    t.app.inject({ method: 'GET', url, remoteAddress: ip, headers: key ? { authorization: `Bearer ${key}` } : {} });
-  const write = (key: string, ip = freshClientIp()) =>
+describe('API keys on the Dhru endpoint', () => {
+  const MERCHANT = 'acme';
+  /** One `accountinfo` call, the cheapest action that needs the credentials. */
+  const get = (key: string | undefined, ip = freshClientIp(), username = MERCHANT) =>
     t.app.inject({
       method: 'POST',
-      url: '/v1/t/mach/write',
+      url: '/api/index.php',
       remoteAddress: ip,
-      headers: { authorization: `Bearer ${key}` },
-      payload: {},
+      payload: { action: 'accountinfo', username, ...(key === undefined ? {} : { apiaccesskey: key }) } as never,
     });
-
-  it('accepts a valid key and hands the handler the merchant, the key and its scopes', async () => {
-    const clientId = await insertMerchant(db);
-    const { id, key } = await insertApiKey(t, db, clientId, { scopes: ['orders:read'] });
-    const res = await get(key);
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ kind: 'api-key', clientId, keyId: id, scopes: ['orders:read'] });
-  });
+  const worked = (res: LightMyRequestResponse) => res.json().SUCCESS !== undefined;
+  const messageOf = (res: LightMyRequestResponse): string | undefined => res.json().ERROR?.[0]?.MESSAGE;
+  const merchant = (overrides: Partial<typeof s.clients.$inferInsert> = {}) =>
+    insertMerchant(db, { username: MERCHANT, ...overrides });
 
   it('stores only a hash and a display prefix, never the key', async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { id, key, keyHash } = await insertApiKey(t, db, clientId);
     const [row] = await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id));
     expect(JSON.stringify(row)).not.toContain(key);
@@ -292,159 +287,93 @@ describe('API keys on REST v1', () => {
     expect(row!.prefix).toBe(key.slice(0, 8));
   });
 
-  it('refuses a request without a key, with another scheme, with an unknown key and with a malformed one as 401', async () => {
-    const clientId = await insertMerchant(db);
+  it('accepts a live key of an active merchant, with no scope to list', async () => {
+    const clientId = await merchant();
     const { key } = await insertApiKey(t, db, clientId);
-    refusedAs(await get(undefined), 401, 'UNAUTHORIZED');
-    const other = await t.app.inject({
-      method: 'GET',
-      url: '/v1/t/mach/read',
-      remoteAddress: freshClientIp(),
-      headers: { authorization: `Basic ${key}` },
-    });
-    refusedAs(other, 401, 'UNAUTHORIZED');
-    refusedAs(await get(`${key}x`), 401, 'UNAUTHORIZED');
-    refusedAs(await get('short'), 401, 'UNAUTHORIZED');
-    // A key is not read from anywhere else.
-    const header = await t.app.inject({
-      method: 'GET',
-      url: '/v1/t/mach/read',
-      remoteAddress: freshClientIp(),
-      headers: { 'x-api-key': key },
-    });
-    refusedAs(header, 401, 'UNAUTHORIZED');
+    expect(worked(await get(key))).toBe(true);
   });
 
-  it('refuses a revoked key and an expired key as 401, in the same words', async () => {
-    const clientId = await insertMerchant(db);
-    const revoked = await insertApiKey(t, db, clientId, { revokedAt: new Date(clock.nowMs() - SECOND) });
-    const expired = await insertApiKey(t, db, clientId, { expiresAt: new Date(clock.nowMs() - SECOND) });
+  it('refuses an expired key once the clock passes its expiry (the cached view is judged again on every request)', async () => {
+    const clientId = await merchant();
     const future = await insertApiKey(t, db, clientId, { expiresAt: new Date(clock.nowMs() + HOUR) });
-    const a = await get(revoked.key);
-    const b = await get(expired.key);
-    refusedAs(a, 401, 'UNAUTHORIZED');
-    refusedAs(b, 401, 'UNAUTHORIZED');
-    expect(a.json().detail).toBe(b.json().detail);
-    expect((await get(future.key)).statusCode).toBe(200);
-    // Time moves: the key that was fine an hour ago is expired now (the cached view is judged again on every request).
+    expect(worked(await get(future.key))).toBe(true);
+    // Time moves: the key that was fine an hour ago is expired now.
     clock.advance(HOUR + SECOND);
-    refusedAs(await get(future.key), 401, 'UNAUTHORIZED');
+    expect((await get(future.key)).json()).toEqual(DHRU_FAILED);
   });
 
   it('applies a revoke at once once the cached view is dropped, and not before (it lives a minute)', async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { id, key, keyHash } = await insertApiKey(t, db, clientId);
     // The first call writes "last used", which drops the view; the second loads and caches it again.
-    expect((await get(key)).statusCode).toBe(200);
-    expect((await get(key)).statusCode).toBe(200);
+    expect(worked(await get(key))).toBe(true);
+    expect(worked(await get(key))).toBe(true);
     await db.update(s.apiKeys).set({ revokedAt: clock.now() }).where(eq(s.apiKeys.id, id));
-    expect((await get(key)).statusCode).toBe(200);
+    expect(worked(await get(key))).toBe(true);
     await t.app.get(ApiKeyDirectory).invalidate([keyHash]);
-    refusedAs(await get(key), 401, 'UNAUTHORIZED');
+    expect((await get(key)).json()).toEqual(DHRU_FAILED);
   });
 
-  it('limits a key to its allowed IP ranges: IPv4 and IPv6 ranges and single addresses, 403 IP_NOT_ALLOWED otherwise', async () => {
-    const clientId = await insertMerchant(db);
+  it('limits a key to its allowed IP ranges: IPv4 and IPv6 ranges and single addresses, the envelope says so otherwise', async () => {
+    const clientId = await merchant();
     const { key } = await insertApiKey(t, db, clientId, {
       allowedIps: ['203.0.113.0/24', '198.51.100.7', '2001:db8:abcd::/48'],
     });
     for (const ip of ['203.0.113.1', '203.0.113.254', '198.51.100.7', '2001:db8:abcd:1::9', '::ffff:203.0.113.9']) {
-      expect((await get(key, ip)).statusCode, ip).toBe(200);
+      expect(worked(await get(key, ip)), ip).toBe(true);
     }
     for (const ip of ['203.0.114.1', '198.51.100.8', '2001:db8:abce::1', '10.0.0.1']) {
       const res = await get(key, ip);
-      refusedAs(res, 403, 'IP_NOT_ALLOWED');
-      expect(res.json().detail, ip).toContain('allowed for this API key');
+      expect(worked(res), ip).toBe(false);
+      expect(messageOf(res), ip).toContain('allowed for this API key');
     }
   });
 
   it('lets a key with no allowed IPs be used from any address', async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { key } = await insertApiKey(t, db, clientId, { allowedIps: [] });
-    expect((await get(key, '192.0.2.200')).statusCode).toBe(200);
-    expect((await get(key, '2001:db8::77')).statusCode).toBe(200);
-  });
-
-  it('needs a scope in the key that covers the route (the permission, its area:* or *): 403 FORBIDDEN naming it otherwise', async () => {
-    const clientId = await insertMerchant(db);
-    const { key } = await insertApiKey(t, db, clientId, { scopes: ['orders:read'] });
-    expect((await get(key)).statusCode).toBe(200);
-    const res = await write(key);
-    refusedAs(res, 403, 'FORBIDDEN');
-    expect(res.json().detail).toContain('orders:write');
-    // Not covering: another action, a bare area, another case, another area's wildcard.
-    for (const scopes of [['orders'], ['ORDERS:WRITE'], ['wallet:*'], []]) {
-      const narrow = await insertApiKey(t, db, clientId, { scopes });
-      refusedAs(await write(narrow.key), 403, 'FORBIDDEN');
-    }
-    const writer = await insertApiKey(t, db, clientId, { scopes: ['orders:write'] });
-    expect((await write(writer.key)).statusCode).toBe(201);
-  });
-
-  it('lets a key with the scope `orders:*` call every orders route', async () => {
-    const clientId = await insertMerchant(db);
-    const { key } = await insertApiKey(t, db, clientId, { scopes: ['orders:*'] });
-    expect((await get(key)).statusCode).toBe(200);
-    expect((await write(key)).statusCode).toBe(201);
-  });
-
-  it('lets a key with the scope `*` call every v1 route', async () => {
-    const clientId = await insertMerchant(db);
-    const { key } = await insertApiKey(t, db, clientId, { scopes: ['*'] });
-    expect((await get(key)).statusCode).toBe(200);
-    expect((await write(key)).statusCode).toBe(201);
-  });
-
-  it('refuses the keys of a suspended merchant with 403 ACCOUNT_SUSPENDED and of one not approved yet with 403 ACCOUNT_PENDING_APPROVAL (B153)', async () => {
-    const suspended = await insertMerchant(db, { status: 'suspended' });
-    const pending = await insertMerchant(db, { status: 'pending' });
-    const a = await insertApiKey(t, db, suspended);
-    const b = await insertApiKey(t, db, pending);
-    refusedAs(await get(a.key), 403, 'ACCOUNT_SUSPENDED');
-    refusedAs(await get(b.key), 403, 'ACCOUNT_PENDING_APPROVAL');
+    expect(worked(await get(key, '192.0.2.200'))).toBe(true);
+    expect(worked(await get(key, '2001:db8::77'))).toBe(true);
   });
 
   it("applies a merchant status change once the merchant's cached key views are dropped", async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { key } = await insertApiKey(t, db, clientId);
     const directory = t.app.get(ApiKeyDirectory);
-    expect((await get(key)).statusCode).toBe(200);
+    expect(worked(await get(key))).toBe(true);
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, clientId));
     await directory.invalidateClient(clientId);
-    refusedAs(await get(key), 403, 'ACCOUNT_SUSPENDED');
+    expect(messageOf(await get(key))).toBe('This merchant account is suspended.');
     await db.update(s.clients).set({ status: 'active' }).where(eq(s.clients.id, clientId));
     await directory.invalidateClient(clientId);
-    expect((await get(key)).statusCode).toBe(200);
+    expect(worked(await get(key))).toBe(true);
   });
 
-  it('limits a key to its own requests per minute: 429 RATE_LIMITED with Retry-After, other keys unaffected', async () => {
-    const clientId = await insertMerchant(db);
+  it('limits a key to its own requests per minute, other keys unaffected', async () => {
+    const clientId = await merchant();
     const limited = await insertApiKey(t, db, clientId, { rateLimitPerMin: 3 });
     const other = await insertApiKey(t, db, clientId, { rateLimitPerMin: 3 });
-    for (let i = 0; i < 3; i++) expect((await get(limited.key)).statusCode, `call ${i + 1}`).toBe(200);
-    const res = await get(limited.key);
-    refusedAs(res, 429, 'RATE_LIMITED');
-    expect(Number(res.headers['retry-after'])).toBeGreaterThanOrEqual(1);
-    expect(Number(res.headers['retry-after'])).toBeLessThanOrEqual(60);
-    expect((await get(other.key)).statusCode).toBe(200);
+    for (let i = 0; i < 3; i++) expect(worked(await get(limited.key)), `call ${i + 1}`).toBe(true);
+    expect(messageOf(await get(limited.key))).toContain('Too many requests');
+    expect(worked(await get(other.key))).toBe(true);
   });
 
   it('counts only the calls that were accepted: refusals cost the merchant nothing', async () => {
-    const clientId = await insertMerchant(db);
-    const { key } = await insertApiKey(t, db, clientId, { scopes: ['orders:read'], rateLimitPerMin: 2 });
-    for (let i = 0; i < 5; i++) refusedAs(await write(key), 403, 'FORBIDDEN');
-    expect((await get(key)).statusCode).toBe(200);
-    expect((await get(key)).statusCode).toBe(200);
-    refusedAs(await get(key), 429, 'RATE_LIMITED');
+    const clientId = await merchant();
+    const { key } = await insertApiKey(t, db, clientId, { allowedIps: ['203.0.113.0/24'], rateLimitPerMin: 2 });
+    for (let i = 0; i < 5; i++) expect(messageOf(await get(key, '198.51.100.9'))).toContain('allowed for this API key');
+    expect(worked(await get(key, '203.0.113.9'))).toBe(true);
+    expect(worked(await get(key, '203.0.113.9'))).toBe(true);
+    expect(messageOf(await get(key, '203.0.113.9'))).toContain('Too many requests');
   });
 
   it('uses the limiter default for a key whose stored limit is not a usable number', async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { key } = await insertApiKey(t, db, clientId, { rateLimitPerMin: 0 });
-    expect((await get(key)).statusCode).toBe(200);
+    expect(worked(await get(key))).toBe(true);
   });
 
-  it('counts unknown keys per client address and answers 429 when one address tries too many', async () => {
+  it('counts unknown keys per client address and refuses when one address tries too many', async () => {
     const ip = freshClientIp();
     const address = parseIpAddress(ip);
     const limiter = t.app.get(RateLimitService);
@@ -452,30 +381,28 @@ describe('API keys on REST v1', () => {
     const used = await limiter.consume('ip', failures, 300, { limit: 300 });
     expect(used.allowed).toBe(true);
     const unknown = `gsm_${t.app.get(TokenService).random(32)}`;
-    const res = await get(unknown, ip);
-    refusedAs(res, 429, 'RATE_LIMITED');
-    expect(Number(res.headers['retry-after'])).toBeGreaterThanOrEqual(1);
+    expect(messageOf(await get(unknown, ip))).toContain('Too many requests');
     // Another address, and a request without any key, are not affected.
-    refusedAs(await get(unknown), 401, 'UNAUTHORIZED');
-    refusedAs(await get(undefined, ip), 401, 'UNAUTHORIZED');
+    expect((await get(unknown)).json()).toEqual(DHRU_FAILED);
+    expect((await get(undefined, ip)).json()).toEqual(DHRU_FAILED);
   });
 
-  it('answers 429 without a lookup, to a valid key the cache does not hold too, once the address used its unknown-key budget (decision 053)', async () => {
+  it('answers without a lookup, to a valid key the cache does not hold too, once the address used its unknown-key budget (decision 053)', async () => {
     const ip = freshClientIp();
     const limiter = t.app.get(RateLimitService);
     await limiter.consume('ip', `api-key-failures:${ipRateLimitKey(parseIpAddress(ip))}`, 300);
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const known = await insertApiKey(t, db, clientId);
     const lookup = spyOn(t.app.get(ApiKeyDirectory), 'findByKey');
     try {
       // Neither an unknown key nor a valid key the cache does not hold costs a lookup from an address that used up its budget.
-      refusedAs(await get(`gsm_${t.app.get(TokenService).random(32)}`, ip), 429, 'RATE_LIMITED');
-      refusedAs(await get(known.key, ip), 429, 'RATE_LIMITED');
+      expect(messageOf(await get(`gsm_${t.app.get(TokenService).random(32)}`, ip))).toContain('Too many requests');
+      expect(messageOf(await get(known.key, ip))).toContain('Too many requests');
       expect(lookup).not.toHaveBeenCalled();
       // Another address still reaches the lookup, and a request without a key never does.
-      expect((await get(known.key)).statusCode).toBe(200);
+      expect(worked(await get(known.key))).toBe(true);
       expect(lookup).toHaveBeenCalledTimes(1);
-      refusedAs(await get(undefined, ip), 401, 'UNAUTHORIZED');
+      expect((await get(undefined, ip)).json()).toEqual(DHRU_FAILED);
       expect(lookup).toHaveBeenCalledTimes(1);
     } finally {
       lookup.mockRestore();
@@ -483,10 +410,10 @@ describe('API keys on REST v1', () => {
   });
 
   it('does not charge the failure budget for a known key', async () => {
-    const clientId = await insertMerchant(db);
-    const { key } = await insertApiKey(t, db, clientId, { scopes: [] });
+    const clientId = await merchant();
+    const { key } = await insertApiKey(t, db, clientId, { allowedIps: ['203.0.113.0/24'] });
     const ip = freshClientIp();
-    for (let i = 0; i < 5; i++) refusedAs(await get(key, ip), 403, 'FORBIDDEN');
+    for (let i = 0; i < 5; i++) expect(messageOf(await get(key, ip))).toContain('allowed for this API key');
     const after = await t.app
       .get(RateLimitService)
       .consume('ip', `api-key-failures:${ipRateLimitKey(parseIpAddress(ip))}`, 1, { limit: 2 });
@@ -494,34 +421,36 @@ describe('API keys on REST v1', () => {
   });
 
   it('records when and from where a key was last used, at most once a minute', async () => {
-    const clientId = await insertMerchant(db);
+    const clientId = await merchant();
     const { id, key } = await insertApiKey(t, db, clientId);
     const row = async () => (await db.select().from(s.apiKeys).where(eq(s.apiKeys.id, id)))[0]!;
     expect((await row()).lastUsedAt).toBeNull();
-    expect((await get(key, '203.0.113.50')).statusCode).toBe(200);
+    expect(worked(await get(key, '203.0.113.50'))).toBe(true);
     const first = await row();
     expect(first.lastUsedAt).not.toBeNull();
     expect(first.lastUsedIp).toBe('203.0.113.50');
-    expect((await get(key, '203.0.113.51')).statusCode).toBe(200);
+    expect(worked(await get(key, '203.0.113.51'))).toBe(true);
     expect((await row()).lastUsedAt).toEqual(first.lastUsedAt);
     expect((await row()).lastUsedIp).toBe('203.0.113.50');
     // A minute later the next call writes it again.
     clock.advance(MINUTE - SECOND);
-    expect((await get(key, '203.0.113.52')).statusCode).toBe(200);
+    expect(worked(await get(key, '203.0.113.52'))).toBe(true);
     expect((await row()).lastUsedIp, 'a second short of a minute: not written').toBe('203.0.113.50');
     clock.advance(SECOND);
-    expect((await get(key, '203.0.113.53')).statusCode).toBe(200);
+    expect(worked(await get(key, '203.0.113.53'))).toBe(true);
     expect((await row()).lastUsedIp).toBe('203.0.113.53');
     expect((await row()).lastUsedAt).toEqual(clock.now());
   });
 
   it('keeps the keys of two merchants apart', async () => {
-    const a = await insertMerchant(db);
-    const b = await insertMerchant(db);
+    const a = await insertMerchant(db, { username: 'acme', email: 'acme@example.com' });
+    const b = await insertMerchant(db, { username: 'beta', email: 'beta@example.com' });
     const keyA = await insertApiKey(t, db, a);
     const keyB = await insertApiKey(t, db, b);
-    expect((await get(keyA.key)).json().clientId).toBe(a);
-    expect((await get(keyB.key)).json().clientId).toBe(b);
+    expect((await get(keyA.key, freshClientIp(), 'acme')).json().SUCCESS[0].AccoutInfo.mail).toBe('acme@example.com');
+    expect((await get(keyB.key, freshClientIp(), 'beta')).json().SUCCESS[0].AccoutInfo.mail).toBe('beta@example.com');
+    // A key never opens another merchant's username.
+    expect((await get(keyA.key, freshClientIp(), 'beta')).json()).toEqual(DHRU_FAILED);
   });
 });
 
@@ -532,7 +461,7 @@ describe('Dhru credentials', () => {
 
   it('accepts username and apiaccesskey from a JSON body and from a form body', async () => {
     const clientId = await insertMerchant(db, { username: 'acme-gsm' });
-    const { key } = await insertApiKey(t, db, clientId, { scopes: ['dhru'] });
+    const { key } = await insertApiKey(t, db, clientId);
     // The real `POST /api/index.php` (feature 7a) answers: `accountinfo` is the cheapest action that needs the credentials.
     const json = await call({ action: 'accountinfo', username: 'acme-gsm', apiaccesskey: key });
     expect(json.statusCode).toBe(200);
@@ -589,14 +518,9 @@ describe('Dhru credentials', () => {
 
   it('tells the owner of valid credentials what is wrong with them, still in the envelope', async () => {
     const clientId = await insertMerchant(db, { username: 'acme' });
-    const noDhru = await insertApiKey(t, db, clientId, { scopes: ['orders:read'] });
     const restricted = await insertApiKey(t, db, clientId, { allowedIps: ['203.0.113.0/24'] });
     const suspended = await insertMerchant(db, { username: 'frozen', status: 'suspended' });
     const frozen = await insertApiKey(t, db, suspended);
-
-    const scope = await call({ action: 'accountinfo', username: 'acme', apiaccesskey: noDhru.key });
-    expect(scope.statusCode).toBe(200);
-    expect(message(scope)).toBe('This API key cannot be used with the Dhru API.');
 
     const ip = await call({ action: 'accountinfo', username: 'acme', apiaccesskey: restricted.key }, '198.51.100.9');
     expect(ip.statusCode).toBe(200);
@@ -614,7 +538,7 @@ describe('Dhru credentials', () => {
 
   it('tells a merchant that waits for approval so in the envelope (B153)', async () => {
     const waiting = await insertMerchant(db, { username: 'waiting', status: 'pending' });
-    const { key } = await insertApiKey(t, db, waiting, { scopes: ['dhru'] });
+    const { key } = await insertApiKey(t, db, waiting);
     const res = await call({ action: 'accountinfo', username: 'waiting', apiaccesskey: key });
     expect(res.statusCode).toBe(200);
     expect(message(res)).toBe('This merchant account has not been approved yet.');
@@ -629,32 +553,6 @@ describe('Dhru credentials', () => {
     const limited = await call(body);
     expect(limited.statusCode).toBe(200);
     expect(message(limited)).toContain('Too many requests');
-  });
-
-  it('keeps the two key uses apart: a Dhru-only key cannot call REST v1, a REST-only key cannot call Dhru', async () => {
-    const clientId = await insertMerchant(db, { username: 'acme' });
-    const dhruOnly = await insertApiKey(t, db, clientId, { scopes: ['dhru'] });
-    const restOnly = await insertApiKey(t, db, clientId, { scopes: ['orders:read'] });
-    const v1 = await t.app.inject({
-      method: 'GET',
-      url: '/v1/t/mach/read',
-      remoteAddress: freshClientIp(),
-      headers: { authorization: `Bearer ${dhruOnly.key}` },
-    });
-    refusedAs(v1, 403, 'FORBIDDEN');
-    expect(message(await call({ action: 'accountinfo', username: 'acme', apiaccesskey: restOnly.key }))).toContain(
-      'Dhru',
-    );
-  });
-
-  it('does not let a wildcard scope open the Dhru surface: `dhru` must be listed', async () => {
-    const clientId = await insertMerchant(db, { username: 'acme' });
-    for (const scopes of [['*'], ['orders:*']]) {
-      const wide = await insertApiKey(t, db, clientId, { scopes });
-      const res = await call({ action: 'accountinfo', username: 'acme', apiaccesskey: wide.key });
-      expect(res.statusCode).toBe(200);
-      expect(message(res), JSON.stringify(scopes)).toBe('This API key cannot be used with the Dhru API.');
-    }
   });
 });
 

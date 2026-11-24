@@ -3,12 +3,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { Money } from '../../../common/money';
-import { TokenService } from '../../../infra/crypto';
 import type { DbExecutor } from '../../../infra/db';
 import { normalizeImei } from '../../orders';
 import type { RiskDecision } from '../db/schema';
 import { isDisposableEmail } from '../domain/disposable-domains';
-import { imeiHashInput } from '../domain/imei-check';
 import {
   type ScreeningFacts,
   holdReason,
@@ -17,7 +15,6 @@ import {
   withReviewReasons,
 } from '../domain/risk-scoring';
 import { insertAssessment, linkAssessmentToOrder, lockBuyer } from '../infra/assessment.repository';
-import { wasCheckedBlacklisted } from '../infra/imei-check-admin.repository';
 import { countEarlierOrders, hasAnyCurrentTaxRate } from '../infra/foreign-reads.repository';
 import { Blocklist } from './blocklist';
 import { RiskRules } from './risk-rules.service';
@@ -62,8 +59,6 @@ export interface ScreeningInput {
   readonly openedSignedIn: boolean;
   /** The gateway did not give the card's details (feature 24C): a signal, and the card blocklist could not be checked. */
   readonly cardDetailsMissing?: boolean;
-  /** The visitor's address is a known VPN or proxy. */
-  readonly proxyIp?: boolean;
   /**
    * Facts the payment side found that need staff review whatever the score: each is a signal and the decision is at least review
    * (decision 048: a payment made after the checkout's price lock ended). The first one is the hold sentence.
@@ -124,7 +119,6 @@ export class RiskScreening {
   constructor(
     private readonly rules: RiskRules,
     private readonly blocklist: Blocklist,
-    private readonly tokens: TokenService,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -179,11 +173,6 @@ export class RiskScreening {
       cardCountry,
       prepaidCard: input.prepaidCard ?? false,
       cardDetailsMissing: input.cardDetailsMissing ?? false,
-      proxyIp: input.proxyIp ?? false,
-      imeiBlacklistedBefore:
-        imei !== null &&
-        /^\d{15}$/.test(imei) &&
-        (await wasCheckedBlacklisted(tx, this.tokens.lookupHash(imeiHashInput(imei)))),
       blocklistHits: hits.map((hit) => hit.sentence),
     };
     // The declared tax country against the evidence (decision 050): a review reason after the payment side's own, and only while the shop

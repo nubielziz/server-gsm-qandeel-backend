@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zDecimal, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
 import { INVOICE_KINDS, INVOICE_STATUSES, TOPUP_METHODS, TOPUP_PAYMENT_STATUSES } from '../db/schema';
+import { INVOICE_FILTER_KINDS } from '../domain/invoice-rules';
 
 /** A payment method the merchant may top up through (B162). */
 export const PaymentMethodSchema = z.object({
@@ -147,7 +148,7 @@ export const listMyInvoices = defineRoute({
     defaultSort: { field: 'createdAt', order: 'desc' },
     filters: {
       status: { type: 'enum', values: INVOICE_STATUSES },
-      kind: { type: 'enum', values: INVOICE_KINDS },
+      kind: { type: 'enum', values: INVOICE_FILTER_KINDS },
       createdAt: { type: 'datetime' },
     },
     search: ['number'],

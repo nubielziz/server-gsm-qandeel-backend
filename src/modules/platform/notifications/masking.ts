@@ -19,7 +19,7 @@ export function maskEmail(email: string): string {
 /**
  * Hides most of a Telegram chat.
  *
- * Why: the merchant's linked chat is an id, not a username, so the mask is an at sign, the first character of the id and three stars
+ * Why: a chat is an id, not a username, so the mask is an at sign, the first character of the id and three stars
  * (`@1***`), the shape the console prints for a Telegram recipient.
  *
  * @param chatId the Telegram chat id, as text

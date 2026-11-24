@@ -6,7 +6,7 @@ import { AppError } from '../../../common/errors';
 import type { DbExecutor } from '../../../infra/db';
 import { ClientGroupDirectory, type ClientGroupRef } from '../../catalog';
 import { MerchantWallets } from '../../money';
-import type { Client, ClientStatus } from '../db/schema';
+import type { ClientStatus } from '../db/schema';
 import { type ClientRow, findClientRow } from '../infra/client-admin.repository';
 import { countLiveSessionsOf } from '../infra/session-admin.repository';
 import { grants } from '../security/permission-grammar';
@@ -49,17 +49,12 @@ export interface ClientView {
   readonly company: string;
   readonly phone: string;
   readonly groupId: number;
-  readonly referralCode: string;
   readonly emailVerifiedAt: string | null;
   readonly status: ClientStatus;
-  readonly kycStatus: Client['kycStatus'];
   readonly group: { id: number; name: string; discountPercent: string } | null;
-  readonly referredBy: { id: number; name: string } | null;
   readonly address: string;
   readonly taxId: string;
   readonly internalNotes: string;
-  /** Whether a Telegram chat is linked; never the chat id. */
-  readonly telegramLinked: boolean;
   readonly security: ClientSecurityView;
   /** `null` unless the status is `suspended`. */
   readonly suspension: ClientSuspensionView | null;
@@ -135,7 +130,7 @@ export class ClientViews {
 }
 
 function toView(
-  { client, referredBy, suspendedBy, linkSentAt, verificationSentAt }: ClientRow,
+  { client, suspendedBy, linkSentAt, verificationSentAt }: ClientRow,
   group: ClientGroupRef | undefined,
   activeSessions: number,
   wallet: ClientView['wallet'],
@@ -151,16 +146,12 @@ function toView(
     company: client.company,
     phone: client.phone,
     groupId: client.groupId,
-    referralCode: client.referralCode,
     emailVerifiedAt: client.emailVerifiedAt?.toISOString() ?? null,
     status: client.status,
-    kycStatus: client.kycStatus,
     group: group ? { id: group.id, name: group.name, discountPercent: group.discountPercent } : null,
-    referredBy,
     address: client.address,
     taxId: client.taxId,
     internalNotes: client.internalNotes,
-    telegramLinked: client.telegramChatId !== null,
     security: {
       hasPassword: client.passwordHash !== null,
       mustChangePassword: client.mustChangePassword,

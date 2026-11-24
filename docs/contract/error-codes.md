@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-125 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+118 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -28,10 +28,8 @@ console shows through their title and detail.
 | ACCOUNT_EXISTS | 409 | POST /admin/customers/:id/account for a customer who already has an account. | `POST /admin/customers/:id/account` | yes |
 | ALERT_ACKNOWLEDGED | 409 | POST /admin/alerts/:id/ack on an alert already acknowledged. | `POST /admin/alerts/:id/ack` | yes |
 | ALERT_RESOLVED | 409 | POST /admin/alerts/:id/ack on an alert that already closed. | `POST /admin/alerts/:id/ack` | yes |
-| ALREADY_ASSIGNED | 409 | POST /admin/commission-assignments for an agent/plan already assigned. | `POST /admin/commission-assignments` | yes |
 | ALREADY_BLOCKED | 409 | POST /admin/blocklist for a value already listed; POST /admin/customers/:id/block on a blocked customer. | `POST /admin/customers/:id/block`, `POST /admin/blocklist` | yes |
 | ALREADY_CURRENT | 409 | POST /admin/legal-documents/:id/publish on the version already current. | `POST /admin/legal-documents/:id/publish` | yes |
-| ALREADY_DECIDED | 409 | POST /admin/kyc-submissions/:id/decide on a decided request. | `POST /admin/kyc-submissions/:id/decide` | yes |
 | ALREADY_REVOKED | 409 | DELETE /admin/api-keys/:id on a revoked key. | `DELETE /admin/api-keys/:id` | yes |
 | ALREADY_SENT | 409 | the order is already sent (dispatch_state sent): detail 'The supplier already has this order: fetch it, or change supplier with a reset reference first' | `POST /admin/orders/:id/dispatch` |  |
 | ALREADY_SUSPENDED | 409 | Suspending an account that is already suspended. | `POST /admin/staff/:id/suspend` | yes |
@@ -45,7 +43,6 @@ console shows through their title and detail.
 | CONFLICT | 409 | Test-only generic conflict; the server should use a specific code. | any | yes |
 | CREDIT_LIMIT_EXCEEDED | 409 | Wallet debit beyond the credit limit. | `POST /admin/clients/:id/wallet/adjust` | yes |
 | DEFAULT_GROUP_REQUIRED | 409 | the change would leave no default group | `PATCH /admin/client-groups/:id` |  |
-| DELIVERY_SUCCEEDED | 409 | POST /admin/webhook-deliveries/:id/retry on a delivered webhook. | `POST /admin/webhook-deliveries/:id/retry` | yes |
 | DISPUTE_NOT_OPEN | 409 | Dispute action when the dispute no longer waits for evidence. | `POST /admin/disputes/:id/evidence`, `POST /admin/disputes/:id/accept` | yes |
 | DUPLICATE_ORDER | 409 | Same client, service and IMEI while an earlier order is still open and the service has duplicate_rule = block_open (the map duplicate rule; the other value is allow). | any |  |
 | EMAIL_TAKEN | 409 | The email already belongs to another staff member / customer / merchant. | `POST /admin/staff`, `PATCH /admin/staff/:id`, `POST /admin/clients` +2 | yes |
@@ -53,16 +50,14 @@ console shows through their title and detail.
 | EVIDENCE_DEADLINE_PASSED | 409 | POST /admin/disputes/:id/evidence after the deadline. | `POST /admin/disputes/:id/evidence` | yes |
 | GATEWAY_IN_USE | 409 | DELETE /admin/payment-gateways/:id while in use. | `DELETE /admin/payment-gateways/:id` | yes |
 | GROUP_IN_USE | 409 | DELETE /admin/client-groups/:id while merchants are in it. | `DELETE /admin/client-groups/:id` | yes |
-| HAS_PENDING | 409 | Not sent: DELETE /admin/commission-assignments/:id ends the assignment and answers 204 even with ready accruals (ANSWERS commissions Q6); the console handler stays harmless (test only). | any | yes |
 | IDEMPOTENCY_IN_PROGRESS | 409 | A request with the same Idempotency-Key is still being processed. | any |  |
 | IDEMPOTENCY_KEY_REUSED | 409 | The Idempotency-Key was already used with a different request body. | any |  |
 | IN_USE | 409 | DELETE /admin/reply-templates/:id while in use (test only). | any | yes |
 | INCIDENT_CLOSED | 409 | PATCH /admin/incidents/:id on a resolved incident. | `PATCH /admin/incidents/:id` | yes |
-| INVALID_TRANSITION | 409 | status change not allowed from the current status, or a policy refusal (tests use KYC_REQUIRED / LAST_ACTIVE as examples) | `PATCH /admin/clients/:id` |  |
+| INVALID_TRANSITION | 409 | status change not allowed from the current status, or a policy refusal (tests use LAST_ACTIVE as an example) | `PATCH /admin/clients/:id` |  |
 | IP_NOT_IN_ALLOWLIST | 409 | PUT /admin/access/restriction enabled=true while the caller's IP is not covered by a live allow rule. | `PUT /admin/access/restriction` | yes |
 | JOB_ALREADY_RUNNING | 409 | POST /admin/system/integrity/run or /admin/system/jobs/:name/run while a run is in progress. | `POST /admin/system/jobs/:name/run`, `POST /admin/system/integrity/run` | yes |
 | KEY_IN_USE | 409 | DELETE /admin/api-keys/:id refused (test only). | any | yes |
-| KYC_REQUIRED | 409 | PATCH /admin/clients/:id activation without approved KYC (test only). | any | yes |
 | LAST_ACTIVE | 409 | PATCH /admin/clients/:id refused for the last active item (test only). | any | yes |
 | LAST_CURRENCY | 409 | PATCH /admin/currencies/:id would leave no offered currency (test only). | any | yes |
 | LAST_OWNER | 409 | Any change that would leave no active staff member holding '*': suspending or demoting the last Owner, or removing '*' from the last Owner's role (PATCH /admin/roles/:id, errors[{field:"permissions"}]). | `PATCH /admin/staff/:id`, `POST /admin/staff/:id/suspend`, `PATCH /admin/roles/:id` | yes |
@@ -87,8 +82,6 @@ console shows through their title and detail.
 | ORDER_NOT_OPEN | 409 | Change to an order that is no longer pending/processing. | `POST /admin/orders/:id/accept`, `POST /admin/orders/:id/change-supplier`, `POST /admin/orders/:id/dispatch` +3 | yes |
 | PAYMENT_ALREADY_REVIEWED | 409 | POST /admin/payments/:id/approve\|reject on a reviewed payment. | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` | yes |
 | PAYMENT_AUTO_CREDIT_PENDING | 409 | the gateway is automatic and review_required is false: the payment is credited by the auto-credit job (detail 'PAY-<id> is credited automatically after the gateway check.') | `POST /admin/payments/:id/approve`, `POST /admin/payments/:id/reject` |  |
-| PLAN_IN_USE | 409 | DELETE /admin/commission-plans/:id while assigned. | `DELETE /admin/commission-plans/:id` | yes |
-| PLAN_LOCKED | 409 | PATCH /admin/commission-assignments/:id plan change refused (test only). | `PATCH /admin/commission-plans/:id`, `PATCH /admin/commission-assignments/:id` | yes |
 | PRICE_CHANGED | 409 | The charged price is more than the tolerance above the price the merchant was last listed (B117); the Dhru surface answers "Price changed. Please refresh the service list and order again.". | any |  |
 | PRICE_EXISTS | 409 | POST /admin/client-prices for a merchant/service that already has one. | `POST /admin/client-prices` | yes |
 | RECONCILE_RUNNING | 409 | a run is already in progress (FinancePage.test.tsx:240-262 uses code CONFLICT) | `POST /admin/ledger/reconcile` |  |

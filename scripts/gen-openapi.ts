@@ -1,4 +1,4 @@
-// Writes docs/contract/openapi.json (every route) and openapi.public.json (REST v1, Dhru, events) from the contracts.
+// Writes docs/contract/openapi.json (every route) and openapi.public.json (Dhru) from the contracts.
 // Builds the Nest app WITHOUT init() or listen(): no Postgres, Redis or S3 needed. `--check` exits 1 on any difference.
 // Usage: `bun run docs:openapi`, `bun run docs:openapi:check` in CI (decisions 008, 009, 017); `--dir <path>` for tests.
 import 'reflect-metadata';

@@ -16,7 +16,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { insertService } from '../../support/catalog';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { body, clearApiKeyCaches, credentialsFor, v1Client } from '../../support/machine-orders';
+import { clearApiKeyCaches } from '../../support/machine-orders';
 import {
   IMEIS,
   eventsOf,
@@ -133,19 +133,15 @@ describe('the order is dispatching while the supplier call is in flight', () => 
     });
   });
 
-  it('a merchant cannot cancel while the supplier call is in flight, through the portal or REST v1', async () => {
+  it('a merchant cannot cancel while the supplier call is in flight', async () => {
     await freshRoute();
     const orderId = await place();
     const { held, running } = await sendHeld(orderId);
     const portal = await portalFor(t, world.merchant.id);
-    const v1 = v1Client(t, (await credentialsFor(t, world.db, world.merchant.id)).key);
 
     const viaPortal = await portal.post(`/client/orders/${orderId}/cancel`);
     expect(viaPortal.statusCode).toBe(409);
     expect(json(viaPortal).code).toBe('ALREADY_SENT');
-    const viaV1 = await v1.post(`/v1/orders/${orderId}/cancel`);
-    expect(viaV1.statusCode).toBe(409);
-    expect(body(viaV1).code).toBe('ALREADY_SENT');
 
     held.release();
     await running;
@@ -160,17 +156,14 @@ describe('the order is dispatching while the supplier call is in flight', () => 
     expect((await ledgerOf(world.db, orderId)).map((entry) => entry.kind)).toEqual(['order_hold']);
   });
 
-  it('canCancel is false on the portal and REST v1 while the call is in flight', async () => {
+  it('canCancel is false on the portal while the call is in flight', async () => {
     await freshRoute();
     const orderId = await place();
     const portal = await portalFor(t, world.merchant.id);
-    const v1 = v1Client(t, (await credentialsFor(t, world.db, world.merchant.id)).key);
     expect(json(await portal.get(`/client/orders/${orderId}`)).canCancel).toBe(true);
-    expect(body(await v1.get(`/v1/orders/${orderId}`)).canCancel).toBe(true);
 
     const { held, running } = await sendHeld(orderId);
     expect(json(await portal.get(`/client/orders/${orderId}`)).canCancel).toBe(false);
-    expect(body(await v1.get(`/v1/orders/${orderId}`)).canCancel).toBe(false);
     held.release();
     await running;
   });
@@ -342,29 +335,20 @@ describe('an order that was claimed for a supplier call once is never cancelled 
     (json(await portal.get('/client/orders')) as Array<{ id: number; canCancel: boolean }>).find(
       (order) => order.id === orderId,
     );
-  const v1Row = async (v1: ReturnType<typeof v1Client>, orderId: number) =>
-    (body(await v1.get('/v1/orders')).data as Array<{ id: number; canCancel: boolean }>).find(
-      (order) => order.id === orderId,
-    );
 
-  it('refuses the cancel after a supplier timeout and a staff send again, on the portal and REST v1: the hold stays, canCancel is false', async () => {
+  it('refuses the cancel after a supplier timeout and a staff send again, on the portal: the hold stays, canCancel is false', async () => {
     await freshRoute(300);
     fake.place('accept-then-hang');
     const orderId = await place();
     const portal = await portalFor(t, world.merchant.id);
-    const v1 = v1Client(t, (await credentialsFor(t, world.db, world.merchant.id)).key);
     expect(await portalRow(portal, orderId)).toMatchObject({ canCancel: true });
     const hold = (await walletOf(world.db, world.merchant.id)).hold;
 
     // The supplier did not answer in time: the order waits for a person, and the merchant already may not cancel it.
     expect(await dispatch.run(orderId, { lastAttempt: false })).toMatchObject({ status: 'needs_attention' });
-    for (const refused of [
-      await portal.post(`/client/orders/${orderId}/cancel`),
-      await v1.post(`/v1/orders/${orderId}/cancel`),
-    ]) {
-      expect(refused.statusCode).toBe(409);
-      expect(refused.json()).toMatchObject({ code: 'ALREADY_SENT' });
-    }
+    const refused = await portal.post(`/client/orders/${orderId}/cancel`);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ code: 'ALREADY_SENT' });
 
     // Staff send it again, but the dispatch job has not run: the order reads pending with no claim, as before the first attempt.
     expect((await staff.post(`/admin/orders/${orderId}/dispatch`, {})).status).toBe(204);
@@ -380,10 +364,6 @@ describe('an order that was claimed for a supplier call once is never cancelled 
     // The plain sentence of a sent order, not the "being sent" one.
     expect(json(viaPortal).detail).not.toBe(SEND_IN_PROGRESS_DETAIL);
     expect(json(viaPortal).detail).toContain('already has this order');
-    const viaV1 = await v1.post(`/v1/orders/${orderId}/cancel`);
-    expect(viaV1.statusCode).toBe(409);
-    expect(body(viaV1).code).toBe('ALREADY_SENT');
-    expect(body(viaV1).detail).not.toBe(SEND_IN_PROGRESS_DETAIL);
 
     expect(await orderRow(world.db, orderId)).toMatchObject({
       status: 'pending',
@@ -397,26 +377,18 @@ describe('an order that was claimed for a supplier call once is never cancelled 
     expect((await ledgerOf(world.db, orderId)).map((entry) => entry.kind)).toEqual(['order_hold']);
     expect(await portalRow(portal, orderId)).toMatchObject({ canCancel: false });
     expect(json(await portal.get(`/client/orders/${orderId}`)).canCancel).toBe(false);
-    expect(await v1Row(v1, orderId)).toMatchObject({ canCancel: false });
-    expect(body(await v1.get(`/v1/orders/${orderId}`)).canCancel).toBe(false);
   });
 
   it('still cancels an order that was never claimed, and shows canCancel true until then', async () => {
     await freshRoute();
-    const viaPortalId = await place(IMEIS[0]);
-    const viaV1Id = await place(IMEIS[1]);
+    const orderId = await place(IMEIS[0]);
     const portal = await portalFor(t, world.merchant.id);
-    const v1 = v1Client(t, (await credentialsFor(t, world.db, world.merchant.id)).key);
-    expect(await portalRow(portal, viaPortalId)).toMatchObject({ canCancel: true });
-    expect(await v1Row(v1, viaV1Id)).toMatchObject({ canCancel: true });
-    expect(json(await portal.get(`/client/orders/${viaPortalId}`)).canCancel).toBe(true);
+    expect(await portalRow(portal, orderId)).toMatchObject({ canCancel: true });
+    expect(json(await portal.get(`/client/orders/${orderId}`)).canCancel).toBe(true);
 
-    expect((await portal.post(`/client/orders/${viaPortalId}/cancel`)).statusCode).toBe(204);
-    expect((await v1.post(`/v1/orders/${viaV1Id}/cancel`)).statusCode).toBe(200);
-    for (const id of [viaPortalId, viaV1Id]) {
-      expect(await orderRow(world.db, id)).toMatchObject({ status: 'rejected', dispatchState: 'done' });
-      expect((await ledgerOf(world.db, id)).map((entry) => entry.kind)).toEqual(['order_hold', 'order_release']);
-    }
+    expect((await portal.post(`/client/orders/${orderId}/cancel`)).statusCode).toBe(204);
+    expect(await orderRow(world.db, orderId)).toMatchObject({ status: 'rejected', dispatchState: 'done' });
+    expect((await ledgerOf(world.db, orderId)).map((entry) => entry.kind)).toEqual(['order_hold', 'order_release']);
     expect(fake.callsOf('placeimeiorder')).toHaveLength(0);
   });
 });

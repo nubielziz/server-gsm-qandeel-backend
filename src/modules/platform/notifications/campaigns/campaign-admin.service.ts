@@ -195,7 +195,7 @@ export class CampaignAdminService {
       campaignDelivery(db, row.id),
       campaignReadCounts(db, row.id),
     ]);
-    return campaignDetailView(row, names, { inApp: reads, email: delivery.email, telegram: delivery.telegram });
+    return campaignDetailView(row, names, { inApp: reads, email: delivery });
   }
 
   /**
@@ -204,7 +204,7 @@ export class CampaignAdminService {
    * @param input the campaign
    * @returns the stored draft
    * @throws {AppError} `VALIDATION_FAILED` for blank or HTML text, an unknown placeholder, a link that leaves the site, or an audience
-   *   that targets nobody (or Telegram without merchants)
+   *   that targets nobody
    */
   async create(input: CampaignInput): Promise<WireCampaignDetail> {
     const staff = currentStaff();
@@ -241,7 +241,7 @@ export class CampaignAdminService {
    * @param input the fields to change
    * @returns the stored campaign
    * @throws {AppError} `NOT_FOUND`; `INVALID_TRANSITION` when it is no longer a draft or scheduled; `VALIDATION_FAILED` as for create,
-   *   judged on the merged campaign
+   *   judged on the merged campaign (also on `channels` for a draft stored with the retired channel only, until an edit names one)
    */
   async update(id: number, input: Partial<CampaignInput>): Promise<WireCampaignDetail> {
     const staff = currentStaff();
@@ -379,14 +379,7 @@ export class CampaignAdminService {
       subject: message.subject,
       body: message.html ?? message.text,
       format: message.html === undefined ? 'text' : 'html',
-      from:
-        input.channel === 'email'
-          ? this.mail.from
-          : input.channel === 'telegram'
-            ? this.config.telegram.botUsername
-              ? `@${this.config.telegram.botUsername}`
-              : 'Telegram bot'
-            : 'In-app notification',
+      from: input.channel === 'email' ? this.mail.from : 'In-app notification',
       note: 'A sample with made-up details.',
     };
   }
@@ -394,9 +387,13 @@ export class CampaignAdminService {
   /** Refuses a campaign whose content, links or audience break a rule. */
   private validate(input: CampaignInput): void {
     const errors: FieldError[] = [
+      // A campaign stored with the retired channel only reads with none left: an edit must choose one.
+      ...(input.channels.length === 0
+        ? [{ field: 'channels', code: 'required', message: 'Choose at least one channel.' }]
+        : []),
       ...contentProblems(input.content),
       ...linkProblems(input.link),
-      ...audienceProblems(input.audience, input.channels),
+      ...audienceProblems(input.audience),
     ];
     if (errors.length > 0) throw new AppError('VALIDATION_FAILED', { errors });
   }

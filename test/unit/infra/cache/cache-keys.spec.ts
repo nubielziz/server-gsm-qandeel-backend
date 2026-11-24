@@ -31,9 +31,12 @@ describe('CacheKeys builders', () => {
 
   it('build the keys of the machine guards (API keys and the webhook replay filter)', () => {
     const hash = 'b'.repeat(64);
-    expect<string>(keys.apiKey(hash)).toBe(`gsm:test:identity:api-key:${hash}`);
+    expect<string>(keys.apiKey(hash)).toBe(`gsm:test:identity:api-key:${hash}:v2`);
     expect<string>(keys.webhookEvent('stripe', hash)).toBe(`gsm:test:identity:webhook-event:stripe:${hash}`);
     expect(familyOf(keys.apiKey(hash))).toBe('identity:api-key');
+    // Decision 062: a view cached under the name of before (no version) is never the name of a new one.
+    expect<string>(keys.apiKey(hash)).not.toBe(`gsm:test:identity:api-key:${hash}`);
+    expect(keys.apiKey(hash).startsWith(keys.prefix('identity', 'api-key'))).toBe(true);
     expect(familyOf(keys.webhookEvent('stripe', hash))).toBe('identity:webhook-event');
     expect(() => keys.apiKey('has:colon')).toThrow(/must match/);
     expect(() => keys.webhookEvent('Not:A:Slug', hash)).toThrow(/must match/);

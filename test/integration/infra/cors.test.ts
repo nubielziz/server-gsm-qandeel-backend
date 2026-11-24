@@ -135,7 +135,7 @@ describe('the shop surfaces', () => {
 
 describe('the machine surfaces', () => {
   it('send no CORS grant to any origin', async () => {
-    for (const path of ['/health', '/v1/nope', '/webhooks/nope', '/docs', '/openapi.json', '/t/items']) {
+    for (const path of ['/health', '/api/index.php', '/webhooks/nope', '/docs', '/openapi.json', '/t/items']) {
       for (const origin of [CONSOLE, SHOP])
         expectNoGrant(await call(t, 'GET', path, { origin }), `${origin} on ${path}`);
     }
@@ -200,7 +200,7 @@ describe('preflight', () => {
     ]) {
       expect(res.headers[name], name).toBeUndefined();
     }
-    const machine = await preflight('/v1/nope');
+    const machine = await preflight('/webhooks/nope');
     expect(machine.statusCode).toBe(404);
     expect(machine.headers['access-control-allow-origin']).toBeUndefined();
     const noOrigin = await call(t, 'OPTIONS', '/admin/t/probe');

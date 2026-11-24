@@ -24,7 +24,7 @@ export interface MerchantCandidate {
   readonly hasPassword: boolean;
   /**
    * True when the merchant's email is verified, so it takes precedence over a customer account with the same email (decision 052).
-   * A merchant that registered but never proved its mailbox must not shadow the customer who owns that address.
+   * A merchant that never proved its mailbox must not shadow the customer who owns that address.
    */
   readonly shadowsCustomer: boolean;
   /**

@@ -10,14 +10,10 @@ const read = (path: string) => readFileSync(join(ROOT, path), 'utf8');
 /** The files that compute a hash stored for later matching. */
 const STORED_LOOKUPS = [
   'src/modules/risk/application/blocklist.ts',
-  'src/modules/risk/application/imei-check.service.ts',
-  'src/modules/risk/application/imei-check-admin.service.ts',
-  'src/modules/risk/application/risk-screening.ts',
   'src/modules/catalog/application/inventory-admin.service.ts',
   'src/modules/platform/notifications/campaigns/unsubscribe-token.ts',
   'src/modules/orders/application/idempotency-store.ts',
   'src/modules/orders/application/order-placement.ts',
-  'src/modules/platform/webhooks/webhook-fan-out.ts',
   'scripts/seed/risk.ts',
   'scripts/seed/catalog.ts',
   'test/support/risk.ts',

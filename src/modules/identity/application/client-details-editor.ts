@@ -27,7 +27,7 @@ import { MerchantAuthTokens } from './merchant-auth-tokens';
  * to the new address. Decision 047: an email change needs `clients:security`, ends every session of the merchant and sends a security notice to
  * the address before the change (the address is where the account's sign-in and password links go); a name change keeps the sessions.
  * `email_set_by_staff` (decision 046, `emailMarkAfterEdit`) says that the address was last set by a staff member who is not an Owner and that no
- * Owner has confirmed it since; while it is set, the account's portal sessions create no API key and create or change no webhook endpoint
+ * Owner has confirmed it since; while it is set, the account's portal sessions create no API key
  * (`MachineCredentialHold`). An email change by a staff member who is not an Owner sets it (the account's links now go to an address staff
  * chose); an email change by an Owner clears it. An Owner's edit that carries the stored address clears a set mark and does nothing else to
  * the email (no link, mail, notice or limiter point, and the sessions stay); its audit row records `emailSetByStaff` going from true to false.

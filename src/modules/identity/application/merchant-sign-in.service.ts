@@ -147,7 +147,7 @@ export class MerchantSignInService implements OnModuleInit {
    * opened in a transaction that reads the merchant again under its row lock and requires the account as it was when the password was
    * checked (`signInStillHolds`) and a stored hash that still holds the proven password: the hash it was proven against, or a hash the
    * same password verifies against again under the lock (decision 007's upgrade, written by a parallel sign-in of the same merchant;
-   * `stillProven`). A reset, a password change, a verification that ended the registration password, a switch-on of two-step sign-in or
+   * `stillProven`). A reset, a password change, a verification that ended the password chosen before, a switch-on of two-step sign-in or
    * a suspension that committed in between ends the sign-in like a wrong password, and one that commits after it ends the new session
    * with the others.
    *

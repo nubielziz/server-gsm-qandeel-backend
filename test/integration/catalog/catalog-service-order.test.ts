@@ -1,6 +1,6 @@
 // Integration tests of the stored order of services (decision 063): POST /admin/services/order saves positions in one transaction with one
 // audit entry, refuses what is wrong without saving anything, and the lists merchants read (the portal catalog, the price list, the Dhru
-// service list) follow it: category position, then the service's position, then the name. REST v1 keeps its cursor in id order.
+// service list) follow it: category position, then the service's position, then the name.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -9,13 +9,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, openSession } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import {
-  body as machineBody,
-  clearApiKeyCaches,
-  credentialsFor,
-  dhruClient,
-  v1Client,
-} from '../../support/machine-orders';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../../support/machine-orders';
 import { catalogVersionOf, insertDemoGroups, insertMerchantIn } from '../../support/pricing';
 
 let t: TestApp;
@@ -312,8 +306,8 @@ describe('the lists merchants and API clients read follow the order', () => {
     expect(codes).toEqual(['IMEI-ALPHA', 'IMEI-MIKE', 'IMEI-ZULU', 'IMEI-YANKEE']);
   });
 
-  it('builds the Dhru groups in the order of the category position, and keeps REST v1 in id order', async () => {
-    const { db, first, zulu, mike, alpha, yankee, merchant } = await world();
+  it('builds the Dhru groups in the order of the category position', async () => {
+    const { db, first, zulu, mike, alpha, merchant } = await world();
     await editor.post(ORDER, {
       items: [
         { id: alpha, sort: 1 },
@@ -326,8 +320,5 @@ describe('the lists merchants and API clients read follow the order', () => {
     expect(await groupNames()).toEqual(['First category', 'Second category']);
     await db.update(s.serviceCategories).set({ sort: 5 }).where(eq(s.serviceCategories.id, first));
     expect(await groupNames()).toEqual(['Second category', 'First category']);
-    // REST v1 pages by cursor in id order: a position never moves a service across a page boundary.
-    const page = machineBody(await v1Client(t, creds.key).get('/v1/services'));
-    expect(page.data.map((row: { id: number }) => row.id)).toEqual([zulu, mike, alpha, yankee]);
   });
 });

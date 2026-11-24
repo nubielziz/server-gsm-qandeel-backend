@@ -21,8 +21,8 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   all are locked again in one statement), a `client_wallet` debit refused below `-overdraft_limit` (`INSUFFICIENT_FUNDS`;
   credits always pass, user rule 2), entries with `balance_after`, balances and versions updated. `ref_id 0` is only for
   `system` (`LedgerRefRequiredError`, a programming error).
-- **Money events.** `domain/money-events.ts` has a pure builder for each of the 13 map money events (`deposit`, `topup`,
-  `order`, `complete`, `reject`, `adjust`, `commission`, `payout`, `b2cPay`, `b2cDeliver`, `b2cFee`, `b2cRefund`,
+- **Money events.** `domain/money-events.ts` has a pure builder for each of the map's money events that can still be posted, 12 of its 13 (`deposit`, `topup`,
+  `order`, `complete`, `reject`, `adjust`, `payout`, `b2cPay`, `b2cDeliver`, `b2cFee`, `b2cRefund`,
   `b2cChargeback`); each returns the map's lines and is unit-tested with the map's numbers. Later features spread one into
   `LedgerPoster.post`. Beyond the 13 (decision 024, "rules beyond the 13 map events"; feature 5): `reopen` (B2B: revenue back to
   the merchant hold, kind `adjustment`), `reopenB2c` (revenue back to customer funds) and `refund` (B2B: revenue to the wallet, kind
@@ -74,10 +74,7 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   at a time per country and region (422 on `validFrom`; changes of one pair serialised by an advisory lock; a region is stored trimmed
   and in upper case, `normalizeTaxRegion`, so two spellings of one region are one pair). No delete
   (M163): a rate that stops applying gets an end. The seed loads the demo's 12 rates as the console's mock maps them.
-- **Spend and credit reads for the groups (feature 4a).** `MerchantSpend.completedSpend(db, clientIds)` is the cumulative
-  completed-order spend in USD (the `order_settle` debits on each merchant's `client_hold` minus the settlements that were
-  reversed: a transaction with the idempotency key `reverse:<settlement id>` exists, decision 024); the nightly group promotion
-  of identity reads it. `MerchantWallets.idsWithCreditLimit(db)` lists the merchants whose credit limit is above zero (the
+- **Credit reads for the groups (feature 4a).** `MerchantWallets.idsWithCreditLimit(db)` lists the merchants whose credit limit is above zero (the
   catalog's `overdraftAllowed: false` guard). `findMerchant` takes `FOR SHARE` on the merchant's group row, so a credit limit
   change and a change of the group's overdraft flag never interleave.
 - **Reports (feature 11).** `ReportService` (`application/report.service.ts`, SQL in `infra/report.repository.ts`, pure figures in
@@ -107,19 +104,17 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
   `from`, a history of more than 10,000 lines is cut to the most recent 10,000 and the period starts on the day of the first of them, and
   more than 10,000 invoices are cut to the newest 10,000. `404` for an unknown merchant; `422` on `from` for a reversed period, or for an
   explicit period of more than 10,000 lines or more than 10,000 invoices (never without `from`); every download writes an audit row (`exported statement of`, entity `merchant`). `originCheck`: same-origin or a console `Origin` (decision 045).
-- **Commission reversal (feature 11).** `commissionReversal` is a pure builder beyond the 13 map events (user rule 5): Dr `client_wallet` /
-  Cr `commission_expense`, kind `commission`, ref type `accrual`. `PostTransactionInput.allowBelowCreditLimit` lets that one debit pass
-  `INSUFFICIENT_FUNDS` (the agent already received and may have spent the commission); only the commissions module sets it.
-- **Merchant machine surfaces (feature 7a).** `MerchantApiAccount` (`application/merchant-api-account.ts`) serves `GET /v1/account`
-  (`balance`, `reserved`, `creditLimit` and `available` from the same wallet view as the portal, the currency and the client group),
-  `GET /v1/transactions` (the wallet's statement by cursor: `?limit=` 1 to 100, `?cursor=` the entry id of the last line sent; newest
-  first, from the merchant side, so a deposit is positive and an order hold negative; the hold-only lines never appear) and binds Dhru's
+- **Commissions are retired (decision 062).** The map's `commission` event has no builder and nothing posts one; the journals it wrote
+  stay in the ledger, with the account kind `commission_expense`, the kind `commission` and the reference type `accrual`, and every
+  statement and journal view still reads them. `PostTransactionInput.allowBelowCreditLimit` stays: the merchant top-up chargeback
+  clawback sets it.
+- **Merchant machine surface (feature 7a).** `MerchantApiAccount` (`application/merchant-api-account.ts`) binds Dhru's
   `accountinfo` to the `DhruGateway`: `{ message: 'Your Accout Info', AccoutInfo: { credit, mail, currency } }` where `credit` is the
-  available balance (balance plus credit limit, what an order may spend now). Never cached (decision 022). Scope `account:read`.
+  available balance (balance plus credit limit, what an order may spend now; the same wallet view as the portal). Never cached (decision 022).
 - **Seed.** `scripts/seed/money.ts` opens the accounts of every demo merchant and posts the demo's ledger history through
   `postTransaction`, skipping merchants the identity seed has not created.
 
-- **Billing (feature 8).** 18 routes (the 5 KYC routes are identity's). Contracts `contracts/{gateways,invoices,payments,billing-portal,payment-webhook}.contracts.ts`; use cases
+- **Billing (feature 8).** 18 routes. Contracts `contracts/{gateways,invoices,payments,billing-portal,payment-webhook}.contracts.ts`; use cases
   `application/`: `PaymentGatewayService` (CRUD, secrets encrypted by `GatewayCredentialsVault`, audit `added|changed|removed payment method`, and `turned on|turned off payment method` when a change only moves the switch, the demo's phrases; only an Owner adds an automatic method, changes `isManual` or the driver of a method that is automatic before or after the change, or sets, replaces or removes a method's secrets, decision 046; the plain fields of an automatic method, and a `secondaryWebhookSecret: null` for a method without a second secret, keep the route's own permission), `InvoiceAdminService` (list, read, issue a manual invoice, audit `issued invoice for`),
   `PaymentReviewService` (list, read, approve, reject; audit `approved|rejected deposit of`) with `PaymentViews` (the wire around a page: merchant, group, wallet, gateway, reviewer, hints) and `PaymentCrediting` (the one place that credits a top-up),
   `MerchantBillingService` (the portal: payment methods, invoices, a new top-up invoice, the receipt), `PaymentWebhookService` and `PaymentWebhookVerifier` (the incoming confirmation), `InvoiceDocuments` (PDF) and `InvoiceOutbox` (`invoice.paid`).
@@ -159,8 +154,8 @@ Refunds, disputes and the VAT and payments reports arrive with 16.
     a different amount or currency (and an event it can no longer read) with `409 CONFLICT`, for staff approval and for the job alike; staff reject it and adjust the wallet by hand. Decision 048: an event that does not state its currency or its amount is a mismatch too (review, never credited); a confirmation for an owned invoice of that gateway that is `paid` or `void` is recorded the same way for review (`closedInvoiceNote`: never credited, approval answers `409 CONFLICT`, a reject keeps the invoice as it is; the reason staff type when they reject it is mailed to the customer). Everything else is acknowledged with `200`.
   - **Automatic credit job** `payment_auto_credit` (queue `maintenance`, every minute; `docs/queues.md`): asks the gateway again, then credits, sends to staff or asks again later. Decision 048: a card top-up is judged on the gateway's record of the payment, read once with `verifyPayment` (the storefront capture's read, given the 10-second limit of any gateway call, `GATEWAY_CALL_TIMEOUT_MS`, instead of the webhook's 3 seconds): it credits only when the record says paid, names this invoice when it states a reference (`metadata[reference]`), shows nothing refunded or disputed since (`afterPayment`) and shows the invoice's amount and currency as received (`topUpRecordProblem`); any difference sends it to staff review with a note that names it, and a record that ended unpaid (`ended`) counts as no longer confirmed. Other automatic gateways keep `checkStatus`. Under the payment's lock, just before the credit, it asks `TopUpScreeningHooks` (a leaf list in `application/top-up-screening-hooks.ts`, module `TopUpScreeningModule`, exported from `index.ts`; money cannot import risk, decision 032): the risk services module registers `RiskScreening.reviewTopUp` at boot (the blocklist's card fingerprint and the merchant's email), and a flagged top-up gets `review_required=true`, `review_note` = the reason and `auto_credit_at=null` with the audit `sent deposit to review`, and posts nothing (money-3). The worker loads `RiskServicesModule` for this; a screen that throws fails that payment for the tick (it stays due). An empty hook list (a process without the risk module) sends every due top-up to staff review with `TOP_UP_SCREENING_UNAVAILABLE` as its note, and the worker logs one error at boot (decision 050).
   - **Group cleanup.** `PaymentGateways.dropGroup(tx, groupId)` (exported, global) takes a deleted merchant group out of `payment_gateways.allowed_group_ids`; the catalog's group delete calls it in its own transaction (a leaf file, `application/payment-gateways.ts`, so that it loads before the catalog import cycle, decision 032).
-  - **Seed.** `scripts/seed/billing.ts`: the demo's 4 gateways (ids 1-4, codes card, crypto, bank, wise), its 54 top-ups with an invoice each (`PAY-1000` is payment 1000, invoice 1), linked to the deposit journals the money seed replayed, 3 manual invoices
-    and one verification request per merchant. No receipt files or PDFs (no objects to download).
+  - **Seed.** `scripts/seed/billing.ts`: the demo's 4 gateways (ids 1-4, codes card, crypto, bank, wise), its 54 top-ups with an invoice each (`PAY-1000` is payment 1000, invoice 1), linked to the deposit journals the money seed replayed, 3 manual invoices.
+    No receipt files or PDFs (no objects to download).
 
 Known deviations (tech debt, PROGRESS): `infra/report.repository.ts` reads `orders`, `clients`, `services`, `suppliers` and
 `supplier_api_logs` with plain selects (no reader exists for these figures; nothing outside the file knows), and `infra/foreign-directory.repository.ts` reads merchant (name, email, country, group), group, supplier, customer
@@ -181,7 +176,7 @@ services as they appear (identity, catalog 4a, suppliers 6, customers 14b). Noth
     engine calls when it rejects a paid order (a staff reject, a supplier rejection): the payment is the one the approved refund names, or else the one linked to the order's first receipt invoice (a duplicate payment, booked and refunded at once, is never the order's payment), and the whole of what is left goes back and a `processing` refund records it. That is for a rejection a person decides; one the system decides (a supplier's rejection) follows the storefront policy `autoRefundFailed` (read by the orders module's `OrderLedger` through `StorefrontPolicies`, default on): off, `onOrderRefund` runs in `request` mode and opens a refund `requested` by the system (no journal, no job, the order is `rejected` and its money stays in customer funds), and approving that request posts the journal from customer funds (`B2cRefunds.postRejected`) instead of cancelling an order that is already rejected.
   - **Disputes.** `DisputeWebhookService` (created, won, lost; the unique `(payment_id, gateway_dispute_id)` makes a repeat harmless; event types it does not use are acknowledged with 200; the card driver reads a card network inquiry (a status that starts with `warning_`) as no event, and an update of a dispute that is open at the gateway (`charge.dispute.updated` or `charge.dispute.funds_withdrawn`, `needs_response` or `under_review`) as `created`, so an inquiry the network turns into a dispute is recorded then; decision 048: an event that names a payment not recorded yet, a payment held for staff, or a dispute whose opening was not recorded yet answers `503 UNAVAILABLE` while it is younger than 24 hours, then it is acknowledged, logged at error level and reported (a held payment's note records it); a `won` after staff accepted the loss changes nothing and is logged; a delivery whose transaction the database ended as a deadlock or a serialization failure writes nothing and answers `503 UNAVAILABLE`, so the gateway delivers it again and the replay mark is freed) and `DisputeService` (the evidence pack of six lines built by `domain/dispute-rules.ts`, the submission to the gateway and a stored PDF, the accept).
     `DisputeLedger` is the one place a loss posts `b2c_chargeback` (key `dispute:<id>:chargeback`, kept in `disputes.ledger_tx_id`), whether the accept or the gateway's `lost` comes first; for an order that was never delivered (`rejected`) the journal gives back the disputed share of what the sale booked as customer funds and VAT (`chargebackReturn` in `domain/dispute-rules.ts`, never more than the refunds that went out left), and only the rest and the dispute fee go to `chargeback_loss` (the VAT report subtracts that VAT, the payments report's loss reads the `chargeback_loss` line, less the give-back journals of orders rejected after a loss); a later loss of a rejected order also counts what its rejection gave back; a win posts nothing and returns the payment to the status its completed refunds leave, unless another dispute of the payment is lost (`chargeback`) or still open (`disputed`) (`paymentStatusAfterDispute`). Decision 048: when a loss books the chargeback, `B2cRefunds.closeNotSent` first closes every refund of the payment the gateway has not paid (`requested`, `processing` without a gateway id, `failed`) as `rejected` with the note "Not sent: the payment was charged back." (`CHARGEBACK_NOT_SENT_NOTE`; `closesAtChargeback` picks them from an unlocked read, and only those are locked, in id order, each checked again and changed by a guarded update under its lock; the refund settlement takes the same order, the payment and then the refund, and closes the same way, with its journal reversed, a refund whose failure arrives after the chargeback (`B2cRefunds.closeUnsent`)) and reverses its journal in the same transaction (the mirrored lines of `reversalLines`, same kind and reference, key `reverse:<journal id>`); each closed refund gets a timeline line. A completed refund stays, and so does one the gateway acknowledged and has not answered. The alert to staff about the deadline (12a) and the blocklist
-    entries and customer risk level a chargeback may add (feature 18, RESOLUTIONS b2c-5) plug in right after the stored dispute / the lost step in `DisputeWebhookService` and `DisputeLedger.lose`.
+    entries a chargeback may add (feature 18, RESOLUTIONS b2c-5) plug in right after the stored dispute / the lost step in `DisputeWebhookService` and `DisputeLedger.lose`.
   - **Reports.** `GET /admin/reports/vat` adds up the signed `vat_payable` lines (and, as the taxable amount, the `customer_funds` and `revenue` lines) of the storefront `b2c_payment`, `refund` and `chargeback` journals by tax country and the month each was booked, so a month already reported never changes (decision 048: a refund journal reversed later, key `reverse:<journal id>`, stays in its month and the reversal counts in its own); `GET /admin/reports/payments` the order payments with money received, per method, with the USD figures taken from the books (the session's locked gross, the fee, refund and chargeback journals).
   - **Customer emails.** `StorefrontMails` (`StorefrontMailsModule`, imported by the money admin module, the order engine and the checkout) writes the storefront customer's emails with `NotificationService.enqueue` in the transaction of the change: `order.received` (the capture; `order.completed` too when stock delivered the order at once), `order.completed` and `order.failed` (every order transition that delivers, or rejects and refunds, a storefront order; for a rejection that only opened a refund request, when staff approve it), `payment.failed` (the gateway's failure event for a pending payment) and `refund.declined` (`RefundService.decline`). The address is the customer's (`customers.email`; mails are English, decision 039); `customerName` is `there` for a guest; `device` is empty until the catalog exports a TAC reader. `order.received`, `order.completed`, `order.failed`, `payment.failed` and `refund.declined` all have a default English template in migration 0015 (the demo's texts without the receipt sentence: no mail carries a file); staff edit them in Settings, and a template switched off sends nothing. The development seed only sets the demo's on/off switch on them (the payment failed mail is off).
   - **Deviation.** `infra/b2c-reads.repository.ts` reads `orders`, `checkout_sessions`, `consent_records`, `legal_documents` and `support_tickets` with plain selects (the owners export no such reads and orders imports money: decision 032); nothing outside that file knows.
@@ -313,7 +308,7 @@ from it (`customerContactOf(caller)`); they take no `contact` parameter.
 
 ## Public API (`index.ts`)
 
-`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `MerchantSpend`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 13 money event builders and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`, `commissionReversal` (feature 11),
+`MoneyModule` (global: `MerchantAccounts`, `LedgerPoster`, `MerchantWallets`, `OrderSettlements`, `PaymentGateways`, `StorefrontMoney`), `MoneyOutboxModule`, `PaymentAutoCreditModule` (worker), `FxRefreshJobModule` (worker), `INVOICE_PAID_EVENT`, `GATEWAY_HTTP_POLICY`, `topupMethodOf`, `postTransaction`, the 12 money event builders that can still be posted and their ids, the reversal builders `reopen`, `reopenB2c` and `refund`,
 the account helpers (`walletViewOf`, `balanceDelta`, `normalSideOf`, `toDebitPositive`, `BASE_CURRENCY`), the ledger line
 helpers, the wire ref types (`toWireRefType`, `storedRefTypesOf`) and the stale-rate rule `isRateStale` (the System health dashboard's `fx_stale` item reads it, so it agrees with the currencies page). `StorefrontPayments`, `OrderReceipts`, `B2cRefunds` (what the order engine calls to reverse a refunded storefront order), `orderPaymentStatus` (the status of the payment that paid a storefront order: the order engine does not release or send an order whose payment is disputed, charged back or refunded in full), `StorefrontCaptures` and `StorefrontOrderPorts` (the slots the customers and orders modules fill at boot, decision 032), `RefundProcessModule` and `RefundSender` (worker), `REFUND_PROCESS_EVENT`/`RefundOutbox`, and the pure helpers `brandLine`, `paymentFacts`, `storefrontMismatch`. `StorefrontMoney` (feature 14a, read only, takes the caller's
 database handle): `currencies` / `offered` / `defaultCurrency` / `byCode` (the currencies the shop offers, `is_storefront` and
@@ -350,7 +345,7 @@ Only this module reads and writes these 11 tables (`scripts/module-map.mjs`); ot
 
 ## Routes
 
-57 endpoints (admin 43, client 7, v1 2, dhru 1, hooks 2, events 2). Source: `docs/slices/money.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+53 endpoints (admin 43, client 7, dhru 1, hooks 2); the two `/v1/account` and `/v1/transactions` rows and the two `EVENT` rows (`wallet.low_balance`, `invoice.paid`) of the map are retired (see `test/contract/retired.ts`). Source: `docs/slices/money.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
 
 Beyond the map (feature 21, `scripts/map-additions/21.mjs`, built): `GET /store/v1/me/wallet`, `GET /store/v1/me/wallet/statement`,
 `GET /store/v1/me/wallet/top-up-methods`, `POST|GET /store/v1/me/wallet/top-ups`, `GET /store/v1/me/wallet/top-ups/:id`,
@@ -429,13 +424,6 @@ Beyond the map (feature 32, `scripts/map-additions/32.mjs`, built): `GET /admin/
 | `POST /client/invoices` | merchant-session | Top-up invoice; returns a payment link or bank transfer instructions. | 8 |
 | `POST /client/invoices/:id/receipt` | merchant-session | Upload a bank transfer receipt for review. | 8 |
 
-### REST API v1 (2)
-
-| Route | Access | What it does | Stage |
-|---|---|---|---|
-| `GET /v1/account` | api-key · `account:read` | Available and held balance, credit limit and client group. | 7 |
-| `GET /v1/transactions` | api-key · `account:read` | Account statement: wallet ledger entries, cursor pagination. | 7 |
-
 ### Dhru Fusion API (1)
 
 | Route | Access | What it does | Stage |
@@ -448,13 +436,6 @@ Beyond the map (feature 32, `scripts/map-additions/32.mjs`, built): `GET /admin/
 |---|---|---|---|
 | `POST /webhooks/disputes/:gateway` | gateway-signature | New or resolved dispute from the gateway; records the dispute with its evidence deadline and posts the loss when the dispute is lost. | 16 |
 | `POST /webhooks/payments/:gateway` | gateway-signature | Payment confirmation: check the signature and idempotency, then credit the merchant wallet or, for the storefront, create the order and dispatch it once confirmed. | 8 |
-
-### Outgoing webhook events (2)
-
-| Route | Access | What it does | Stage |
-|---|---|---|---|
-| `EVENT invoice.paid` | outbound-hmac | The wallet was credited from an invoice. | 8 |
-| `EVENT wallet.low_balance` | outbound-hmac | The available balance fell below the alert threshold. | 7 |
 
 ## Scenarios
 
@@ -473,22 +454,18 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 
 Staff permissions the map requires on this module's admin routes: `currencies:update`, `disputes:manage`, `disputes:read`, `invoices:create`, `invoices:read`, `ledger:read`, `ledger:reconcile`, `payments:approve`, `payments:gateways`, `payments:read`, `refunds:approve`, `refunds:read`, `reports:finance`, `reports:read`, `settings:update`, `tax:*`, `wallet:adjust`, `wallet:credit_limit`, `wallet:read`.
 
-API key scopes on its REST v1 routes: `account:read`.
-
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced: `wallet.low_balance` (queue `merchant-webhooks`, aggregate `ledger_accounts`, payload `{ clientId, currency, available, threshold }`), written by
+Outbox events produced: `wallet.low_balance` (queue `notifications`, aggregate `ledger_accounts`, payload `{ clientId, currency, available, threshold }`), written by
 `WalletLowBalanceWatch` inside `LedgerPoster.post` (feature 7b) in the posting's own transaction: for each `client_wallet` a debit took from an available balance (balance
 plus credit limit) at or above the merchant's threshold to below it, once per crossing. The threshold is `clients.notification_prefs.lowBalanceThreshold`, a money string
-(the map names no field; feature 12a's notification preferences are where a merchant sets it; no threshold, no alert). The route is registered by the platform module.
+(the map names no field; feature 12a's notification preferences are where a merchant sets it; no threshold, no alert). The route is registered by the platform module (`NotificationRoutes`).
 `postTransaction` itself writes no alert: only the injectable `LedgerPoster` does. `refund.process` (queue `maintenance`, aggregate `refunds`, payload `{ refundId }`), written by `RefundOutbox.refund` in the transaction of an approval, a retry or an automatic refund; the processor is `RefundProcessProcessor` (worker). Consumed: none yet. Record each outbox type and the queue it maps to here and in `docs/queues.md`.
 
-`invoice.paid` (queue `merchant-webhooks`, aggregate `invoices`, payload `{ invoiceId, clientId }`), written by `InvoiceOutbox.paid` in the transaction that credits a top-up (a staff approval and the automatic credit
-job); the type is registered by `InvoiceOutbox` (module `MoneyOutboxModule`, loaded by the API and the worker). The webhook fan-out (7b) re-reads the invoice.
-
-Outgoing webhook events from the map (documented as OpenAPI `webhooks` once defined with `defineEvent`): `wallet.low_balance`, `invoice.paid`.
+`invoice.paid` (queue `notifications`, aggregate `invoices`, payload `{ invoiceId, clientId }`), written by `InvoiceOutbox.paid` in the transaction that credits a top-up (a staff approval and the automatic credit
+job); the route is registered by the platform module (`NotificationRoutes`) and the notification job re-reads the invoice.
 
 ## Jobs and schedules
 

@@ -1,4 +1,4 @@
-// What the contract tests know about the running application: its route contracts, events and Fastify route table,
+// What the contract tests know about the running application: its route contracts and Fastify route table,
 // read once per test run from a child process (see dump-app.ts for why a child).
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,7 +43,6 @@ export interface RouteSnapshot {
  */
 export interface AppSnapshot {
   readonly contracts: readonly RouteSnapshot[];
-  readonly events: readonly { readonly key: string; readonly name: string; readonly payload: JsonSchema }[];
   /** `DHRU <action>` of every Dhru action the application defines (the registry of `defineDhruAction`). */
   readonly dhruActions: readonly string[];
   /** `SUPPLIER <action>[+<action>bulk]` of every call the application makes to a supplier (the registry of `defineSupplierCall`). */

@@ -12,7 +12,6 @@ export const EVENTS_KEY = 'events';
 /** What a merchant chose for one event. */
 export interface EventChoice {
   readonly email: boolean;
-  readonly telegram: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -22,7 +21,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
  * Reads what a merchant saved for each event.
  *
  * Why: the column is a free jsonb object (it also holds the threshold), so every read tolerates a missing key, a wrong type and an
- * event that is no longer registered: they read as "never saved".
+ * event that is no longer registered: they read as "never saved". A `telegram` switch that an older save stored is ignored.
  *
  * @param prefs `clients.notification_prefs`
  * @returns the saved choices by event key
@@ -35,9 +34,8 @@ export function savedChoices(
   if (!isRecord(events)) return choices;
   for (const [key, value] of Object.entries(events)) {
     if (!isRecord(value)) continue;
-    const choice: { email?: boolean; telegram?: boolean } = {};
+    const choice: { email?: boolean } = {};
     if (typeof value['email'] === 'boolean') choice.email = value['email'];
-    if (typeof value['telegram'] === 'boolean') choice.telegram = value['telegram'];
     choices.set(key, choice);
   }
   return choices;
@@ -46,9 +44,8 @@ export function savedChoices(
 /**
  * Tells what a merchant gets for an event: its saved choice, else the event's default.
  *
- * Why: B165: "an event never saved reads as email on, telegram off", except the order results, which the registry keeps off until
- * a merchant opts in (brief 12a). A transactional event ignores the saved choice: it is always sent by email (or Telegram for the
- * bot's own answers).
+ * Why: B165: "an event never saved reads as email on", except the order results, which the registry keeps off until
+ * a merchant opts in (brief 12a). A transactional event ignores the saved choice: it is always sent by email.
  *
  * @param definition the event
  * @param prefs `clients.notification_prefs`
@@ -58,37 +55,26 @@ export function choiceFor(
   definition: NotificationEventDefinition,
   prefs: Readonly<Record<string, unknown>> | null | undefined,
 ): EventChoice {
-  if (definition.transactional) {
-    return { email: definition.channels.includes('email'), telegram: definition.channels.includes('telegram') };
-  }
+  if (definition.transactional) return { email: definition.channels.includes('email') };
   const saved = savedChoices(prefs).get(definition.key);
-  return {
-    email: definition.channels.includes('email') && (saved?.email ?? definition.defaultEmail),
-    telegram: definition.channels.includes('telegram') && (saved?.telegram ?? definition.defaultTelegram),
-  };
+  return { email: definition.channels.includes('email') && (saved?.email ?? definition.defaultEmail) };
 }
 
 /**
  * Lists the channels an event is sent through for a merchant.
  *
- * Why: a Telegram message needs a linked chat; a merchant who switched Telegram on and later sent `/stop` has none, so the
- * channel is left out instead of creating a row that can only fail.
+ * Why: email is the one channel a merchant has, so the list is `['email']` when the merchant's choice (or the event's default) is on and
+ * empty when it is off.
  *
  * @param definition the event
  * @param prefs `clients.notification_prefs`
- * @param telegramLinked whether the merchant has a linked chat
- * @returns the channels, email first
+ * @returns the channels
  */
 export function channelsFor(
   definition: NotificationEventDefinition,
   prefs: Readonly<Record<string, unknown>> | null | undefined,
-  telegramLinked: boolean,
 ): NotificationChannel[] {
-  const choice = choiceFor(definition, prefs);
-  const channels: NotificationChannel[] = [];
-  if (choice.email) channels.push('email');
-  if (choice.telegram && telegramLinked) channels.push('telegram');
-  return channels;
+  return choiceFor(definition, prefs).email ? ['email'] : [];
 }
 
 const THRESHOLD = /^\d{1,14}(\.\d{1,4})?$/;
@@ -140,26 +126,7 @@ export function applyPreferences(
   if (change.lowBalanceThreshold === null) delete next[LOW_BALANCE_THRESHOLD_KEY];
   else next[LOW_BALANCE_THRESHOLD_KEY] = change.lowBalanceThreshold;
   const events: Record<string, unknown> = isRecord(next[EVENTS_KEY]) ? { ...next[EVENTS_KEY] } : {};
-  for (const entry of change.events) events[entry.event] = { email: entry.email, telegram: entry.telegram };
+  for (const entry of change.events) events[entry.event] = { email: entry.email };
   next[EVENTS_KEY] = events;
-  return next;
-}
-
-/**
- * Turns every Telegram switch off.
- *
- * Why: B165: `/stop` clears the chat and "turns its telegram events off", so nothing waits for a chat that is gone.
- *
- * @param prefs the stored `notification_prefs`
- * @returns the new stored object
- */
-export function withoutTelegram(prefs: Readonly<Record<string, unknown>> | null | undefined): Record<string, unknown> {
-  const next: Record<string, unknown> = { ...(prefs ?? {}) };
-  const events = isRecord(next[EVENTS_KEY]) ? next[EVENTS_KEY] : {};
-  const off: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(events)) {
-    off[key] = { ...(isRecord(value) ? value : {}), telegram: false };
-  }
-  next[EVENTS_KEY] = off;
   return next;
 }

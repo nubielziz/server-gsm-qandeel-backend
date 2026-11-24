@@ -15,8 +15,8 @@ const TOKEN_ACCESS: ReadonlySet<AccessKind> = new Set([
 /** The sign-in steps of the admin console and the merchant portal (login, 2FA, password); `me` and logout are not. */
 const AUTH_PATH = /^\/(admin|client)\/auth\/(login|2fa|password)(\/|$)/;
 
-/** The typing pings and read marks of a ticket page (feature 28): counted against `ticket-chat`, not `token`. */
-const TICKET_CHAT_PATH = /^\/store\/v1\/tickets\/[^/]+\/(typing|read)$/;
+/** The read marks of a ticket page (feature 28): counted against `ticket-chat`, not `token`. */
+const TICKET_CHAT_PATH = /^\/store\/v1\/tickets\/[^/]+\/read$/;
 
 /** The public service pictures (feature 22): counted against `media`, not `ip`. */
 const MEDIA_PATH = '/store/v1/media/';
@@ -30,16 +30,16 @@ const SUGGEST_PATH = '/store/v1/search/suggest';
  * Why: decision 021 limits, before authentication, per client IP: the public store routes and the sign-in family
  * (`ip`: 300 a minute), and the token routes (`token`: 30 a minute, so a capability token cannot be guessed at speed). The
  * store surface is limited as a whole, matched or not, so a scanner probing unknown paths is counted too. Admin and
- * merchant-portal routes are limited only when they are public (sign-in, password and registration routes); their
- * session-authenticated routes have per-principal limits after authentication. REST v1 and Dhru have a limit per API key, and
+ * merchant-portal routes are limited only when they are public (sign-in and password routes); their
+ * session-authenticated routes have per-principal limits after authentication. Dhru has a limit per API key, and
  * `/health` and `/metrics` are probes: none of them is limited per IP here, except for a large body
- * (`upload`, 20 a minute): a multipart body or one over 1 MiB on Dhru, REST v1 or the merchant portal is buffered and parsed
+ * (`upload`, 20 a minute): a multipart body or one over 1 MiB on Dhru or the merchant portal is buffered and parsed
  * (up to 25 MiB, B157) before the credentials are known, so an anonymous caller could otherwise make the server read one after
  * another (the per-key limit comes too late for that). The admin console counts a large body the same way (its service picture upload
  * is multipart, feature 22). The public pictures (`/store/v1/media/`) have their own budget (`media`, 1200 a minute): a catalog page
- * shows up to 100 of them and they must not use up the store's `ip` budget. The typing pings and read marks of a ticket page
- * (`…/tickets/:token/typing` and `…/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`. Every request under
- * `/webhooks` (payment and dispute events, Telegram updates), matched or not, counts against `webhook-intake` (600 a minute per address,
+ * shows up to 100 of them and they must not use up the store's `ip` budget. The read marks of a ticket page
+ * (`…/tickets/:token/read`, feature 28) count against `ticket-chat` (120 a minute) instead of `token`. Every request under
+ * `/webhooks` (payment and dispute events), matched or not, counts against `webhook-intake` (600 a minute per address,
  * decision 053): the route reads the gateway row before the signature, and the IP rules skip this surface, so this is the first check. The suggest route of the search (`/store/v1/search/suggest`, feature 29) counts against `search-suggest` (1200 a minute).
  *
  * @param path the route template or decoded path of the request (`requestPath`)
@@ -56,7 +56,7 @@ export function publicLimiterFor(
     case 'store':
       // A large body on the store (the receipt upload, feature 21) is buffered before the session is checked: it costs an upload point.
       if (largeBody) return 'upload';
-      // A ticket page pings typing every few seconds and marks what it showed: its own budget, so the token lookups stay 30 a minute.
+      // A ticket page marks what it showed as seen as it is read: its own budget, so the token lookups stay 30 a minute.
       if (access === 'ticket-token' && TICKET_CHAT_PATH.test(path)) return 'ticket-chat';
       if (access !== undefined && TOKEN_ACCESS.has(access)) return 'token';
       if (path === SUGGEST_PATH) return 'search-suggest';
@@ -70,7 +70,6 @@ export function publicLimiterFor(
       if (access === 'public' || AUTH_PATH.test(path)) return 'ip';
       // A session route still reads its body before the session is checked: a large one (the file upload) is counted.
       return largeBody ? 'upload' : undefined;
-    case 'v1':
     case 'dhru':
       return largeBody ? 'upload' : undefined;
     case 'hooks':

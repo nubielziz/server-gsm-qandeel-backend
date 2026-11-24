@@ -1,9 +1,9 @@
-// The registry of the metrics an alert rule can watch: eleven keys with a fixed unit and a fixed kind of subject (feature 12b,
+// The registry of the metrics an alert rule can watch: ten keys with a fixed unit and a fixed kind of subject (feature 12b,
 // RESOLUTIONS health-commissions-13 and -14, ANSWERS system-health Q30). Pure.
 import type { AlertSubjectType, AlertUnit } from '../db/schema';
 
 /**
- * The eleven metrics a rule can watch.
+ * The ten metrics a rule can watch.
  *
  * Why: B101 and ANSWERS Q30: "the metric comes from a fixed list" owned by the server; the console offers these keys and the
  * OpenAPI document carries them as an enum, so an unknown key is `422` on `metric`.
@@ -19,11 +19,19 @@ export const METRIC_KEYS = [
   'ledger.mismatch_count',
   'db.connection_usage',
   'redis.memory_usage',
-  'webhooks.success_rate',
 ] as const;
 
 /** One key of {@link METRIC_KEYS}. */
 export type MetricKey = (typeof METRIC_KEYS)[number];
+
+/**
+ * The metrics no rule can watch any more, kept so that alerts that fired on them still read.
+ *
+ * Why: the success rate of the deliveries to merchants' webhooks went with the outgoing webhooks. A stored alert keeps the key it fired
+ * with (its snapshot of the rule), and the alert list's answer is checked against its schema, so the key stays readable there; a rule
+ * cannot be created or edited with it (the rule inputs take {@link METRIC_KEYS} only).
+ */
+export const RETIRED_METRIC_KEYS = ['webhooks.success_rate'] as const;
 
 /** What a metric is about: the subject types a metric can raise (a subset of the alert subject types). */
 export type MetricSubject = Extract<AlertSubjectType, 'system' | 'supplier' | 'queue'>;
@@ -73,14 +81,13 @@ export const METRICS: Readonly<Record<MetricKey, MetricSpec>> = {
   'ledger.mismatch_count': { unit: 'count', subject: 'system', window: 'run', source: 'postgres' },
   'db.connection_usage': { unit: 'percent', subject: 'system', window: 'held', source: 'postgres' },
   'redis.memory_usage': { unit: 'percent', subject: 'system', window: 'held', source: 'redis' },
-  'webhooks.success_rate': { unit: 'percent', subject: 'system', window: 'measured', source: 'postgres' },
 };
 
 /**
  * Tells whether a text is a metric of the registry.
  *
  * @param text any text
- * @returns true for one of the eleven keys
+ * @returns true for one of the ten keys
  */
 export function isMetricKey(text: string): text is MetricKey {
   return (METRIC_KEYS as readonly string[]).includes(text);

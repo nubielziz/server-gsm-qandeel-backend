@@ -1,5 +1,5 @@
 // Integration tests of the notification delivery path (feature 12a, decisions 020 and 033): a notification is a row plus an outbox event written
-// together, the send job renders the active template and hands it to the mail or Telegram driver, a failure is retried by the queue with the attempt
+// together, the send job renders the active template and hands it to the mail driver (or, for an operations message, the Telegram driver), a failure is retried by the queue with the attempt
 // on the row, and the planning job turns the outbox events (low balance, order results, invoices, deposits, price changes) into notifications by the
 // merchant's own preferences, with the price changes collected into one digest a day. Real Postgres and Redis; the drivers are in memory.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
@@ -16,7 +16,6 @@ import {
 } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { insertMerchant } from '../../support/auth';
-import { insertRecoveryTemplate } from '../../support/growth';
 import { seedIdentityTemplates } from '../../support/identity-mail';
 import { logSink } from '../../support/log-sink';
 import { insertCustomer } from '../../support/support';
@@ -36,7 +35,7 @@ import {
 } from '../../support/notifications';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
 import { expectRejection } from '../../support/rejection';
-import { insertOrder, insertUsd } from '../../support/webhooks';
+import { insertOrder, insertUsd } from '../../support/portal-orders';
 import { insertCategory, insertService } from '../../support/catalog';
 
 const prefix = testBullPrefix();
@@ -48,7 +47,7 @@ beforeAll(async () => {
   ({ db } = await testDb());
   t = await createTestApp({
     clock,
-    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 afterAll(async () => {
@@ -72,6 +71,9 @@ const enqueue = (input: NotificationInput) =>
   t.app.get(DbService).runInTransaction(({ tx }) => service().enqueue({ tx }, input));
 const outboxRows = () => db.select().from(s.outboxEvents).orderBy(s.outboxEvents.id);
 const notificationQueue = () => t.app.get(QueuesService).queue('notifications');
+
+/** A link email of the customer audience that only these tests register: it has no shipped text. */
+const LINK_EVENT = 'sample.link_mail';
 
 let merchants = 0;
 /** A merchant: the first of a test has the address the mails go to; the others get their own. */
@@ -160,39 +162,33 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(await outboxRows()).toEqual([]);
   });
 
-  it('writes to every recipient with the one template of the event, and tells whether that template can be written now', async () => {
+  it('writes to every recipient with the one template of the event, and skips an event whose template is off or missing', async () => {
     const [customer] = await db
       .insert(s.customers)
       .values({ email: 'sam@mail.example', name: 'Sam' })
       .returning({ id: s.customers.id });
     const input = {
-      event: 'checkout.abandoned',
+      event: 'order.failed',
       recipient: { type: 'customer' as const, id: customer!.id },
       channel: 'email' as const,
     };
-    const key = { event: 'checkout.abandoned', channel: 'email' as const, audience: 'customer' as const };
     const check = () => service().check(db, input);
-    const writable = () => service().templateIsOn(db, key);
-    expect(await check()).toEqual({ skipped: 'no_template' });
-    expect(await writable()).toBe(false);
-
-    await insertRecoveryTemplate(db);
+    const template = eq(s.notificationTemplates.event, 'order.failed');
     expect(await check()).toHaveProperty('recipient');
-    expect(await writable()).toBe(true);
 
     // Off: nothing stands in for it (templates have no language to fall back on, decision 039).
-    await db.update(s.notificationTemplates).set({ isActive: false });
+    await db.update(s.notificationTemplates).set({ isActive: false }).where(template);
     expect(await check()).toEqual({ skipped: 'template_off' });
-    expect(await writable()).toBe(false);
-    await db.update(s.notificationTemplates).set({ isActive: true });
+    await db.update(s.notificationTemplates).set({ isActive: true }).where(template);
     expect(await check()).toHaveProperty('recipient');
-    expect(await writable()).toBe(true);
 
     // Another audience's template of the same event and channel is another template: it does not make this one writable.
-    await db.delete(s.notificationTemplates);
-    await insertRecoveryTemplate(db, { audience: 'merchant' });
+    await db.delete(s.notificationTemplates).where(template);
     expect(await check()).toEqual({ skipped: 'no_template' });
-    expect(await writable()).toBe(false);
+    await db
+      .insert(s.notificationTemplates)
+      .values({ event: 'order.failed', channel: 'email', audience: 'merchant', subject: 'Failed', body: 'It failed.' });
+    expect(await check()).toEqual({ skipped: 'no_template' });
   });
 
   it('keeps a suspended merchant from messages that are not transactional, but not from the mails it needs', async () => {
@@ -214,6 +210,8 @@ describe('NotificationService.enqueue and the send job', () => {
       enqueue({ ...lowBalance(clientId), event: 'merchant.invited', channel: 'telegram' }),
       'cannot be sent by telegram',
     );
+    // A merchant has email only (decision 062): even an event that was on Telegram once is refused on that channel.
+    await expectRejection(enqueue({ ...lowBalance(clientId), channel: 'telegram' }), 'cannot be sent by telegram');
   });
 
   it('sends once when the job runs twice, and a finished row is skipped', async () => {
@@ -282,12 +280,13 @@ describe('NotificationService.enqueue and the send job', () => {
   });
 
   it('fails a message whose template was switched off or deleted, or whose recipient lost the address, after it was queued', async () => {
-    const clientId = await merchant();
+    // A merchant's order mails are off until it switches them on: this one did, so the deleted template is what stops the second one.
+    const clientId = await merchant({ notificationPrefs: { events: { 'order.completed': { email: true } } } });
     await enqueue(lowBalance(clientId));
     await enqueue({
       ...lowBalance(clientId),
-      event: 'deposit.approved',
-      variables: { merchantName: 'Z', amount: '1', currency: 'USD' },
+      event: 'order.completed',
+      variables: { merchantName: 'Z', orderId: '1', service: 'S' },
     });
     await enqueue({
       ...lowBalance(clientId),
@@ -298,7 +297,7 @@ describe('NotificationService.enqueue and the send job', () => {
       .update(s.notificationTemplates)
       .set({ isActive: false })
       .where(eq(s.notificationTemplates.event, 'wallet.low_balance'));
-    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'deposit.approved'));
+    await db.delete(s.notificationTemplates).where(eq(s.notificationTemplates.event, 'order.completed'));
     await db.update(s.clients).set({ email: 'not-an-address' }).where(eq(s.clients.id, clientId));
     expect(
       (await sendAllQueued(t)).map((outcome) => (outcome.outcome === 'failed' ? outcome.reason : outcome.outcome)),
@@ -326,36 +325,47 @@ describe('NotificationService.enqueue and the send job', () => {
     expect(mail?.text).toBe('Hi Zain <b>&</b> Co, you have 42.50 USD.');
   });
 
-  it('sends a Telegram message to the linked chat, to a chat named by the row, and fails for a merchant with no chat', async () => {
-    const telegramOn = { events: { 'wallet.low_balance': { email: false, telegram: true } } };
-    const linked = await merchant({ telegramChatId: '7001234', notificationPrefs: telegramOn });
-    const unlinked = await merchant({ name: 'No Chat', notificationPrefs: telegramOn });
-    await enqueue({ ...lowBalance(linked), channel: 'telegram' });
-    await enqueue({ ...lowBalance(unlinked), channel: 'telegram' });
-    await enqueue({ ...lowBalance(unlinked), channel: 'telegram', chatId: '555' });
-    const outcomes = await sendAllQueued(t);
-    expect(outcomes).toEqual([
-      { outcome: 'sent' },
-      { outcome: 'failed', reason: 'Telegram is not linked.' },
-      { outcome: 'sent' },
-    ]);
-    expect(telegramOutbox(t).sent).toEqual([
-      { chatId: '7001234', text: 'Low balance: 42.50 USD available (your alert level is 50.00 USD).' },
-      { chatId: '555', text: 'Low balance: 42.50 USD available (your alert level is 50.00 USD).' },
-    ]);
+  it('makes no Telegram message for a merchant, even one with a chat, and ends a Telegram row queued before as failed', async () => {
+    const linked = await merchant({ telegramChatId: '7001234' });
+    await expectRejection(enqueue({ ...lowBalance(linked), channel: 'telegram' }), 'cannot be sent by telegram');
+    // A row an older version queued (a merchant, the chat in its payload or on the merchant) is recorded as not sent and never retried.
+    const [older, named] = await db
+      .insert(s.notifications)
+      .values([
+        {
+          recipientType: 'client',
+          recipientId: linked,
+          channel: 'telegram',
+          event: 'wallet.low_balance',
+          payload: { variables: {} },
+          status: 'queued',
+        },
+        {
+          recipientType: 'client',
+          recipientId: linked,
+          channel: 'telegram',
+          event: 'wallet.low_balance',
+          payload: { chatId: '555', variables: {} },
+          status: 'queued',
+        },
+      ])
+      .returning();
+    for (const row of [older!, named!]) {
+      expect(await sendNotification(t, row.id)).toEqual({
+        outcome: 'failed',
+        reason: 'Telegram is no longer used for this message.',
+      });
+    }
+    expect((await notificationRows(db)).map((row) => row.status)).toEqual(['failed', 'failed']);
+    expect(telegramOutbox(t).sent).toEqual([]);
     expect(mailbox(t).sent).toEqual([]);
   });
 
   it('re-reads the merchant at send time: a message switched off or a merchant suspended after the row was queued sends nothing, a transactional mail still goes out', async () => {
     const off = await merchant();
     const suspended = await merchant();
-    const telegramOff = await merchant({
-      telegramChatId: '7001234',
-      notificationPrefs: { events: { 'wallet.low_balance': { email: false, telegram: true } } },
-    });
     await enqueue({ ...lowBalance(off), dedupeKey: 'off' });
     await enqueue({ ...lowBalance(suspended), dedupeKey: 'suspended' });
-    await enqueue({ ...lowBalance(telegramOff), channel: 'telegram', dedupeKey: 'telegram-off' });
     await enqueue({
       event: 'merchant.invited',
       recipient: { type: 'client', id: suspended },
@@ -370,33 +380,45 @@ describe('NotificationService.enqueue and the send job', () => {
         await (
           await merchantSession(t, off)
         ).call('PUT', '/client/notification-preferences', {
-          events: [{ event: 'wallet.low_balance', email: false, telegram: false }],
+          events: [{ event: 'wallet.low_balance', email: false }],
         })
       ).status,
     ).toBe(200);
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, suspended));
-    await db
-      .update(s.clients)
-      .set({ notificationPrefs: { events: { 'wallet.low_balance': { email: true, telegram: false } } } })
-      .where(eq(s.clients.id, telegramOff));
 
     expect(await sendAllQueued(t)).toEqual([
       { outcome: 'failed', reason: 'The merchant turned this message off.' },
       { outcome: 'failed', reason: 'The recipient is suspended.' },
-      { outcome: 'failed', reason: 'The merchant turned this message off.' },
       { outcome: 'sent' },
     ]);
     expect(telegramOutbox(t).sent).toEqual([]);
     expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Your GSM merchant account is ready']);
-    expect((await notificationRows(db)).map((row) => row.status)).toEqual(['failed', 'failed', 'failed', 'sent']);
+    expect((await notificationRows(db)).map((row) => row.status)).toEqual(['failed', 'failed', 'sent']);
   });
 
-  it('keeps a Telegram refusal that cannot change as failed, and retries one that can', async () => {
-    const clientId = await merchant({
-      telegramChatId: '7001234',
-      notificationPrefs: { events: { 'wallet.low_balance': { email: false, telegram: true } } },
-    });
-    await enqueue({ ...lowBalance(clientId), channel: 'telegram' });
+  it('keeps a Telegram refusal that cannot change as failed, and retries one that can (an operations message)', async () => {
+    const made = await t.app.get(DbService).runInTransaction(({ tx }) =>
+      service().enqueueToAddress(
+        { tx },
+        {
+          event: 'alert.fired',
+          channel: 'telegram',
+          to: '-1001234567890',
+          noRecipientReason: 'No chat is configured.',
+          variables: {
+            ruleName: 'Supplier timeouts',
+            severity: 'critical',
+            metric: 'supplier.timeout_rate',
+            value: '25%',
+            threshold: '20%',
+            subject: 'Supplier Bosphorus Unlock',
+            detail: 'The limit is above 20% over 3 min.',
+          },
+          dedupeKey: 'ops-telegram-1',
+        },
+      ),
+    );
+    expect(made).toMatchObject({ status: 'queued' });
     const [row] = await notificationRows(db);
     telegramOutbox(t).failNext(new DeliveryError('Telegram asked to slow down.'));
     await expectRejection(sendNotification(t, row!.id), 'slow down');
@@ -410,15 +432,15 @@ describe('NotificationService.enqueue and the send job', () => {
 });
 
 describe('the outbox routes of the notifications', () => {
-  it('send order changes, low balance and price changes to the webhooks and to the notifications, and the rest to one queue', () => {
+  it('send order changes, low balance, price changes and paid invoices to the notifications queue only, like every other event of the notifications', () => {
     const queuesOf = (type: string) =>
       t.app
         .get(OutboxRouteRegistry)
         .routesOf(type)
         .map((route) => route.queue)
         .sort();
-    for (const type of ['order.status_changed', 'wallet.low_balance', 'service.price_changed'])
-      expect(queuesOf(type), type).toEqual(['merchant-webhooks', 'notifications']);
+    for (const type of ['order.status_changed', 'wallet.low_balance', 'service.price_changed', 'invoice.paid'])
+      expect(queuesOf(type), type).toEqual(['notifications']);
     for (const type of [
       'notification.send',
       'merchant.invited',
@@ -426,9 +448,12 @@ describe('the outbox routes of the notifications', () => {
       'merchant.email_verification',
     ])
       expect(queuesOf(type), type).toEqual(['notifications']);
-    // Feature 8 owns the routes of these two: the lead adds their `notifications` route when 8 is merged.
     expect(t.app.get(NotificationEventRegistry).has('invoice.paid')).toBe(true);
-    expect(t.app.get(NotificationEventRegistry).has('deposit.approved')).toBe(true);
+    // The deposit event is retired: it has no registry entry any more.
+    expect(t.app.get(NotificationEventRegistry).has('deposit.approved')).toBe(false);
+    // The notice of a switched-off webhook endpoint went with the outgoing webhooks: no event, no route.
+    expect(t.app.get(NotificationEventRegistry).has('webhook.endpoint_disabled')).toBe(false);
+    expect(t.app.get(OutboxRouteRegistry).routesOf('webhook.endpoint_disabled')).toEqual([]);
   });
 });
 
@@ -451,42 +476,40 @@ describe('planning a low balance alert', () => {
     expect(mail?.text).toContain('Your available balance is 42.50 USD, below your alert level of 50.00 USD.');
   });
 
-  it('follows the merchant’s switches: off sends nothing, Telegram needs a linked chat, both channels make two rows', async () => {
+  it('follows the merchant’s email switch: off sends nothing, on makes one email, and a Telegram switch an older save stored changes nothing', async () => {
     const off = await merchant({
-      notificationPrefs: { events: { 'wallet.low_balance': { email: false, telegram: false } } },
+      notificationPrefs: { events: { 'wallet.low_balance': { email: false } } },
     });
     expect(await planEvent(t, await event(off))).toEqual({ created: 0, skipped: 'opted_out' });
 
-    const unlinked = await merchant({
-      notificationPrefs: { events: { 'wallet.low_balance': { email: true, telegram: true } } },
+    const staleOff = await merchant({
+      telegramChatId: '9002',
+      notificationPrefs: { events: { 'wallet.low_balance': { email: false, telegram: true } } },
     });
-    expect(await planEvent(t, await event(unlinked))).toEqual({ created: 1 });
-    expect((await notificationRows(db)).map((row) => row.channel)).toEqual(['email']);
+    expect(await planEvent(t, await event(staleOff))).toEqual({ created: 0, skipped: 'opted_out' });
+    expect(await notificationRows(db)).toEqual([]);
 
-    const both = await merchant({
+    const staleOn = await merchant({
       telegramChatId: '9001',
       notificationPrefs: { events: { 'wallet.low_balance': { email: true, telegram: true } } },
     });
-    expect(await planEvent(t, await event(both))).toEqual({ created: 2 });
+    expect(await planEvent(t, await event(staleOn))).toEqual({ created: 1 });
+    expect((await notificationRows(db)).map((row) => row.channel)).toEqual(['email']);
     await sendAllQueued(t);
-    expect(telegramOutbox(t).sent.map((message) => message.chatId)).toEqual(['9001']);
-    expect(mailbox(t).sent).toHaveLength(2);
+    expect(telegramOutbox(t).sent).toEqual([]);
+    expect(mailbox(t).sent).toHaveLength(1);
   });
 
   it('is safe to run twice for one event: a retry after a crash makes no second message', async () => {
     const clientId = await merchant({
-      telegramChatId: '9001',
-      notificationPrefs: { events: { 'wallet.low_balance': { email: true, telegram: true } } },
+      notificationPrefs: { events: { 'wallet.low_balance': { email: true } } },
     });
     const job = await event(clientId);
-    expect(await planEvent(t, job)).toEqual({ created: 2 });
+    expect(await planEvent(t, job)).toEqual({ created: 1 });
     expect(await planEvent(t, job, 1)).toEqual({ created: 0 });
-    expect(await notificationRows(db)).toHaveLength(2);
-    expect(await outboxRows()).toHaveLength(3);
-    expect((await notificationRows(db)).map((row) => row.dedupeKey)).toEqual([
-      `outbox-${job.eventId}:email`,
-      `outbox-${job.eventId}:telegram`,
-    ]);
+    expect(await notificationRows(db)).toHaveLength(1);
+    expect(await outboxRows()).toHaveLength(2);
+    expect((await notificationRows(db)).map((row) => row.dedupeKey)).toEqual([`outbox-${job.eventId}:email`]);
   });
 
   it('skips a merchant who is gone or suspended, and fails the job for good when the event lacks its figures', async () => {
@@ -532,7 +555,7 @@ describe('planning the result of an order', () => {
     };
   }
   const optedIn = {
-    events: { 'order.completed': { email: true, telegram: false }, 'order.failed': { email: true, telegram: false } },
+    events: { 'order.completed': { email: true }, 'order.failed': { email: true } },
   };
 
   it('stays silent until the merchant opts in to order results', async () => {
@@ -612,22 +635,14 @@ describe('planning the events of billing', () => {
       .returning({ id: s.invoices.id });
     const paid = eventJob('invoice.paid', 'invoices', invoice!.id, { invoiceId: invoice!.id, clientId });
     expect(await planEvent(t, paid)).toEqual({ created: 1 });
-    const approved = eventJob('deposit.approved', 'payments', 12, {
-      clientId,
-      amount: '100.0000',
-      currency: 'USD',
-    });
-    expect(await planEvent(t, approved)).toEqual({ created: 1 });
     await sendAllQueued(t);
-    expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual([
-      'Invoice INV-2026-0311 is paid',
-      'Your deposit of 100.00 USD was approved',
-    ]);
+    expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual(['Invoice INV-2026-0311 is paid']);
     expect(mailbox(t).sent[0]?.text).toContain('(250.00 USD) was paid');
     const gone = eventJob('invoice.paid', 'invoices', 987654, { invoiceId: 987654, clientId });
     expect(await planEvent(t, gone)).toEqual({ created: 0, skipped: 'source_gone' });
-    const broken = eventJob('deposit.approved', 'payments', 13, { clientId });
-    await expectRejection(planEvent(t, broken), UnrecoverableError);
+    // A leftover outbox row of the retired deposit event plans nothing and does not fail.
+    const retired = eventJob('deposit.approved', 'payments', 12, { clientId, amount: '100.0000', currency: 'USD' });
+    expect(await planEvent(t, retired)).toEqual({ created: 0, skipped: 'unknown_event' });
   });
 });
 
@@ -748,7 +763,7 @@ describe('the daily digest of price changes (user rule 9)', () => {
     expect((await notificationQueue().getJob(queueJobId('notification', rows[1]!.id)))?.opts.delay).toBe(DAY - 5);
   });
 
-  it('keeps a digest per merchant and per channel, in the merchant’s preferences, and nothing for a merchant who turned it off', async () => {
+  it('keeps a digest per merchant, in the merchant’s preferences, and nothing for a merchant who turned it off', async () => {
     const { a } = await services();
     const linked = await merchant({
       telegramChatId: '9001',
@@ -756,9 +771,9 @@ describe('the daily digest of price changes (user rule 9)', () => {
     });
     const plain = await merchant();
     const off = await merchant({
-      notificationPrefs: { events: { 'service.price_changed': { email: false, telegram: false } } },
+      notificationPrefs: { events: { 'service.price_changed': { email: false } } },
     });
-    expect(await planEvent(t, await change(linked, a, '12.0000', '12.5000'))).toEqual({ created: 2 });
+    expect(await planEvent(t, await change(linked, a, '12.0000', '12.5000'))).toEqual({ created: 1 });
     expect(await planEvent(t, await change(plain, a, '12.0000', '12.5000'))).toEqual({ created: 1 });
     expect(await planEvent(t, await change(off, a, '12.0000', '12.5000'))).toEqual({
       created: 0,
@@ -767,18 +782,12 @@ describe('the daily digest of price changes (user rule 9)', () => {
     const rows = await digests();
     expect(rows.map((row) => `${row.recipientId === linked ? 'linked' : 'plain'}:${row.channel}`)).toEqual([
       'linked:email',
-      'linked:telegram',
       'plain:email',
     ]);
 
     clock.set('2026-11-02T06:00:00.000Z');
     for (const row of rows) await sendNotification(t, row.id);
-    expect(telegramOutbox(t).sent).toEqual([
-      {
-        chatId: '9001',
-        text: 'Price changes on services you ordered (1):\n- Vodafone UK iPhone Unlock: 12.00 to 12.50 USD',
-      },
-    ]);
+    expect(telegramOutbox(t).sent).toEqual([]);
     expect(mailbox(t).sent).toHaveLength(2);
   });
 
@@ -798,7 +807,7 @@ describe('the daily digest of price changes (user rule 9)', () => {
         await (
           await merchantSession(t, clientId)
         ).call('PUT', '/client/notification-preferences', {
-          events: [{ event: 'service.price_changed', email, telegram: false }],
+          events: [{ event: 'service.price_changed', email }],
         })
       ).status;
     expect(await choose(optedOut, false)).toBe(200);
@@ -961,23 +970,45 @@ describe('link emails and security emails (decision 047)', () => {
     expect(String(warnings().at(-1)!.msg)).toContain('breaks the link rules (link_attribute)');
   });
 
-  it('sends nothing for a broken reminder template, which has no shipped text, and treats it as switched off', async () => {
-    await insertRecoveryTemplate(db);
+  it('sends nothing for a broken link template of an event with no shipped text, and treats it as switched off', async () => {
+    // A link email of the customer audience that nothing ships a text for: the rule is the platform's, whichever event carries it.
+    const registry = t.app.get(NotificationEventRegistry);
+    if (!registry.has(LINK_EVENT)) {
+      registry.register({
+        key: LINK_EVENT,
+        audience: 'customer',
+        label: 'Link mail',
+        description: 'A test event whose mail carries a link and has no shipped text.',
+        channels: ['email'],
+        variables: ['customerName', 'link'],
+        sample: { customerName: 'Sam', link: 'https://shop.example.com/x' },
+        transactional: false,
+        defaultEmail: true,
+        secretLink: true,
+      });
+    }
+    const template = eq(s.notificationTemplates.event, LINK_EVENT);
+    await db.insert(s.notificationTemplates).values({
+      event: LINK_EVENT,
+      channel: 'email',
+      audience: 'customer',
+      subject: 'Your link',
+      body: 'Pick up where you left off: {{link}}',
+      isActive: true,
+    });
     const customer = await insertCustomer(db, { name: 'Sam Buyer' });
-    const reminder = {
-      event: 'checkout.abandoned',
+    const mail = {
+      event: LINK_EVENT,
       recipient: { type: 'customer' as const, id: customer.id },
       channel: 'email' as const,
-      variables: { customerName: 'Sam', device: 'iPhone 13' },
+      variables: { customerName: 'Sam' },
     };
-    const key = { event: 'checkout.abandoned', channel: 'email' as const, audience: 'customer' as const };
     // A row queued while the template was fine; the template is broken before it is sent.
-    expect(await enqueue(reminder)).toMatchObject({ status: 'queued' });
-    expect(await service().templateIsOn(db, key)).toBe(true);
+    expect(await enqueue(mail)).toMatchObject({ status: 'queued' });
     await db
       .update(s.notificationTemplates)
       .set({ body: 'Pick up where you left off: https://example.com/{{link}}' })
-      .where(eq(s.notificationTemplates.event, 'checkout.abandoned'));
+      .where(template);
     const outcomes = await sendAllQueued(t);
     expect(outcomes).toEqual([{ outcome: 'failed', reason: 'The template breaks the rules of a link mail.' }]);
     expect((await notificationRows(db))[0]).toMatchObject({
@@ -985,16 +1016,12 @@ describe('link emails and security emails (decision 047)', () => {
       error: 'The template breaks the rules of a link mail.',
     });
     expect(mailbox(t).sent).toEqual([]);
-    // From now on the broken template counts as switched off: nothing is queued and the sweep would pick nobody.
-    expect(await enqueue(reminder)).toEqual({ status: 'skipped', reason: 'template_off' });
-    expect(await service().templateIsOn(db, key)).toBe(false);
+    // From now on the broken template counts as switched off: nothing is queued.
+    expect(await enqueue(mail)).toEqual({ status: 'skipped', reason: 'template_off' });
     expect(await notificationRows(db)).toHaveLength(1);
     // A template that keeps the rules works again.
-    await db
-      .update(s.notificationTemplates)
-      .set({ body: 'Pick up where you left off:\n{{link}}' })
-      .where(eq(s.notificationTemplates.event, 'checkout.abandoned'));
-    expect(await service().templateIsOn(db, key)).toBe(true);
+    await db.update(s.notificationTemplates).set({ body: 'Pick up where you left off:\n{{link}}' }).where(template);
+    expect(await enqueue(mail)).toMatchObject({ status: 'queued' });
   });
 
   it('stands in for a missing or switched-off template of a security email, and for nothing else', async () => {
@@ -1003,9 +1030,6 @@ describe('link emails and security emails (decision 047)', () => {
     const off = eq(s.notificationTemplates.event, 'merchant.password_reset');
     await db.update(s.notificationTemplates).set({ isActive: false }).where(off);
     expect(await enqueue(passwordReset(clientId))).toMatchObject({ status: 'queued' });
-    expect(
-      await service().templateIsOn(db, { event: 'merchant.password_reset', channel: 'email', audience: 'merchant' }),
-    ).toBe(true);
     await db.delete(s.notificationTemplates).where(off);
     expect(
       await enqueue({ ...passwordReset(clientId), variables: { merchantName: 'Z', expiresAt: 'x' } }),

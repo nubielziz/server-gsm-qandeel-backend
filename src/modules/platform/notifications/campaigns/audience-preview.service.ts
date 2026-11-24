@@ -12,8 +12,8 @@ export interface AudiencePreview {
   readonly total: number;
   readonly reachable: number;
   readonly byType: { staff: number; client: number; customer: number };
-  readonly byChannel: { inApp: number; email: number; telegram: number };
-  readonly excluded: { noConsent: number; optedOut: number; noTelegram: number; noAccount: number };
+  readonly byChannel: { inApp: number; email: number };
+  readonly excluded: { noConsent: number; optedOut: number; noAccount: number };
 }
 
 /**
@@ -38,14 +38,14 @@ export class AudiencePreviewService {
    * @param channels the channels
    * @param purpose the purpose
    * @returns the counts
-   * @throws {AppError} `VALIDATION_FAILED` for an audience that targets nobody, a duplicate person, or Telegram without merchants
+   * @throws {AppError} `VALIDATION_FAILED` for an audience that targets nobody, or a duplicate person
    */
   async preview(
     spec: AudienceSpec,
     channels: readonly CampaignChannel[],
     purpose: NotificationCampaignPurpose,
   ): Promise<AudiencePreview> {
-    const errors = audienceProblems(spec, channels);
+    const errors = audienceProblems(spec);
     if (errors.length > 0) throw new AppError('VALIDATION_FAILED', { errors });
     return this.count(spec, channels, purpose);
   }
@@ -79,7 +79,6 @@ export class AudiencePreviewService {
         reachable: sum.reachable + one.reachable,
         inApp: sum.inApp + one.inApp,
         email: sum.email + one.email,
-        telegram: sum.telegram + one.telegram,
         noConsent: sum.noConsent + one.noConsent,
       };
     });
@@ -91,12 +90,10 @@ export class AudiencePreviewService {
       byChannel: {
         inApp: chosen('in_app', sum.inApp),
         email: chosen('email', sum.email),
-        telegram: chosen('telegram', sum.telegram),
       },
       excluded: {
         noConsent: sum.noConsent,
         optedOut: chosen('email', sum.total - sum.email),
-        noTelegram: chosen('telegram', sum.total - sum.telegram),
         noAccount: chosen('in_app', sum.total - sum.inApp),
       },
     };

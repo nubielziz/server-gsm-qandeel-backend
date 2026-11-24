@@ -60,6 +60,7 @@ describe('toWireCustomer', () => {
       suspendedAt: null,
     });
     expect(wire).not.toHaveProperty('updatedAt');
+    expect(wire).not.toHaveProperty('riskLevel');
   });
 
   it('sends null for both currency fields when the customer has none', () => {

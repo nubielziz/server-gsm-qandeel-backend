@@ -278,30 +278,6 @@ export async function lastPublicMessage(db: DbExecutor, ticketId: number): Promi
 }
 
 /**
- * Records that a ticket's satisfaction survey was queued, once.
- *
- * Why: a ticket is asked for its survey once. The column `survey_sent_at` is the record (it does not depend on the words of a system message,
- * which a rewording, a translation or a staff name could break). The guard `survey_sent_at IS NULL` makes the first caller the only winner,
- * so a second resolve after a reopen finds the ticket already asked.
- *
- * Side effects: writes `support_tickets.survey_sent_at`. `updated_at` is set to the same `now` (the resolve wrote it a moment before in the
- * same transaction): without it the table's `$onUpdate` default would stamp the wall clock, not the injected one (decision 031).
- *
- * @param db the transaction (the ticket row is locked by the caller)
- * @param ticketId the ticket
- * @param now the injected clock's time
- * @returns true when this call recorded it (the survey is to be queued); false when the ticket was already asked
- */
-export async function markSurveySent(db: DbExecutor, ticketId: number, now: Date): Promise<boolean> {
-  const rows = await db
-    .update(supportTickets)
-    .set({ surveySentAt: now, updatedAt: now })
-    .where(and(eq(supportTickets.id, ticketId), isNull(supportTickets.surveySentAt)))
-    .returning({ id: supportTickets.id });
-  return rows.length > 0;
-}
-
-/**
  * Records that a ticket's requester address is proven, once.
  *
  * Why: decision 053. A ticket opened on the contact form with a typed address is unproven until the link that was mailed to that

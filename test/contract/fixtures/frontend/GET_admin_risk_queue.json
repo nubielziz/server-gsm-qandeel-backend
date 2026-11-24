@@ -24,16 +24,13 @@
         "fxRate": "1.0000",
         "paymentMethod": "card",
         "signals": [
-          "IMEI was checked blacklisted before",
-          "New customer, first order above $40",
-          "VPN or proxy IP"
+          "New customer, first order above $40"
         ],
         "customer": {
           "id": 10,
           "name": "Tyler Brooks",
           "email": "tyler.brooks@inbox.example",
           "country": "US",
-          "riskLevel": "medium",
           "history": {
             "earlierOrders": 8,
             "refunds": 1,
@@ -68,7 +65,6 @@
           "name": "Victor Silva",
           "email": "victor.silva@webmail.example",
           "country": "US",
-          "riskLevel": "low",
           "history": {
             "earlierOrders": 12,
             "refunds": 2,
@@ -104,7 +100,6 @@
           "name": "Olivia Grant",
           "email": "olivia.grant@mail.example",
           "country": "US",
-          "riskLevel": "low",
           "history": {
             "earlierOrders": 7,
             "refunds": 1,
@@ -133,7 +128,6 @@
         "signals": [
           "Disposable email domain",
           "New customer, first order above $40",
-          "VPN or proxy IP",
           "IP country differs from card country"
         ],
         "customer": {
@@ -141,7 +135,6 @@
           "name": "Samira Khan",
           "email": "samira.khan@mail.example",
           "country": "GB",
-          "riskLevel": "low",
           "history": {
             "earlierOrders": 5,
             "refunds": 1,

@@ -1,5 +1,6 @@
-// Unit tests of the 13 money events (decision 024): every builder is compared with the map's own journal lines and amounts
-// (docs/slices/money.json, generated from reference/gsm-map system.mjs), and each posting sums to zero.
+// Unit tests of the money events (decision 024): every builder is compared with the map's own journal lines and amounts
+// (docs/slices/money.json, generated from reference/gsm-map system.mjs), and each posting sums to zero. The map's 13th event,
+// `commission`, is retired (decision 062): it has no builder, its old journals stay readable.
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -26,6 +27,9 @@ const mapEvent = (id: string): MapEvent => slice.moneyEvents.find((event) => eve
 
 const m = (amount: string): Money => Money.of(amount);
 
+/** Events the map still lists but nothing can post any more: their journals stay in the ledger, they have no builder. */
+const RETIRED_EVENT_IDS = ['commission'];
+
 /** The posting as the map's `[account, debit, credit]` triples (amounts as numbers, as the map writes them). */
 function triples(posting: MoneyEventPosting): Array<[string, number, number]> {
   return posting.lines.map((line) => [line.account.kind, Number(line.debit.toWire()), Number(line.credit.toWire())]);
@@ -38,7 +42,6 @@ const BUILT: Record<MoneyEventId, MoneyEventPosting> = {
   complete: events.complete({ clientId: 7, price: m('5'), cost: m('3'), supplierId: 2 }),
   reject: events.reject({ clientId: 7, amount: m('5') }),
   topup: events.topup({ supplierId: 2, amount: m('50') }),
-  commission: events.commission({ clientId: 7, amount: m('0.20') }),
   adjust: events.adjust({ clientId: 7, amount: m('10'), direction: 'credit' }),
   b2c_pay: events.b2cPay({ net: m('12.49'), vat: m('2.50') }),
   b2c_fee: events.b2cFee({ fee: m('0.73') }),
@@ -48,10 +51,19 @@ const BUILT: Record<MoneyEventId, MoneyEventPosting> = {
   payout: events.payout({ amount: m('14.26') }),
 };
 
-describe('the 13 money events of the map', () => {
-  it('has a builder for every event of the map and no other', () => {
-    expect<string[]>([...MONEY_EVENT_IDS].sort()).toEqual(slice.moneyEvents.map((event) => event.id).sort());
+describe('the money events of the map', () => {
+  it('has a builder for every event of the map except the retired one, and no other', () => {
+    expect<string[]>([...MONEY_EVENT_IDS, ...RETIRED_EVENT_IDS].sort()).toEqual(
+      slice.moneyEvents.map((event) => event.id).sort(),
+    );
     expect(Object.keys(BUILT).sort()).toEqual([...MONEY_EVENT_IDS].sort());
+  });
+
+  it('has no builder for a commission any more, whatever it was called', () => {
+    const exported = events as Record<string, unknown>;
+    expect(exported.commission).toBeUndefined();
+    expect(exported.commissionReversal).toBeUndefined();
+    expect(Object.keys(MONEY_EVENT_KINDS)).not.toContain('commission');
   });
 
   for (const id of MONEY_EVENT_IDS) {
@@ -86,7 +98,6 @@ describe('the 13 money events of the map', () => {
       complete: 'order',
       reject: 'order',
       topup: 'supplier',
-      commission: 'accrual',
       adjust: 'client',
       b2c_pay: 'order',
       b2c_fee: 'order',
@@ -104,7 +115,6 @@ describe('the 13 money events of the map', () => {
       complete: 'order_settle',
       reject: 'order_release',
       topup: 'supplier_topup',
-      commission: 'commission',
       adjust: 'adjustment',
       b2c_pay: 'b2c_payment',
       b2c_fee: 'gateway_fee',

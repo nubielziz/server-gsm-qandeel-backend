@@ -11,7 +11,7 @@ import {
 } from '../db/schema';
 import { WIRE_TICKET_STATUSES } from '../domain/ticket-status';
 
-/** The longest text of a reply, a note, a customer message or a template: a Telegram message holds 4096 characters. */
+/** The longest text of a reply, a note, a customer message or a template. */
 export const MAX_MESSAGE_LENGTH = 4000;
 
 /**

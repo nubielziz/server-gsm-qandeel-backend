@@ -6,11 +6,6 @@
   "body": {
     "rules": [
       {
-        "id": "blockBlacklistedImei",
-        "on": true,
-        "value": null
-      },
-      {
         "id": "reviewThreshold",
         "on": true,
         "value": 50

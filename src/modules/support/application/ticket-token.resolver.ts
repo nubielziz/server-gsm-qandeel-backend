@@ -17,7 +17,7 @@ import { findTicketByToken } from '../infra/ticket.repository';
  * compares the stored form with the presented one in constant time, so the answer for a wrong token does not depend on how much of it
  * matched. A ticket's link stops working 180 days after the ticket was resolved (decision 054, `TICKET_LINK_DAYS_AFTER_RESOLUTION`): the
  * guard then answers the same `404` as for an unknown token; reopening the ticket opens it again. Within that time a resolved ticket can
- * still be read and rated, but takes no message or upload from its holder (B220: `409 TICKET_RESOLVED`, decided by the services).
+ * still be read, but takes no message or upload from its holder (B220: `409 TICKET_RESOLVED`, decided by the services).
  *
  * Side effects: none (reads only).
  */

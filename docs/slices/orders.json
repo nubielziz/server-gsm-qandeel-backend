@@ -1343,7 +1343,7 @@
       "description": "Top merchants by volume and by profit.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 22,
+        "line": 42,
         "fn": "getTopClients"
       }
     },

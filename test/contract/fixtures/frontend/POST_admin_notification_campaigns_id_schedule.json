@@ -7,7 +7,6 @@
     "link": null,
     "skipped": {
       "optedOut": 0,
-      "noTelegram": 0,
       "noAccount": 0
     },
     "updatedBy": {
@@ -32,8 +31,7 @@
     "recipients": 0,
     "planned": {
       "inApp": 0,
-      "email": 0,
-      "telegram": 0
+      "email": 0
     },
     "audience": {
       "merchants": {}
@@ -48,11 +46,6 @@
         "read": 0
       },
       "email": {
-        "queued": 0,
-        "sent": 0,
-        "failed": 0
-      },
-      "telegram": {
         "queued": 0,
         "sent": 0,
         "failed": 0

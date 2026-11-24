@@ -23,14 +23,14 @@ export const groupNames = {
     orders: 'Orders and inventory',
     suppliers: 'Suppliers',
     billing: 'Payments and verification',
-    growth: 'Commissions and reports',
+    growth: 'Reports',
     ops: 'Operations and notifications',
     customers: 'Storefront customers and accounts (B2C)',
     storefront: 'Storefront and content',
     refunds: 'Refunds, disputes and tax',
     support: 'Support',
     risk: 'Risk and compliance',
-    promo: 'Abandoned carts and sales funnel',
+    promo: 'Sales funnel',
     health: 'System health and performance'
   },
   client: {
@@ -38,11 +38,11 @@ export const groupNames = {
     catalog: 'Catalog and wallet',
     orders: 'Orders and files',
     billing: 'Top-up and verification',
-    api: 'API keys and webhooks',
-    growth: 'Commissions and notifications'
+    api: 'API keys',
+    growth: 'Notifications and support tickets'
   },
   store: {
-    catalog: 'Services and IMEI check',
+    catalog: 'Services and search',
     checkout: 'Checkout and tracking',
     account: 'My account and personal data',
     support: 'Support',
@@ -155,7 +155,7 @@ export const descriptions = {
   'admin CRUD /admin/currencies': 'Currencies and exchange rates.',
   'admin GET /admin/clients/:id/api-keys': 'API keys of a merchant.',
   'admin DELETE /admin/api-keys/:id': 'Revoke a merchant API key.',
-  'admin CRUD /admin/client-groups': 'Merchant groups: discount, upgrade threshold and deposit limit.',
+  'admin CRUD /admin/client-groups': 'Merchant groups: discount and deposit limit.',
   'admin CRUD /admin/service-categories': 'Service categories and the merchant groups that can see them.',
   'admin CRUD /admin/services': 'Services: type, execution, pricing mode and rules.',
   'admin PUT /admin/services/:id/fields': 'Custom fields of the service.',
@@ -312,7 +312,7 @@ export const descriptions = {
   'admin POST /admin/system/jobs/:name/run': 'Run a job now by hand (for example the price sync); the run is recorded in job_runs with trigger = manual.',
   'admin GET /admin/system/database': 'Postgres: connections out of the maximum and pool wait, slowest queries (pg_stat_statements), locks and long transactions, replica lag, size and growth, and pending migrations.',
   'admin GET /admin/system/cache': 'Redis: memory used out of the limit, evictions, hit rate, clients and latency.',
-  'admin GET /admin/system/webhooks': 'Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message.',
+  'admin GET /admin/system/webhooks': 'Health of the incoming webhooks from gateways: success rate, failures, attempts and the oldest undelivered message.',
   'admin GET /admin/system/integrity': 'Money integrity checks: every entry sums to zero, every account balance equals the sum of its lines, holds stuck over 24 hours, confirmed payments without an entry, and the last result.',
   'admin POST /admin/system/integrity/run': 'Run the integrity check now as a background job; the result appears in GET /admin/system/integrity.',
   'admin PUT /admin/system/maintenance': 'Maintenance mode with a scope (store, checkout, API orders or all), a message and an expected time. The chosen scope answers 503 MAINTENANCE; the admin console is never affected, so staff are not locked out. The switch is stored in settings.',
@@ -323,6 +323,6 @@ export const descriptions = {
   'hooks POST /webhooks/disputes/:gateway': 'New or resolved dispute from the gateway; records the dispute with its evidence deadline and posts the loss when the dispute is lost.',
   'system GET /health': 'Service health check: Postgres and Redis.',
   'system GET /metrics': 'Prometheus metrics: requests, latency and queues. Internal network or token only; the admin health page reads it.',
-  'system GET /openapi.json': 'REST v1 specification (OpenAPI).',
-  'system GET /docs': 'REST v1 documentation page.',
+  'system GET /openapi.json': 'Dhru API specification (OpenAPI).',
+  'system GET /docs': 'Dhru API documentation page.',
 };

@@ -138,24 +138,6 @@
           "SEK"
         ],
         "oldestUpdatedAt": "2026-10-28T10:00:00.000Z"
-      },
-      {
-        "id": "pend",
-        "severity": "low",
-        "kind": "merchants_pending",
-        "count": 2,
-        "names": [
-          "Algiers Service Plus",
-          "Accra Devices"
-        ]
-      },
-      {
-        "id": "comm",
-        "severity": "low",
-        "kind": "commissions_accrued",
-        "count": 49,
-        "total": "23.7500",
-        "agents": 2
       }
     ],
     "queues": [
@@ -716,8 +698,7 @@
     },
     "storefront": {
       "funnel": {
-        "visitorsEstimated": 5079,
-        "imeiChecks": 907,
+        "visitorsEstimated": 1915,
         "checkoutsStarted": 342,
         "paid": 104,
         "delivered": 86
@@ -726,10 +707,6 @@
       "refundRate": 7.737755570710794,
       "disputeRate": 4.807692307692308,
       "firstReplySeconds": 5400,
-      "satisfaction": {
-        "average": 4.6,
-        "ratings": 5
-      },
       "heldForReview": 4
     },
     "topCustomers": [
@@ -776,9 +753,6 @@
       },
       "finance": {
         "pendingDeposits": 6
-      },
-      "merchants": {
-        "pendingApproval": 2
       },
       "support": {
         "open": 10,

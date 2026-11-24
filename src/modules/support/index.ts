@@ -5,12 +5,7 @@ export { PRIORITY_TARGET_MS, defaultPriority, slaDueAt } from './domain/ticket-s
 export type { LastPublicMessage } from './domain/ticket-sla';
 export { WIRE_TICKET_STATUSES, toWireStatus } from './domain/ticket-status';
 export type { WireTicketStatus } from './domain/ticket-status';
-export {
-  SUPPORT_CSAT_SURVEY_EVENT,
-  SUPPORT_EVENTS,
-  SUPPORT_REPLY_EVENT,
-  SUPPORT_TICKET_RECEIVED_EVENT,
-} from './application/support-events';
+export { SUPPORT_EVENTS, SUPPORT_REPLY_EVENT, SUPPORT_TICKET_RECEIVED_EVENT } from './application/support-events';
 export { SUPPORT_DEFAULT_TEMPLATES, supportTemplatesSql } from './application/support-templates';
 export { SupportEventsModule } from './support-events.module';
 export { TICKET_MAIL_EVENT } from './application/ticket-mail-outbox';

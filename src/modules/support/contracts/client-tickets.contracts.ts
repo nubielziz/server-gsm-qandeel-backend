@@ -1,5 +1,5 @@
 // Route contracts of a merchant's support tickets in the portal (feature 28, slice B2, routes beyond the map: scripts/map-additions/28b.mjs;
-// plan docs/briefs/28-support-live-chat.md § 3.2 routes 8 to 14): list, open, the conversation, reply, read mark, typing and the
+// plan docs/briefs/28-support-live-chat.md § 3.2 routes 8 to 14): list, open, the conversation, reply, read mark and the
 // download of an attachment. A merchant's ticket has no link token: the session is the credential and the routes take the ticket id (a
 // ticket of another merchant is `404`). A merchant waiting for approval may use all of them (B153); a suspended one may not.
 import { z } from 'zod';
@@ -19,14 +19,11 @@ export const ClientTicketRowSchema = MyTicketRowSchema.omit({ token: true }).ext
 });
 
 /**
- * A merchant's ticket with its conversation: the storefront's ticket without the rating, with the ticket id.
+ * A merchant's ticket with its conversation: the storefront's ticket with the ticket id.
  *
- * Why: a merchant's ticket has no survey (the survey is for customers), and the seen marks are always sent here (the route is new, so they
- * need not be optional as on the storefront's existing answers).
+ * Why: the seen marks are always sent here (the route is new, so they need not be optional as on the storefront's existing answers).
  */
 export const ClientTicketSchema = StoreTicketSchema.omit({
-  canRate: true,
-  csatScore: true,
   seenByYou: true,
   seenBySupport: true,
   seenBySupportAt: true,
@@ -120,8 +117,7 @@ export const openClientTicket = defineRoute({
     'for any other, an unknown one included). `fileIds` attaches files the merchant uploaded with `POST /client/files` (at most 5; ' +
     'the portal accepts any file there, so the type and size are checked again: only a PDF, JPEG or PNG of at most 5 MiB, else `422` on ' +
     '`fileIds` with `type` or `too_large`); the first `message` may be `""` when a file is attached. The ticket starts `new` with the ' +
-    'priority of its category and a reply target; a merchant gets no receipt email (staff replies are mailed, or sent to its linked ' +
-    'Telegram chat). A merchant opens 5 tickets an hour (`429 RATE_LIMITED` with `Retry-After`). A merchant waiting for approval may ' +
+    'priority of its category and a reply target; a merchant gets no receipt email (staff replies are mailed). A merchant opens 5 tickets an hour (`429 RATE_LIMITED` with `Retry-After`). A merchant waiting for approval may ' +
     'open tickets (B153). The answer is the new ticket with its conversation.',
   tags: ['support-tickets'],
   surface: 'client',
@@ -215,24 +211,6 @@ export const markClientTicketRead = defineRoute({
   success: { status: 204 },
   errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'CSRF_FAILED', ...CLIENT_ERRORS],
   examples: { request: { upToMessageId: 9001 } },
-});
-
-/** `POST /client/tickets/:id/typing`. */
-export const clientTicketTyping = defineRoute({
-  key: 'POST /client/tickets/:id/typing',
-  summary: 'Tell support the merchant is typing',
-  description:
-    'A typing ping of the portal thread (send at most one every 3 seconds while the text changes and is not empty). Staff see ' +
-    '"<name> is typing…" for a few seconds. Never stored; pings within 2.5 seconds of the last one are absorbed. Always `204` for ' +
-    'a ticket of the merchant, whatever happened to the ping (on a resolved ticket nothing is published); another merchant’s ticket and ' +
-    'an unknown id are `404`.',
-  tags: ['support-tickets'],
-  surface: 'client',
-  access: 'merchant-session',
-  pendingMerchant: 'allow',
-  params: ID_PARAMS,
-  success: { status: 204 },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED', 'CSRF_FAILED', ...CLIENT_ERRORS],
 });
 
 /** `GET /client/tickets/:id/files/:fileId`. */

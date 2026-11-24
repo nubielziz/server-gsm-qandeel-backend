@@ -111,8 +111,7 @@ function changeVerb(before: Supplier, after: Supplier, keys: readonly string[]):
  * AES-GCM text with a key id and `api_key_hint` is a masked form of it, written together, never decrypted on read (decision 051: `••••`, and the key's last 2 characters when it has 16 or more; never its
  * first characters); decision 051: a saved key is only sent to the origin, username and driver it was saved with, so a change of any of
  * them needs the key again in the same request; orders-suppliers-8: delete is refused with `SUPPLIER_IN_USE` while an
- * order, a service link, an order call log row or an IMEI check refers to the supplier, and otherwise removes the logs of its
- * tests and syncs with it.
+ * order, a service link or an order call log row refers to the supplier, and otherwise removes the logs of its tests and syncs with it.
  *
  * Side effects: writes `suppliers` (and, on delete, `supplier_api_logs`) and `audit_logs` (entity `supplier`; the key is never in
  * them); a status change writes `services.effective_cost` (`recomputeEffectiveCost`) and moves the catalog price version after the
@@ -267,7 +266,7 @@ export class SupplierAdminService {
     });
   }
 
-  /** Refuses the delete with the most useful reason first: open orders, order history, links, call history, IMEI checks. */
+  /** Refuses the delete with the most useful reason first: open orders, order history, links, call history. */
   private async assertUnused(tx: DbExecutor, supplier: Supplier): Promise<void> {
     const usage = await this.orders.usageOf(tx, supplier.id);
     const blockers = await supplierBlockers(tx, supplier.id);
@@ -281,8 +280,6 @@ export class SupplierAdminService {
       detail = `${plural(blockers.links, 'service')} still use ${supplier.name}. Unlink them first.`;
     } else if (blockers.orderCalls > 0) {
       detail = `${supplier.name} has the call history of orders. Disable it instead.`;
-    } else if (blockers.imeiChecks > 0) {
-      detail = `${supplier.name} was used for IMEI checks. Disable it instead.`;
     }
     if (detail !== undefined) throw new AppError('SUPPLIER_IN_USE', { detail });
   }

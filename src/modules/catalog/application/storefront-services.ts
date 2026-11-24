@@ -1,5 +1,5 @@
-// StorefrontServices and TacDirectory: the read-only views of the catalog the storefront and the IMEI check use (feature 14a).
-// The storefront module prices and lists; this file only says which services a group may buy and what the TAC catalogue knows.
+// StorefrontServices: the read-only view of the catalog the storefront and the customers module use (feature 14a).
+// The storefront module prices and lists; this file only says which services a group may buy.
 import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
 import type { DbExecutor } from '../../../infra/db';
@@ -17,7 +17,6 @@ import {
   findSellableServices,
   findServiceNames,
   findServiceFields,
-  findTacEntry,
 } from '../infra/storefront-services.repository';
 
 /** A service as the storefront needs it: no cost, no supplier, no staff-only flag. */
@@ -257,45 +256,5 @@ export class StorefrontServices {
       required: row.required,
       regex: row.regex,
     }));
-  }
-}
-
-/** A TAC catalogue entry as the IMEI check shows it. */
-export interface TacRef {
-  readonly tac: string;
-  readonly brand: string;
-  readonly model: string;
-  readonly marketingName: string;
-  readonly releaseYear: number | null;
-}
-
-/**
- * Looks up the brand and model of a TAC.
- *
- * Why: the IMEI check recognises a device by the first 8 digits (RESOLUTIONS b2c-3, map `tac_catalog`); the catalog module owns
- * the table, so the risk module asks here.
- *
- * Side effects: none (reads only).
- */
-@Injectable()
-export class TacDirectory {
-  /**
-   * Finds a TAC.
-   *
-   * @param db the database or a transaction
-   * @param tac exactly 8 digits
-   * @returns the entry, or `undefined` when the catalogue does not know the TAC
-   */
-  async find(db: DbExecutor, tac: string): Promise<TacRef | undefined> {
-    const row = await findTacEntry(db, tac);
-    return row === undefined
-      ? undefined
-      : {
-          tac: row.tac,
-          brand: row.brand,
-          model: row.model,
-          marketingName: row.marketingName,
-          releaseYear: row.releaseYear,
-        };
   }
 }

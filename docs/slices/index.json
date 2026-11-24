@@ -12,7 +12,7 @@
         "admin": 45,
         "store": 1
       },
-      "frontendCalled": 44,
+      "frontendCalled": 41,
       "stages": [
         2,
         7,
@@ -45,7 +45,7 @@
         "system": 2,
         "store": 6
       },
-      "frontendCalled": 33,
+      "frontendCalled": 30,
       "stages": [
         2,
         5,
@@ -237,7 +237,7 @@
         "client": 2,
         "admin": 13
       },
-      "frontendCalled": 13,
+      "frontendCalled": 0,
       "stages": [
         11
       ],
@@ -255,7 +255,7 @@
         "admin": 15,
         "client": 1
       },
-      "frontendCalled": 15,
+      "frontendCalled": 13,
       "stages": [
         14,
         16,
@@ -302,14 +302,14 @@
       "module": "support",
       "name": "Support",
       "domain": "J",
-      "rows": 26,
-      "endpoints": 32,
+      "rows": 23,
+      "endpoints": 29,
       "bySurface": {
-        "store": 11,
-        "admin": 14,
-        "client": 7
+        "store": 10,
+        "admin": 13,
+        "client": 6
       },
-      "frontendCalled": 14,
+      "frontendCalled": 13,
       "stages": [
         17,
         28
@@ -330,7 +330,7 @@
         "store": 3,
         "admin": 14
       },
-      "frontendCalled": 14,
+      "frontendCalled": 12,
       "stages": [
         14,
         18

@@ -11,13 +11,13 @@ import type { OutboxRoute } from './outbox.types';
  * Why: decision 020 relays each outbox row to the queue mapped from the event type; the producing module knows which
  * queue handles its event, so it registers the mapping instead of the relay knowing every module. Registering in
  * `onModuleInit` is enough: the API and the worker load the same modules, so both see the same registry. Amended by feature
- * 12a: one event may be wanted by two consumers (an order change reaches the merchant's webhooks and its notifications), so a
+ * 12a: one event may be wanted by two consumers, so a
  * type has one route per queue; the relay adds one job per route and the consumers stay independent.
  *
  * @example
  * // in OrdersModule
  * onModuleInit(): void {
- *   this.outboxRoutes.register({ type: 'order.status_changed', queue: 'merchant-webhooks' });
+ *   this.outboxRoutes.register({ type: 'order.dispatch_requested', queue: 'supplier-dispatch' });
  * }
  */
 @Injectable()

@@ -143,7 +143,7 @@ export const zJsonObject = z
 
 /**
  * A file part of a `multipart/form-data` body.
- * Why: B157: the upload routes (`POST /v1/files`, `POST /client/files`) read one part named `file`; the multipart parser
+ * Why: B157: the upload routes (`POST /client/files`, `POST /store/v1/files`) read one part named `file`; the multipart parser
  * (`src/common/multipart.ts`) turns it into an {@link UploadedFile} before the contract validates the body. In OpenAPI it is a
  * binary string.
  */

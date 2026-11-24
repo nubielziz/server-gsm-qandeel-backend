@@ -68,7 +68,6 @@ const ORDER_EXAMPLE = {
   result: { code: 'Unlocked: code 8842 1113', comment: null, fileId: null },
   verificationStatus: null,
   inputFileId: null,
-  clientNote: null,
   adminNote: null,
   sentAt: '2026-10-02T06:23:28.000Z',
   completedAt: '2026-10-02T07:01:10.000Z',
@@ -138,7 +137,7 @@ export const listOrderEvents = defineRoute({
   summary: 'The timeline of an order',
   description:
     'Every `order_events` row of the order, oldest first, as a bare array (no paging). Internal notes appear here and never reach ' +
-    'the merchant, the storefront or REST v1. The console shows `data.message` as it is.',
+    'the merchant or the storefront. The console shows `data.message` as it is.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

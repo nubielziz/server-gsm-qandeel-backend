@@ -84,7 +84,7 @@ function embeddedV4(bytes: Uint8Array): Uint8Array | undefined {
 /**
  * Tells whether an IP literal is a public unicast address.
  *
- * Why: decision 023 sends merchant-webhook and supplier requests only to public hosts, so a configured URL cannot be used
+ * Why: decision 023 sends supplier requests only to public hosts, so a configured URL cannot be used
  * to reach Postgres, Redis, MinIO or a cloud metadata endpoint (SSRF). The test is a deny list of every special-purpose
  * range (private, loopback, link-local, carrier-grade NAT, multicast, reserved, documentation, ...) for both IP versions;
  * IPv6 forms that embed an IPv4 address (IPv4-mapped `::ffff:127.0.0.1`, NAT64, 6to4) are judged by the embedded address.

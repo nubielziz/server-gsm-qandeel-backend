@@ -77,14 +77,17 @@ describe('POST /admin/notification-campaigns', () => {
     );
   });
 
-  it('refuses Telegram without merchants, a person listed twice and unknown keys of the audience', async () => {
-    const telegram = await owner.post('/admin/notification-campaigns', {
-      ...CAMPAIGN_INPUT,
-      channels: ['telegram'],
-      audience: { customers: {} },
-    });
-    expect(telegram.status).toBe(422);
-    expect(fieldsOf(telegram.body)).toEqual(['channels']);
+  it('refuses the retired Telegram channel, a person listed twice and unknown keys of the audience', async () => {
+    // A campaign has two channels (in the app, by email): a merchant audience does not bring a third back (decision 062).
+    for (const audience of [{ customers: {} }, { merchants: {} }]) {
+      const telegram = await owner.post('/admin/notification-campaigns', {
+        ...CAMPAIGN_INPUT,
+        channels: ['telegram'],
+        audience,
+      });
+      expect(telegram.status).toBe(422);
+      expect(fieldsOf(telegram.body)[0]).toMatch(/^channels/);
+    }
     const twice = await owner.post('/admin/notification-campaigns', {
       ...CAMPAIGN_INPUT,
       audience: {
@@ -245,10 +248,27 @@ describe('PATCH /admin/notification-campaigns/:id', () => {
 
     const telegram = await owner.patch(`/admin/notification-campaigns/${draft.id}`, {
       channels: ['telegram'],
-      audience: { customers: {} },
+      audience: { merchants: {} },
     });
     expect(telegram.status).toBe(422);
-    expect(fieldsOf(telegram.body)).toEqual(['channels']);
+    expect(fieldsOf(telegram.body)[0]).toMatch(/^channels/);
+  });
+
+  it('refuses an edit of a draft stored with the retired channel only until the edit names a channel', async () => {
+    const draft = await createDraft(owner);
+    const { db } = await testDb();
+    await db
+      .update(s.notificationCampaigns)
+      .set({ channels: ['telegram'] })
+      .where(eq(s.notificationCampaigns.id, draft.id));
+    // The route shows no channel for it, and a rename alone cannot save: the merged campaign would reach nobody.
+    expect((await owner.get(`/admin/notification-campaigns/${draft.id}`)).body.channels).toEqual([]);
+    const rename = await owner.patch(`/admin/notification-campaigns/${draft.id}`, { name: 'Friday maintenance' });
+    expect(rename.status).toBe(422);
+    expect(fieldsOf(rename.body)).toEqual(['channels']);
+    const chosen = await owner.patch(`/admin/notification-campaigns/${draft.id}`, { channels: ['email'] });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body.channels).toEqual(['email']);
   });
 
   it('keeps the time of a scheduled campaign, and refuses a campaign that is no longer a draft or scheduled', async () => {
@@ -310,15 +330,18 @@ describe('POST /admin/notification-campaigns/:id/preview', () => {
     expect((await db.select().from(s.auditLogs)).length).toBe(before);
   });
 
-  it('renders Telegram as text, uses the caller name for staff and refuses a language sent along', async () => {
+  it('renders the in-app message as text, uses the caller name for staff, and refuses a retired channel and a language sent along', async () => {
     const draft = await createDraft(owner);
     const inApp = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, { channel: 'in_app' });
     expect(inApp.body).toMatchObject({ subject: 'Maintenance for Daniel', format: 'text' });
     const staff = await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, {
-      channel: 'telegram',
+      channel: 'in_app',
       audience: 'staff',
     });
     expect(staff.body).toMatchObject({ subject: 'Maintenance for Rami K.', format: 'text' });
+    expect(
+      (await owner.post(`/admin/notification-campaigns/${draft.id}/preview`, { channel: 'telegram' })).status,
+    ).toBe(422);
     expect((await owner.post('/admin/notification-campaigns/999999/preview', { channel: 'email' })).status).toBe(404);
     // A language is no part of the request any more (decision 039): the strict body refuses `locale` like any unknown key.
     for (const url of ['preview', 'test']) {

@@ -385,6 +385,17 @@ describe('GET /admin/orders/:id and /events', () => {
     expect((await staff.get('/admin/orders/abc')).status).toBe(422);
   });
 
+  it('still reads an order stored with the retired source admin, and sends no client note field', async () => {
+    const { db, merchant, auto } = world;
+    const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId, source: 'admin' });
+    await db.update(s.orders).set({ clientNote: 'old note' }).where(eq(s.orders.id, order.id));
+    const one = await staff.get(`/admin/orders/${order.id}`);
+    expect(one.status).toBe(200);
+    expect(one.body.source).toBe('admin');
+    expect(one.body).not.toHaveProperty('clientNote');
+    expect((await staff.get('/admin/orders')).body[0]).not.toHaveProperty('clientNote');
+  });
+
   it('lists the timeline oldest first with the actor names joined, notes included', async () => {
     const { db, merchant, auto } = world;
     const order = await insertOrderRow(db, { clientId: merchant.id, serviceId: auto.serviceId });

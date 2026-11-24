@@ -81,31 +81,37 @@ Frontend features covering this module: `orders`, `dashboard` (rules in `RULES.m
 ## POST /v1/orders
 
 - **Map**: Place an order; supports Idempotency-Key. (طلب جديد؛ يدعم Idempotency-Key) · api-key `orders:write` · stage 7 · tables orders, order_events, ledger_entries
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /v1/orders/bulk
 
 - **Map**: Up to 100 orders, with a result per item. (حتى 100 طلب بنتيجة لكل عنصر) · api-key `orders:write` · stage 7 · tables orders, ledger_entries
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /v1/orders
 
 - **Map**: Order list: filter by status, ids, imei and updatedSince, with cursor pagination. (قائمة الطلبات: status و ids و imei و updatedSince و cursor) · api-key `orders:read` · stage 7 · tables orders
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /v1/orders/:id
 
 - **Map**: Order status and result. (حالة طلب ونتيجته) · api-key `orders:read` · stage 7 · tables orders
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /v1/orders/:id/cancel
 
 - **Map**: Cancel an order that is still pending, if the service allows it. (إلغاء طلب ما زال pending إذا الخدمة بتسمح) · api-key `orders:write` · stage 7 · tables orders, ledger_entries
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /v1/orders/:id/verify
 
 - **Map**: Request verification of the result within the allowed window. (طلب تحقق على النتيجة ضمن المدة المسموحة) · api-key `orders:write` · stage 7 · tables orders, order_events
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/dashboard
@@ -295,7 +301,7 @@ Frontend features covering this module: `orders`, `dashboard` (rules in `RULES.m
 ## GET /admin/reports/top-clients
 
 - **Map**: Top merchants by volume and by profit. (أكبر التجار حجماً وربحاً) · staff-permission `reports:read` · stage 11 · tables orders, clients
-- **Frontend**: `getTopClients` (src/features/dashboard/api/dashboard.ts:24) · params `params: TopClientsParams` · returns `TopClient[]` · success 200 · assumed contract
+- **Frontend**: `getTopClients` (src/features/dashboard/api/dashboard.ts:44) · params `params: TopClientsParams` · returns `TopClient[]` · success 200 · assumed contract
 - **Query**: days=1|7|14&limit=6 (hooks/useTopClients.ts:8-20); called only when the caller has reports:read.
 - **Response**: A JSON array (not a paged list, no x-total-count) of up to limit merchants ranked by spend, highest first: id, name, country (ISO-2), orders (count created in the window), spend (sum total_price of non-rejected orders created in the window), profit (completed orders: total_price - total_cost), walletBalance (merchant-side wallet balance, may be negative). Excludes merchants with status pending and merchants with no order in the window (mocks/topClients.ts:10-41). Window = the last days x 24 h.
 - **Errors**: 422 VALIDATION_FAILED (days outside 1|7|14 or limit not a positive integer (proposed max 50)); 403 FORBIDDEN (caller lacks reports:read)
@@ -305,6 +311,7 @@ Frontend features covering this module: `orders`, `dashboard` (rules in `RULES.m
 ## EVENT order.status_changed
 
 - **Map**: An order changed status; the payload carries the whole order. (تغيّرت حالة طلب؛ الطلب كامل بالـ payload) · outbound-hmac · stage 7 · tables orders, webhook_deliveries
+- **Retired** (decision 062): Outgoing webhooks to merchants were retired: merchants learn of the same events by email and in the inbox. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /store/v1/orders/:token

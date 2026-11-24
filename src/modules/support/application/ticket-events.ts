@@ -7,19 +7,14 @@ import { RealtimePublisher } from '../../../infra/realtime';
 export const TICKET_TOPIC = 'ticket';
 
 /** What a ticket doorbell says happened. */
-export type TicketDoorbellOp = 'message' | 'updated' | 'read' | 'typing' | 'revoked';
-
-/** Who is typing: the requester, or a staff member writing a reply or a note. */
-export type TypingParty =
-  { readonly by: 'requester' } | { readonly by: 'staff'; readonly staffId: number; readonly mode: 'reply' | 'note' };
+export type TicketDoorbellOp = 'message' | 'updated' | 'read' | 'revoked';
 
 /**
  * Rings the ticket doorbells.
  *
  * Why: owner request (2026-11-15) and decision 037: a message appears at once on the other side, without a reload. The doorbell carries
  * ids only (never a text, a name or the ticket token), so a lost or forged one loses or leaks nothing; the source decides who may see
- * what. Transactional changes ring after their commit (`publishOnCommit`), so a reader finds the row and a rolled-back change rings
- * nothing; typing has no transaction and rings at once.
+ * what. Every change rings after its commit (`publishOnCommit`), so a reader finds the row and a rolled-back change rings nothing.
  *
  * Side effects: `PUBLISH` on the cache Redis (through `RealtimePublisher`, which never throws to the caller).
  *
@@ -40,7 +35,7 @@ export class TicketEvents {
   }
 
   /**
-   * The ticket changed without a new message the requester sees (a new ticket, a status, assignee or priority change, a rating).
+   * The ticket changed without a new message the requester sees (a new ticket, a status, assignee or priority change).
    *
    * @param ticketId the ticket
    */
@@ -56,20 +51,6 @@ export class TicketEvents {
    */
   read(ticketId: number, by: 'requester' | 'staff'): void {
     this.publisher.publishOnCommit(TICKET_TOPIC, 'read', { ticketId, by });
-  }
-
-  /**
-   * Someone is typing (throttled by the caller to one doorbell per party every 2.5 s).
-   *
-   * @param ticketId the ticket
-   * @param party who types, and for staff whether a reply or a note
-   */
-  typing(ticketId: number, party: TypingParty): void {
-    const fields =
-      party.by === 'staff'
-        ? { ticketId, by: 'staff', staffId: party.staffId, mode: party.mode }
-        : { ticketId, by: 'requester' };
-    this.publisher.publishOnCommit(TICKET_TOPIC, 'typing', fields);
   }
 
   /**

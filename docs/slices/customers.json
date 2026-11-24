@@ -11,7 +11,7 @@
       "admin": 15,
       "client": 1
     },
-    "frontendCalled": 15
+    "frontendCalled": 13
   },
   "stages": [
     14,
@@ -1125,11 +1125,7 @@
       },
       "module": "customers",
       "description": "Abandoned carts, including who has marketing consent.",
-      "frontend": {
-        "file": "src/features/checkouts/api/checkouts.ts",
-        "line": 12,
-        "fn": "listAbandonedCheckouts"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/checkouts/recover",
@@ -1159,11 +1155,7 @@
       },
       "module": "customers",
       "description": "Send a recovery email once, only to customers with marketing consent.",
-      "frontend": {
-        "file": "src/features/checkouts/api/checkouts.ts",
-        "line": 26,
-        "fn": "recoverCheckouts"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/reports/funnel",
@@ -1195,8 +1187,8 @@
       "module": "customers",
       "description": "Sales funnel: check, then payment started, then paid, then delivered.",
       "frontend": {
-        "file": "src/features/checkouts/api/funnel.ts",
-        "line": 10,
+        "file": "src/features/finance/api/reports.ts",
+        "line": 54,
         "fn": "getFunnel"
       }
     },

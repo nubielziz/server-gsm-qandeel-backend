@@ -33,8 +33,8 @@ export const CONSOLE_AUDIT_ENTITY_TYPES = [
  * Every entity type `AuditService.record` accepts: the console's words plus the backend additions.
  *
  * Why: RESOLUTIONS identity-platform-15. Table to word: `clients` is `merchant`, `staff_users` `staff`, `checkout_sessions`
- * `checkout`, `legal_documents` `legal`, blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan`,
- * `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`, `ledger_accounts` `ledger_account` (the system accounts `bun run setup`
+ * `checkout`, `legal_documents` `legal`, blocklist entries `blocklist`, `settings` `setting`, `commission_plans` `plan` (retired,
+ * decision 062: only old rows carry it, and the word stays so they can still be read and filtered), `withdrawal_requests` `withdrawal`, `support_tickets` `ticket`, `ledger_accounts` `ledger_account` (the system accounts `bun run setup`
  * opens, P4b). The list is enforced in code with no database CHECK, so the
  * append-only table never needs a migration for a new word; a feature that needs one adds it here in its own commit.
  */
@@ -47,8 +47,6 @@ export const AUDIT_ENTITY_TYPES = [
   'payment_gateway',
   'invoice',
   'api_key',
-  'webhook_endpoint',
-  'kyc_submission',
   'notification_template',
   'reply_template',
   'alert_rule',

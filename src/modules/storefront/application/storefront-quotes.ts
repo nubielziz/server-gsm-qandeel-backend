@@ -123,7 +123,7 @@ export class StorefrontQuotes {
    * Finds the services the shop may sell to the public: sellable for the retail group and with a switched-on listing.
    *
    * Why: catalog-3 and the brief of feature 14a ("only listed ... with their `service_listings` row"): the public list, the
-   * service page, the checkout and the pre-order IMEI check share this one rule, so a service staff switched off (or never
+   * service page and the checkout share this one rule, so a service staff switched off (or never
    * listed) cannot be bought by guessing its id.
    *
    * @param db the database or a transaction

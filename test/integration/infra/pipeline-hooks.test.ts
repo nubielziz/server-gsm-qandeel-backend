@@ -143,7 +143,7 @@ describe('an application without Postgres or Redis', () => {
 describe('pipeline order: IP rules, then maintenance, then the per-IP limit, all before authentication', () => {
   it('lets a request reach the guard (401) when no hook refuses it', async () => {
     const ip = freshIp();
-    for (const url of ['/admin/t/secure', '/store/v1/t/ping', '/v1/t/ping', '/client/t/ping']) {
+    for (const url of ['/admin/t/secure', '/store/v1/t/ping', '/client/t/ping']) {
       refusedAs(await get(url, ip), 401, 'UNAUTHORIZED');
     }
     expect((await get('/store/v1/t/ping', ip, AUTH)).statusCode).toBe(200);
@@ -158,14 +158,16 @@ describe('pipeline order: IP rules, then maintenance, then the per-IP limit, all
       ['GET', '/client/t/ping'],
       ['GET', '/store/v1/nope'],
     ];
-    // A machine surface sends no CORS grant to any origin (decision 045), the refusal included.
+    // A machine surface sends no CORS grant to any origin (decision 045), the refusal included; the Dhru surface answers it in its envelope.
     const machine = await t.app.inject({
-      method: 'GET',
-      url: '/v1/t/ping',
+      method: 'POST',
+      url: '/api/index.php',
       remoteAddress: blocked,
       headers: { origin: CONSOLE },
+      payload: {},
     });
-    refusedAs(machine, 403, 'IP_NOT_ALLOWED');
+    expect(machine.statusCode).toBe(200);
+    expect(machine.json().ERROR[0].MESSAGE).toBe(`Your network address (${blocked}) is blocked.`);
     expect(machine.headers['access-control-allow-origin']).toBeUndefined();
     expect(machine.headers['access-control-allow-credentials']).toBeUndefined();
     // Signed incoming webhooks are never judged by IP rules (B118): they reach their own checks.
@@ -242,9 +244,6 @@ describe('maintenance (scenario system-integrity)', () => {
   const STORE_TOKEN = (ip: string) => get('/store/v1/t/orders/abc', ip, AUTH);
   const CHECKOUT = (ip: string) => post('/store/v1/checkout-sessions', ip, {}, AUTH);
   const PAY = (ip: string) => post('/store/v1/checkout-sessions/abc123/pay', ip, {}, AUTH);
-  const ORDER = (ip: string) => post('/v1/orders', ip, {}, AUTH);
-  const BULK = (ip: string) => post('/v1/orders/bulk', ip, {}, AUTH);
-  const V1_READ = (ip: string) => get('/v1/t/ping', ip, AUTH);
   const ADMIN = (ip: string) => get('/admin/t/session', ip, AUTH);
   const CLIENT = (ip: string) => get('/client/t/ping', ip, AUTH);
   const HOOK = (ip: string) => post('/webhooks/t/ping', ip, {}, AUTH);
@@ -252,14 +251,15 @@ describe('maintenance (scenario system-integrity)', () => {
   // /metrics answers private networks only (or a token): the test address would be refused by its own guard.
   const METRICS = () => get('/metrics', '127.0.0.1');
 
-  const ALWAYS_OPEN = { ADMIN, CLIENT, HOOK, HEALTH, METRICS, V1_READ };
+  const ALWAYS_OPEN = { ADMIN, CLIENT, HOOK, HEALTH, METRICS };
   const SCOPES: Record<string, Array<(ip: string) => Promise<LightMyRequestResponse>>> = {
     store: [STORE_PING, STORE_TOKEN, CHECKOUT, PAY],
     checkout: [CHECKOUT, PAY],
-    api_orders: [ORDER, BULK],
-    all: [STORE_PING, STORE_TOKEN, CHECKOUT, PAY, ORDER, BULK],
+    // The placements of the Dhru endpoint (scope api_orders) answer in the Dhru envelope: test/integration/orders/dhru-surface.test.ts.
+    api_orders: [],
+    all: [STORE_PING, STORE_TOKEN, CHECKOUT, PAY],
   };
-  const EVERY = [STORE_PING, STORE_TOKEN, CHECKOUT, PAY, ORDER, BULK];
+  const EVERY = [STORE_PING, STORE_TOKEN, CHECKOUT, PAY];
 
   for (const [scope, refused] of Object.entries(SCOPES)) {
     it(`scope "${scope}" answers 503 MAINTENANCE for its requests only; the admin console, the portal, webhooks, health and metrics never`, async () => {
@@ -314,7 +314,9 @@ describe('maintenance (scenario system-integrity)', () => {
     expect((await STORE_PING(ip)).statusCode).toBe(200);
     await setMaintenance(maintenanceOn('api_orders'));
     expect((await STORE_PING(ip)).statusCode).toBe(200);
-    expect((await ORDER(ip)).statusCode).toBe(503);
+    // A Dhru placement is refused (in the Dhru envelope, HTTP 200).
+    const placed = await post('/api/index.php', ip, { action: 'placeimeiorder' });
+    expect(placed.json().ERROR[0].MESSAGE).toBe('Checkout is paused while we check the ledger.');
   });
 
   it('answers a Dhru order placement in the Dhru envelope (HTTP 200) and leaves the other Dhru actions alone', async () => {
@@ -401,9 +403,9 @@ describe('the per-IP rate limit (decision 021)', () => {
     refusedAs(await post('/admin/t/sign-in', ip, {}, AUTH), 429, 'RATE_LIMITED');
   });
 
-  it('counts nothing else on ip and token: authenticated admin and portal routes, REST v1, webhooks and the probes', async () => {
+  it('counts nothing else on ip and token: authenticated admin and portal routes, webhooks and the probes', async () => {
     const ip = freshIp();
-    for (const url of ['/admin/t/session', '/client/t/ping', '/v1/t/ping', '/health', '/metrics']) {
+    for (const url of ['/admin/t/session', '/client/t/ping', '/health', '/metrics']) {
       await get(url, ip, AUTH);
     }
     await post('/webhooks/t/ping', ip, {}, AUTH);

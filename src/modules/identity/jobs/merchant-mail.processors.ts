@@ -9,9 +9,9 @@ import { MERCHANT_MAIL_EVENTS } from '../application/mail/merchant-mail-outbox';
 import { type MerchantMailJobResult, MerchantMailJobs } from '../application/mail/merchant-mail-jobs';
 
 /**
- * Sends the email-verification mail of a new merchant.
+ * Sends the email-verification mail of a merchant.
  *
- * Why: `POST /client/auth/register` (B122) writes `merchant.email_verification`; this job hands it to the mail sender.
+ * Why: `POST /client/auth/verify-email/resend` and a staff change of the address (`PATCH /admin/clients/:id`) write `merchant.email_verification`; this job hands it to the mail sender.
  */
 @Injectable()
 @QueueProcessor('notifications', MERCHANT_MAIL_EVENTS.email_verification)

@@ -10,7 +10,8 @@ import { type FileReferences, auditedKindsOf, fileKindsOf } from './file-kinds';
  *
  * Why: decision 047: who opened which identity document or payment proof is in the audit log of the merchant or the payment, whichever
  * page the staff member opened the file from. The kinds come from {@link auditedKindsOf}, so every route applies the same rule. The rows are
- * written in a short transaction of their own, before the caller makes the link: no row, no link.
+ * written in a short transaction of their own, before the caller makes the link: no row, no link. Decision 061: the documents stored
+ * before the document check was retired stay readable and stay audited; nothing creates a new one.
  *
  * Side effects: one `audit_logs` row per audited kind the file has (`merchant` for an identity document, `payment` for a payment proof);
  * none for any other file.
@@ -32,13 +33,14 @@ export async function auditStaffFileOpening(
   if (audited.length === 0) return false;
   await db.runInTransaction(async ({ tx }) => {
     for (const kind of audited) {
-      if (kind === 'identity_document' && found.kyc !== undefined) {
+      if (kind === 'identity_document' && found.identityDocument !== undefined) {
         await audit.record(tx, {
           action: 'opened an identity document of',
           entityType: 'merchant',
-          entityId: found.kyc.clientId,
-          entityLabel: found.kyc.clientName,
-          after: { fileId, kycSubmissionId: found.kyc.submissionId },
+          entityId: found.identityDocument.clientId,
+          entityLabel: found.identityDocument.clientName,
+          // The key keeps the name of the old rows, so the audit log reads the same before and after decision 061.
+          after: { fileId, kycSubmissionId: found.identityDocument.submissionId },
         });
       } else if (kind === 'payment_proof' && found.paymentId !== undefined) {
         await audit.record(tx, {

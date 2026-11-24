@@ -133,15 +133,6 @@ const JOBS: readonly JobShape[] = [
     result: (processed) => ({ deleted: processed }),
   },
   {
-    job: 'client_group_promotion',
-    every: DAY_MS,
-    offset: 3 * HOUR_MS + 30 * MINUTE_MS,
-    runs: 14,
-    typicalMs: 1_250,
-    processed: 2,
-    result: (processed) => ({ promoted: processed }),
-  },
-  {
     job: 'service_checks_purge',
     every: DAY_MS,
     offset: 3 * HOUR_MS + 30 * MINUTE_MS,

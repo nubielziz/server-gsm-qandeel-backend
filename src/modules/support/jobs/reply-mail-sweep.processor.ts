@@ -22,7 +22,7 @@ const NOTHING: ReplyMailSweepResult = { tickets: 0, mailed: 0, seen: 0 };
 /**
  * Runs the email fallback when the schedule ticks.
  *
- * Why: feature 28, rule 9. Recorded like `checkout_recovery_sweep`: a tick with nothing due writes no `job_runs` row (a run every minute
+ * Why: feature 28, rule 9. A tick with nothing due writes no `job_runs` row (a run every minute
  * with nothing to do would bury the jobs list); a tick that finds due tickets, and every manual run, is recorded with its counts. The job
  * carries no data: it reads the clock and the tickets itself, and a repeat finds nothing left to mail (the sweep clears what it handled).
  */

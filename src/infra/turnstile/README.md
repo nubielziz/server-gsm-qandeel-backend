@@ -31,7 +31,7 @@ export const openCheckoutSession = defineRoute({
 
 `turnstileRollout: 'merchant-auth'` (only with `turnstile: true`) makes the guard skip the check, without reading the token or calling
 the verifier, while `TURNSTILE_MERCHANT_AUTH` is off; OpenAPI then shows the header as optional and adds
-`x-gsm-turnstile-rollout`. It is on `POST /client/auth/register`, `/login` and `/password/forgot`, whose map rows get the flag from
+`x-gsm-turnstile-rollout`. It is on `POST /client/auth/login` and `/password/forgot`, whose map rows get the flag from
 `rowFlags` in `scripts/map-additions/24a.mjs`. The switch is on by default in production (the shop sends the token on its merchant
 forms, decision 052) and off by default elsewhere, so development and test callers that do not send the token keep working.
 The smart sign-in `POST /client/auth/sign-in` has no rollout: it is always checked. Remove the field and the variable one release after
@@ -68,5 +68,5 @@ produce the dummy token, which the dummy verifier accepts.
 
 Tests send the dummy token through `TURNSTILE_HEADERS` / `withTurnstile()` of `test/support/storefront.ts`. Unit tests of the
 verifiers and the guard: `test/unit/infra/turnstile/turnstile.spec.ts`; wiring and the real routes: `test/integration/infra/turnstile.test.ts`,
-`imei-check.test.ts`, `checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on, and the production default),
+`checkout-sessions.test.ts`, `merchant-auth-turnstile.test.ts` (the switch on, and the production default),
 `smart-sign-in.test.ts`.

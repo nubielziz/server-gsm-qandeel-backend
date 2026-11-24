@@ -1,7 +1,7 @@
 {
   "name": "gsm-backend",
   "version": "0.1.0",
-  "description": "GSM supplier backend: order engine, supplier layer and double-entry ledger behind the Dhru, REST v1, client portal, storefront and admin APIs.",
+  "description": "GSM supplier backend: order engine, supplier layer and double-entry ledger behind the Dhru, client portal, storefront and admin APIs.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

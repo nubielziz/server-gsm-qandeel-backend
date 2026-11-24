@@ -10,7 +10,8 @@ import { orders } from '../../orders/db/schema';
 /**
  * Where a ticket came from.
  *
- * Why: the console's ticket wire enum (GET /admin/support-tickets).
+ * Why: the console's ticket wire enum (GET /admin/support-tickets). `telegram` names the tickets an older version opened from a chat;
+ * no route writes it any more (decision 062), and a ticket that carries it is answered by email.
  */
 export const TICKET_CHANNELS = ['email', 'telegram', 'web', 'chat'] as const;
 
@@ -77,9 +78,10 @@ export const TICKET_AUTHOR_TYPES = ['staff', 'client', 'customer', 'system'] as 
 export type TicketAuthorType = (typeof TICKET_AUTHOR_TYPES)[number];
 
 /**
- * How a public staff message was delivered: by email (the reply-mail sweep may batch it) or by Telegram (sent at once).
+ * How a public staff message was delivered: by email (the reply-mail sweep may batch it).
  *
- * Why: feature 28, rule 9: only email replies wait for the requester to see them; a Telegram reply is never repeated by email.
+ * Why: feature 28, rule 9: only email replies wait for the requester to see them. The list keeps `telegram` for the messages an older
+ * version sent that way (the CHECK of the column still allows it); nothing writes it any more (decision 062).
  */
 export const TICKET_NOTIFY_CHANNELS = ['email', 'telegram'] as const;
 
@@ -112,7 +114,7 @@ export const supportTickets = pgTable(
     slaDueAt: timestampTz(),
     firstResponseAt: timestampTz(),
     resolvedAt: timestampTz(),
-    /** 1 to 5, set by the requester after resolution */
+    /** retired with the satisfaction survey of a resolved ticket (decision 062): unread and unwritten, kept (1 to 5) until the migration of the accounts model drops it */
     csatScore: integer(),
     /** the ticket link token as issued: only tickets opened before decision 054, until the seal pass empties it; null for a ticket nobody opens by link */
     token: text(),
@@ -122,7 +124,7 @@ export const supportTickets = pgTable(
     tokenEnc: text(),
     /** when the requester's address was proven (decision 053): when the ticket was made, except a ticket of the public form opened with a typed email, which is null until its link is first used; while null the ticket stays off the customer's account */
     requesterProvenAt: timestampTz().defaultNow(),
-    /** when the satisfaction survey was queued; set once, in the resolve transaction, and never cleared (one survey per ticket) */
+    /** retired with the satisfaction survey of a resolved ticket (decision 062): unread and unwritten, kept until the migration of the accounts model drops it */
     surveySentAt: timestampTz(),
     /** the newest public staff message the requester has seen (feature 28: one seen mark per side, it only moves forward) */
     requesterSeenMessageId: bigId(),
@@ -214,7 +216,7 @@ export const ticketMessages = pgTable(
     isInternal: boolean().notNull().default(false),
     /** attachments (files.id): PDF, JPEG or PNG, at most 5 (feature 28) */
     fileIds: bigintList(),
-    /** how a public staff message reaches the requester (`email`, `telegram`); null for every other message (feature 28) */
+    /** how a public staff message reaches the requester (`email`; older rows hold `telegram`); null for every other message (feature 28) */
     notifyChannel: text().$type<TicketNotifyChannel>(),
     createdAt: createdAt(),
   },

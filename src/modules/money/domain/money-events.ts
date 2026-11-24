@@ -1,17 +1,17 @@
-// The 13 money events of the map (reference/gsm-map system.mjs `moneyEvents`, decision 024) as pure builders: each returns
-// the journal lines exactly as the map writes them, plus the ledger kind and the reference type the posting carries.
+// The money events of the map (reference/gsm-map system.mjs `moneyEvents`, decision 024) as pure builders: each returns
+// the journal lines exactly as the map writes them, plus the ledger kind and the reference type the posting carries. The map's
+// `commission` event has no builder any more (decision 062: commissions are retired); its old journals stay valid and readable.
 import { Money } from '../../../common/money';
 import type { LedgerRefType } from '../db/schema';
 import { type AccountRef, type LedgerLine, creditLine, debitLine } from './ledger-lines';
 
-/** The ids of the map's 13 money events. */
+/** The ids of the map's money events that can still be posted (the map has 13; `commission` is retired). */
 export const MONEY_EVENT_IDS = [
   'deposit',
   'order',
   'complete',
   'reject',
   'topup',
-  'commission',
   'adjust',
   'b2c_pay',
   'b2c_fee',
@@ -37,7 +37,6 @@ export const MONEY_EVENT_KINDS: Readonly<Record<MoneyEventId, string>> = {
   complete: 'order_settle',
   reject: 'order_release',
   topup: 'supplier_topup',
-  commission: 'commission',
   adjust: 'adjustment',
   b2c_pay: 'b2c_payment',
   b2c_fee: 'gateway_fee',
@@ -186,23 +185,6 @@ export function topup(input: { supplierId: number; amount: Money }): MoneyEventP
     'supplier',
     debitLine(prepaid(input.supplierId), input.amount),
     creditLine(SYSTEM('bank'), input.amount),
-  );
-}
-
-/**
- * Event `commission`: a referral commission is paid into the referrer's wallet.
- *
- * Why: the map's "referral commission 0.20$" money event: "paid to the referring merchant's wallet".
- *
- * @param input the agent merchant and the commission
- * @returns Dr commission_expense / Cr client_wallet; reference type `accrual`
- */
-export function commission(input: { clientId: number; amount: Money }): MoneyEventPosting {
-  return posting(
-    'commission',
-    'accrual',
-    debitLine(SYSTEM('commission_expense'), input.amount),
-    creditLine(wallet(input.clientId), input.amount),
   );
 }
 
@@ -454,41 +436,5 @@ export function refund(input: { clientId: number; amount: Money }): ReversalPost
     kind: REVERSAL_KINDS.refund,
     refType: 'order',
     lines: [...debitLine(SYSTEM('revenue'), input.amount), ...creditLine(wallet(input.clientId), input.amount)],
-  };
-}
-
-/**
- * What {@link commissionReversal} returns: spread it into the input of `postTransaction` and add the accrual id, key, memo and actor.
- *
- * Why: like the order reversals it is a rule beyond the map's 13 events (user rule 5), so it has its own event word and keeps the
- * reference type of the record it reverses (`accrual`).
- */
-export interface CommissionReversalPosting {
-  readonly event: 'commission_reversal';
-  readonly kind: string;
-  readonly refType: LedgerRefType;
-  readonly lines: readonly LedgerLine[];
-}
-
-/**
- * Reversal of a paid commission: the agent's wallet gives the commission back.
- *
- * Why: user rule 5 (ANSWERS commissions Q8): an order refunded or reopened after its commission was approved keeps the accrual
- * `approved` and posts the mirror of the `commission` event. It keeps the ledger kind `commission`, so the agent's statement shows
- * the commission and its reversal as lines of the same kind; the memo and the key (`reverse:accrual:<id>`) say it is a reversal.
- * The debit may take the wallet below its credit limit: the caller posts it with `allowBelowCreditLimit`.
- *
- * @param input the agent merchant and the commission that was paid
- * @returns Dr client_wallet / Cr commission_expense; reference type `accrual`
- */
-export function commissionReversal(input: { clientId: number; amount: Money }): CommissionReversalPosting {
-  return {
-    event: 'commission_reversal',
-    kind: MONEY_EVENT_KINDS.commission,
-    refType: 'accrual',
-    lines: [
-      ...debitLine(wallet(input.clientId), input.amount),
-      ...creditLine(SYSTEM('commission_expense'), input.amount),
-    ],
   };
 }

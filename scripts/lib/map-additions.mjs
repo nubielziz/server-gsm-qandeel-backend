@@ -13,8 +13,11 @@ import { pathToFileURL } from 'node:url';
  */
 export const R = (s, g, m, p, f, a, st, t, extra = {}) => ({ s, g, m, p, f, a, st, t, ...extra });
 
-/** Surfaces an addition may use, with the path prefix of each (`null` = everything the other prefixes do not take). */
-export const ADDITION_SURFACES = { admin: '/admin', client: '/client', store: '/store/v1', v1: '/v1', hooks: '/webhooks', system: null };
+/**
+ * Surfaces an addition may use, with the path prefix of each (`null` = everything the other prefixes do not take). The REST API v1
+ * surface is retired (decision 062): its map rows stay in the manifest as retired routes, and no addition may join them.
+ */
+export const ADDITION_SURFACES = { admin: '/admin', client: '/client', store: '/store/v1', hooks: '/webhooks', system: null };
 
 /** Success statuses a route may promise (302 only on GET: a redirect). */
 export const SUCCESS_STATUSES = [200, 201, 202, 204, 302];

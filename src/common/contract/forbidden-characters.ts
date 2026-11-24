@@ -124,7 +124,7 @@ interface CopyFrame {
  * Copies a value with U+0000 removed and every unpaired surrogate replaced by U+FFFD, in every string and every object key.
  *
  * Why: decision 053. The incoming webhooks (`/webhooks/*`) are not refused for these texts (a gateway would repeat the event for
- * days and Telegram would hold back later updates), so what their handlers store (event payloads, ids, texts) is cleaned instead: the
+ * days), so what their handlers store (event payloads, ids, texts) is cleaned instead: the
  * signed body is accepted as usual and written without them, which Postgres would refuse in text or jsonb.
  *
  * It walks the value with an explicit stack (any depth). A value that holds nothing to clean is returned as it is (no copy). Arrays and

@@ -1,6 +1,6 @@
 // Public API of the catalog module: the module, the read-only directory of merchant groups (identity uses it), the effective
 // cost function (suppliers use it), the price resolver, the listed-price memory, the merchant catalog and the price guard
-// (orders, Dhru, REST v1 and the storefront use them), the storefront's service view and the TAC directory (feature 14a), the price version and the service figure rules,
+// (orders, Dhru and the storefront use them), the storefront's service view and the TAC directory (feature 14a), the price version and the service figure rules,
 // the retail price writer, the retail price rules, the follow pass and the pass that cleans category names (feature 31, decision 040), then the admin routes module. Other modules import only this file.
 // Order matters: `CatalogModule` and the leaves other modules use come first, ahead of `CatalogAdminModule`, whose controllers
 // lead into identity (decision 032), and of the follow pass's worker module, which leads into health.
@@ -102,14 +102,13 @@ export {
 } from './domain/service-figures';
 export { IMPORTED_CATEGORY_NAME } from './domain/category-name';
 export { INVENTORY_CODE_AAD, inventoryCodeHashInput, lastFour } from './domain/inventory-codes';
-export { StorefrontServices, TacDirectory } from './application/storefront-services';
+export { StorefrontServices } from './application/storefront-services';
 export type {
   SellableCategory,
   SellableField,
   SellableFilter,
   SellableService,
   ServiceName,
-  TacRef,
 } from './application/storefront-services';
 export { coversSmallestOrder, smallestOrder } from './domain/storefront-availability';
 export { MAX_QTY_OPTIONS, MAX_QUANTITY, quantityRuleProblems, resolveQuantityRule } from './domain/quantity-rule';

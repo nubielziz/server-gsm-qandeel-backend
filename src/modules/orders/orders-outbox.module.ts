@@ -8,7 +8,7 @@ import { OrderOutbox } from './application/order-outbox';
  *
  * Why: decision 020: an event type must be registered in a module the worker loads, or the relay cannot route its rows. The module
  * needs only the global outbox providers and no database or Redis of its own, so a test app built without the infrastructure still
- * builds. Feature 5 adds no processor for the two queues: 7b builds the webhook fan-out, 6 the dispatch job.
+ * builds. Feature 5 adds no processor for the dispatch queue: 6 builds the dispatch job.
  */
 @Module({ providers: [OrderOutbox], exports: [OrderOutbox] })
 export class OrdersOutboxModule {}

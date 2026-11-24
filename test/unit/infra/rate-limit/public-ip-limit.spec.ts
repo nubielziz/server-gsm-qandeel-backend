@@ -19,21 +19,20 @@ describe('publicLimiterFor', () => {
     }
   });
 
-  it('counts the typing pings and read marks of a ticket page against ticket-chat, never against token (feature 28)', () => {
-    expect(publicLimiterFor('/store/v1/tickets/:token/typing', 'ticket-token')).toBe('ticket-chat');
+  it('counts the read marks of a ticket page against ticket-chat, never against token (feature 28)', () => {
     expect(publicLimiterFor('/store/v1/tickets/:token/read', 'ticket-token')).toBe('ticket-chat');
     expect(publicLimiterFor('/store/v1/tickets/:token', 'ticket-token')).toBe('token');
     expect(publicLimiterFor('/store/v1/tickets/:token/messages', 'ticket-token')).toBe('token');
     expect(publicLimiterFor('/store/v1/tickets/:token/stream', 'ticket-token')).toBe('token');
     // Only a ticket-token route: an unknown path that looks like one is a plain store request.
-    expect(publicLimiterFor('/store/v1/tickets/abc/typing', undefined)).toBe('ip');
+    expect(publicLimiterFor('/store/v1/tickets/abc/read', undefined)).toBe('ip');
     // The attachment upload is multipart: it costs an upload point like any large body.
     expect(publicLimiterFor('/store/v1/tickets/:token/files', 'ticket-token', true)).toBe('upload');
   });
 
-  it('counts only the public routes of the admin console and the merchant portal (sign-in, registration, password)', () => {
+  it('counts only the public routes of the admin console and the merchant portal (sign-in, password)', () => {
     expect(publicLimiterFor('/admin/auth/login', 'public')).toBe('ip');
-    expect(publicLimiterFor('/client/auth/register', 'public')).toBe('ip');
+    expect(publicLimiterFor('/client/auth/password/forgot', 'public')).toBe('ip');
     expect(publicLimiterFor('/admin/staff', 'staff-permission')).toBeUndefined();
     expect(publicLimiterFor('/admin/auth/me', 'staff-session')).toBeUndefined();
     // The 2FA steps run on a pending session but are still counted per address (guessing codes).
@@ -44,9 +43,8 @@ describe('publicLimiterFor', () => {
     expect(publicLimiterFor('/admin/nope', undefined)).toBeUndefined();
   });
 
-  it('counts a large body on Dhru, REST v1 and the merchant portal per IP, before the credentials are read', () => {
+  it('counts a large body on Dhru and the merchant portal per IP, before the credentials are read', () => {
     expect(publicLimiterFor('/api/index.php', 'dhru-credentials', true)).toBe('upload');
-    expect(publicLimiterFor('/v1/files', 'api-key', true)).toBe('upload');
     expect(publicLimiterFor('/client/files', 'merchant-session', true)).toBe('upload');
     // The public routes keep their own limiter.
     expect(publicLimiterFor('/client/auth/login', 'public', true)).toBe('ip');
@@ -56,7 +54,7 @@ describe('publicLimiterFor', () => {
     for (const largeBody of [false, true]) {
       expect(publicLimiterFor('/webhooks/payments/:gateway', 'gateway-signature', largeBody)).toBe('webhook-intake');
       expect(publicLimiterFor('/webhooks/disputes/:gateway', 'gateway-signature', largeBody)).toBe('webhook-intake');
-      expect(publicLimiterFor('/webhooks/telegram/:secret', 'url-secret', largeBody)).toBe('webhook-intake');
+      expect(publicLimiterFor('/webhooks/example/:secret', 'url-secret', largeBody)).toBe('webhook-intake');
       expect(publicLimiterFor('/webhooks/nope', undefined, largeBody)).toBe('webhook-intake');
       expect(publicLimiterFor('/webhooks', undefined, largeBody)).toBe('webhook-intake');
     }
@@ -104,16 +102,10 @@ describe('publicLimiterFor', () => {
     expect(isLargeBody('application/x-www-form-urlencoded', '100', true)).toBe(false);
   });
 
-  it('leaves REST v1, Dhru and the system routes to their own limits', () => {
-    const accesses: Array<AccessKind | undefined> = [
-      'public',
-      'api-key',
-      'dhru-credentials',
-      'gateway-signature',
-      undefined,
-    ];
+  it('leaves Dhru and the system routes to their own limits', () => {
+    const accesses: Array<AccessKind | undefined> = ['public', 'dhru-credentials', 'gateway-signature', undefined];
     for (const access of accesses) {
-      for (const path of ['/v1/orders', '/api/index.php', '/health', '/metrics', '/docs']) {
+      for (const path of ['/api/index.php', '/health', '/metrics', '/docs']) {
         expect(publicLimiterFor(path, access), `${path} ${String(access)}`).toBeUndefined();
       }
     }

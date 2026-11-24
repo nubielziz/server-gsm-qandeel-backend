@@ -22,7 +22,7 @@ import { insertWalletMerchant } from '../../support/money';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
 import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
-import { portalFor } from '../../support/webhooks';
+import { portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-17T10:00:00.000Z');
 let t: TestApp;

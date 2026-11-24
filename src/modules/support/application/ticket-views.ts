@@ -93,7 +93,6 @@ export function toTicketView(
     slaDueAt: iso(ticket.slaDueAt),
     firstResponseAt: iso(ticket.firstResponseAt),
     resolvedAt: iso(ticket.resolvedAt),
-    csatScore: ticket.csatScore,
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
     lastPublicAt: iso(lastPublicAt ?? null),
@@ -182,8 +181,8 @@ export function toStoreMessage(
  * Builds the customer's view of a ticket.
  *
  * Why: the storefront shows the conversation without internal notes and system messages (the caller leaves them out of `messages`), a
- * status in the console's words, and whether the survey can be answered. No staff name, assignee, priority or timer appears. The seen
- * marks (feature 28) say which support message the requester has seen and which of theirs support has seen, never who.
+ * status in the console's words. No staff name, assignee, priority or timer appears. The seen marks (feature 28) say which support
+ * message the requester has seen and which of theirs support has seen, never who.
  *
  * @param ticket the stored ticket
  * @param messages the public messages, oldest first
@@ -204,8 +203,6 @@ export function toStoreTicket(
     createdAt: ticket.createdAt.toISOString(),
     updatedAt: ticket.updatedAt.toISOString(),
     resolvedAt: iso(ticket.resolvedAt),
-    csatScore: ticket.csatScore,
-    canRate: ticket.status === 'resolved' && ticket.csatScore === null,
     messages: messages.map((row) => toStoreMessage(row.message, files)),
     seenByYou: ticket.requesterSeenMessageId,
     seenBySupport: ticket.staffSeenMessageId,

@@ -30,14 +30,13 @@ function section(name: string): string | undefined {
 }
 
 describe('QUEUES', () => {
-  it('has the ten queues of decision 020, the bulk queue of feature 23 and the search queue of feature 29', () => {
+  it('has the nine queues of decision 020 that remain, the bulk queue of feature 23 and the search queue of feature 29', () => {
     expect<string[]>([...QUEUE_NAMES].sort()).toEqual(
       [
         'alerts',
         'files',
         'imports',
         'maintenance',
-        'merchant-webhooks',
         'notification-broadcasts',
         'notifications',
         'outbox-relay',
@@ -111,9 +110,9 @@ describe('defaultJobOptions', () => {
       attempts: 3,
       backoff: { type: 'exponential', delay: 5_000, jitter: 0.5 },
     });
-    expect(defaultJobOptions('merchant-webhooks')).toMatchObject({
-      attempts: 8,
-      backoff: { type: 'exponential', delay: 600_000, jitter: 0.2 },
+    expect(defaultJobOptions('notifications')).toMatchObject({
+      attempts: 5,
+      backoff: { type: 'exponential', delay: 30_000, jitter: 0.5 },
     });
     expect(defaultJobOptions('outbox-relay')).toMatchObject({ attempts: 1 });
     expect(defaultJobOptions('outbox-relay').backoff).toBeUndefined();

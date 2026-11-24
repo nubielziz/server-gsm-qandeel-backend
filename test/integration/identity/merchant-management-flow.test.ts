@@ -1,4 +1,4 @@
-// Feature 20 as one story, in order (not a map scenario): invite, resend, password, approve, sign in, change the email, verify, temporary
+// Feature 20 as one story, in order (not a map scenario): invite, resend, password, sign in, change the email, verify, temporary
 // password and forced change, suspend, reactivate, and the audit history that tells it. Steps share state like a scenario file.
 // Step 11 is the staff-made API key of slice D.
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
@@ -56,12 +56,12 @@ afterAll(async () => {
 });
 
 describe('the life of a merchant account', () => {
-  it('1. staff invite a merchant: pending, no password, an invitation mail with a link', async () => {
+  it('1. staff invite a merchant: active at once, no password, an invitation mail with a link', async () => {
     const res = await api.post('/admin/clients', { name: 'Story Shop', email, country: 'JO', invite: true });
     expect(res.status).toBe(201);
     merchantId = res.body.id;
     expect(res.body).toMatchObject({
-      status: 'pending',
+      status: 'active',
       security: { hasPassword: false, twofaEnabled: false, activeSessions: 0 },
     });
     await runMerchantMailJob(t, 'invited');
@@ -85,11 +85,11 @@ describe('the life of a merchant account', () => {
     expect((await clientRow(merchantId)).passwordHash).not.toBeNull();
   });
 
-  it('4. staff approve: one mail tells the merchant', async () => {
+  it('4. nothing waits for an approval: the account was active from the invitation, and no other mail goes out', async () => {
     mailbox(t).reset();
-    expect((await api.patch(`/admin/clients/${merchantId}`, { status: 'active' })).body.status).toBe('active');
+    expect((await clientRow(merchantId)).status).toBe('active');
     await sendAllQueued(t);
-    expect(mails().map((mail) => mail.subject)).toEqual(['Your merchant account is approved']);
+    expect(mails()).toEqual([]);
   });
 
   it('5. the merchant signs in; the row shows the session and the last sign-in', async () => {
@@ -166,7 +166,6 @@ describe('the life of a merchant account', () => {
     mailbox(t).reset();
     const created = await api.post(`/admin/clients/${merchantId}/api-keys`, {
       name: 'Server',
-      scopes: ['orders:read'],
       rateLimitPerMin: 120,
     });
     expect(created.status).toBe(201);
@@ -198,8 +197,8 @@ describe('the life of a merchant account', () => {
     expect(res.status).toBe(200);
     const actions: string[] = res.body.map((row: { action: string }) => row.action);
     for (const phrase of [
+      'invited merchant',
       'resent the invitation of',
-      'approved merchant',
       'edited details of',
       'set a temporary password for',
       'suspended merchant',
@@ -209,7 +208,7 @@ describe('the life of a merchant account', () => {
     ]) {
       expect(actions).toContain(phrase);
     }
-    expect(actions.indexOf('approved merchant')).toBeLessThan(actions.indexOf('edited details of'));
+    expect(actions.indexOf('invited merchant')).toBeLessThan(actions.indexOf('edited details of'));
     expect(actions.indexOf('suspended merchant')).toBeLessThan(actions.indexOf('reactivated merchant'));
     const { db } = await testDb();
     const everything = JSON.stringify(await db.select().from(s.auditLogs));

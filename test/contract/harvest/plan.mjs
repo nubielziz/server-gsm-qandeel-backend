@@ -23,7 +23,6 @@ const COLLECTION_OF = {
   supplier: '/admin/suppliers',
   category: '/admin/service-categories',
   order: '/admin/orders',
-  plan: '/admin/commission-plans',
   gateway: '/admin/payment-gateways',
   invoice: '/admin/invoices',
   payment: '/admin/payments',
@@ -33,10 +32,7 @@ const COLLECTION_OF = {
   dispute: '/admin/disputes',
   refund: '/admin/refunds',
   template: '/admin/reply-templates',
-  agent: '/admin/clients',
   listing: '/admin/service-listings',
-  accrual: '/admin/commission-accruals',
-  assignment: '/admin/commission-assignments',
   file: '/admin/files',
 };
 
@@ -133,6 +129,8 @@ export const OVERRIDES = {
   'GET /admin/support-tickets/:id/files/:fileId': { path: { id: 4208, fileId: 1 } },
   // Feature 29: the search preview needs the query it ranks.
   'GET /admin/search/preview': { query: { q: 'unlock' } },
+  // Decision 062: the console's Sessions tab always asks for staff sessions (`listSessions` adds subjectType=staff).
+  'GET /admin/sessions': { query: { _start: 0, _end: 25, subjectType: 'staff' } },
   'GET /admin/system/queues/:name/failed': (w) => ({ path: { name: queueName(w, true) } }),
 
   'POST /admin/system/queues/:name/pause': (w) => ({
@@ -196,15 +194,6 @@ export const OVERRIDES = {
         (w.rows['/admin/services'] ?? [])
           .slice(0, 8)
           .map((service) => ({ clientId: client.id, serviceId: service.id, price: '10.0000' })),
-      ),
-  }),
-  'POST /admin/commission-assignments': (w) => ({
-    bodies: (w.rows['/admin/clients'] ?? [])
-      .slice(0, 8)
-      .flatMap((client) =>
-        (w.rows['/admin/commission-plans'] ?? [])
-          .slice(0, 3)
-          .map((plan) => ({ beneficiaryId: client.id, planId: plan.id })),
       ),
   }),
 };

@@ -1,5 +1,5 @@
 // Route contracts of merchant management (map domain A, routes /admin/clients, stage 2): list, show, create by invitation,
-// approve, suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
+// suspend, reactivate and move to another group. Shapes match the console's Client (docs/contract/endpoints/identity.md).
 import { z } from 'zod';
 import {
   defineRoute,
@@ -44,7 +44,7 @@ const Security = z.object({
 const Suspension = z.object({ at: zIsoDateTime.nullable(), reason: z.string().nullable(), by: PersonRef.nullable() });
 
 /**
- * A merchant as the console reads it. Never carries a password hash, TOTP data, Telegram chat id or preferences.
+ * A merchant as the console reads it. Never carries a password hash, TOTP data or preferences.
  *
  * The keys of feature 20 (`address` to `suspension`) are optional in the schema, because the console's recorded fixtures are
  * validated against it, and always sent by the server.
@@ -59,16 +59,12 @@ const ClientRow = z.object({
   company: z.string(),
   phone: z.string(),
   groupId: zId,
-  referralCode: z.string(),
   emailVerifiedAt: zIsoDateTime.nullable(),
   status: z.enum(['active', 'suspended', 'pending']),
-  kycStatus: z.enum(['none', 'pending', 'approved', 'rejected']),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }).nullable(),
-  referredBy: PersonRef.nullable(),
   address: z.string().optional(),
   taxId: z.string().optional(),
   internalNotes: z.string().optional(),
-  telegramLinked: z.boolean().optional(),
   security: Security.optional(),
   suspension: Suspension.nullable().optional(),
   wallet: Wallet.optional(),
@@ -85,16 +81,12 @@ const CLIENT_EXAMPLE = {
   company: 'Zain Mobile Hub',
   phone: '',
   groupId: 3,
-  referralCode: 'GSM0001',
   emailVerifiedAt: '2025-09-01T10:30:00.000Z',
   status: 'active',
-  kycStatus: 'approved',
   group: { id: 3, name: 'VIP', discountPercent: '8.0000' },
-  referredBy: null,
   address: 'Abdali Boulevard, Amman',
   taxId: 'JO-1234567',
   internalNotes: 'Pays by bank transfer on Sundays.',
-  telegramLinked: false,
   security: {
     hasPassword: true,
     mustChangePassword: false,
@@ -115,7 +107,7 @@ export const listClients = defineRoute({
   key: 'GET /admin/clients',
   summary: 'List merchants',
   description:
-    'Merchants of any status with their group and referrer. `wallet` and `stats` are sent only to staff who hold ' +
+    'Merchants of any status with their group. `wallet` and `stats` are sent only to staff who hold ' +
     '`wallet:read` (MISMATCHES B26). `q` is a case-insensitive contains over name, email, company, username and country. ' +
     'Default order: name.',
   tags: ['clients'],
@@ -156,10 +148,10 @@ export const createClient = defineRoute({
   key: 'POST /admin/clients',
   summary: 'Invite a merchant',
   description:
-    'Creates the merchant as `pending` with a generated Dhru username and referral code, opens its wallet and hold accounts ' +
+    'Creates the merchant as `active` with a generated Dhru username, opens its wallet and hold accounts ' +
     'in the same transaction (`MerchantAccounts.open`, with the credit limit), issues a one-hour invite token (hash only) ' +
     'and writes the outbox event `merchant.invited` (ids only). The merchant sets a password with ' +
-    '`POST /client/auth/password/reset`; staff approve with `PATCH /admin/clients/:id`. A credit limit above zero needs a ' +
+    '`POST /client/auth/password/reset` (until then its `security.hasPassword` is false: the invitation is pending). A credit limit above zero needs a ' +
     'group that allows credit (user rule 2): `422` on `creditLimit` otherwise. `groupId` defaults to the default group. ' +
     'A `creditLimit` above zero also needs `wallet:credit_limit`, and a `groupId` other than the default group needs `groups:update` ' +
     '(`403 FORBIDDEN`, after the validation and before anything is written; decision 046). A `creditLimit` above the approval ' +
@@ -194,8 +186,7 @@ export const createClient = defineRoute({
     },
     response: {
       ...CLIENT_EXAMPLE,
-      status: 'pending',
-      kycStatus: 'none',
+      status: 'active',
       emailVerifiedAt: null,
       security: {
         hasPassword: false,
@@ -212,23 +203,23 @@ export const createClient = defineRoute({
   },
 });
 
-/** `PATCH /admin/clients/:id`: approve, suspend, reactivate, move to another group, or edit the details. */
+/** `PATCH /admin/clients/:id`: activate, suspend, reactivate, move to another group, or edit the details. */
 export const updateClient = defineRoute({
   key: 'PATCH /admin/clients/:id',
   summary: 'Change a merchant',
   description:
     'One kind of change per call: a status, a group or details (a mix is `422` on the first key of the second kind). ' +
-    '`status`: `active` from `pending` (approve) or `suspended` (reactivate); `suspended` from `active` or `pending` ' +
-    '(declining an application) with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ' +
+    '`status`: `active` from `pending` (an account that was never activated) or `suspended` (reactivate); `suspended` from `active` or `pending` ' +
+    'with a `reason` of 3 to 140 characters; any other change is `409 INVALID_TRANSITION`. A suspension ' +
     "ends the merchant's sessions, cancels every open link and refuses new orders; open orders keep processing and the wallet is " +
-    'untouched; the staff reason stays internal. Approval, suspension and reactivation email the merchant. `groupId` moves the ' +
+    'untouched; the staff reason stays internal. Suspension and reactivation email the merchant (activating a `pending` account sends no mail). `groupId` moves the ' +
     'merchant (never to the storefront retail group, and not to a group without credit while the credit limit is above zero: ' +
     '`422` on `groupId`); it prices new orders only. Details (`name`, `company`, `phone`, `country`, `email`, `address`, ' +
     '`taxId`, `internalNotes`; several at once, a value equal to the stored one is not a change): changing the `email` cancels ' +
     'every open link, clears `emailVerifiedAt` and emails a new verification link (or the invitation while the merchant has no ' +
     'password) to the new address; it ends every session of the merchant and emails a security notice to the address before the ' +
     'change (`409 EMAIL_TAKEN` for an address in use, `429` after five email changes of one merchant in an hour). ' +
-    'Besides `clients:update`: suspending, declining and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046); ' +
+    'Besides `clients:update`: suspending and reactivating also need `clients:security`; a group move needs `groups:update` (`403 FORBIDDEN`, decision 046); ' +
     'an email change also needs `clients:security` (decision 047).',
   tags: ['clients'],
   surface: 'admin',

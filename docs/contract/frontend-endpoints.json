@@ -1,7 +1,7 @@
 {
  "generatedBy": "scripts/extract-frontend-contract.mjs",
- "frontend": "../frontend-admin",
- "count": 343,
+ "frontend": "../worktrees/acc-console-r2",
+ "count": 319,
  "endpoints": [
   {
    "key": "DELETE /admin/alert-rules/:id",
@@ -48,7 +48,7 @@
    "key": "DELETE /admin/api-keys/:id",
    "fn": "revokeApiKey",
    "file": "src/features/merchants/api/apiKeys.ts",
-   "line": 23,
+   "line": 29,
    "params": [
     {
      "name": "id",
@@ -209,88 +209,6 @@
    }
   },
   {
-   "key": "DELETE /admin/commission-assignments/:id",
-   "fn": "deleteAssignment",
-   "file": "src/features/commissions/api/assignments.ts",
-   "line": 68,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
-   "key": "DELETE /admin/commission-plans/:id",
-   "fn": "deletePlan",
-   "file": "src/features/commissions/api/plans.ts",
-   "line": 59,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
-   }
-  },
-  {
    "key": "DELETE /admin/ip-rules/:id",
    "fn": "deleteIpRule",
    "file": "src/features/access/api/ipRules.ts",
@@ -335,7 +253,7 @@
    "key": "DELETE /admin/notification-campaigns/:id",
    "fn": "deleteCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 75,
+   "line": 89,
    "params": [
     {
      "name": "id",
@@ -909,7 +827,7 @@
    "key": "DELETE /admin/sessions/:id",
    "fn": "revokeSession",
    "file": "src/features/access/api/sessions.ts",
-   "line": 29,
+   "line": 35,
    "params": [
     {
      "name": "id",
@@ -2331,165 +2249,6 @@
    }
   },
   {
-   "key": "GET /admin/checkouts/abandoned",
-   "fn": "listAbandonedCheckouts",
-   "file": "src/features/checkouts/api/checkouts.ts",
-   "line": 14,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<AbandonedCheckout>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "status": {
-         "type": "string"
-        },
-        "email": {
-         "type": "string"
-        },
-        "grossAmount": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "fxRate": {
-         "type": "string",
-         "alias": "Decimal"
-        },
-        "utm": {
-         "type": "json",
-         "alias": "JsonObject"
-        },
-        "recoveryEmailedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "serviceName": {
-         "type": "string"
-        },
-        "currencyCode": {
-         "type": "string"
-        },
-        "orderId": {
-         "type": "number",
-         "nullable": true,
-         "alias": "Id"
-        },
-        "marketingConsent": {
-         "type": "boolean"
-        },
-        "canRecover": {
-         "type": "boolean"
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
    "key": "GET /admin/client-groups",
    "fn": "listClientGroups",
    "file": "src/features/merchants/api/groups.ts",
@@ -2609,10 +2368,6 @@
         "isDefault": {
          "type": "boolean"
         },
-        "earnThreshold": {
-         "type": "string",
-         "alias": "Money"
-        },
         "depositLimit": {
          "type": "string",
          "alias": "Money"
@@ -2695,10 +2450,6 @@
      },
      "isDefault": {
       "type": "boolean"
-     },
-     "earnThreshold": {
-      "type": "string",
-      "alias": "Money"
      },
      "depositLimit": {
       "type": "string",
@@ -2834,9 +2585,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "note": {
-         "type": "string"
-        },
         "serviceId": {
          "type": "number",
          "alias": "Id"
@@ -2844,6 +2592,9 @@
         "price": {
          "type": "string",
          "alias": "Money"
+        },
+        "note": {
+         "type": "string"
         },
         "service": {
          "object": {
@@ -3016,9 +2767,6 @@
          "type": "number",
          "alias": "Id"
         },
-        "referralCode": {
-         "type": "string"
-        },
         "emailVerifiedAt": {
          "type": "string",
          "nullable": true,
@@ -3029,14 +2777,6 @@
           "active",
           "suspended",
           "pending"
-         ]
-        },
-        "kycStatus": {
-         "enum": [
-          "pending",
-          "approved",
-          "rejected",
-          "none"
          ]
         },
         "group": {
@@ -3051,18 +2791,6 @@
           "discountPercent": {
            "type": "string",
            "alias": "Decimal"
-          }
-         },
-         "nullable": true
-        },
-        "referredBy": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
           }
          },
          "nullable": true
@@ -3130,10 +2858,6 @@
         },
         "internalNotes": {
          "type": "string",
-         "optional": true
-        },
-        "telegramLinked": {
-         "type": "boolean",
          "optional": true
         },
         "security": {
@@ -3282,9 +3006,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "referralCode": {
-      "type": "string"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
@@ -3295,14 +3016,6 @@
        "active",
        "suspended",
        "pending"
-      ]
-     },
-     "kycStatus": {
-      "enum": [
-       "pending",
-       "approved",
-       "rejected",
-       "none"
       ]
      },
      "group": {
@@ -3317,18 +3030,6 @@
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
-       }
-      },
-      "nullable": true
-     },
-     "referredBy": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
        }
       },
       "nullable": true
@@ -3396,10 +3097,6 @@
      },
      "internalNotes": {
       "type": "string",
-      "optional": true
-     },
-     "telegramLinked": {
-      "type": "boolean",
       "optional": true
      },
      "security": {
@@ -3477,7 +3174,7 @@
    "key": "GET /admin/clients/:id/api-keys",
    "fn": "listClientApiKeys",
    "file": "src/features/merchants/api/apiKeys.ts",
-   "line": 13,
+   "line": 19,
    "params": [
     {
      "name": "clientId",
@@ -3540,11 +3237,6 @@
       },
       "prefix": {
        "type": "string"
-      },
-      "scopes": {
-       "array": {
-        "type": "string"
-       }
       },
       "allowedIps": {
        "array": {
@@ -3770,827 +3462,6 @@
      "available": {
       "type": "string",
       "alias": "Money"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-accruals",
-   "fn": "listAccruals",
-   "file": "src/features/commissions/api/accruals.ts",
-   "line": 23,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<CommissionAccrual>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "amount": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "orderId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "percent": {
-         "type": "string",
-         "alias": "Decimal"
-        },
-        "planId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "beneficiaryId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "period": {
-         "type": "string"
-        },
-        "basisAmount": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "status": {
-         "type": "string"
-        },
-        "ledgerTxId": {
-         "type": "number",
-         "nullable": true,
-         "alias": "Id"
-        },
-        "beneficiary": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true,
-         "optional": true
-        },
-        "merchant": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true,
-         "optional": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-accruals/:id",
-   "fn": "getAccrual",
-   "file": "src/features/commissions/api/accruals.ts",
-   "line": 32,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionAccrual",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "amount": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "orderId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "percent": {
-      "type": "string",
-      "alias": "Decimal"
-     },
-     "planId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiaryId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "period": {
-      "type": "string"
-     },
-     "basisAmount": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "status": {
-      "type": "string"
-     },
-     "ledgerTxId": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "beneficiary": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "merchant": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-assignments",
-   "fn": "listAssignments",
-   "file": "src/features/commissions/api/assignments.ts",
-   "line": 24,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<CommissionAssignment>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "scope": {
-         "type": "string"
-        },
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "startsAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "endsAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "planId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "beneficiaryId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "beneficiary": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          },
-          "country": {
-           "type": "string",
-           "optional": true
-          }
-         },
-         "nullable": true,
-         "optional": true
-        },
-        "plan": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          },
-          "percent": {
-           "type": "string",
-           "alias": "Decimal"
-          }
-         },
-         "nullable": true,
-         "optional": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-assignments/:id",
-   "fn": "getAssignment",
-   "file": "src/features/commissions/api/assignments.ts",
-   "line": 36,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionAssignment",
-   "returns": {
-    "object": {
-     "scope": {
-      "type": "string"
-     },
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "startsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "endsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "planId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiaryId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiary": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string",
-        "optional": true
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "plan": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "percent": {
-        "type": "string",
-        "alias": "Decimal"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-plans",
-   "fn": "listPlans",
-   "file": "src/features/commissions/api/plans.ts",
-   "line": 23,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<CommissionPlan>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "name": {
-         "type": "string"
-        },
-        "isActive": {
-         "type": "boolean"
-        },
-        "percent": {
-         "type": "string",
-         "alias": "Decimal"
-        },
-        "period": {
-         "type": "string"
-        },
-        "basis": {
-         "type": "string"
-        },
-        "tiers": {
-         "type": "json",
-         "alias": "JsonObject"
-        },
-        "kind": {
-         "enum": [
-          "referral",
-          "rebate"
-         ]
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/commission-plans/:id",
-   "fn": "getPlan",
-   "file": "src/features/commissions/api/plans.ts",
-   "line": 32,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionPlan",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "isActive": {
-      "type": "boolean"
-     },
-     "percent": {
-      "type": "string",
-      "alias": "Decimal"
-     },
-     "period": {
-      "type": "string"
-     },
-     "basis": {
-      "type": "string"
-     },
-     "tiers": {
-      "type": "json",
-      "alias": "JsonObject"
-     },
-     "kind": {
-      "enum": [
-       "referral",
-       "rebate"
-      ]
      }
     }
    }
@@ -5432,13 +4303,6 @@
          "nullable": true,
          "alias": "IsoDateTime"
         },
-        "riskLevel": {
-         "enum": [
-          "low",
-          "medium",
-          "high"
-         ]
-        },
         "status": {
          "enum": [
           "active",
@@ -5583,13 +4447,6 @@
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
-     },
-     "riskLevel": {
-      "enum": [
-       "low",
-       "medium",
-       "high"
-      ]
      },
      "status": {
       "enum": [
@@ -6012,7 +4869,7 @@
    "key": "GET /admin/dashboard",
    "fn": "getDashboard",
    "file": "src/features/dashboard/api/dashboard.ts",
-   "line": 14,
+   "line": 26,
    "params": [
     {
      "name": "params",
@@ -6114,10 +4971,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6145,10 +5002,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6173,10 +5030,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6208,10 +5065,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6245,10 +5102,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6271,10 +5128,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6300,10 +5157,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6338,64 +5195,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
-           ]
-          },
-          "kind": {
-           "const": "merchants_pending"
-          },
-          "count": {
-           "type": "number"
-          },
-          "names": {
-           "array": {
-            "type": "string"
-           }
-          }
-         }
-        },
-        {
-         "object": {
-          "id": {
-           "type": "string"
-          },
-          "severity": {
-           "enum": [
             "low",
-            "medium",
-            "high",
-            "critical"
-           ]
-          },
-          "kind": {
-           "const": "commissions_accrued"
-          },
-          "count": {
-           "type": "number"
-          },
-          "total": {
-           "type": "string",
-           "alias": "Money"
-          },
-          "agents": {
-           "type": "number"
-          }
-         }
-        },
-        {
-         "object": {
-          "id": {
-           "type": "string"
-          },
-          "severity": {
-           "enum": [
-            "low",
-            "medium",
-            "high",
-            "critical"
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6421,10 +5224,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6458,10 +5261,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6490,10 +5293,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6515,10 +5318,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6543,10 +5346,10 @@
           },
           "severity": {
            "enum": [
-            "low",
-            "medium",
             "high",
-            "critical"
+            "low",
+            "critical",
+            "medium"
            ]
           },
           "kind": {
@@ -6737,9 +5540,6 @@
          "visitorsEstimated": {
           "type": "number"
          },
-         "imeiChecks": {
-          "type": "number"
-         },
          "checkoutsStarted": {
           "type": "number"
          },
@@ -6766,17 +5566,6 @@
        },
        "firstReplySeconds": {
         "type": "number",
-        "nullable": true
-       },
-       "satisfaction": {
-        "object": {
-         "average": {
-          "type": "number"
-         },
-         "ratings": {
-          "type": "number"
-         }
-        },
         "nullable": true
        },
        "heldForReview": {
@@ -6824,13 +5613,6 @@
        "finance": {
         "object": {
          "pendingDeposits": {
-          "type": "number"
-         }
-        }
-       },
-       "merchants": {
-        "object": {
-         "pendingApproval": {
           "type": "number"
          }
         }
@@ -7713,347 +6495,6 @@
      },
      "helpfulNo": {
       "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/imei-checks",
-   "fn": "listImeiChecks",
-   "file": "src/features/risk/api/imeiChecks.ts",
-   "line": 13,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<ImeiCheck>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "price": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "model": {
-         "type": "string"
-        },
-        "brand": {
-         "type": "string"
-        },
-        "cost": {
-         "type": "string",
-         "alias": "Money"
-        },
-        "cachedUntil": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "imei": {
-         "type": "string"
-        },
-        "checkType": {
-         "enum": [
-          "blacklist",
-          "basic",
-          "icloud",
-          "sim_lock"
-         ]
-        },
-        "status": {
-         "enum": [
-          "unknown",
-          "clean",
-          "blacklisted",
-          "locked"
-         ]
-        },
-        "source": {
-         "enum": [
-          "pre_order",
-          "storefront_free"
-         ]
-        },
-        "country": {
-         "type": "string",
-         "nullable": true
-        },
-        "ip": {
-         "type": "string",
-         "nullable": true
-        },
-        "orderId": {
-         "type": "number",
-         "nullable": true,
-         "alias": "Id"
-        },
-        "customer": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        },
-        "supplier": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        },
-        "result": {
-         "type": "json",
-         "alias": "JsonObject",
-         "nullable": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/imei-checks/:id",
-   "fn": "getImeiCheck",
-   "file": "src/features/risk/api/imeiChecks.ts",
-   "line": 22,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ImeiCheck",
-   "returns": {
-    "object": {
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "price": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "model": {
-      "type": "string"
-     },
-     "brand": {
-      "type": "string"
-     },
-     "cost": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "cachedUntil": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "imei": {
-      "type": "string"
-     },
-     "checkType": {
-      "enum": [
-       "blacklist",
-       "basic",
-       "icloud",
-       "sim_lock"
-      ]
-     },
-     "status": {
-      "enum": [
-       "unknown",
-       "clean",
-       "blacklisted",
-       "locked"
-      ]
-     },
-     "source": {
-      "enum": [
-       "pre_order",
-       "storefront_free"
-      ]
-     },
-     "country": {
-      "type": "string",
-      "nullable": true
-     },
-     "ip": {
-      "type": "string",
-      "nullable": true
-     },
-     "orderId": {
-      "type": "number",
-      "nullable": true,
-      "alias": "Id"
-     },
-     "customer": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "supplier": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "result": {
-      "type": "json",
-      "alias": "JsonObject",
-      "nullable": true
      }
     }
    }
@@ -8957,8 +7398,7 @@
          "enum": [
           "manual",
           "topup",
-          "receipt",
-          "statement"
+          "receipt"
          ]
         },
         "status": {
@@ -9115,8 +7555,7 @@
       "enum": [
        "manual",
        "topup",
-       "receipt",
-       "statement"
+       "receipt"
       ]
      },
      "status": {
@@ -9451,337 +7890,6 @@
    }
   },
   {
-   "key": "GET /admin/kyc-submissions",
-   "fn": "listKycSubmissions",
-   "file": "src/features/merchants/api/kyc.ts",
-   "line": 22,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<KycSubmission>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "clientId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "fileIds": {
-         "array": {
-          "type": "number",
-          "alias": "Id"
-         }
-        },
-        "reviewedAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "note": {
-         "type": "string"
-        },
-        "status": {
-         "enum": [
-          "pending",
-          "approved",
-          "rejected"
-         ]
-        },
-        "client": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          },
-          "email": {
-           "type": "string"
-          },
-          "country": {
-           "type": "string"
-          },
-          "status": {
-           "enum": [
-            "active",
-            "suspended",
-            "pending"
-           ]
-          }
-         }
-        },
-        "reviewedBy": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        },
-        "files": {
-         "array": {
-          "object": {
-           "id": {
-            "type": "number",
-            "alias": "Id"
-           },
-           "filename": {
-            "type": "string"
-           },
-           "mime": {
-            "type": "string"
-           },
-           "size": {
-            "type": "number"
-           }
-          }
-         },
-         "optional": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/kyc-submissions/:id",
-   "fn": "getKycSubmission",
-   "file": "src/features/merchants/api/kyc.ts",
-   "line": 34,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "KycSubmission",
-   "returns": {
-    "object": {
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "clientId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "fileIds": {
-      "array": {
-       "type": "number",
-       "alias": "Id"
-      }
-     },
-     "reviewedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "note": {
-      "type": "string"
-     },
-     "status": {
-      "enum": [
-       "pending",
-       "approved",
-       "rejected"
-      ]
-     },
-     "client": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "email": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string"
-       },
-       "status": {
-        "enum": [
-         "active",
-         "suspended",
-         "pending"
-        ]
-       }
-      }
-     },
-     "reviewedBy": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "files": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "filename": {
-         "type": "string"
-        },
-        "mime": {
-         "type": "string"
-        },
-        "size": {
-         "type": "number"
-        }
-       }
-      },
-      "optional": true
-     }
-    }
-   }
-  },
-  {
    "key": "GET /admin/ledger/accounts",
    "fn": "getTrialBalance",
    "file": "src/features/finance/api/accounts.ts",
@@ -9978,9 +8086,9 @@
           "type": {
            "enum": [
             "staff",
-            "client",
             "customer",
-            "system"
+            "system",
+            "client"
            ]
           },
           "id": {
@@ -10020,9 +8128,9 @@
              },
              "ownerType": {
               "enum": [
-               "client",
                "customer",
-               "supplier"
+               "supplier",
+               "client"
               ],
               "nullable": true
              },
@@ -10123,9 +8231,9 @@
        "type": {
         "enum": [
          "staff",
-         "client",
          "customer",
-         "system"
+         "system",
+         "client"
         ]
        },
        "id": {
@@ -10165,9 +8273,9 @@
           },
           "ownerType": {
            "enum": [
-            "client",
             "customer",
-            "supplier"
+            "supplier",
+            "client"
            ],
            "nullable": true
           },
@@ -10415,7 +8523,7 @@
    "key": "GET /admin/notification-campaigns",
    "fn": "listCampaigns",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 42,
+   "line": 54,
    "params": [
     {
      "name": "query",
@@ -10530,7 +8638,6 @@
          "array": {
           "enum": [
            "email",
-           "telegram",
            "in_app"
           ]
          }
@@ -10585,9 +8692,6 @@
           },
           "email": {
            "type": "number"
-          },
-          "telegram": {
-           "type": "number"
           }
          }
         },
@@ -10627,7 +8731,7 @@
    "key": "GET /admin/notification-campaigns/:id",
    "fn": "getCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 50,
+   "line": 65,
    "params": [
     {
      "name": "id",
@@ -10679,7 +8783,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -10733,9 +8836,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -10825,8 +8925,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -10843,8 +8943,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -10889,9 +8989,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -10910,19 +9007,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -10968,7 +9052,7 @@
    "key": "GET /admin/notification-campaigns/:id/recipients",
    "fn": "listCampaignRecipients",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 146,
+   "line": 160,
    "params": [
     {
      "name": "id",
@@ -11048,7 +9132,6 @@
        "channel": {
         "enum": [
          "email",
-         "telegram",
          "in_app"
         ]
        }
@@ -11089,15 +9172,14 @@
         "channel": {
          "enum": [
           "email",
-          "telegram",
           "in_app"
          ]
         },
         "recipientType": {
          "enum": [
           "staff",
-          "client",
-          "customer"
+          "customer",
+          "client"
          ]
         },
         "recipientId": {
@@ -11275,10 +9357,7 @@
          "type": "string"
         },
         "channel": {
-         "enum": [
-          "email",
-          "telegram"
-         ]
+         "const": "email"
         },
         "audience": {
          "enum": [
@@ -11366,10 +9445,7 @@
       "type": "string"
      },
      "channel": {
-      "enum": [
-       "email",
-       "telegram"
-      ]
+      "const": "email"
      },
      "audience": {
       "enum": [
@@ -11517,10 +9593,7 @@
          "type": "string"
         },
         "channel": {
-         "enum": [
-          "email",
-          "telegram"
-         ]
+         "type": "string"
         },
         "status": {
          "enum": [
@@ -11644,10 +9717,7 @@
       "type": "string"
      },
      "channel": {
-      "enum": [
-       "email",
-       "telegram"
-      ]
+      "type": "string"
      },
      "status": {
       "enum": [
@@ -11977,10 +10047,6 @@
          "nullable": true,
          "alias": "Id"
         },
-        "clientNote": {
-         "type": "string",
-         "nullable": true
-        },
         "adminNote": {
          "type": "string",
          "nullable": true
@@ -12221,10 +10287,6 @@
       "nullable": true,
       "alias": "Id"
      },
-     "clientNote": {
-      "type": "string",
-      "nullable": true
-     },
      "adminNote": {
       "type": "string",
       "nullable": true
@@ -12310,10 +10372,10 @@
         "type": {
          "enum": [
           "staff",
-          "client",
           "customer",
           "supplier",
-          "system"
+          "system",
+          "client"
          ]
         },
         "id": {
@@ -14782,7 +12844,7 @@
    "key": "GET /admin/queues",
    "fn": "queuesBoardUrl",
    "file": "src/features/dashboard/api/dashboard.ts",
-   "line": 37,
+   "line": 57,
    "params": [],
    "returnsText": "string",
    "returns": {
@@ -15515,8 +13577,8 @@
   {
    "key": "GET /admin/reports/funnel",
    "fn": "getFunnel",
-   "file": "src/features/checkouts/api/funnel.ts",
-   "line": 12,
+   "file": "src/features/finance/api/reports.ts",
+   "line": 56,
    "params": [
     {
      "name": "query",
@@ -15556,9 +13618,6 @@
    "returns": {
     "object": {
      "days": {
-      "type": "number"
-     },
-     "imeiChecks": {
       "type": "number"
      },
      "paymentStarted": {
@@ -15773,7 +13832,7 @@
    "key": "GET /admin/reports/profit",
    "fn": "getProfitReport",
    "file": "src/features/finance/api/reports.ts",
-   "line": 13,
+   "line": 21,
    "params": [
     {
      "name": "query",
@@ -15783,8 +13842,8 @@
       "object": {
        "groupBy": {
         "enum": [
-         "client",
          "supplier",
+         "client",
          "day",
          "service"
         ]
@@ -15824,8 +13883,8 @@
     "object": {
      "groupBy": {
       "enum": [
-       "client",
        "supplier",
+       "client",
        "day",
        "service"
       ]
@@ -15968,7 +14027,7 @@
    "key": "GET /admin/reports/top-clients",
    "fn": "getTopClients",
    "file": "src/features/dashboard/api/dashboard.ts",
-   "line": 24,
+   "line": 44,
    "params": [
     {
      "name": "params",
@@ -16035,7 +14094,7 @@
    "key": "GET /admin/reports/vat",
    "fn": "getVatReport",
    "file": "src/features/finance/api/reports.ts",
-   "line": 37,
+   "line": 45,
    "params": [
     {
      "name": "query",
@@ -16133,7 +14192,7 @@
    "key": "GET /admin/reports/wallet-exposure",
    "fn": "getWalletExposure",
    "file": "src/features/finance/api/reports.ts",
-   "line": 27,
+   "line": 35,
    "params": [
     {
      "name": "init",
@@ -16708,13 +14767,6 @@
           },
           "country": {
            "type": "string"
-          },
-          "riskLevel": {
-           "enum": [
-            "low",
-            "medium",
-            "high"
-           ]
           },
           "history": {
            "object": {
@@ -19303,7 +17355,7 @@
    "key": "GET /admin/sessions",
    "fn": "listSessions",
    "file": "src/features/access/api/sessions.ts",
-   "line": 20,
+   "line": 25,
    "params": [
     {
      "name": "query",
@@ -19426,10 +17478,7 @@
          "alias": "IsoDateTime"
         },
         "subjectType": {
-         "enum": [
-          "staff",
-          "client"
-         ]
+         "const": "staff"
         },
         "subject": {
          "object": {
@@ -19491,10 +17540,6 @@
     "object": {
      "adminAllowlistOnly": {
       "type": "boolean",
-      "optional": true
-     },
-     "imeiRetentionDays": {
-      "type": "number",
       "optional": true
      }
     },
@@ -21031,7 +19076,7 @@
    "key": "GET /admin/support-tickets",
    "fn": "listSupportTickets",
    "file": "src/features/support/api/tickets.ts",
-   "line": 36,
+   "line": 35,
    "params": [
     {
      "name": "query",
@@ -21165,15 +19210,15 @@
         "channel": {
          "enum": [
           "email",
-          "telegram",
           "web",
-          "chat"
+          "chat",
+          "telegram"
          ]
         },
         "requesterType": {
          "enum": [
-          "client",
-          "customer"
+          "customer",
+          "client"
          ]
         },
         "requester": {
@@ -21206,15 +19251,15 @@
         },
         "priority": {
          "enum": [
-          "low",
           "high",
-          "normal"
+          "normal",
+          "low"
          ]
         },
         "status": {
          "enum": [
-          "pending",
           "open",
+          "pending",
           "new",
           "resolved"
          ]
@@ -21234,10 +19279,6 @@
            "type": "string"
           }
          },
-         "nullable": true
-        },
-        "csatScore": {
-         "type": "number",
          "nullable": true
         },
         "lastPublicAt": {
@@ -21288,7 +19329,7 @@
    "key": "GET /admin/support-tickets/:id",
    "fn": "getSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 49,
+   "line": 48,
    "params": [
     {
      "name": "id",
@@ -21359,15 +19400,15 @@
      "channel": {
       "enum": [
        "email",
-       "telegram",
        "web",
-       "chat"
+       "chat",
+       "telegram"
       ]
      },
      "requesterType": {
       "enum": [
-       "client",
-       "customer"
+       "customer",
+       "client"
       ]
      },
      "requester": {
@@ -21400,15 +19441,15 @@
      },
      "priority": {
       "enum": [
-       "low",
        "high",
-       "normal"
+       "normal",
+       "low"
       ]
      },
      "status": {
       "enum": [
-       "pending",
        "open",
+       "pending",
        "new",
        "resolved"
       ]
@@ -21428,10 +19469,6 @@
         "type": "string"
        }
       },
-      "nullable": true
-     },
-     "csatScore": {
-      "type": "number",
       "nullable": true
      },
      "lastPublicAt": {
@@ -21483,12 +19520,6 @@
         "body": {
          "type": "string"
         },
-        "fileIds": {
-         "array": {
-          "type": "number",
-          "alias": "Id"
-         }
-        },
         "ticketId": {
          "type": "number",
          "alias": "Id"
@@ -21496,12 +19527,18 @@
         "isInternal": {
          "type": "boolean"
         },
+        "fileIds": {
+         "array": {
+          "type": "number",
+          "alias": "Id"
+         }
+        },
         "authorType": {
          "enum": [
           "staff",
-          "client",
           "customer",
-          "system"
+          "system",
+          "client"
          ]
         },
         "authorId": {
@@ -21549,7 +19586,7 @@
    "key": "GET /admin/support-tickets/:id/files/:fileId",
    "fn": "ticketFileUrl",
    "file": "src/features/support/api/tickets.ts",
-   "line": 125,
+   "line": 114,
    "params": [
     {
      "name": "id",
@@ -25263,7 +23300,7 @@
    "key": "GET /admin/system/webhooks",
    "fn": "getWebhooksHealth",
    "file": "src/features/system-health/api/jobs.ts",
-   "line": 33,
+   "line": 34,
    "params": [
     {
      "name": "init",
@@ -25289,110 +23326,6 @@
    "returnsText": "WebhooksHealth",
    "returns": {
     "object": {
-     "outgoing": {
-      "object": {
-       "successRate": {
-        "object": {
-         "value": {
-          "type": "number",
-          "nullable": true
-         },
-         "unit": {
-          "enum": [
-           "percent",
-           "ms",
-           "s",
-           "per_min",
-           "count",
-           "bytes"
-          ]
-         },
-         "state": {
-          "enum": [
-           "ok",
-           "unknown",
-           "warn",
-           "crit"
-          ]
-         },
-         "warn": {
-          "type": "number",
-          "nullable": true,
-          "optional": true
-         },
-         "crit": {
-          "type": "number",
-          "nullable": true,
-          "optional": true
-         },
-         "direction": {
-          "enum": [
-           "above",
-           "below"
-          ],
-          "optional": true
-         }
-        }
-       },
-       "delivered": {
-        "type": "number"
-       },
-       "failed": {
-        "type": "number"
-       },
-       "retrying": {
-        "type": "number"
-       },
-       "oldestUndeliveredAt": {
-        "type": "string",
-        "nullable": true,
-        "alias": "IsoDateTime"
-       },
-       "oldestAge": {
-        "object": {
-         "value": {
-          "type": "number",
-          "nullable": true
-         },
-         "unit": {
-          "enum": [
-           "percent",
-           "ms",
-           "s",
-           "per_min",
-           "count",
-           "bytes"
-          ]
-         },
-         "state": {
-          "enum": [
-           "ok",
-           "unknown",
-           "warn",
-           "crit"
-          ]
-         },
-         "warn": {
-          "type": "number",
-          "nullable": true,
-          "optional": true
-         },
-         "crit": {
-          "type": "number",
-          "nullable": true,
-          "optional": true
-         },
-         "direction": {
-          "enum": [
-           "above",
-           "below"
-          ],
-          "optional": true
-         }
-        }
-       }
-      }
-     },
      "incoming": {
       "object": {
        "successRate": {
@@ -25941,343 +23874,6 @@
    }
   },
   {
-   "key": "GET /admin/webhook-deliveries",
-   "fn": "listWebhookDeliveries",
-   "file": "src/features/settings/api/webhooks.ts",
-   "line": 21,
-   "params": [
-    {
-     "name": "query",
-     "optional": true,
-     "typeText": "ListQuery",
-     "shape": {
-      "object": {
-       "start": {
-        "type": "number",
-        "optional": true
-       },
-       "end": {
-        "type": "number",
-        "optional": true
-       },
-       "sort": {
-        "array": {
-         "type": "string"
-        },
-        "optional": true
-       },
-       "order": {
-        "array": {
-         "enum": [
-          "asc",
-          "desc"
-         ]
-        },
-        "optional": true
-       },
-       "q": {
-        "type": "string",
-        "optional": true
-       },
-       "filters": {
-        "object": {},
-        "record": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "anyOf": [
-             {
-              "type": "string"
-             },
-             {
-              "type": "number"
-             },
-             {
-              "type": "boolean"
-             }
-            ]
-           }
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "undefinable": true
-        },
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ListResult<WebhookDelivery>",
-   "returns": {
-    "object": {
-     "data": {
-      "array": {
-       "object": {
-        "updatedAt": {
-         "type": "string",
-         "alias": "IsoDateTime",
-         "optional": true
-        },
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "createdAt": {
-         "type": "string",
-         "alias": "IsoDateTime"
-        },
-        "event": {
-         "type": "string"
-        },
-        "endpointId": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "attempt": {
-         "type": "number"
-        },
-        "responseCode": {
-         "type": "number"
-        },
-        "nextRetryAt": {
-         "type": "string",
-         "nullable": true,
-         "alias": "IsoDateTime"
-        },
-        "status": {
-         "enum": [
-          "failed",
-          "delivered",
-          "pending"
-         ]
-        },
-        "payload": {
-         "anyOf": [
-          {
-           "type": "string"
-          },
-          {
-           "type": "number"
-          },
-          {
-           "array": {
-            "type": "json",
-            "alias": "JsonValue"
-           }
-          },
-          {
-           "type": "json",
-           "alias": "JsonObject"
-          },
-          {
-           "type": "boolean"
-          }
-         ],
-         "nullable": true,
-         "optional": true
-        },
-        "endpoint": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "url": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        },
-        "client": {
-         "object": {
-          "id": {
-           "type": "number",
-           "alias": "Id"
-          },
-          "name": {
-           "type": "string"
-          }
-         },
-         "nullable": true
-        }
-       }
-      }
-     },
-     "total": {
-      "type": "number"
-     }
-    }
-   }
-  },
-  {
-   "key": "GET /admin/webhook-deliveries/:id",
-   "fn": "getWebhookDelivery",
-   "file": "src/features/settings/api/webhooks.ts",
-   "line": 33,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "WebhookDeliveryDetail",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "event": {
-      "type": "string"
-     },
-     "endpointId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "attempt": {
-      "type": "number"
-     },
-     "responseCode": {
-      "type": "number"
-     },
-     "nextRetryAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "status": {
-      "enum": [
-       "failed",
-       "delivered",
-       "pending"
-      ]
-     },
-     "payload": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "number"
-       },
-       {
-        "array": {
-         "type": "json",
-         "alias": "JsonValue"
-        }
-       },
-       {
-        "type": "json",
-        "alias": "JsonObject"
-       },
-       {
-        "type": "boolean"
-       }
-      ],
-      "nullable": true,
-      "optional": true
-     },
-     "endpoint": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "url": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "client": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "responseBody": {
-      "type": "string",
-      "nullable": true,
-      "optional": true
-     },
-     "error": {
-      "type": "string",
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
    "key": "GET /health",
    "fn": "getHealth",
    "file": "src/features/system/api/health.ts",
@@ -26511,7 +24107,7 @@
    "key": "PATCH /admin/api-keys/:id",
    "fn": "updateApiKey",
    "file": "src/features/merchants/api/apiKeys.ts",
-   "line": 47,
+   "line": 58,
    "params": [
     {
      "name": "id",
@@ -26593,11 +24189,6 @@
      "prefix": {
       "type": "string"
      },
-     "scopes": {
-      "array": {
-       "type": "string"
-      }
-     },
      "allowedIps": {
       "array": {
        "type": "string"
@@ -26649,11 +24240,6 @@
        "discountPercent": {
         "type": "string",
         "alias": "Decimal",
-        "optional": true
-       },
-       "earnThreshold": {
-        "type": "string",
-        "alias": "Money",
         "optional": true
        },
        "depositLimit": {
@@ -26713,10 +24299,6 @@
      },
      "isDefault": {
       "type": "boolean"
-     },
-     "earnThreshold": {
-      "type": "string",
-      "alias": "Money"
      },
      "depositLimit": {
       "type": "string",
@@ -26807,9 +24389,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "note": {
-      "type": "string"
-     },
      "serviceId": {
       "type": "number",
       "alias": "Id"
@@ -26817,6 +24396,9 @@
      "price": {
       "type": "string",
       "alias": "Money"
+     },
+     "note": {
+      "type": "string"
      },
      "service": {
       "object": {
@@ -26978,9 +24560,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "referralCode": {
-      "type": "string"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
@@ -26991,14 +24570,6 @@
        "active",
        "suspended",
        "pending"
-      ]
-     },
-     "kycStatus": {
-      "enum": [
-       "pending",
-       "approved",
-       "rejected",
-       "none"
       ]
      },
      "group": {
@@ -27013,18 +24584,6 @@
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
-       }
-      },
-      "nullable": true
-     },
-     "referredBy": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
        }
       },
       "nullable": true
@@ -27092,10 +24651,6 @@
      },
      "internalNotes": {
       "type": "string",
-      "optional": true
-     },
-     "telegramLinked": {
-      "type": "boolean",
       "optional": true
      },
      "security": {
@@ -27236,252 +24791,6 @@
      "available": {
       "type": "string",
       "alias": "Money"
-     }
-    }
-   }
-  },
-  {
-   "key": "PATCH /admin/commission-assignments/:id",
-   "fn": "updateAssignment",
-   "file": "src/features/commissions/api/assignments.ts",
-   "line": 55,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "UpdateAssignmentBody",
-     "shape": {
-      "object": {
-       "planId": {
-        "type": "number",
-        "alias": "Id"
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionAssignment",
-   "returns": {
-    "object": {
-     "scope": {
-      "type": "string"
-     },
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "startsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "endsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "planId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiaryId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiary": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string",
-        "optional": true
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "plan": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "percent": {
-        "type": "string",
-        "alias": "Decimal"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "PATCH /admin/commission-plans/:id",
-   "fn": "updatePlan",
-   "file": "src/features/commissions/api/plans.ts",
-   "line": 50,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "Partial<CreatePlanBody>",
-     "shape": {
-      "object": {
-       "name": {
-        "type": "string",
-        "optional": true
-       },
-       "kind": {
-        "enum": [
-         "referral",
-         "rebate"
-        ],
-        "optional": true
-       },
-       "percent": {
-        "type": "string",
-        "alias": "Decimal",
-        "optional": true
-       },
-       "basis": {
-        "type": "string",
-        "optional": true
-       },
-       "period": {
-        "type": "string",
-        "optional": true
-       },
-       "tiers": {
-        "type": "json",
-        "alias": "JsonObject",
-        "optional": true
-       },
-       "isActive": {
-        "type": "boolean",
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionPlan",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "isActive": {
-      "type": "boolean"
-     },
-     "percent": {
-      "type": "string",
-      "alias": "Decimal"
-     },
-     "period": {
-      "type": "string"
-     },
-     "basis": {
-      "type": "string"
-     },
-     "tiers": {
-      "type": "json",
-      "alias": "JsonObject"
-     },
-     "kind": {
-      "enum": [
-       "referral",
-       "rebate"
-      ]
      }
     }
    }
@@ -27883,13 +25192,6 @@
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
-     },
-     "riskLevel": {
-      "enum": [
-       "low",
-       "medium",
-       "high"
-      ]
      },
      "status": {
       "enum": [
@@ -28350,7 +25652,7 @@
    "key": "PATCH /admin/notification-campaigns/:id",
    "fn": "updateCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 67,
+   "line": 81,
    "params": [
     {
      "name": "id",
@@ -28382,7 +25684,6 @@
         "array": {
          "enum": [
           "email",
-          "telegram",
           "in_app"
          ]
         },
@@ -28450,8 +25751,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -28468,8 +25769,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -28556,7 +25857,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -28610,9 +25910,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -28702,8 +25999,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -28720,8 +26017,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -28766,9 +26063,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -28787,19 +26081,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -28867,10 +26148,7 @@
         "optional": true
        },
        "channel": {
-        "enum": [
-         "email",
-         "telegram"
-        ],
+        "const": "email",
         "optional": true
        },
        "audience": {
@@ -28946,10 +26224,7 @@
       "type": "string"
      },
      "channel": {
-      "enum": [
-       "email",
-       "telegram"
-      ]
+      "const": "email"
      },
      "audience": {
       "enum": [
@@ -31027,10 +28302,6 @@
        "adminAllowlistOnly": {
         "type": "boolean",
         "optional": true
-       },
-       "imeiRetentionDays": {
-        "type": "number",
-        "optional": true
        }
       },
       "record": {
@@ -31086,10 +28357,6 @@
     "object": {
      "adminAllowlistOnly": {
       "type": "boolean",
-      "optional": true
-     },
-     "imeiRetentionDays": {
-      "type": "number",
       "optional": true
      }
     },
@@ -31306,19 +28573,7 @@
         "type": "boolean",
         "optional": true
        },
-       "imeiPrecheck": {
-        "type": "boolean",
-        "optional": true
-       },
-       "imeiRetentionDays": {
-        "type": "number",
-        "optional": true
-       },
        "refundHoursBeforeDispatch": {
-        "type": "number",
-        "optional": true
-       },
-       "abandonedMinutes": {
         "type": "number",
         "optional": true
        }
@@ -31365,19 +28620,7 @@
       "type": "boolean",
       "optional": true
      },
-     "imeiPrecheck": {
-      "type": "boolean",
-      "optional": true
-     },
-     "imeiRetentionDays": {
-      "type": "number",
-      "optional": true
-     },
      "refundHoursBeforeDispatch": {
-      "type": "number",
-      "optional": true
-     },
-     "abandonedMinutes": {
       "type": "number",
       "optional": true
      }
@@ -31661,7 +28904,7 @@
    "key": "PATCH /admin/support-tickets/:id",
    "fn": "updateSupportTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 59,
+   "line": 58,
    "params": [
     {
      "name": "id",
@@ -31680,9 +28923,9 @@
       "object": {
        "priority": {
         "enum": [
-         "low",
          "high",
-         "normal"
+         "normal",
+         "low"
         ],
         "optional": true
        },
@@ -31762,15 +29005,15 @@
      "channel": {
       "enum": [
        "email",
-       "telegram",
        "web",
-       "chat"
+       "chat",
+       "telegram"
       ]
      },
      "requesterType": {
       "enum": [
-       "client",
-       "customer"
+       "customer",
+       "client"
       ]
      },
      "requester": {
@@ -31803,15 +29046,15 @@
      },
      "priority": {
       "enum": [
-       "low",
        "high",
-       "normal"
+       "normal",
+       "low"
       ]
      },
      "status": {
       "enum": [
-       "pending",
        "open",
+       "pending",
        "new",
        "resolved"
       ]
@@ -31831,10 +29074,6 @@
         "type": "string"
        }
       },
-      "nullable": true
-     },
-     "csatScore": {
-      "type": "number",
       "nullable": true
      },
      "lastPublicAt": {
@@ -32758,70 +29997,6 @@
    }
   },
   {
-   "key": "POST /admin/checkouts/recover",
-   "fn": "recoverCheckouts",
-   "file": "src/features/checkouts/api/checkouts.ts",
-   "line": 28,
-   "params": [
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "RecoverCheckoutsBody",
-     "shape": {
-      "object": {
-       "ids": {
-        "array": {
-         "type": "number",
-         "alias": "Id"
-        }
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "RecoverCheckoutsResult",
-   "returns": {
-    "object": {
-     "sent": {
-      "type": "number"
-     },
-     "skipped": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "reason": {
-         "type": "string"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  {
    "key": "POST /admin/client-groups",
    "fn": "createClientGroup",
    "file": "src/features/merchants/api/groups.ts",
@@ -32839,10 +30014,6 @@
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
-       },
-       "earnThreshold": {
-        "type": "string",
-        "alias": "Money"
        },
        "depositLimit": {
         "type": "string",
@@ -32898,10 +30069,6 @@
      },
      "isDefault": {
       "type": "boolean"
-     },
-     "earnThreshold": {
-      "type": "string",
-      "alias": "Money"
      },
      "depositLimit": {
       "type": "string",
@@ -32990,9 +30157,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "note": {
-      "type": "string"
-     },
      "serviceId": {
       "type": "number",
       "alias": "Id"
@@ -33000,6 +30164,9 @@
      "price": {
       "type": "string",
       "alias": "Money"
+     },
+     "note": {
+      "type": "string"
      },
      "service": {
       "object": {
@@ -33125,9 +30292,6 @@
       "type": "number",
       "alias": "Id"
      },
-     "referralCode": {
-      "type": "string"
-     },
      "emailVerifiedAt": {
       "type": "string",
       "nullable": true,
@@ -33138,14 +30302,6 @@
        "active",
        "suspended",
        "pending"
-      ]
-     },
-     "kycStatus": {
-      "enum": [
-       "pending",
-       "approved",
-       "rejected",
-       "none"
       ]
      },
      "group": {
@@ -33160,18 +30316,6 @@
        "discountPercent": {
         "type": "string",
         "alias": "Decimal"
-       }
-      },
-      "nullable": true
-     },
-     "referredBy": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
        }
       },
       "nullable": true
@@ -33239,10 +30383,6 @@
      },
      "internalNotes": {
       "type": "string",
-      "optional": true
-     },
-     "telegramLinked": {
-      "type": "boolean",
       "optional": true
      },
      "security": {
@@ -33320,7 +30460,7 @@
    "key": "POST /admin/clients/:id/api-keys",
    "fn": "createClientApiKey",
    "file": "src/features/merchants/api/apiKeys.ts",
-   "line": 34,
+   "line": 41,
    "params": [
     {
      "name": "clientId",
@@ -33339,11 +30479,6 @@
       "object": {
        "name": {
         "type": "string"
-       },
-       "scopes": {
-        "array": {
-         "type": "string"
-        }
        },
        "allowedIps": {
         "array": {
@@ -33416,11 +30551,6 @@
        },
        "prefix": {
         "type": "string"
-       },
-       "scopes": {
-        "array": {
-         "type": "string"
-        }
        },
        "allowedIps": {
         "array": {
@@ -33736,299 +30866,6 @@
         "alias": "Money"
        }
       }
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/commission-accruals/approve",
-   "fn": "approveAccruals",
-   "file": "src/features/commissions/api/accruals.ts",
-   "line": 42,
-   "params": [
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "ApproveAccrualsBody",
-     "shape": {
-      "object": {
-       "ids": {
-        "array": {
-         "type": "number",
-         "alias": "Id"
-        }
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "ApproveAccrualsResult",
-   "returns": {
-    "object": {
-     "approved": {
-      "type": "number"
-     },
-     "total": {
-      "type": "string",
-      "alias": "Money"
-     },
-     "skipped": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "reason": {
-         "type": "string"
-        }
-       }
-      }
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/commission-assignments",
-   "fn": "createAssignment",
-   "file": "src/features/commissions/api/assignments.ts",
-   "line": 46,
-   "params": [
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "CreateAssignmentBody",
-     "shape": {
-      "object": {
-       "beneficiaryId": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "planId": {
-        "type": "number",
-        "alias": "Id"
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionAssignment",
-   "returns": {
-    "object": {
-     "scope": {
-      "type": "string"
-     },
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "startsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "endsAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "planId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiaryId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "beneficiary": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string",
-        "optional": true
-       }
-      },
-      "nullable": true,
-      "optional": true
-     },
-     "plan": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "percent": {
-        "type": "string",
-        "alias": "Decimal"
-       }
-      },
-      "nullable": true,
-      "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/commission-plans",
-   "fn": "createPlan",
-   "file": "src/features/commissions/api/plans.ts",
-   "line": 41,
-   "params": [
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "CreatePlanBody",
-     "shape": {
-      "object": {
-       "name": {
-        "type": "string"
-       },
-       "kind": {
-        "enum": [
-         "referral",
-         "rebate"
-        ]
-       },
-       "percent": {
-        "type": "string",
-        "alias": "Decimal"
-       },
-       "basis": {
-        "type": "string"
-       },
-       "period": {
-        "type": "string"
-       },
-       "tiers": {
-        "type": "json",
-        "alias": "JsonObject"
-       },
-       "isActive": {
-        "type": "boolean"
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "CommissionPlan",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "name": {
-      "type": "string"
-     },
-     "isActive": {
-      "type": "boolean"
-     },
-     "percent": {
-      "type": "string",
-      "alias": "Decimal"
-     },
-     "period": {
-      "type": "string"
-     },
-     "basis": {
-      "type": "string"
-     },
-     "tiers": {
-      "type": "json",
-      "alias": "JsonObject"
-     },
-     "kind": {
-      "enum": [
-       "referral",
-       "rebate"
-      ]
      }
     }
    }
@@ -34710,13 +31547,6 @@
       "type": "string",
       "nullable": true,
       "alias": "IsoDateTime"
-     },
-     "riskLevel": {
-      "enum": [
-       "low",
-       "medium",
-       "high"
-      ]
      },
      "status": {
       "enum": [
@@ -36305,8 +33135,7 @@
       "enum": [
        "manual",
        "topup",
-       "receipt",
-       "statement"
+       "receipt"
       ]
      },
      "status": {
@@ -36624,156 +33453,6 @@
    }
   },
   {
-   "key": "POST /admin/kyc-submissions/:id/decide",
-   "fn": "decideKycSubmission",
-   "file": "src/features/merchants/api/kyc.ts",
-   "line": 44,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "KycDecisionBody",
-     "shape": {
-      "object": {
-       "decision": {
-        "enum": [
-         "approve",
-         "reject"
-        ]
-       },
-       "note": {
-        "type": "string",
-        "optional": true
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "KycSubmission",
-   "returns": {
-    "object": {
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "clientId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "fileIds": {
-      "array": {
-       "type": "number",
-       "alias": "Id"
-      }
-     },
-     "reviewedAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "note": {
-      "type": "string"
-     },
-     "status": {
-      "enum": [
-       "pending",
-       "approved",
-       "rejected"
-      ]
-     },
-     "client": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       },
-       "email": {
-        "type": "string"
-       },
-       "country": {
-        "type": "string"
-       },
-       "status": {
-        "enum": [
-         "active",
-         "suspended",
-         "pending"
-        ]
-       }
-      }
-     },
-     "reviewedBy": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "files": {
-      "array": {
-       "object": {
-        "id": {
-         "type": "number",
-         "alias": "Id"
-        },
-        "filename": {
-         "type": "string"
-        },
-        "mime": {
-         "type": "string"
-        },
-        "size": {
-         "type": "number"
-        }
-       }
-      },
-      "optional": true
-     }
-    }
-   }
-  },
-  {
    "key": "POST /admin/ledger/reconcile",
    "fn": "reconcileLedger",
    "file": "src/features/finance/api/accounts.ts",
@@ -37015,7 +33694,7 @@
    "key": "POST /admin/notification-campaigns",
    "fn": "createCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 59,
+   "line": 73,
    "params": [
     {
      "name": "body",
@@ -37036,7 +33715,6 @@
         "array": {
          "enum": [
           "email",
-          "telegram",
           "in_app"
          ]
         }
@@ -37103,8 +33781,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -37121,8 +33799,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -37207,7 +33885,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -37261,9 +33938,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -37353,8 +34027,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -37371,8 +34045,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -37417,9 +34091,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -37438,19 +34109,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -37496,7 +34154,7 @@
    "key": "POST /admin/notification-campaigns/:id/cancel",
    "fn": "cancelCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 137,
+   "line": 151,
    "params": [
     {
      "name": "id",
@@ -37548,7 +34206,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -37602,9 +34259,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -37694,8 +34348,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -37712,8 +34366,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -37758,9 +34412,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -37779,19 +34430,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -37837,7 +34475,7 @@
    "key": "POST /admin/notification-campaigns/:id/preview",
    "fn": "previewCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 92,
+   "line": 106,
    "params": [
     {
      "name": "id",
@@ -37857,7 +34495,6 @@
        "channel": {
         "enum": [
          "email",
-         "telegram",
          "in_app"
         ]
        },
@@ -37921,7 +34558,7 @@
    "key": "POST /admin/notification-campaigns/:id/schedule",
    "fn": "scheduleCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 124,
+   "line": 138,
    "params": [
     {
      "name": "id",
@@ -37986,7 +34623,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -38040,9 +34676,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -38132,8 +34765,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -38150,8 +34783,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -38196,9 +34829,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -38217,19 +34847,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -38275,7 +34892,7 @@
    "key": "POST /admin/notification-campaigns/:id/send",
    "fn": "sendCampaign",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 115,
+   "line": 129,
    "params": [
     {
      "name": "id",
@@ -38339,7 +34956,6 @@
       "array": {
        "enum": [
         "email",
-        "telegram",
         "in_app"
        ]
       }
@@ -38393,9 +35009,6 @@
         "type": "number"
        },
        "email": {
-        "type": "number"
-       },
-       "telegram": {
         "type": "number"
        }
       }
@@ -38485,8 +35098,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -38503,8 +35116,8 @@
           "type": {
            "enum": [
             "staff",
-            "client",
-            "customer"
+            "customer",
+            "client"
            ]
           },
           "id": {
@@ -38549,9 +35162,6 @@
        "optedOut": {
         "type": "number"
        },
-       "noTelegram": {
-        "type": "number"
-       },
        "noAccount": {
         "type": "number"
        }
@@ -38570,19 +35180,6 @@
         }
        },
        "email": {
-        "object": {
-         "queued": {
-          "type": "number"
-         },
-         "sent": {
-          "type": "number"
-         },
-         "failed": {
-          "type": "number"
-         }
-        }
-       },
-       "telegram": {
         "object": {
          "queued": {
           "type": "number"
@@ -38628,7 +35225,7 @@
    "key": "POST /admin/notification-campaigns/:id/test",
    "fn": "sendCampaignTest",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 101,
+   "line": 115,
    "params": [
     {
      "name": "id",
@@ -38696,7 +35293,7 @@
    "key": "POST /admin/notification-campaigns/audience-preview",
    "fn": "previewAudience",
    "file": "src/features/notifications/api/campaigns.ts",
-   "line": 84,
+   "line": 98,
    "params": [
     {
      "name": "body",
@@ -38766,8 +35363,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -38784,8 +35381,8 @@
             "type": {
              "enum": [
               "staff",
-              "client",
-              "customer"
+              "customer",
+              "client"
              ]
             },
             "id": {
@@ -38802,7 +35399,6 @@
         "array": {
          "enum": [
           "email",
-          "telegram",
           "in_app"
          ]
         }
@@ -38866,9 +35462,6 @@
        },
        "email": {
         "type": "number"
-       },
-       "telegram": {
-        "type": "number"
        }
       }
      },
@@ -38878,9 +35471,6 @@
         "type": "number"
        },
        "optedOut": {
-        "type": "number"
-       },
-       "noTelegram": {
         "type": "number"
        },
        "noAccount": {
@@ -38907,10 +35497,7 @@
         "type": "string"
        },
        "channel": {
-        "enum": [
-         "email",
-         "telegram"
-        ]
+        "const": "email"
        },
        "audience": {
         "enum": [
@@ -38981,10 +35568,7 @@
       "type": "string"
      },
      "channel": {
-      "enum": [
-       "email",
-       "telegram"
-      ]
+      "const": "email"
      },
      "audience": {
       "enum": [
@@ -45991,7 +42575,7 @@
    "key": "POST /admin/support-tickets/:id/files",
    "fn": "uploadTicketFile",
    "file": "src/features/support/api/tickets.ts",
-   "line": 112,
+   "line": 101,
    "params": [
     {
      "name": "id",
@@ -46065,7 +42649,7 @@
    "key": "POST /admin/support-tickets/:id/note",
    "fn": "addTicketNote",
    "file": "src/features/support/api/tickets.ts",
-   "line": 80,
+   "line": 79,
    "params": [
     {
      "name": "id",
@@ -46130,12 +42714,6 @@
      "body": {
       "type": "string"
      },
-     "fileIds": {
-      "array": {
-       "type": "number",
-       "alias": "Id"
-      }
-     },
      "ticketId": {
       "type": "number",
       "alias": "Id"
@@ -46143,12 +42721,18 @@
      "isInternal": {
       "type": "boolean"
      },
+     "fileIds": {
+      "array": {
+       "type": "number",
+       "alias": "Id"
+      }
+     },
      "authorType": {
       "enum": [
        "staff",
-       "client",
        "customer",
-       "system"
+       "system",
+       "client"
       ]
      },
      "authorId": {
@@ -46185,7 +42769,7 @@
    "key": "POST /admin/support-tickets/:id/read",
    "fn": "markTicketRead",
    "file": "src/features/support/api/tickets.ts",
-   "line": 91,
+   "line": 90,
    "params": [
     {
      "name": "id",
@@ -46239,7 +42823,7 @@
    "key": "POST /admin/support-tickets/:id/reply",
    "fn": "replyToTicket",
    "file": "src/features/support/api/tickets.ts",
-   "line": 70,
+   "line": 69,
    "params": [
     {
      "name": "id",
@@ -46311,12 +42895,6 @@
      "body": {
       "type": "string"
      },
-     "fileIds": {
-      "array": {
-       "type": "number",
-       "alias": "Id"
-      }
-     },
      "ticketId": {
       "type": "number",
       "alias": "Id"
@@ -46324,12 +42902,18 @@
      "isInternal": {
       "type": "boolean"
      },
+     "fileIds": {
+      "array": {
+       "type": "number",
+       "alias": "Id"
+      }
+     },
      "authorType": {
       "enum": [
        "staff",
-       "client",
        "customer",
-       "system"
+       "system",
+       "client"
       ]
      },
      "authorId": {
@@ -46360,62 +42944,6 @@
       }
      }
     }
-   }
-  },
-  {
-   "key": "POST /admin/support-tickets/:id/typing",
-   "fn": "sendTicketTyping",
-   "file": "src/features/support/api/tickets.ts",
-   "line": 101,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "body",
-     "optional": false,
-     "typeText": "TypingBody",
-     "shape": {
-      "object": {
-       "mode": {
-        "enum": [
-         "note",
-         "reply"
-        ]
-       }
-      }
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "void",
-   "returns": {
-    "type": "undefined"
    }
   },
   {
@@ -47045,135 +43573,6 @@
       "type": "string",
       "alias": "IsoDateTime",
       "optional": true
-     }
-    }
-   }
-  },
-  {
-   "key": "POST /admin/webhook-deliveries/:id/retry",
-   "fn": "retryWebhookDelivery",
-   "file": "src/features/settings/api/webhooks.ts",
-   "line": 43,
-   "params": [
-    {
-     "name": "id",
-     "optional": false,
-     "typeText": "number",
-     "shape": {
-      "type": "number",
-      "alias": "Id"
-     }
-    },
-    {
-     "name": "init",
-     "optional": true,
-     "typeText": "ApiInit | undefined",
-     "shape": {
-      "object": {
-       "signal": {
-        "type": "AbortSignal",
-        "optional": true
-       },
-       "headers": {
-        "object": {},
-        "record": {
-         "type": "string"
-        },
-        "optional": true
-       }
-      }
-     }
-    }
-   ],
-   "returnsText": "WebhookDelivery",
-   "returns": {
-    "object": {
-     "updatedAt": {
-      "type": "string",
-      "alias": "IsoDateTime",
-      "optional": true
-     },
-     "id": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "createdAt": {
-      "type": "string",
-      "alias": "IsoDateTime"
-     },
-     "event": {
-      "type": "string"
-     },
-     "endpointId": {
-      "type": "number",
-      "alias": "Id"
-     },
-     "attempt": {
-      "type": "number"
-     },
-     "responseCode": {
-      "type": "number"
-     },
-     "nextRetryAt": {
-      "type": "string",
-      "nullable": true,
-      "alias": "IsoDateTime"
-     },
-     "status": {
-      "enum": [
-       "failed",
-       "delivered",
-       "pending"
-      ]
-     },
-     "payload": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "number"
-       },
-       {
-        "array": {
-         "type": "json",
-         "alias": "JsonValue"
-        }
-       },
-       {
-        "type": "json",
-        "alias": "JsonObject"
-       },
-       {
-        "type": "boolean"
-       }
-      ],
-      "nullable": true,
-      "optional": true
-     },
-     "endpoint": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "url": {
-        "type": "string"
-       }
-      },
-      "nullable": true
-     },
-     "client": {
-      "object": {
-       "id": {
-        "type": "number",
-        "alias": "Id"
-       },
-       "name": {
-        "type": "string"
-       }
-      },
-      "nullable": true
      }
     }
    }

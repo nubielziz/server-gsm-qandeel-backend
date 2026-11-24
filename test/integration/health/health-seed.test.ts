@@ -122,7 +122,6 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
     expect([...byJob.keys()].sort()).toEqual(
       [
         'balance_check',
-        'client_group_promotion',
         'db_size_sample',
         'ledger_integrity',
         'price_sync',
@@ -153,10 +152,10 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
     expect(body.size.growthPerDayBytes).toBeLessThan(4_310_000);
   });
 
-  it('seeds the ten alert rules of the mock, in its order, one muted and one switched off', async () => {
+  it('seeds the nine alert rules of the mock, in its order, one muted and one switched off', async () => {
     const { db } = await testDb();
     const rules = await db.select().from(s.alertRules).orderBy(s.alertRules.id);
-    expect(rules.map((rule) => rule.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(rules.map((rule) => rule.id)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(rules.map((rule) => rule.key).slice(0, 3)).toEqual([
       'supplier_timeout_rate',
       'ledger_mismatch',
@@ -171,7 +170,7 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
     expect(rules.every((rule) => rule.deletedAt === null)).toBe(true);
     const wire = await alertsStaff.get('/admin/alert-rules?_start=0&_end=25');
     expect(wire.status).toBe(200);
-    expect(wire.total).toBe(10);
+    expect(wire.total).toBe(9);
     expect(wire.body.map((rule: { name: string }) => rule.name)).toEqual([...rules.map((rule) => rule.name)].sort());
     expect(wire.body.find((rule: { key: string }) => rule.key === 'supplier_timeout_rate')).toMatchObject({
       metric: 'supplier.timeout_rate',
@@ -189,7 +188,7 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
   it('seeds a month of resolved alerts with the rule snapshot, and none open: the console opens on Operational', async () => {
     const { db } = await testDb();
     const alerts = await db.select().from(s.alertEvents).orderBy(s.alertEvents.id);
-    expect(alerts).toHaveLength(10);
+    expect(alerts).toHaveLength(9);
     expect(alerts.every((alert) => alert.status === 'resolved' && alert.resolvedAt !== null)).toBe(true);
     const times = alerts.map((alert) => alert.startedAt.getTime());
     expect(times).toEqual([...times].sort((a, b) => a - b));
@@ -208,7 +207,7 @@ describe.skipIf(!frontendPresent)('the health seed', () => {
       { subjectType: 'system', subjectKey: 'system', note: 'Reversing entry posted in Finance.' },
     ]);
     const wire = await alertsStaff.get('/admin/alerts?_start=0&_end=25');
-    expect(wire.total).toBe(10);
+    expect(wire.total).toBe(9);
     expect(wire.body[0].startedAt > wire.body.at(-1).startedAt).toBe(true);
     expect((await alertsStaff.get('/admin/alerts?open=true')).total).toBe(0);
     expect(

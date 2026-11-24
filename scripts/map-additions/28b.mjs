@@ -1,6 +1,6 @@
 // Feature 28 (support as a live chat, slice B2): the account surfaces beyond the map (decisions 035 and 037, plan
 // docs/briefs/28-support-live-chat.md § 3.2 routes 6-14 and § 5): a signed-in customer's own tickets and a merchant's whole ticket
-// conversation by id. The chat engine's own routes (the ticket link's stream, typing, read mark and files; the console's) are 28.mjs.
+// conversation by id. The chat engine's own routes (the ticket link's stream, read mark and files; the console's) are 28.mjs.
 import { R } from '../lib/map-additions.mjs';
 
 const ACCOUNTS = 'B217';
@@ -47,12 +47,6 @@ export const rows = [
   }),
   R('client', 'growth', 'POST', '/client/tickets/:id/read', 'تعليم رسائل الدعم كمقروءة للتاجر', 'جلسة', 28, THREAD, {
     en: "Mark support's messages of one of the merchant’s tickets as seen.",
-    module: 'support',
-    spec: ACCOUNTS,
-    successStatus: 204,
-  }),
-  R('client', 'growth', 'POST', '/client/tickets/:id/typing', 'التاجر يكتب الآن', 'جلسة', 28, THREAD, {
-    en: 'The merchant is typing on one of its tickets.',
     module: 'support',
     spec: ACCOUNTS,
     successStatus: 204,

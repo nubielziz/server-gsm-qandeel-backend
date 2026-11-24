@@ -7,7 +7,6 @@ import {
   parseThreshold,
   savedChoices,
   thresholdOf,
-  withoutTelegram,
 } from '@src/modules/platform/notifications/merchant-preferences';
 import {
   BUILT_IN_EVENTS,
@@ -21,41 +20,50 @@ const event = (key: string, audience = 'merchant'): NotificationEventDefinition 
 };
 
 describe('choiceFor', () => {
-  it('reads an event never saved as email on and Telegram off', () => {
-    expect(choiceFor(event('wallet.low_balance'), {})).toEqual({ email: true, telegram: false });
-    expect(choiceFor(event('wallet.low_balance'), null)).toEqual({ email: true, telegram: false });
+  it('reads an event never saved as email on', () => {
+    expect(choiceFor(event('wallet.low_balance'), {})).toEqual({ email: true });
+    expect(choiceFor(event('wallet.low_balance'), null)).toEqual({ email: true });
   });
 
   it('keeps the order results off until the merchant opts in', () => {
-    expect(choiceFor(event('order.completed'), {})).toEqual({ email: false, telegram: false });
+    expect(choiceFor(event('order.completed'), {})).toEqual({ email: false });
     expect(choiceFor(event('order.completed'), { events: { 'order.completed': { email: true } } })).toEqual({
       email: true,
-      telegram: false,
     });
   });
 
-  it('uses the saved choice, field by field, and ignores a wrong type', () => {
+  it('uses the saved choice and ignores a wrong type', () => {
     const prefs = {
-      events: { 'wallet.low_balance': { email: false, telegram: true }, 'deposit.approved': { email: 'yes' } },
+      events: { 'wallet.low_balance': { email: false }, 'invoice.paid': { email: 'yes' } },
     };
-    expect(choiceFor(event('wallet.low_balance'), prefs)).toEqual({ email: false, telegram: true });
-    expect(choiceFor(event('deposit.approved'), prefs)).toEqual({ email: true, telegram: false });
-    expect(choiceFor(event('deposit.approved'), { events: 'nope' })).toEqual({ email: true, telegram: false });
+    expect(choiceFor(event('wallet.low_balance'), prefs)).toEqual({ email: false });
+    expect(choiceFor(event('invoice.paid'), prefs)).toEqual({ email: true });
+    expect(choiceFor(event('invoice.paid'), { events: 'nope' })).toEqual({ email: true });
   });
 
-  it('never lets a merchant switch off a transactional event, and never offers it a channel the event lacks', () => {
-    const off = { events: { 'merchant.password_reset': { email: false, telegram: true } } };
-    expect(choiceFor(event('merchant.password_reset'), off)).toEqual({ email: true, telegram: false });
-    expect(choiceFor(event('telegram.linked'), off)).toEqual({ email: false, telegram: true });
+  it('reads a preference that an older save stored with a Telegram switch as if the switch was not there', () => {
+    const prefs = {
+      events: { 'wallet.low_balance': { email: false, telegram: true }, 'order.completed': { telegram: true } },
+    };
+    expect(choiceFor(event('wallet.low_balance'), prefs)).toEqual({ email: false });
+    expect(choiceFor(event('order.completed'), prefs)).toEqual({ email: false });
+    expect(savedChoices(prefs).get('wallet.low_balance')).toEqual({ email: false });
+  });
+
+  it('never lets a merchant switch off a transactional event', () => {
+    const off = { events: { 'merchant.password_reset': { email: false } } };
+    expect(choiceFor(event('merchant.password_reset'), off)).toEqual({ email: true });
   });
 });
 
 describe('channelsFor', () => {
-  it('leaves Telegram out when no chat is linked', () => {
+  it('is email while the choice is on and nothing while it is off', () => {
     const prefs = { events: { 'wallet.low_balance': { email: true, telegram: true } } };
-    expect(channelsFor(event('wallet.low_balance'), prefs, true)).toEqual(['email', 'telegram']);
-    expect(channelsFor(event('wallet.low_balance'), prefs, false)).toEqual(['email']);
-    expect(channelsFor(event('order.completed'), {}, true)).toEqual([]);
+    expect(channelsFor(event('wallet.low_balance'), prefs)).toEqual(['email']);
+    expect(channelsFor(event('wallet.low_balance'), { events: { 'wallet.low_balance': { email: false } } })).toEqual(
+      [],
+    );
+    expect(channelsFor(event('order.completed'), {})).toEqual([]);
   });
 });
 
@@ -78,26 +86,35 @@ describe('thresholds', () => {
   });
 });
 
-describe('applyPreferences and withoutTelegram', () => {
+describe('applyPreferences', () => {
   it('replaces the listed events, keeps the others and the keys it does not know, and sets the threshold', () => {
     const stored = {
       lowBalanceThreshold: '10.0000',
       other: 'kept',
+      // A choice stored for an event that no longer exists is data like any other key: it is kept, never read.
       events: { 'deposit.approved': { email: false, telegram: false } },
     };
     const next = applyPreferences(stored, {
       lowBalanceThreshold: '25.0000',
-      events: [{ event: 'wallet.low_balance', email: true, telegram: true }],
+      events: [{ event: 'wallet.low_balance', email: true }],
     });
     expect(next).toEqual({
       lowBalanceThreshold: '25.0000',
       other: 'kept',
       events: {
         'deposit.approved': { email: false, telegram: false },
-        'wallet.low_balance': { email: true, telegram: true },
+        'wallet.low_balance': { email: true },
       },
     });
     expect(stored.lowBalanceThreshold).toBe('10.0000');
+  });
+
+  it('writes the email switch only, over an event that an older save stored with a Telegram switch', () => {
+    const next = applyPreferences(
+      { events: { 'wallet.low_balance': { email: true, telegram: true } } },
+      { lowBalanceThreshold: null, events: [{ event: 'wallet.low_balance', email: false }] },
+    );
+    expect(next).toEqual({ events: { 'wallet.low_balance': { email: false } } });
   });
 
   it('removes the threshold for null and starts from nothing', () => {
@@ -105,17 +122,5 @@ describe('applyPreferences and withoutTelegram', () => {
       events: {},
     });
     expect(applyPreferences(null, { lowBalanceThreshold: null, events: [] })).toEqual({ events: {} });
-  });
-
-  it('turns every Telegram switch off and keeps the email ones', () => {
-    const next = withoutTelegram({
-      events: { 'wallet.low_balance': { email: true, telegram: true } },
-      lowBalanceThreshold: '5.0000',
-    });
-    expect(next).toEqual({
-      events: { 'wallet.low_balance': { email: true, telegram: false } },
-      lowBalanceThreshold: '5.0000',
-    });
-    expect(savedChoices(next).get('wallet.low_balance')).toEqual({ email: true, telegram: false });
   });
 });

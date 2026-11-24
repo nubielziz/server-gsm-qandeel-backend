@@ -23,8 +23,7 @@
       "recipients": 0,
       "planned": {
         "inApp": 0,
-        "email": 0,
-        "telegram": 0
+        "email": 0
       },
       "createdBy": {
         "id": 1,
@@ -51,8 +50,7 @@
       "recipients": 0,
       "planned": {
         "inApp": 0,
-        "email": 0,
-        "telegram": 0
+        "email": 0
       },
       "createdBy": {
         "id": 1,
@@ -80,8 +78,7 @@
       "recipients": 90,
       "planned": {
         "inApp": 90,
-        "email": 90,
-        "telegram": 0
+        "email": 90
       },
       "createdBy": {
         "id": 1,

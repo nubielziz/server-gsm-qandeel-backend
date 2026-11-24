@@ -27,6 +27,11 @@ describe('IMEI', () => {
     }
   });
 
+  it('refuses Arabic-Indic digits on purpose: an IMEI is typed with Latin digits only', () => {
+    expect(isValidImei('١٢٣٤٥٦٧٨٩٠١٢٣٤٥')).toBe(false);
+    expect(isValidImei(normalizeImei('٣٥٢٩٠٥١١٢٤٩٠٨٦١'))).toBe(false);
+  });
+
   it('removes the spaces and dashes a merchant pastes', () => {
     expect(normalizeImei(' 3529 0511-2490 861 ')).toBe('352905112490861');
     expect(isValidImei(normalizeImei('35-290511-249086-1'))).toBe(true);

@@ -98,29 +98,6 @@
         "workers": 2
       },
       {
-        "name": "webhooks.out",
-        "state": "ok",
-        "paused": false,
-        "waiting": 7,
-        "active": 3,
-        "delayed": 15,
-        "failed": 3,
-        "oldestAge": {
-          "value": 5.9,
-          "unit": "s",
-          "state": "ok",
-          "warn": 120,
-          "crit": 600,
-          "direction": "above"
-        },
-        "ratePerMin": {
-          "value": 45,
-          "unit": "per_min",
-          "state": "ok"
-        },
-        "workers": 3
-      },
-      {
         "name": "ledger.jobs",
         "state": "ok",
         "paused": false,

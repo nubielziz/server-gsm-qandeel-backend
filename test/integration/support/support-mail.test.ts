@@ -1,4 +1,4 @@
-// Integration tests of the ticket message job (feature 17): `support.ticket_mail` events become emails and Telegram messages through the
+// Integration tests of the ticket message job (feature 17): `support.ticket_mail` events become emails through the
 // notification delivery. The ticket link (the token) is a secret that is never stored or logged, a repeat sends nothing twice, a transient
 // failure is retried by the queue, and a message that is no longer worth sending is skipped.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
@@ -28,7 +28,7 @@ let t: TestApp;
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 beforeEach(async () => {
@@ -94,7 +94,7 @@ describe('the ticket message job', () => {
 
   it('sends nothing twice when the job runs again, and a retry after a transient failure sends once', async () => {
     const { ticket } = await customerTicket();
-    const job = await writeEvent(ticket.id, { kind: 'survey' });
+    const job = await writeEvent(ticket.id, { kind: 'received' });
     mailbox(t).failNext(new DeliveryError('The mail server is busy.'));
     expect((await rejectionOf(run(job, 0))) instanceof DeliveryError).toBe(true);
     expect(mailbox(t).sent).toHaveLength(0);
@@ -163,9 +163,9 @@ describe('the ticket message job', () => {
     expect(mailbox(t).sent[0]!.text).toContain('Hi Victor.');
   });
 
-  it('fails a merchant’s Telegram reply for good when the chat was unlinked since, and sends no receipt for a merchant', async () => {
+  it('skips a reply event that was written for the retired Telegram channel, and sends no receipt for a merchant', async () => {
     const { db } = await testDb();
-    const merchant = await insertClient(db, { telegramChatId: null });
+    const merchant = await insertClient(db, { telegramChatId: '555001' });
     const ticket = await insertSupportTicket(db, { requesterType: 'client', requesterId: merchant.id, token: null });
     const staffId = (
       await db
@@ -183,12 +183,10 @@ describe('the ticket message job', () => {
       body: 'Done.',
     });
     const job = await writeEvent(ticket.id, { kind: 'reply', messageId: reply.id, channel: 'telegram' });
-    expect(await run(job)).toEqual({ sent: false, failed: 'Telegram is not linked.' });
-    expect((await notificationRows(db))[0]).toMatchObject({
-      status: 'failed',
-      channel: 'telegram',
-      event: 'support.reply',
-    });
+    // No notification row is made and nothing is sent, even though a chat is still stored on the merchant.
+    expect(await run(job)).toEqual({ sent: false, skipped: 'channel_retired' });
+    expect(await notificationRows(db)).toEqual([]);
+    expect(telegramOutbox(t).sent).toEqual([]);
     expect(await run(await writeEvent(ticket.id, { kind: 'received' }))).toEqual({
       sent: false,
       skipped: 'recipient_gone',
@@ -199,6 +197,8 @@ describe('the ticket message job', () => {
     const { ticket } = await customerTicket();
     const malformed: Array<Record<string, string | number>> = [
       { kind: 'unknown' },
+      // The retired survey: an event of that kind that was written before the retirement is no message any more.
+      { kind: 'survey' },
       { kind: 'reply' },
       { kind: 'reply', messageId: 1, channel: 'sms' },
     ];
@@ -209,14 +209,15 @@ describe('the ticket message job', () => {
   });
 
   it('runs every written event in order through the helper the other tests use', async () => {
-    const { ticket } = await customerTicket();
+    const { db, ticket } = await customerTicket();
+    const second = await insertSupportTicket(db, { requesterId: ticket.requesterId });
     await writeEvent(ticket.id, { kind: 'received' });
-    await writeEvent(ticket.id, { kind: 'survey' });
-    expect(await ticketMailEvents((await testDb()).db)).toHaveLength(2);
+    await writeEvent(second.id, { kind: 'received' });
+    expect(await ticketMailEvents(db)).toHaveLength(2);
     expect(await sendTicketMails(t)).toEqual([{ sent: true }, { sent: true }]);
     expect(mailbox(t).sent.map((mail) => mail.subject)).toEqual([
       `We got your message (${ticket.number})`,
-      `How did we do? (${ticket.number})`,
+      `We got your message (${second.number})`,
     ]);
   });
 });

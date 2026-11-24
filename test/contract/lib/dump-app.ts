@@ -1,12 +1,11 @@
 // Child process of the contract tests: boots the real API once and writes what it serves and promises (route
-// contracts as JSON Schema, events, Fastify's route table) to the file named by argv[2].
+// contracts as JSON Schema, Fastify's route table) to the file named by argv[2].
 // Why a child: bun runs every test file in one process, and other tests register fixture contracts (`/t/...`) in the
 // process-wide registry; a fresh process sees exactly the contracts the application defines (decision 009).
 import 'reflect-metadata';
 import { writeFileSync } from 'node:fs';
 import {
   contractRegistry,
-  eventRegistry,
   isListQuerySchema,
   parseRouteKey,
   supplierCallRegistry,
@@ -58,11 +57,6 @@ const contracts: RouteSnapshot[] = contractRegistry.all().map((contract) => ({
 
 const snapshot: AppSnapshot = {
   contracts,
-  events: eventRegistry.all().map((event) => ({
-    key: event.key,
-    name: event.name,
-    payload: toJsonSchema(event.payload, 'output'),
-  })),
   dhruActions: dhruActionRegistry.all().map((action) => action.key),
   supplierCalls: supplierCallRegistry.keys(),
   served: [...served].sort(),

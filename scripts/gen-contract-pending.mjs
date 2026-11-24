@@ -15,13 +15,13 @@ if (existsSync(OUT) && !process.argv.includes('--force')) {
   process.exit(1);
 }
 
-// Importing the application registers every route contract and event (their definitions run at import time).
+// Importing the application registers every route contract (their definitions run at import time).
 await import('../src/app.module.ts');
-const { contractRegistry, eventRegistry } = await import('../src/common/contract/index.ts');
+const { contractRegistry } = await import('../src/common/contract/index.ts');
 
 const manifest = JSON.parse(readFileSync(join(ROOT, 'docs', 'route-manifest.json'), 'utf8'));
-// Dhru actions and supplier calls have no registry yet (features 7a and 6), so only HTTP routes and events can be built.
-const built = new Set([...contractRegistry.keys(), ...eventRegistry.keys()]);
+// Dhru actions and supplier calls have no registry yet (features 7a and 6), so only HTTP routes can be built.
+const built = new Set(contractRegistry.keys());
 
 const byModule = new Map(manifest.modules.map((module) => [module.id, []]));
 for (const endpoint of manifest.endpoints) {

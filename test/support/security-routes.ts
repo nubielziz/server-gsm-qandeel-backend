@@ -327,13 +327,10 @@ function placeholderRoute<K extends AccessKind>(kind: K) {
     tags: ['security-test'],
     surface: 'store',
     access: kind,
-    // An API key route names the scope the key needs.
-    ...(kind === 'api-key' ? { permission: 'orders:read' } : {}),
     success: { status: 200, schema: Okay },
     errors: ['UNAUTHORIZED'],
   });
 }
-export const placeholderApiKey = placeholderRoute('api-key');
 export const placeholderGateway = placeholderRoute('gateway-signature');
 export const placeholderUrlSecret = placeholderRoute('url-secret');
 export const placeholderCheckout = placeholderRoute('checkout-token');
@@ -343,7 +340,6 @@ export const placeholderTicket = placeholderRoute('ticket-token');
 
 /** The access kinds the placeholder routes above cover, with their URL (the Dhru one is the real `POST /api/index.php`). */
 export const PLACEHOLDER_URLS: Readonly<Record<string, string>> = {
-  'api-key': '/store/v1/t/sec/kind/api-key',
   'gateway-signature': '/store/v1/t/sec/kind/gateway-signature',
   'url-secret': '/store/v1/t/sec/kind/url-secret',
   'checkout-token': '/store/v1/t/sec/kind/checkout-token',
@@ -516,11 +512,6 @@ export class SecurityTestController {
 
   @Route(storePublicWrite)
   storePublicWrite(): ResultOf<typeof storePublicWrite> {
-    return { ok: true };
-  }
-
-  @Route(placeholderApiKey)
-  placeholderApiKey(): { ok: boolean } {
     return { ok: true };
   }
 

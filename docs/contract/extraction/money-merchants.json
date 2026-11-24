@@ -2,14 +2,14 @@
   "features": [
     {
       "feature": "merchants",
-      "summary": "Merchants page: status tabs All/Active/Pending approval/Suspended with server counts (one-row list calls), a Groups tab (client-groups CRUD) and a Verification tab (KYC review). Merchant page: header actions (approve, suspend, reactivate, group move, adjust wallet, credit limit), tabs Orders, Wallet ledger (four balances, paged statement, official statement download, journal dialog), Pricing (client overrides) and API access (list/revoke keys). Every figure (wallet, 30-day stats, group price, floor) comes from the server; the console only formats and shows problem+json refusals.",
+      "summary": "Merchants page: status tabs All/Active/Pending approval/Suspended with server counts (one-row list calls) and a Groups tab (client-groups CRUD). Merchant page: header actions (approve, suspend, reactivate, group move, adjust wallet, credit limit), tabs Orders, Wallet ledger (four balances, paged statement, official statement download, journal dialog), Pricing (client overrides) and API access (list/revoke keys). Every figure (wallet, 30-day stats, group price, floor) comes from the server; the console only formats and shows problem+json refusals.",
       "endpoints": [
         {
           "key": "GET /admin/clients",
           "successStatus": 200,
           "query": "Paging _start/_end (25 per page). Tab counts: _start=0&_end=1 with only status (or nothing for All). Other features (orders, finance, commissions, services) read _start=0&_end=200&_sort=name&_order=asc; palette sends q with _end=5. _sort: name | status only (default name asc; merchants/lib/filters.ts:70). Filters (eq): status=active|pending|suspended, groupId=<id>. q: case-insensitive contains over name, email, company (mock also username, country: mocks/clientRoutes.ts:12). Refetched every 30 s.",
           "request": "",
-          "response": "JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), kycStatus (none|pending|approved|rejected), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.",
+          "response": "JSON array + x-total-count. Row = clients columns id, username, email, name, company, phone, country, groupId, status (active|pending|suspended), referralCode, emailVerifiedAt, createdAt, plus joins group {id, name, discountPercent} or null and referredBy {id, name} or null. Only for callers holding wallet:read: wallet {balance, reserved, creditLimit, available} (same meaning as GET /admin/clients/:id/wallet) and stats over a rolling 30 days of orders.created_at: orders (count), spend (sum total_price of non-rejected orders), profit (sum total_price - total_cost of completed), margin (profit/spend*100 as decimal string with 1 dp, null when spend is 0), successRate (completed/(completed+rejected)*100 as a JSON number, null when none finished), lastOrderAt (latest order created_at or null). Without wallet:read omit both (UI shows dashes). Build joins in one batched query per page. Never send password_hash, totp_secret_enc, telegram_chat_id or notification_prefs.",
           "errors": [
             {
               "status": 403,
@@ -48,8 +48,8 @@
           "key": "POST /admin/clients",
           "successStatus": 201,
           "query": "",
-          "request": "Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be \"0.0000\"), invite: true (always)}. Server: insert clients with status=pending, kyc_status=none, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).",
-          "response": "201 with the new Client (same shape as GET; status pending, kycStatus none, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts \"Invitation sent\" and refetches lists and counts.",
+          "request": "Body {name, email (trimmed, lower-cased), country (ISO-2, upper-cased), groupId? (omitted when groups are unreadable: use the is_default group), creditLimit? (4-dp money string, may be \"0.0000\"), invite: true (always)}. Server: insert clients with status=pending, a generated unique username (Dhru username) and referral_code; in the same DB transaction open the merchant's ledger accounts through money's public `MerchantAccounts.open(tx, { clientId, currency: 'USD', creditLimit, overdraftAllowed })` (feature 3; raw inserts with ON CONFLICT DO NOTHING of client_wallet with overdraft_limit = creditLimit or '0.0000' and client_hold; no postTransaction; it also applies the credit rule below and returns the wallet view); issue the invite token in auth_tokens (purpose 'invite', subject_type 'client', hash only, expires after 1 hour like every one-time token, decisions 010/019) and write the outbox event `merchant.invited` (ids only, never the token); the emailed link is `<PORTAL_BASE_URL>/set-password?token=<token>` and the merchant consumes it with POST /client/auth/password/reset {token, password} (purposes reset and invite); a merchant who misses the hour uses POST /client/auth/password/forgot, which also works for a pending merchant with no password yet; audit_logs entry. No money event. Credit rule (user rule 2): creditLimit > 0 is refused when the chosen group (groupId, or the is_default group when omitted) has overdraft_allowed = false (see Errors).",
+          "response": "201 with the new Client (same shape as GET; status pending, wallet {balance '0.0000', reserved '0.0000', creditLimit, available = creditLimit} returned by MerchantAccounts.open). The console toasts \"Invitation sent\" and refetches lists and counts.",
           "errors": [
             {
               "status": 422,
@@ -95,7 +95,7 @@
             {
               "status": 409,
               "code": "INVALID_TRANSITION",
-              "when": "status change not allowed from the current status, or a policy refusal (tests use KYC_REQUIRED / LAST_ACTIVE as examples)",
+              "when": "status change not allowed from the current status, or a policy refusal (tests use LAST_ACTIVE as an example)",
               "ui": "approve, reactivate and group menu: default error toast (title + detail); suspend dialog: detail in its error slot"
             },
             {
@@ -595,19 +595,19 @@
       ],
       "businessRules": [
         "Status machine: pending->active (approve), active->suspended (reason 3-140 chars), suspended->active (reactivate); anything else 409. Suspended merchants cannot place new orders on any surface; open orders keep processing; wallet untouched (SuspendMerchantDialog.tsx:1-2; demo 42-p-merchants.js m-suspend; MerchantHeader.tsx:76-106). Each change writes audit_logs with from/to and reason (demo 11-state.js:329-335).",
-        "Approving an account does not require an approved verification: the demo pending note says \"KYC is in review. The merchant cannot place orders until you approve the account.\" (MerchantNote.tsx:34-38). Any policy refusal must be a problem+json the toast can show (MerchantsActions.test.tsx:40-56).",
+        "Approving an account requires no verification by documents (retired, B243, decision 061): the pending note says \"The merchant cannot place orders until you approve the account.\" (MerchantNote.tsx). Any policy refusal must be a problem+json the toast can show (MerchantsActions.test.tsx:40-56).",
         "Group move prices new orders only (open orders keep orders.pricing_snapshot); merchants can never be put in the b2c_retail group (lib/groups.ts:6-16; client_groups kind = b2c_retail is the single storefront group).",
         "Wallet figures come from the ledger: moneyEvent \"order\" (Dr client_wallet / Cr client_hold) holds the price, \"reject\" returns it (Dr client_hold / Cr client_wallet), \"complete\" moves it to revenue (Dr client_hold / Cr revenue, plus Dr cogs / Cr supplier_prepaid). So balance excludes reserved and available = balance + creditLimit; an order is refused when available < price (money.json order.need \"اشحن الرصيد أولاً\"; mocks/dto.ts:14-21).",
         "Manual adjustment = moneyEvent \"adjust\" (credit: Dr adjustments / Cr client_wallet; debit mirrored), ledger kind \"adjustment\", in one DB transaction with the balance update and audit_logs; entries are never edited or deleted, corrections are reverse entries (scenario system-integrity step 6: \"القيود لا تُعدَّل ولا تُحذف\").",
         "Adjustment refusals the dialog shows: amount over the approval limit -> 409 APPROVAL_REQUIRED (demo $10,000, walletRoutes.ts:14,47); debit taking balance below -creditLimit -> 409 CREDIT_LIMIT_EXCEEDED (walletRoutes.ts:55; demo 42-p-merchants.js:126); reason at least 5 characters (AdjustWalletDialog.tsx:86-90).",
         "Credit limit = client_wallet.overdraft_limit, >= 0, 0 removes the credit; only for merchants whose group has overdraft_allowed (GroupDialog label \"Merchants in this group can use a credit limit\"); audit entry; no ledger entry (M55).",
         "Balance updates use ledger_accounts.version (optimistic lock) so concurrent holds, deposits and adjustments cannot overspend; the statement, wallet and reconciliation all read the same client_wallet account.",
-        "API keys: staff can only list and revoke (M45); revoke sets revoked_at, acts immediately (key cache), writes audit_logs (manifest tables api_keys, audit_logs); key_hash is never returned; a second revoke is 409 ALREADY_REVOKED (kycRoutes.ts:69).",
+        "API keys: staff can only list and revoke (M45); revoke sets revoked_at, acts immediately (key cache), writes audit_logs (manifest tables api_keys, audit_logs); key_hash is never returned; a second revoke is 409 ALREADY_REVOKED (apiKeyRoutes.ts:85).",
         "Client groups: exactly one default group (groupRoutes.ts:26-31); names unique case-insensitive (groupRoutes.ts:33-34); delete refused while merchants are in it with 409 GROUP_IN_USE (groupRoutes.ts:96); groups created through the API get kind \"b2b\" (groupRoutes.ts:60); the b2c_retail group cannot be deleted; a discount change applies to the next orders only (useClientGroups.ts:41-53); depositLimit is the most a merchant of the group may add in one deposit (0 = no limit; a deposit above a non-zero limit is 422 on amount, feature 8); promotion (user rule 1): the nightly job moves a merchant to the b2b group with the highest earnThreshold > 0 that is <= the merchant's spend and above the current group's threshold; a group with earnThreshold 0 (the default group, or any left at 0) and b2c_retail are never targets; earnThreshold and depositLimit are >= 0.",
         "Client prices: price must be >= the service floor (cost + minimum profit) else 422 on price (priceRoutes.ts:13-21; demo setPrice floor rule in 11-state.js); one price per (client, service) else 409 PRICE_EXISTS (priceRoutes.ts:48); it beats group price, category rule and discounts (api/prices.ts:1-3); deleting returns the merchant to the group price from the next order.",
-        "KYC decide: pending only (409 ALREADY_DECIDED, kycRoutes.ts:41); reject needs a note (kycRoutes.ts:39); sets clients.kyc_status (kycRoutes.ts:51; manifest tables kyc_submissions, clients), reviewed_by, reviewed_at; the merchant is notified.",
-        "Invite: account starts pending with kyc_status none, unique email (409 EMAIL_TAKEN), default group when groupId is omitted (clientRoutes.ts:57-74), sign-up link emailed with a hashed one-time token (identity scenario admin-team step 2 pattern).",
-        "Permissions per route (M7 reading of x:*): clients:read/create/update; wallet:read, wallet:adjust, wallet:credit_limit; reports:read (official statement); api_keys:read, api_keys:revoke; groups:read/create/update/delete; pricing:read/create/update/delete; kyc:read, kyc:decide. Wallet and 30-day stats inside client rows require wallet:read (M52)."
+        "Retired (B243, decision 061): merchant verification by documents. There is no upload, review queue, decision, verification label or verification mail for a merchant.",
+        "Invite: account starts pending, unique email (409 EMAIL_TAKEN), default group when groupId is omitted (clientRoutes.ts:57-74), sign-up link emailed with a hashed one-time token (identity scenario admin-team step 2 pattern).",
+        "Permissions per route (M7 reading of x:*): clients:read/create/update; wallet:read, wallet:adjust, wallet:credit_limit; reports:read (official statement); api_keys:read, api_keys:revoke; groups:read/create/update/delete; pricing:read/create/update/delete. Wallet and 30-day stats inside client rows require wallet:read (M52)."
       ],
       "questions": [
         {
@@ -645,7 +645,7 @@
         {
           "n": 5,
           "question": "Status changes: does PATCH take status and reason, or are approve/suspend/reactivate separate? Does approving need an approved verification?",
-          "proposedAnswer": "One route: PATCH takes status (+ reason when suspending) or groupId; the map has no separate approve/suspend endpoints. Allowed: pending->active, active->suspended, suspended->active, else 409. Approving does not require an approved verification (the demo approves while KYC is in review); a future policy refusal is a 409 with its own code.",
+          "proposedAnswer": "One route: PATCH takes status (+ reason when suspending) or groupId; the map has no separate approve/suspend endpoints. Allowed: pending->active, active->suspended, suspended->active, else 409. Approving requires no verification by documents (retired, B243, decision 061); a future policy refusal is a 409 with its own code.",
           "basis": "map CRUD /admin/clients \"creation, group, status and blocking\"; demo 11-state.js setMerchantStatus; MerchantNote.tsx:34-38; MerchantHeader.tsx:76-106",
           "confidence": "medium",
           "needsUser": false
@@ -676,9 +676,9 @@
         },
         {
           "n": 9,
-          "question": "Verification: are files joined, are statuses pending|approved|rejected, does approving activate the merchant or only set kyc_status, and is the rejection reason sent to the merchant?",
-          "proposedAnswer": "files joined as [{id, filename, mime, size}]; statuses pending|approved|rejected; deciding sets kyc_submissions.status and clients.kyc_status only (clients.status changes only through PATCH /admin/clients); the rejection note is sent to the merchant (notification) and shown by GET /client/kyc.",
-          "basis": "map POST /admin/kyc-submissions/:id/decide tables kyc_submissions, clients; kyc_submissions columns file_ids, note; kycRoutes.ts:39-51",
+          "question": "Verification by documents: is anything to be built for it? (Superseded: the earlier question about joined files, statuses and the rejection note no longer applies.)",
+          "proposedAnswer": "No. Merchant verification by documents was retired (B243, decision 061): no routes, no verification label on a merchant row and no permissions for it.",
+          "basis": "B243; decision 061",
           "confidence": "medium",
           "needsUser": false
         },
@@ -686,7 +686,7 @@
           "n": 10,
           "question": "API keys: plain array or paged list? Status field, or revokedAt/expiresAt as the truth?",
           "proposedAnswer": "Plain array of all the merchant keys, newest first; no status field: revokedAt and expiresAt are the truth (the console derives the state).",
-          "basis": "api_keys columns revoked_at, expires_at; kycRoutes.ts:61; merchants/lib/keys.ts",
+          "basis": "api_keys columns revoked_at, expires_at; apiKeyRoutes.ts:11; merchants/lib/keys.ts",
           "confidence": "high",
           "needsUser": false
         },
@@ -733,8 +733,8 @@
         },
         {
           "id": "M47",
-          "summary": "Verification tab with document links to /admin/files/:id.",
-          "backendImpact": "Join file metadata on KYC rows; the files route must serve KYC documents to files:read."
+          "summary": "Retired (B243, decision 061): the Verification tab with its document links is gone.",
+          "backendImpact": "None: no route joins file metadata on verification rows any more; a document stored earlier needs clients:read to open."
         },
         {
           "id": "M48",
@@ -832,14 +832,11 @@
         },
         {
           "routes": [
-            "GET /admin/kyc-submissions",
-            "GET /admin/kyc-submissions/:id",
-            "POST /admin/kyc-submissions/:id/decide",
             "GET /admin/clients/:id/api-keys",
             "DELETE /admin/api-keys/:id"
           ],
-          "file": "src/features/merchants/mocks/kycRoutes.ts",
-          "note": "KYC rows are synthetic (mocks/kycSeed.ts, the demo has none); API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras)."
+          "file": "src/features/merchants/mocks/apiKeyRoutes.ts",
+          "note": "API keys from mocks/seed.ts keysOf (demo key + IPs per merchant plus extras)."
         }
       ]
     },

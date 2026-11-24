@@ -4,7 +4,6 @@ export { MoneyModule } from './money.module';
 export { MerchantAccounts } from './application/merchant-accounts';
 export type { OpenMerchantAccountsInput, OpenedWallet } from './application/merchant-accounts';
 export { MerchantWallets } from './application/merchant-wallets';
-export { MerchantSpend } from './application/merchant-spend';
 export { StorefrontMoney } from './application/storefront-money';
 export type { StorefrontCurrency, StorefrontPaymentMethod, TaxInForce } from './application/storefront-money';
 export { OrderSettlements } from './application/order-settlements';
@@ -82,8 +81,6 @@ export {
   b2cFee,
   b2cPay,
   b2cRefund,
-  commission,
-  commissionReversal,
   complete,
   deposit,
   order,
@@ -96,13 +93,7 @@ export {
   reopenB2c,
   topup,
 } from './domain/money-events';
-export type {
-  CommissionReversalPosting,
-  MoneyEventId,
-  MoneyEventPosting,
-  ReversalEventId,
-  ReversalPosting,
-} from './domain/money-events';
+export type { MoneyEventId, MoneyEventPosting, ReversalEventId, ReversalPosting } from './domain/money-events';
 export { isRateStale } from './domain/currency-rules';
 export { WIRE_REF_TYPES, storedRefTypesOf, toWireRefType } from './domain/ref-types';
 export type { WireRefType } from './domain/ref-types';

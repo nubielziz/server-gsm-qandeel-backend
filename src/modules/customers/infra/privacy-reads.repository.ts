@@ -1,11 +1,11 @@
-// Reads of the customer privacy routes that reach tables other modules own (orders, payments, IMEI checks, support tickets, data
+// Reads of the customer privacy routes that reach tables other modules own (orders, payments, support tickets, data
 // requests, the blocklist), kept in this one file: the block collects what to block, the export collects what is held about a customer,
 // and the anonymization cuts the IMEI out of the orders (a write the orders module does, through its export) and out of the customer's own
 // checkout sessions.
 //
 // DEVIATION to resolve when those modules export reads (decision 016): orders, money, support and risk export no per-customer read, so
 // this file reads their tables with plain selects, like the other foreign-read files. Nothing outside this file names a foreign table.
-import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import { rewriteCustomerOrderInputs } from '../../orders';
 import { erasedMainInput } from '../../risk';
@@ -190,17 +190,6 @@ export interface ExportTicket {
   readonly messages: Array<{ author: string; body: string; createdAt: Date }>;
 }
 
-/** The IMEI check rows of an export. */
-export interface ExportImeiCheck {
-  readonly id: number;
-  readonly imeiEnc: string | null;
-  readonly source: string;
-  readonly checkType: string;
-  readonly status: string;
-  readonly ip: string | null;
-  readonly createdAt: Date;
-}
-
 /** The data request rows of an export. */
 export interface ExportRequest {
   readonly id: number;
@@ -218,7 +207,6 @@ export interface ExportRows {
   readonly sessions: ExportSession[];
   readonly consents: ExportConsent[];
   readonly tickets: ExportTicket[];
-  readonly imeiChecks: ExportImeiCheck[];
   readonly requests: ExportRequest[];
 }
 
@@ -227,8 +215,8 @@ export interface ExportRows {
  *
  * Why: GET /admin/customers/:id/export, the data-subject access right: the profile (read by the caller), the orders with their IMEI,
  * the payments without card data, the consents, the checkout sessions, the support tickets with their public messages (never the
- * internal notes; a ticket opened with a typed address that was never confirmed is not the customer's data, decision 053), the IMEI
- * checks and the data requests. It works for an anonymized customer too (the rows then hold the masks).
+ * internal notes; a ticket opened with a typed address that was never confirmed is not the customer's data, decision 053) and the data
+ * requests. It works for an anonymized customer too (the rows then hold the masks).
  *
  * @param db the database or a transaction
  * @param customerId the customer
@@ -307,23 +295,6 @@ export async function exportRowsOf(db: DbExecutor, customerId: number): Promise<
     .where(and(eq(s.consentRecords.subjectType, 'customer'), eq(s.consentRecords.subjectId, customerId)))
     .orderBy(asc(s.consentRecords.id));
   const tickets = await ticketsOf(db, customerId);
-  const sessionIds = db
-    .select({ id: s.checkoutSessions.id })
-    .from(s.checkoutSessions)
-    .where(eq(s.checkoutSessions.customerId, customerId));
-  const imeiChecks = await db
-    .select({
-      id: s.imeiChecks.id,
-      imeiEnc: s.imeiChecks.imeiEnc,
-      source: s.imeiChecks.source,
-      checkType: s.imeiChecks.checkType,
-      status: s.imeiChecks.status,
-      ip: s.imeiChecks.ip,
-      createdAt: s.imeiChecks.createdAt,
-    })
-    .from(s.imeiChecks)
-    .where(sql`${s.imeiChecks.customerId} = ${customerId} or ${s.imeiChecks.checkoutSessionId} in (${sessionIds})`)
-    .orderBy(asc(s.imeiChecks.id));
   const requests = await db
     .select({
       id: s.dataRequests.id,
@@ -336,7 +307,7 @@ export async function exportRowsOf(db: DbExecutor, customerId: number): Promise<
     .from(s.dataRequests)
     .where(eq(s.dataRequests.customerId, customerId))
     .orderBy(asc(s.dataRequests.id));
-  return { orders, payments, sessions, consents, tickets, imeiChecks, requests };
+  return { orders, payments, sessions, consents, tickets, requests };
 }
 
 async function ticketsOf(db: DbExecutor, customerId: number): Promise<ExportTicket[]> {

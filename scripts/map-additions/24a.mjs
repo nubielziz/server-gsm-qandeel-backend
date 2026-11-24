@@ -1,5 +1,5 @@
-// Feature 24A (smart sign-in): the one sign-in route beyond the map, and Turnstile added to the three public merchant auth rows
-// (decision 035; plan docs/briefs/24A-smart-sign-in.md § 2.5). The flags are enforced only when TURNSTILE_MERCHANT_AUTH is on.
+// Feature 24A (smart sign-in): the one sign-in route beyond the map, and Turnstile added to the two public merchant auth rows
+// that remain (decision 035; plan docs/briefs/24A-smart-sign-in.md § 2.5). The flags are enforced only when TURNSTILE_MERCHANT_AUTH is on.
 import { R } from '../lib/map-additions.mjs';
 
 export const rows = [
@@ -21,7 +21,6 @@ export const rows = [
 ];
 
 export const rowFlags = [
-  { row: 'client POST /client/auth/register', turnstile: true, spec: 'B-TBD merchant-auth-turnstile' },
   { row: 'client POST /client/auth/login', turnstile: true, spec: 'B-TBD merchant-auth-turnstile' },
   { row: 'client POST /client/auth/password/forgot', turnstile: true, spec: 'B-TBD merchant-auth-turnstile' },
 ];

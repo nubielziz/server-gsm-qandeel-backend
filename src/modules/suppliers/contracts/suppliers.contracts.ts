@@ -299,7 +299,7 @@ export const deleteSupplier = defineRoute({
   summary: 'Delete a supplier',
   description:
     'Refused with `409 SUPPLIER_IN_USE` when any order references the supplier (open orders: "it has N open orders", else "it has order ' +
-    'history"), a service link points at one of its services, a call log row belongs to an order, or an IMEI check used it. Otherwise ' +
+    'history"), a service link points at one of its services, or a call log row belongs to an order. Otherwise ' +
     'the log rows of its tests and syncs go with it: a supplier that was only tested or synced is deleted (`204`). Disable it to stop a ' +
     'supplier that has history.',
   tags: ['suppliers'],

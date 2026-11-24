@@ -63,7 +63,6 @@ describe('GET /store/v1/orders/:token', () => {
       completedAt: new Date('2026-11-07T12:02:10.000Z'),
       supplierRef: 'NG-8841',
       adminNote: 'staff only note',
-      clientNote: 'client note',
     });
     await db.insert(s.orderEvents).values([
       {
@@ -142,7 +141,6 @@ describe('GET /store/v1/orders/:token', () => {
       'Nordic',
       'NG-8841',
       'staff only',
-      'client note',
       'Risk score',
       'cost',
       APPLE_IMEI,

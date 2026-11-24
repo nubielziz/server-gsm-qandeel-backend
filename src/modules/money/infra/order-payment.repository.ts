@@ -11,7 +11,7 @@ export const CAPTURED_STATUSES = ['captured', 'partial_refund', 'refunded', 'dis
  * Takes the lock of a pay call without waiting.
  *
  * Why: two `/pay` calls with the same checkout and `Idempotency-Key` must not both open a gateway checkout; the loser learns at once
- * that the key is in use (`409 IDEMPOTENCY_IN_PROGRESS`), as REST v1 does.
+ * that the key is in use (`409 IDEMPOTENCY_IN_PROGRESS`), as the portal's order placement does.
  *
  * @param db the transaction
  * @param sessionId the checkout session

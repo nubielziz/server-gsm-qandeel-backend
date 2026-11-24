@@ -1,5 +1,5 @@
 // Integration tests of the payment screening (feature 18, RiskScreening, RESOLUTIONS orders-suppliers-11 and money-3): the signals read
-// from the database (earlier orders, the blocklist, earlier IMEI checks), the rules that decide, the assessment row, the link to the
+// from the database (earlier orders, the blocklist), the rules that decide, the assessment row, the link to the
 // order and the top-up question billing asks.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
@@ -12,7 +12,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { DAY, HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertOrderRow, type OrdersWorld, ordersWorld } from '../../support/orders';
-import { assessmentOf, insertBlock, insertHeldOrder, insertImeiCheck } from '../../support/risk';
+import { assessmentOf, insertBlock, insertHeldOrder } from '../../support/risk';
 import { insertTaxWindow } from '../../support/storefront';
 
 const clock = new TestClock('2026-11-08T12:00:00.000Z');
@@ -240,20 +240,6 @@ describe('RiskScreening.assess', () => {
     expect((await assess({ email: 'temp@example.com' })).block).toBe(true);
     clock.advance(2 * HOUR);
     expect((await assess({ email: 'temp@example.com' })).block).toBe(false);
-  });
-
-  it('blocks an IMEI an earlier check found blacklisted while its rule is on, and only scores it when the rule is off', async () => {
-    const { db } = world;
-    await insertImeiCheck(t, db, '353890113898412', { checkType: 'blacklist', status: 'blacklisted' });
-    await earlierOrders('calm@example.com', 1, new Date(clock.nowMs() - 5 * DAY));
-    const blocked = await assess({ imei: '353890113898412' });
-    expect(blocked).toMatchObject({ decision: 'block', score: 100, signals: ['IMEI was checked blacklisted before'] });
-    await owner.put('/admin/risk/rules', { rules: [{ id: 'blockBlacklistedImei', on: false, value: null }] });
-    const scored = await assess({ imei: '353890113898412' });
-    expect(scored).toMatchObject({ decision: 'allow', score: 30 });
-    // A check of another IMEI, or a clean one, says nothing.
-    await insertImeiCheck(t, db, '352905112490861', { status: 'clean' });
-    expect((await assess({ imei: '352905112490861' })).signals).toEqual([]);
   });
 
   it('follows the rules saved through the rules route on the very next payment', async () => {

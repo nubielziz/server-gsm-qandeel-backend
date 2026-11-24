@@ -11,7 +11,7 @@
       "admin": 45,
       "store": 1
     },
-    "frontendCalled": 44
+    "frontendCalled": 41
   },
   "stages": [
     2,
@@ -289,7 +289,7 @@
       "descriptionAr": "تسجيل تاجر جديد وإرسال إيميل التفعيل",
       "access": "public",
       "permission": null,
-      "turnstile": true,
+      "turnstile": false,
       "idempotencyKey": false,
       "authRaw": "عام",
       "stage": 2,
@@ -305,11 +305,7 @@
       },
       "module": "identity",
       "description": "Register a new merchant and send the verification email.",
-      "frontend": null,
-      "rowFlag": {
-        "file": "scripts/map-additions/24a.mjs",
-        "spec": "B-TBD merchant-auth-turnstile"
-      }
+      "frontend": null
     },
     {
       "key": "POST /client/auth/verify-email",
@@ -1852,7 +1848,7 @@
       "description": "Active sessions of staff members and merchants.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 18,
+        "line": 23,
         "fn": "listSessions"
       }
     },
@@ -1885,7 +1881,7 @@
       "description": "End a session.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 27,
+        "line": 33,
         "fn": "revokeSession"
       }
     },
@@ -2050,7 +2046,7 @@
       "description": "API keys of a merchant.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 11,
+        "line": 17,
         "fn": "listClientApiKeys"
       }
     },
@@ -2084,7 +2080,7 @@
       "description": "Revoke a merchant API key.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 21,
+        "line": 27,
         "fn": "revokeApiKey"
       }
     },
@@ -2115,11 +2111,7 @@
       },
       "module": "identity",
       "description": "Verification (KYC) requests.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 20,
-        "fn": "listKycSubmissions"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/kyc-submissions/:id",
@@ -2148,11 +2140,7 @@
       },
       "module": "identity",
       "description": "Verification (KYC) requests.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 32,
-        "fn": "getKycSubmission"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/kyc-submissions/:id/decide",
@@ -2182,11 +2170,7 @@
       },
       "module": "identity",
       "description": "Approve or reject the verification.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 42,
-        "fn": "decideKycSubmission"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/clients/:id/password",
@@ -2380,7 +2364,7 @@
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 32,
+        "line": 39,
         "fn": "createClientApiKey"
       },
       "addition": {
@@ -2419,7 +2403,7 @@
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 45,
+        "line": 56,
         "fn": "updateApiKey"
       },
       "addition": {

@@ -94,13 +94,20 @@ describe('POST /admin/alert-rules', () => {
       'ledger.mismatch_count': 'count',
       'db.connection_usage': 'percent',
       'redis.memory_usage': 'percent',
-      'webhooks.success_rate': 'percent',
     };
     for (const [metric, unit] of Object.entries(units)) {
       const res = await staff.post('/admin/alert-rules', body({ key: `k_${metric.replace('.', '_')}`, metric }));
       expect(res.status, metric).toBe(201);
       expect(res.body.unit, metric).toBe(unit);
     }
+  });
+
+  it('refuses the retired metric of the deliveries to merchants like any unknown metric', async () => {
+    const res = await staff.post(
+      '/admin/alert-rules',
+      body({ key: 'retired_metric', metric: 'webhooks.success_rate' }),
+    );
+    expect(res.status).toBe(422);
   });
 
   it('answers 422 with a message per field', async () => {

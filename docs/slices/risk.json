@@ -10,7 +10,7 @@
       "store": 3,
       "admin": 14
     },
-    "frontendCalled": 14
+    "frontendCalled": 12
   },
   "stages": [
     14,
@@ -518,11 +518,7 @@
       },
       "module": "risk",
       "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
-      "frontend": {
-        "file": "src/features/risk/api/imeiChecks.ts",
-        "line": 11,
-        "fn": "listImeiChecks"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/imei-checks/:id",
@@ -551,11 +547,7 @@
       },
       "module": "risk",
       "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
-      "frontend": {
-        "file": "src/features/risk/api/imeiChecks.ts",
-        "line": 20,
-        "fn": "getImeiCheck"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/blocklist",

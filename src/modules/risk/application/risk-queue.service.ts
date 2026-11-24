@@ -42,7 +42,6 @@ export interface HeldOrderView {
     readonly name: string;
     readonly email: string;
     readonly country: string;
-    readonly riskLevel: 'low' | 'medium' | 'high';
     readonly history: { readonly earlierOrders: number; readonly refunds: number; readonly disputes: number };
   };
 }
@@ -168,7 +167,6 @@ export class RiskQueueService {
         name: row.customerName,
         email: customerEmailIn(contact, row.customerEmail),
         country: row.customerCountry,
-        riskLevel: row.customerRisk,
         history: histories.get(row.orderId) ?? { earlierOrders: 0, refunds: 0, disputes: 0 },
       },
     };

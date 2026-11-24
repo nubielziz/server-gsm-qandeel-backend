@@ -1,4 +1,4 @@
-// Route contracts of the merchant portal's sign-in (map domain A, routes /client/auth/*, stage 2): register, verify email,
+// Route contracts of the merchant portal's sign-in (map domain A, routes /client/auth/*, stage 2): verify email,
 // login, the TOTP step, logout, the password links and "me". No console screen calls them (the portal is another frontend):
 // the shapes follow docs/contract/MISMATCHES.md B121 to B129 and ALIGNMENT § 7.
 import { z } from 'zod';
@@ -23,21 +23,6 @@ export const MerchantCountry = z
   .regex(/^[A-Za-z]{2}$/, 'Use a two-letter country code, like JO.')
   .toUpperCase();
 
-/**
- * The registration form (B122).
- *
- * Why: the password's upper bound only keeps oversize input out; the policy itself is the server's (`WEAK_PASSWORD`).
- */
-const RegisterBody = z.object({
-  name: z.string().trim().min(1, 'Enter your name.').max(120),
-  email: MerchantEmail,
-  password: z.string().min(1).max(1024),
-  company: z.string().trim().max(160).optional(),
-  phone: z.string().trim().max(40).optional(),
-  country: MerchantCountry,
-  referralCode: z.string().trim().min(1).max(32).optional(),
-});
-
 const LoginBody = z.object({
   email: z.string().trim().min(1).max(254),
   password: z.string().min(1).max(1024),
@@ -53,10 +38,8 @@ export const MerchantMeShape = z.object({
   phone: z.string(),
   country: z.string(),
   status: z.enum(['pending', 'active', 'suspended']),
-  kycStatus: z.enum(['none', 'pending', 'approved', 'rejected']),
   emailVerifiedAt: zIsoDateTime.nullable(),
   twofaEnabled: z.boolean(),
-  referralCode: z.string(),
   group: z.object({ id: zId, name: z.string(), discountPercent: zDecimal }),
   createdAt: zIsoDateTime,
   address: z.string(),
@@ -74,11 +57,9 @@ export const MERCHANT_ME_EXAMPLE = {
   company: 'Hassan Mobile',
   phone: '+962791234567',
   country: 'JO',
-  status: 'pending',
-  kycStatus: 'none',
+  status: 'active',
   emailVerifiedAt: null,
   twofaEnabled: false,
-  referralCode: 'GSM7K2QXD',
   group: { id: 1, name: 'Standard', discountPercent: '0.0000' },
   createdAt: '2026-11-01T09:30:00.000Z',
   address: '',
@@ -86,43 +67,12 @@ export const MERCHANT_ME_EXAMPLE = {
   mustChangePassword: false,
 } as const;
 
-/** `POST /client/auth/register`: a visitor becomes a pending merchant; the answer never says whether the email was known. */
-export const merchantRegister = defineRoute({
-  key: 'POST /client/auth/register',
-  summary: 'Register a new merchant',
-  description:
-    'Answers `204` for a new and for an already registered email alike, so it cannot be used to find out who is registered. A ' +
-    'new email creates a merchant that is `pending` until staff approve it, opens its wallet, and sends the verification email. ' +
-    'An existing email changes nothing and sends nothing. Counted per address, whether or not the email exists.' +
-    ' Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).',
-  tags: ['auth'],
-  surface: 'client',
-  access: 'public',
-  csrf: false,
-  turnstile: true,
-  turnstileRollout: 'merchant-auth',
-  body: RegisterBody,
-  success: { status: 204 },
-  errors: ['VALIDATION_FAILED', 'WEAK_PASSWORD', 'IP_NOT_ALLOWED', 'CSRF_FAILED', 'RATE_LIMITED'],
-  examples: {
-    request: {
-      name: 'Ali Hassan',
-      email: 'ali@example.com',
-      password: 'a-long-password',
-      company: 'Hassan Mobile',
-      phone: '+962791234567',
-      country: 'JO',
-      referralCode: 'GSM0001',
-    },
-  },
-});
-
 /** `POST /client/auth/verify-email`: the link of the verification email. */
 export const merchantVerifyEmail = defineRoute({
   key: 'POST /client/auth/verify-email',
   summary: 'Verify the email with the token',
   description:
-    'Marks the email verified. The status stays `pending` until staff approve the merchant, and the call signs nobody in. The address and ' +
+    'Marks the email verified, and the call signs nobody in. The address and ' +
     'the holder of the password prove the account together: when the request carries no full session of that merchant, the password ' +
     'chosen before stops working, two-step sign-in is turned off, every session of the merchant ends and the address gets the ' +
     'password-reset mail to choose a new one. ' +
@@ -145,7 +95,7 @@ export const merchantLogin = defineRoute({
     'Opens a session: `pending_password` (10 minutes) when staff set a temporary password that is not replaced yet (`next: password`: ' +
     'the portal shows a new-password form and calls `POST /client/auth/password/change`), `pending_totp` (10 minutes) when the ' +
     'merchant has two-factor sign-in on, a full one otherwise. A merchant ' +
-    'waiting for approval signs in too (it can read its status and manage its own account). One `401` answers an unknown email, ' +
+    'whose status is still `pending` (an account that was never activated) signs in too (it can read its status and manage its own account). One `401` answers an unknown email, ' +
     'a wrong password and a merchant with no password yet.' +
     ' Five attempts per email and network (an IPv4 address or an IPv6 /64) in 15 minutes; ten failed attempts for one email (a success in between does not cancel them) lock it for 15 minutes for every network its account has not signed in from (the lock is shared with `POST /store/v1/auth/login` and `POST /client/auth/sign-in`): both answer `429 RATE_LIMITED` with `Retry-After`, the same for every email.' +
     ' While the lock runs, the attempts a network the account has signed in from is still allowed share one budget per network: five in 15 minutes, then `429 RATE_LIMITED` like any other attempt.' +
@@ -235,8 +185,7 @@ export const merchantResendVerification = defineRoute({
   key: 'POST /client/auth/verify-email/resend',
   summary: 'Resend the verification email',
   description:
-    'Emails the signed-in merchant a new one-hour verification link; it replaces the older one. A merchant waiting for approval may ' +
-    'call it. `409 CONFLICT` when the email is already verified (refresh `me`), `429` after five mails an hour. There is no public ' +
+    'Emails the signed-in merchant a new one-hour verification link; it replaces the older one. `409 CONFLICT` when the email is already verified (refresh `me`), `429` after five mails an hour. There is no public ' +
     'resend route.',
   tags: ['auth'],
   surface: 'client',
@@ -251,8 +200,8 @@ export const merchantForgotPassword = defineRoute({
   key: 'POST /client/auth/password/forgot',
   summary: 'Send a password reset link',
   description:
-    'Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one waiting for ' +
-    'approval that has no password yet, gets a link valid for one hour; up to three such links work at once (a fourth replaces the ' +
+    'Answers `204` whether or not the email belongs to a merchant. A merchant that is not suspended, including one that has ' +
+    'no password yet, gets a link valid for one hour; up to three such links work at once (a fourth replaces the ' +
     'oldest), and at most five are mailed an hour per merchant; a request beyond that answers `204` and sends nothing.' +
     ' Send `X-Turnstile-Token`: production requires it (`TURNSTILE_MERCHANT_AUTH`, on by default there).',
   tags: ['auth'],
@@ -273,8 +222,8 @@ export const merchantResetPassword = defineRoute({
   summary: 'Set a new password with the reset token',
   description:
     'Accepts a reset link and the invitation link of a merchant that staff created. It sets the password, uses the link up, ends ' +
-    'every session of the merchant and signs nobody in; an invitation also marks the email verified. The status stays `pending` ' +
-    'until staff approve the merchant. A weak password does not use the link up. On a merchant whose email is not verified yet it ' +
+    'every session of the merchant and signs nobody in; an invitation also marks the email verified. A weak ' +
+    'password does not use the link up. On a merchant whose email is not verified yet it ' +
     'also turns two-factor sign-in off.',
   tags: ['auth'],
   surface: 'client',
@@ -286,12 +235,12 @@ export const merchantResetPassword = defineRoute({
   examples: { request: { token: 'k3Jx9Qd7mT2vN8bR5yHc1WzA4uLsE6oPgF0iVtXnDqM', password: 'a-long-new-password' } },
 });
 
-/** `GET /client/auth/me`: the merchant's account, approval status and group. */
+/** `GET /client/auth/me`: the merchant's account, status and group. */
 export const merchantMe = defineRoute({
   key: 'GET /client/auth/me',
   summary: "The merchant's details and client group",
   description:
-    'Full sessions only. Works for a merchant waiting for approval: `status` says `pending`. Never cached, and repeats the CSRF ' +
+    'Full sessions only. `status` is `active`, `suspended` or, for an account that was never activated, `pending`. Never cached, and repeats the CSRF ' +
     'token in the `X-CSRF-Token` header (the first call after every reload).',
   tags: ['auth'],
   surface: 'client',

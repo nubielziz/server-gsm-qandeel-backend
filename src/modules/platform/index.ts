@@ -1,8 +1,7 @@
 // Public API of the platform module: the module itself, what the bootstrap, the generator script and the contract tests
 // need from its documentation routes, the audit log, the transactional outbox (write events, register their queues, relay
-// them), the settings readers, maintenance mode and the merchant webhooks (the event contracts and outbox routes of 7b, the
-// delivery engine, the processor of the `merchant-webhooks` queue) and the notifications (event registry, templates, delivery, the
-// mail and Telegram channels, a merchant's preference rules), the inbox doorbell and live-stream source (feature 27) and the public service
+// them), the settings readers, maintenance mode and the notifications (event registry, templates, delivery, the
+// mail channel and the Telegram channel of the operations alerts, a merchant's preference rules), the inbox doorbell and live-stream source (feature 27) and the public service
 // pictures of the storefront.
 export { PlatformModule } from './platform.module';
 export { FilesModule } from './files.module';
@@ -37,7 +36,6 @@ export {
   buildInternalDocument,
   buildOpenApiDocuments,
   buildPublicDocument,
-  buildWebhooks,
   serializeOpenApiDocument,
   stripSchemaKeyword,
 } from './docs/openapi-documents';
@@ -64,8 +62,6 @@ export {
   CUSTOMER_WALLET_SETTINGS,
   CUSTOMER_WALLET_SETTING_RANGES,
   FX_GUARD_SETTINGS,
-  IMEI_RETENTION_MAX_DAYS,
-  imeiRetentionDaysProblem,
   INBOX_READ_RETENTION_DAYS_KEY,
   INBOX_RETENTION_DAYS_KEY,
   LOG_RETENTION_DAYS_KEY,
@@ -114,39 +110,8 @@ export type {
   OutboxPayloadValue,
   OutboxRoute,
 } from './outbox/outbox.types';
-export { WebhookEventsModule } from './webhooks/webhook-events.module';
-export { WebhookDeliveryModule } from './webhooks/webhook-delivery.module';
-export { MerchantWebhooksModule } from './webhooks/merchant-webhooks.module';
-export { MerchantWebhookService } from './webhooks/merchant-webhook.service';
-export {
-  portalCreateWebhook,
-  portalDeleteWebhook,
-  portalListWebhookDeliveries,
-  portalListWebhooks,
-  portalTestWebhook,
-  portalUpdateWebhook,
-} from './webhooks/webhooks.contracts';
-export {
-  SERVICE_PRICE_CHANGED_EVENT,
-  WALLET_LOW_BALANCE_EVENT,
-  MerchantEventRoutes,
-} from './webhooks/merchant-event-routes';
-export { invoicePaid, orderStatusChanged, servicePriceChanged, walletLowBalance } from './webhooks/webhook-events';
-export {
-  MAX_ENDPOINTS_PER_MERCHANT,
-  PING_EVENT,
-  WEBHOOK_EVENT_NAMES,
-  WEBHOOK_MAX_ATTEMPTS,
-  isWebhookEvent,
-} from './webhooks/webhook-delivery.rules';
-export type { WebhookEventName } from './webhooks/webhook-delivery.rules';
-export { WEBHOOK_DELIVER_JOB, WEBHOOK_QUEUE, WebhookDeliveries } from './webhooks/webhook-deliveries';
-export type { DeliverResult, WebhookJobData } from './webhooks/webhook-deliveries';
-export { WebhookFanOut } from './webhooks/webhook-fan-out';
-export type { FanOutResult } from './webhooks/webhook-fan-out';
-export { MerchantWebhooksProcessor } from './webhooks/merchant-webhooks.processor';
-export { WEBHOOK_TARGET_POLICY } from './webhooks/webhook-target-policy';
-export type { WebhookTargetPolicy } from './webhooks/webhook-target-policy';
+// The outbox event types the money and catalog modules write (the notifications module is their only consumer).
+export { SERVICE_PRICE_CHANGED_EVENT, WALLET_LOW_BALANCE_EVENT } from './notifications/event-notifier';
 export { PdfModule } from './pdf/pdf.module';
 export { PdfRenderer } from './pdf/pdf-renderer';
 export type { PdfBlock, PdfColumn, PdfDocument } from './pdf/pdf-renderer';
@@ -165,12 +130,6 @@ export { lockUploadOwner } from './infra/file.repository';
 export { UploadJanitor } from './files/upload-janitor';
 export { UPLOAD_JANITOR_JOB, UploadJanitorProcessor } from './files/upload-janitor.processor';
 export { PlatformRetentionModule } from './jobs/platform-retention.module';
-export { WebhookDeliveryRetention } from './webhooks/webhook-delivery-retention';
-export {
-  WEBHOOK_DELIVERY_RETENTION_JOB,
-  WebhookDeliveryRetentionProcessor,
-} from './webhooks/webhook-delivery-retention.processor';
-export { WEBHOOK_ENDPOINT_DISABLED_EVENT } from './webhooks/webhook-delivery.rules';
 export type { FileMeta, StoreFileInput, StoredFileRecord } from './files/stored-files';
 export { PUBLIC_IMAGE_NAME, PUBLIC_IMAGE_PREFIX, PUBLIC_MEDIA_PATH, PublicImages } from './files/public-images';
 export type { PublicImageBytes, StorePublicImageInput, StoredPublicImage } from './files/public-images';
@@ -194,8 +153,6 @@ export {
   MERCHANT_MAIL_EVENT_KEYS,
   NotificationEventRegistry,
   RETAIL_PRICES_FOLLOWED_EVENT,
-  TELEGRAM_LINKED_EVENT,
-  TELEGRAM_UNLINKED_EVENT,
 } from './notifications/notification-events';
 export type { NotificationEventDefinition } from './notifications/notification-events';
 export { NOTIFICATION_SEND_EVENT, NotificationService } from './notifications/notification.service';
@@ -222,7 +179,6 @@ export {
   choiceFor,
   parseThreshold,
   thresholdOf,
-  withoutTelegram,
 } from './notifications/merchant-preferences';
 export type { EventChoice } from './notifications/merchant-preferences';
 export { DEFAULT_TEMPLATES, defaultTemplatesSql, templatesInsertSql } from './notifications/default-templates';

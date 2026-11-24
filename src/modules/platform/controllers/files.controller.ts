@@ -10,15 +10,13 @@ import { identityApi } from '../notifications/identity-api';
 import {
   openAdminFile,
   openClientFile,
-  openV1File,
   uploadClientFile,
   STORE_UPLOAD_MAX_BYTES,
   uploadStoreFile,
-  uploadV1File,
 } from '../contracts/files.contracts';
 
 /**
- * The id of the signed-in caller of a merchant, API key or storefront route, from the request context the session guards fill in.
+ * The id of the signed-in caller of a merchant or storefront route, from the request context the session guards fill in.
  *
  * Why: the platform module may not import the identity module's decorators (identity imports platform: decision 032), and the
  * context carries exactly the actor type and id the guards authenticated. The staff download needs the caller's permissions too, which the
@@ -37,16 +35,13 @@ function callerOf(type: 'staff' | 'client' | 'customer'): number {
 /**
  * The file routes: downloads and merchant uploads.
  *
- * Why: the console renders a plain link to `GET /admin/files/:id` (an order's input or result file, a KYC document); the merchant portal
+ * Why: the console renders a plain link to `GET /admin/files/:id` (an order's input or result file, an identity document stored earlier); the merchant portal
  * links to its own files. Downloads redirect to a link that expires after 5 minutes (B154). A merchant uploads the input of a File
- * service order, its KYC documents and its bank transfer receipts through `POST /client/files` (portal) or `POST /v1/files` (REST v1),
- * one code path (B157); the REST v1 key's merchant is the actor the guard put in the request context, like a portal session's.
+ * service order and its bank transfer receipts through `POST /client/files` (B157).
  *
  * @route GET /admin/files/:id
  * @route GET /client/files/:id
  * @route POST /client/files
- * @route POST /v1/files
- * @route GET /v1/files/:id
  * @route POST /store/v1/files
  */
 @Controller()
@@ -128,37 +123,5 @@ export class FilesController {
       { filename: body.file.filename, mime: body.file.mime, data: body.file.data },
       STORE_UPLOAD_MAX_BYTES,
     );
-  }
-
-  /**
-   * Stores a file for the merchant behind the API key.
-   *
-   * @param body the multipart body with the file part
-   * @returns the stored file
-   * @route POST /v1/files
-   */
-  @Route(uploadV1File)
-  uploadForKey(@Body() body: BodyOf<typeof uploadV1File>): Promise<ResultOf<typeof uploadV1File>> {
-    return this.uploads.upload(callerOf('client'), {
-      filename: body.file.filename,
-      mime: body.file.mime,
-      data: body.file.data,
-    });
-  }
-
-  /**
-   * Redirects the merchant behind an API key to a file of its orders or an upload no record uses yet.
-   *
-   * @param params the file id
-   * @param reply the reply, to set `Location`
-   * @route GET /v1/files/:id
-   */
-  @Route(openV1File)
-  async openForKey(
-    @Param() params: ParamsOf<typeof openV1File>,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<void> {
-    const url = await this.files.linkForKey(callerOf('client'), params.id);
-    reply.header('location', url).header('cache-control', 'no-store');
   }
 }

@@ -22,14 +22,11 @@ describe('buildProcessorTable', () => {
     const table = buildProcessorTable([
       processor('Dispatch', 'supplier-dispatch'),
       processor('Integrity', 'maintenance', 'ledger_integrity'),
-      processor('Promotion', 'maintenance', 'group_promotion'),
+      processor('Purge', 'maintenance', 'session_purge'),
     ]);
     expect([...table.keys()].sort()).toEqual(['maintenance', 'supplier-dispatch']);
     expect(table.get('supplier-dispatch')?.catchAll?.label).toBe('Dispatch');
-    expect([...(table.get('maintenance')?.byName.keys() ?? [])].sort()).toEqual([
-      'group_promotion',
-      'ledger_integrity',
-    ]);
+    expect([...(table.get('maintenance')?.byName.keys() ?? [])].sort()).toEqual(['ledger_integrity', 'session_purge']);
   });
 
   it('is empty when nothing is registered', () => {

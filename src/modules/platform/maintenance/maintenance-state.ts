@@ -12,8 +12,7 @@ import { AppError } from '../../../common/errors';
 export const MAINTENANCE_KEY = 'maintenance';
 
 /**
- * What maintenance covers: the storefront API, starting a storefront checkout only, merchant order placement over REST v1
- * and Dhru, or all of it.
+ * What maintenance covers: the storefront API, starting a storefront checkout only, merchant order placement over Dhru, or all of it.
  *
  * Why: the console's maintenance dialog offers exactly these four (`MaintenanceScope`, docs/contract/endpoints/health.md);
  * the admin console, the merchant portal, incoming webhooks and running orders are never affected.
@@ -106,8 +105,6 @@ const CHECKOUT_START: readonly RegExp[] = [
   // Paying from the store balance places the order at once (feature 21), so it is a checkout start too.
   /^\/store\/v1\/checkout-sessions\/[^/]+\/balance-payment$/,
 ];
-// The upload of a File service's input is part of placing the order (B157), so scope `api_orders` refuses it too.
-const ORDER_PLACEMENT: ReadonlySet<string> = new Set(['/v1/orders', '/v1/orders/bulk', '/v1/files']);
 
 /**
  * A request, as far as maintenance cares.
@@ -126,8 +123,8 @@ export interface MaintenanceRequest {
  * The scopes whose maintenance refuses a request.
  *
  * Why: `store` is the whole storefront API; `checkout` is only starting a checkout (opening a session and starting the
- * payment of one, or paying it from the store balance (feature 21), so nothing is created and nothing is held); `api_orders` is placing an order over REST v1 or Dhru;
- * `all` is the three; the upload of a File service's input (`POST /v1/files`, B157) counts as placing. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
+ * payment of one, or paying it from the store balance (feature 21), so nothing is created and nothing is held); `api_orders` is placing an order over Dhru;
+ * `all` is the three. Everything else (admin, merchant portal, webhooks, health, metrics, docs, reads and cancellations of
  * running orders) is in no scope. A Dhru request counts only once its action is known and is a placement.
  *
  * @param request method and path (and the Dhru action when known)
@@ -140,7 +137,6 @@ export function scopesCovering(request: MaintenanceRequest): readonly Maintenanc
       ? ['store', 'checkout', 'all']
       : ['store', 'all'];
   }
-  if (post && ORDER_PLACEMENT.has(request.path)) return ['api_orders', 'all'];
   if (post && request.path === DHRU_PATH && request.dhruAction && DHRU_PLACEMENT_ACTIONS.has(request.dhruAction)) {
     return ['api_orders', 'all'];
   }

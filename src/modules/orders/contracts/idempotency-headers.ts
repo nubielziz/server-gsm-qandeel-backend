@@ -1,4 +1,4 @@
-// The optional `Idempotency-Key` request header shared by REST v1's placements and the merchant portal's `POST /client/orders` (ALIGNMENT § 7).
+// The optional `Idempotency-Key` request header of the merchant portal's `POST /client/orders` (ALIGNMENT § 7).
 import { z } from 'zod';
 import { IDEMPOTENCY_WINDOW_DAYS } from '../domain/idempotency-window';
 

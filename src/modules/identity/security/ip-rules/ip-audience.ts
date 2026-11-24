@@ -6,7 +6,7 @@ import { surfaceOfPath } from '../../../../common/surface';
  * The audience an IP rule can name (`ip_rules.scope`), as far as a request is concerned.
  *
  * Why: a rule has the scope `store`, `api`, `admin` or `all`. A request belongs to one audience: `/admin` is the admin
- * console, `/store/v1` the storefront, `/v1` and `/api/index.php` the merchant API (REST v1 and Dhru). Everything else
+ * console, `/store/v1` the storefront, `/api/index.php` the merchant API (Dhru). Everything else
  * (the merchant portal, incoming webhooks, the documentation pages) is `other`: only rules with scope `all` reach it.
  */
 export type IpAudience = 'admin' | 'store' | 'api' | 'other';
@@ -30,7 +30,6 @@ export function ipAudienceOf(path: string): IpAudience | undefined {
       return 'admin';
     case 'store':
       return 'store';
-    case 'v1':
     case 'dhru':
       return 'api';
     case 'client':

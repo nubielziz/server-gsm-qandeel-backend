@@ -1,19 +1,9 @@
 // Seeder of the platform module: the settings the frontend demo starts with.
 // Mirrors src/mocks/settings.ts: `adminAllowlistOnly` comes from the demo's `access.restrict`.
 import { and, eq, ne } from 'drizzle-orm';
-import type { AppConfig } from '../../src/config';
-import { EncryptionService, TokenService } from '../../src/infra/crypto';
 import { schema as s, type DbExecutor } from '../../src/infra/db';
-import type { JsonObject } from '../../src/common/contract';
-import { WEBHOOK_SECRET_AAD } from '../../src/modules/platform/webhooks/webhook-deliveries';
 import type { DefaultTemplate } from '../../src/modules/platform';
 import { SUPPORT_DEFAULT_TEMPLATES } from '../../src/modules/support';
-import {
-  invoicePaid,
-  orderStatusChanged,
-  servicePriceChanged,
-  walletLowBalance,
-} from '../../src/modules/platform/webhooks/webhook-events';
 import { type DemoSeed, demoNumericId, demoRows } from './demo-state';
 import { type SeedReport, insertRows, syncIdentity } from './helpers';
 
@@ -27,113 +17,11 @@ import { type SeedReport, insertRows, syncIdentity } from './helpers';
  * @param demo the loaded frontend demo state
  * @returns one report per table
  */
-export async function seedPlatform(db: DbExecutor, demo: DemoSeed, config?: AppConfig): Promise<SeedReport[]> {
+export async function seedPlatform(db: DbExecutor, demo: DemoSeed): Promise<SeedReport[]> {
   const access = demo.state.access as { restrict?: boolean } | undefined;
   const settings = await insertRows(db, s.settings, [{ key: 'adminAllowlistOnly', value: access?.restrict ?? false }]);
   await syncIdentity(db, s.settings);
-  // The endpoints need the encryption key and the deliveries the token pepper (the event ids): without a configuration there are none.
-  const webhooks = config ? await seedWebhooks(db, demo, config) : [];
-  return [settings, ...webhooks, ...(await seedNotifications(db, demo)), ...(await seedCampaigns(db, demo))];
-}
-
-const MINUTE_MS = 60_000;
-
-/** The events the seeded deliveries cycle through (the public four). */
-const SEED_EVENTS = ['order.status_changed', 'wallet.low_balance', 'invoice.paid', 'service.price_changed'] as const;
-
-/** The contract of each seeded event: its documented example is the base of the seeded `data`. */
-const SEED_EVENT_CONTRACTS = {
-  'order.status_changed': orderStatusChanged,
-  'wallet.low_balance': walletLowBalance,
-  'invoice.paid': invoicePaid,
-  'service.price_changed': servicePriceChanged,
-} as const;
-
-/**
- * The `data` of a seeded delivery: the documented example of its event with the ids moved per row.
- *
- * Why: the console's delivery drawer shows the request as sent, so every event carries its own payload (an invoice for
- * `invoice.paid`, not an order); the payload schema checks it, so a change of an event's contract cannot leave the seed behind.
- *
- * @param event the event name
- * @param index the row number, which moves the order or invoice id
- * @returns the event data
- */
-function seedEventData(event: (typeof SEED_EVENTS)[number], index: number): JsonObject {
-  const example = SEED_EVENT_CONTRACTS[event].example as JsonObject;
-  const moved: JsonObject =
-    event === 'order.status_changed'
-      ? { orderId: 48100 - index }
-      : event === 'invoice.paid'
-        ? { invoiceId: 300 + index, number: `INV-2026-${String(300 + index).padStart(4, '0')}` }
-        : {};
-  return SEED_EVENT_CONTRACTS[event].payload.parse({ ...example, ...moved });
-}
-
-/**
- * Seeds the webhook log the console's Webhook deliveries tab shows: an endpoint for each of the first four demo merchants and 36
- * deliveries over them, newest first, with the outcomes of the frontend mock (`deliveryRows` in
- * src/features/settings/mocks/seedWebhooks.ts): mostly delivered, some refused with 500, one that never answered, one waiting.
- *
- * Why: the demo has no webhook log; the console mock made one up. The same rows through the real API keep the screen alive in
- * development. The event names are the real ones (the mock's `order.completed` is illustrative) and the signing secret of every
- * endpoint is a development value.
- *
- * @param db the transaction to write with
- * @param demo the loaded frontend demo state
- * @param config the application configuration (encryption keys and token pepper)
- * @returns the reports of `webhook_endpoints` and `webhook_deliveries`
- */
-async function seedWebhooks(db: DbExecutor, demo: DemoSeed, config: AppConfig): Promise<SeedReport[]> {
-  const encryption = new EncryptionService(config);
-  const tokens = new TokenService(config);
-  const merchants = demoRows<{ id: string; name: string }>(demo, 'merchants').slice(0, 4);
-  const endpoints = merchants.map((merchant, index) => ({
-    id: index + 1,
-    clientId: demoNumericId(merchant.id),
-    name: merchant.name,
-    url: `https://hooks.${merchant.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.example/gsm`,
-  }));
-  const endpointReport = await insertRows(
-    db,
-    s.webhookEndpoints,
-    endpoints.map((endpoint) => ({
-      id: endpoint.id,
-      clientId: endpoint.clientId,
-      url: endpoint.url,
-      secretEnc: encryption.encrypt(`whsec_seed_${endpoint.id}_development_only`, WEBHOOK_SECRET_AAD),
-      events: [...SEED_EVENTS],
-      isActive: true,
-      failureCount: 0,
-    })),
-  );
-  const deliveries = Array.from({ length: 36 }, (_, index) => {
-    const endpoint = endpoints[index % endpoints.length]!;
-    const event = SEED_EVENTS[index % SEED_EVENTS.length]!;
-    const at = new Date(demo.now - (index + 1) * 25 * MINUTE_MS);
-    const eventId = `evt_${tokens.hash(`seed-delivery:${index}`).slice(0, 24)}`;
-    const kind = index % 9 === 2 ? 'refused' : index % 9 === 5 ? 'silent' : index % 9 === 7 ? 'waiting' : 'delivered';
-    return {
-      id: 36 - index,
-      endpointId: endpoint.id,
-      event,
-      eventId,
-      payload: { id: eventId, type: event, createdAt: at.toISOString(), data: seedEventData(event, index) },
-      // A failed delivery used its 8 attempts; a waiting one is on its 2nd to 4th.
-      attempt: kind === 'delivered' ? 1 : kind === 'waiting' ? 2 + (index % 3) : 8,
-      status:
-        kind === 'delivered' ? ('delivered' as const) : kind === 'waiting' ? ('pending' as const) : ('failed' as const),
-      responseCode: kind === 'refused' ? 500 : kind === 'delivered' ? 200 : null,
-      responseBody: kind === 'refused' ? '{"error":"internal"}' : kind === 'delivered' ? '{"ok":true}' : null,
-      error: kind === 'silent' ? 'The endpoint did not answer within 10 seconds.' : null,
-      nextRetryAt: kind === 'waiting' ? new Date(demo.now + (index + 1) * MINUTE_MS) : null,
-      createdAt: at,
-    };
-  });
-  const deliveryReport = await insertRows(db, s.webhookDeliveries, deliveries);
-  await syncIdentity(db, s.webhookEndpoints);
-  await syncIdentity(db, s.webhookDeliveries);
-  return [endpointReport, deliveryReport];
+  return [settings, ...(await seedNotifications(db, demo)), ...(await seedCampaigns(db, demo))];
 }
 
 const HOUR_MS = 3_600_000;
@@ -174,8 +62,8 @@ const SUPPORT_REPLY_DEFAULT = requireSupportTemplate(SUPPORT_DEFAULT_TEMPLATES, 
 });
 
 /**
- * The six customer emails of the demo (`S.settings.notifs`), as templates: the event key, the subject and the text the console's mock shows
- * (`TEXTS` in src/features/settings/mocks/seedMessages.ts), keyed by the demo id.
+ * The customer emails of the demo that the system still sends (`S.settings.notifs`), as templates: the event key, the subject and the text the
+ * console's mock shows (`TEXTS` in src/features/settings/mocks/seedMessages.ts), keyed by the demo id.
  */
 const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body: string }> = {
   nt1: {
@@ -195,12 +83,6 @@ const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body:
   },
   // The demo's text is a placeholder for the agent's reply; the real template carries the reply and the ticket link (feature 17).
   nt4: { event: 'support.reply', subject: SUPPORT_REPLY_DEFAULT.subject, body: SUPPORT_REPLY_DEFAULT.body },
-  nt5: {
-    event: 'checkout.abandoned',
-    subject: 'You left something behind',
-    // The demo's text, with the greeting and the one-click link of the recovery mail (feature 19: `customerName`, `device` and `link` are the event's variables).
-    body: 'Hi {{customerName}}, you started an unlock for {{device}} and did not finish paying. Your basket is saved: {{link}} takes you back to the payment step. No account needed.',
-  },
   nt6: {
     event: 'payment.failed',
     subject: 'Your payment didn’t go through',
@@ -211,7 +93,7 @@ const CUSTOMER_TEMPLATES: Record<string, { event: string; subject: string; body:
 /** The merchant messages the seeded log cycles through: the event, its channel and the values of its placeholders. */
 const MERCHANT_LOG: ReadonlyArray<{
   event: string;
-  channel: 'email' | 'telegram';
+  channel: 'email';
   variables: Record<string, string>;
 }> = [
   {
@@ -221,10 +103,9 @@ const MERCHANT_LOG: ReadonlyArray<{
   },
   {
     event: 'order.completed',
-    channel: 'telegram',
+    channel: 'email',
     variables: { orderId: '48102', service: 'Vodafone UK iPhone Unlock' },
   },
-  { event: 'deposit.approved', channel: 'email', variables: { amount: '250.00', currency: 'USD' } },
   {
     event: 'invoice.paid',
     channel: 'email',
@@ -235,12 +116,12 @@ const MERCHANT_LOG: ReadonlyArray<{
 ];
 
 /**
- * Seeds the console's Customer emails tab and Notification log (feature 12a): the six customer email templates of the demo, the "sent in the last 30 days"
+ * Seeds the console's Customer emails tab and Notification log (feature 12a): the customer email templates of the demo, the "sent in the last 30 days"
  * messages that make their counts, and a log of 48 recent messages to the demo merchants, a seventh of them failed and an eleventh still queued.
  *
- * Why: the demo's merchant templates (low balance, invoices, order results, Telegram) are the defaults migration 0009 ships, so the seed adds only the
- * customer emails the demo knows and the migrations do not ship (support reply, abandoned checkout); the four storefront order and payment mails are
- * migration defaults too (feature 16), and the seed only sets their on/off switch to the demo's. The counts the mock shows (112, 86, 6, 41, 17, 0) become real `sent` rows with the demo customers' ids; the customers
+ * Why: the demo's merchant templates (low balance, invoices, order results) are the defaults migration 0009 ships, so the seed adds only the
+ * customer emails the demo knows and the migrations do not ship (support reply); the four storefront order and payment mails are
+ * migration defaults too (feature 16), and the seed only sets their on/off switch to the demo's. The counts the mock shows (112, 86, 6, 41, 0) become real `sent` rows with the demo customers' ids; the customers
  * themselves arrive with feature 14b, so until then the log shows their address as `***`. Every row has a `seed:` dedupe key, so a second run adds nothing.
  *
  * @param db the transaction to write with
@@ -263,7 +144,7 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
     })),
   );
 
-  // The migrations already ship English defaults for four of the six events (feature 16: order received, completed, failed, payment failed), so
+  // The migrations already ship English defaults for four of the five events (feature 16: order received, completed, failed, payment failed), so
   // `insertRows` skips those rows; the demo's on/off switch (the payment failed mail is off) still applies to them, as the console's tab shows it.
   for (const row of notifs) {
     await db
@@ -317,19 +198,11 @@ async function seedNotifications(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
         recipientId: demoNumericId(merchant.id),
         channel: kind.channel,
         event: kind.event,
-        // The merchants of the seed have no linked chat, so a Telegram row carries its chat in the payload (the log masks it from there).
-        payload: {
-          variables: { merchantName: merchant.name, ...kind.variables },
-          ...(kind.channel === 'telegram' ? { chatId: `70010${index % 5}` } : {}),
-        },
+        payload: { variables: { merchantName: merchant.name, ...kind.variables } },
         status: failed ? 'failed' : queued ? 'queued' : 'sent',
         sentAt: failed || queued ? null : at,
         attempts: queued ? 0 : failed ? 5 : 1,
-        error: failed
-          ? kind.channel === 'telegram'
-            ? 'Telegram refused the message: Bad Request: chat not found'
-            : '550 5.1.1 The mailbox does not exist.'
-          : null,
+        error: failed ? '550 5.1.1 The mailbox does not exist.' : null,
         dedupeKey: `seed:merchant:${index}`,
         createdAt: at,
         updatedAt: at,
@@ -402,8 +275,8 @@ async function seedCampaigns(db: DbExecutor, demo: DemoSeed): Promise<SeedReport
       expectedRecipients: people.length,
       recipients: people.length,
       stats: {
-        planned: { inApp: people.length, email: people.length, telegram: 0 },
-        skipped: { optedOut: 0, noTelegram: 0, noAccount: 0 },
+        planned: { inApp: people.length, email: people.length },
+        skipped: { optedOut: 0, noAccount: 0 },
       },
       chunksDone: 1,
       createdBy: SEED_OWNER_ID,

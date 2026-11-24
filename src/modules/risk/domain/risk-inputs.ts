@@ -4,12 +4,11 @@ import { RISK_RULE_IDS, RULE_DEFINITIONS, type RiskRuleId, type RiskRuleSet } fr
 import { CARD_DETAILS_MISSING_SIGNAL, SIGNAL_POINTS } from './risk-scoring';
 
 /**
- * The inputs a rule or a signal can need that not every installation supplies: the visitor's country from a trusted proxy header, a VPN or
- * proxy lookup of the visitor's address, and an IMEI blacklist lookup that stores checks as `blacklisted`.
+ * The inputs a rule or a signal can need that not every installation supplies: the visitor's country from a trusted proxy header.
  *
  * Why: decision 050 (W1-D-2): a rule that is switched on but never receives its input looks active and protects nothing; the boot check names it.
  */
-export const OPTIONAL_INPUTS = ['ipCountry', 'proxyIp', 'imeiBlacklist'] as const;
+export const OPTIONAL_INPUTS = ['ipCountry'] as const;
 
 /** One value of {@link OPTIONAL_INPUTS}. */
 export type OptionalInput = (typeof OPTIONAL_INPUTS)[number];
@@ -24,7 +23,6 @@ export type SignalName = keyof typeof SIGNAL_POINTS;
  * an input (W1-D-2).
  */
 export const NEEDED_INPUT: Readonly<Record<RiskRuleId | SignalName, OptionalInput | null>> = {
-  blockBlacklistedImei: 'imeiBlacklist',
   reviewThreshold: null,
   blockThreshold: null,
   maxOrdersPerEmail: null,
@@ -34,12 +32,10 @@ export const NEEDED_INPUT: Readonly<Record<RiskRuleId | SignalName, OptionalInpu
   blockDisposableEmail: null,
   disposableEmail: null,
   firstOrderAbove: null,
-  proxyIp: 'proxyIp',
   ipCountryMismatch: 'ipCountry',
   // The card driver supplies the funding.
   prepaidCard: null,
   orderBurst: null,
-  blacklistedBefore: 'imeiBlacklist',
   tooManyOrders: null,
   cardDetailsMissing: null,
 };
@@ -51,7 +47,6 @@ export const NEEDED_INPUT: Readonly<Record<RiskRuleId | SignalName, OptionalInpu
  * a name for them.
  */
 export const SIGNALS_WITHOUT_SWITCH: Readonly<Partial<Record<SignalName, string>>> = {
-  proxyIp: 'VPN or proxy IP',
   prepaidCard: 'Prepaid card BIN',
   orderBurst: 'Order burst from one device',
   cardDetailsMissing: CARD_DETAILS_MISSING_SIGNAL,
@@ -60,21 +55,18 @@ export const SIGNALS_WITHOUT_SWITCH: Readonly<Partial<Record<SignalName, string>
 /** Which optional inputs this installation can supply. */
 export interface RiskInputSources {
   readonly ipCountry: boolean;
-  readonly proxyIp: boolean;
-  readonly imeiBlacklist: boolean;
 }
 
 /**
  * The inputs this installation supplies.
  *
- * Why: decision 050: the visitor's country exists only when the proxy header is configured; no VPN or proxy lookup and no IMEI blacklist
- * lookup exists in this installation.
+ * Why: decision 050: the visitor's country exists only when the proxy header is configured.
  *
  * @param geoipCountryHeader the configured header name (`GEOIP_COUNTRY_HEADER`, lower case), or `undefined`
  * @returns what is available
  */
 export function inputSourcesOf(geoipCountryHeader: string | undefined): RiskInputSources {
-  return { ipCountry: geoipCountryHeader !== undefined, proxyIp: false, imeiBlacklist: false };
+  return { ipCountry: geoipCountryHeader !== undefined };
 }
 
 /** A rule or signal that has no input source, with the words to say so. */
@@ -86,8 +78,6 @@ export interface InputGap {
 
 const REASONS: Readonly<Record<OptionalInput, string>> = {
   ipCountry: 'No visitor country: GEOIP_COUNTRY_HEADER is not set.',
-  proxyIp: 'No VPN or proxy lookup is connected.',
-  imeiBlacklist: 'No IMEI blacklist lookup is connected: only an IMEI check stored as blacklisted matches.',
 };
 
 /**

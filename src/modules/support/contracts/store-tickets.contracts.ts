@@ -1,6 +1,6 @@
-// Route contracts of the storefront support routes (map domain J, stage 17): open a ticket, read it, write on it and rate it. The console
+// Route contracts of the storefront support routes (map domain J, stage 17): open a ticket, read it and write on it. The console
 // has no screen for them (the storefront is another frontend): the shapes follow ALIGNMENT § 7 and are written up in the module README.
-// The ticket token is the whole credential of the three token routes (decision 010, 018).
+// The ticket token is the whole credential of the two token routes (decision 010, 018).
 import { z } from 'zod';
 import { defineRoute, zId, zIsoDateTime } from '../../../common/contract';
 import {
@@ -31,8 +31,6 @@ export const StoreTicketSchema = z.object({
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime,
   resolvedAt: zIsoDateTime.nullable(),
-  csatScore: z.number().int().min(1).max(5).nullable().describe('The rating the customer gave, once.'),
-  canRate: z.boolean().describe('True while the ticket is resolved and not yet rated.'),
   messages: z.array(StoreMessageSchema).describe('Oldest first, without internal notes.'),
   seenByYou: zId
     .nullable()
@@ -56,8 +54,6 @@ const TICKET_EXAMPLE = {
   createdAt: '2026-11-08T09:30:00.000Z',
   updatedAt: '2026-11-08T10:12:00.000Z',
   resolvedAt: null,
-  csatScore: null,
-  canRate: false,
   messages: [
     {
       id: 9000,
@@ -202,38 +198,6 @@ export const writeOnStoreTicket = defineRoute({
       body: 'Here is the photo. Same message after restart.',
       createdAt: '2026-11-08T11:00:00.000Z',
       attachments: [{ id: 7002, filename: 'screen.jpg', mime: 'image/jpeg', size: 182044 }],
-    },
-  },
-});
-
-/** `POST /store/v1/tickets/:token/csat`. */
-export const rateStoreTicket = defineRoute({
-  key: 'POST /store/v1/tickets/:token/csat',
-  summary: 'Rate a resolved support ticket',
-  description:
-    'The satisfaction rating, 1 to 5, once, after the ticket is resolved (the survey email links to it). A ticket that is not resolved, or ' +
-    'was already rated, is `422` on `score`. The ticket stays resolved: the rating only sets `csatScore`. The answer is the ticket.',
-  tags: ['support-tickets'],
-  surface: 'store',
-  access: 'ticket-token',
-  params: TOKEN_PARAMS,
-  body: z.object({
-    score: z
-      .number('Choose a rating from 1 to 5.')
-      .int('Choose a rating from 1 to 5.')
-      .min(1, 'Choose a rating from 1 to 5.')
-      .max(5, 'Choose a rating from 1 to 5.'),
-  }),
-  success: { status: 200, schema: StoreTicketSchema },
-  errors: ['NOT_FOUND', 'VALIDATION_FAILED'],
-  examples: {
-    request: { score: 5 },
-    response: {
-      ...TICKET_EXAMPLE,
-      status: 'resolved',
-      resolvedAt: '2026-11-08T12:00:00.000Z',
-      csatScore: 5,
-      canRate: false,
     },
   },
 });

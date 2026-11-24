@@ -1,18 +1,7 @@
-// Pure rules of the merchant's own API keys (routes /client/api-keys, B155): which scopes a merchant may give a key, how the
-// allowed addresses are checked and written, how a new key looks and how a stored key reads on the wire. No I/O.
+// Pure rules of the merchant's own API keys (routes /client/api-keys, B155): how the allowed addresses are checked and written, how a new
+// key looks and how a stored key reads on the wire. No I/O.
 import { type FieldError } from '../../../common/errors';
 import { cidrToWire, normaliseCidr } from './ip-rule-input';
-
-/** The scopes a merchant may put on a key, as the REST v1 routes and the Dhru surface need them (`dhru` is matched exactly). */
-export const MERCHANT_KEY_SCOPES = ['dhru', 'account:read', 'orders:read', 'orders:write', 'services:read'] as const;
-
-/**
- * The areas of the merchant scopes: `<area>:*` covers every action of the area (the permission grammar of decision 018).
- * `dhru` has no wildcard and `*` is never offered to a merchant, so a key cannot silently gain a route added later.
- */
-const WILDCARD_AREAS: readonly string[] = [
-  ...new Set(MERCHANT_KEY_SCOPES.filter((scope) => scope.includes(':')).map((scope) => scope.split(':')[0]!)),
-];
 
 /** A merchant may hold at most this many keys that are neither revoked nor expired. */
 export const MAX_LIVE_KEYS = 10;
@@ -23,7 +12,7 @@ export const DEFAULT_RATE_LIMIT_PER_MIN = 60;
 /**
  * The per-minute limit staff may give a key when they create or edit it (feature 20, R5 and R6).
  *
- * Why: a key's limit is the ceiling of REST v1 calls per minute; 6000 (100 a second) is far above a normal integration and still
+ * Why: a key's limit is the ceiling of calls per minute; 6000 (100 a second) is far above a normal integration and still
  * bounded, so a typing mistake cannot switch the limit off.
  */
 export const RATE_LIMIT_PER_MIN_RANGE = { min: 1, max: 6000 } as const;
@@ -32,38 +21,9 @@ export const API_KEY_PREFIX_LENGTH = 8;
 /** Every key starts with this text, so a leaked key is recognisable in a scan of public code. */
 export const API_KEY_LEADER = 'gsm_';
 
-/**
- * Tells why a scope cannot be put on a merchant's key.
- *
- * Why: B155: a key's scopes are a subset of the merchant scopes, and the area wildcards of the permission grammar are allowed.
- *
- * @param scope one scope as sent
- * @returns the sentence for the `scopes.N` field, or `undefined` when the scope is acceptable
- */
-export function scopeProblem(scope: string): string | undefined {
-  if ((MERCHANT_KEY_SCOPES as readonly string[]).includes(scope)) return undefined;
-  if (scope.endsWith(':*') && WILDCARD_AREAS.includes(scope.slice(0, -2))) return undefined;
-  return `Unknown scope. Use ${MERCHANT_KEY_SCOPES.join(', ')} or an area wildcard such as orders:*.`;
-}
-
 /** A checked list: the values to store, or the field errors to answer. */
 export type Checked<T> =
   { readonly ok: true; readonly value: T } | { readonly ok: false; readonly errors: FieldError[] };
-
-/**
- * Checks the scopes of a new key.
- *
- * @param scopes the scopes as sent (trimmed by the contract)
- * @returns the scopes without repeats in the order given, or one error per refused scope (`scopes.N`)
- */
-export function checkScopes(scopes: readonly string[]): Checked<string[]> {
-  const errors: FieldError[] = [];
-  scopes.forEach((scope, index) => {
-    const message = scopeProblem(scope);
-    if (message) errors.push({ field: `scopes.${index}`, code: 'invalid_scope', message });
-  });
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, value: [...new Set(scopes)] };
-}
 
 /**
  * Checks the allowed addresses of a key and writes them the way `api_keys.allowed_ips` stores them.
@@ -140,7 +100,6 @@ export interface ApiKeyWire {
   readonly clientId: number;
   readonly name: string;
   readonly prefix: string;
-  readonly scopes: string[];
   readonly allowedIps: string[];
   readonly rateLimitPerMin: number;
   readonly lastUsedAt: string | null;
@@ -158,7 +117,6 @@ export interface ApiKeyColumns {
   readonly clientId: number;
   readonly name: string;
   readonly prefix: string;
-  readonly scopes: readonly string[];
   readonly allowedIps: readonly string[];
   readonly rateLimitPerMin: number;
   readonly lastUsedAt: Date | null;
@@ -186,7 +144,6 @@ export function apiKeyToWire(row: ApiKeyColumns): ApiKeyWire {
     clientId: row.clientId,
     name: row.name,
     prefix: row.prefix,
-    scopes: [...row.scopes],
     allowedIps: row.allowedIps.map(cidrToWire),
     rateLimitPerMin: row.rateLimitPerMin,
     lastUsedAt: row.lastUsedAt?.toISOString() ?? null,

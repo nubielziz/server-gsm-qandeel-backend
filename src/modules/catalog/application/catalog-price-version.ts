@@ -15,7 +15,7 @@ export interface AfterCommitHook {
 /**
  * Moves and reads the catalog price version.
  *
- * Why: user rule 9 (c) and MISMATCHES B117 (3): price lists (Dhru, REST v1, the merchant catalog) may be cached, and they must
+ * Why: user rule 9 (c) and MISMATCHES B117 (3): price lists (Dhru, the merchant catalog) may be cached, and they must
  * never show a price older than a change of a price, a pricing rule, a merchant group's discount, a category or a service's
  * effective cost. Every writer of those calls `bumpAfterCommit` in its use case; the supplier sync of feature 6 does the same
  * when `recomputeEffectiveCost` reports a change. A price list is never the truth for a charge (the order path resolves
@@ -47,7 +47,7 @@ export class CatalogPriceVersion {
    * Moves the version now (call it after the commit, never before: a rolled-back change must not empty the cache).
    *
    * Every move also tells the listeners ({@link PriceVersionListeners}): the price change scan asks for a run, so merchants who
-   * ordered the service in the last 30 days get the webhook event `service.price_changed` (user rule 9 (5)). A listener never fails
+   * ordered the service in the last 30 days get the event `service.price_changed` for their daily digest (user rule 9 (5)). A listener never fails
    * the bump.
    *
    * @returns the new version number, or `undefined` when Redis could not be reached (logged; lists then age out by TTL)

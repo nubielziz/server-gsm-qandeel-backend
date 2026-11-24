@@ -14,7 +14,7 @@ import {
 /**
  * The merchant group routes.
  *
- * Why: groups carry the discount, the promotion threshold, the deposit limit and the credit rule of the merchants in them.
+ * Why: groups carry the discount, the deposit limit and the credit rule of the merchants in them.
  *
  * @route GET /admin/client-groups
  * @route GET /admin/client-groups/:id

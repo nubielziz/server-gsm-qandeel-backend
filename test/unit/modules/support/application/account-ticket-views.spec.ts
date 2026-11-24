@@ -1,6 +1,6 @@
 // Unit tests of the account views of the support chat (feature 28, slice B2): the rows of my tickets and of the merchant's tickets, and the
 // merchant's conversation. Pure mapping: the customer's row carries the link token and the merchant's never, `hasUnread` is the requester's
-// own side of the seen marks, and the conversation carries no rating and no staff detail.
+// own side of the seen marks, and the conversation carries no staff detail.
 import { describe, expect, it } from 'bun:test';
 import type { SupportTicket, TicketMessage } from '@src/modules/support/db/schema';
 import type { AccountTicketRow } from '@src/modules/support/infra/account-ticket.repository';
@@ -104,9 +104,9 @@ describe('toClientTicketRow', () => {
 });
 
 describe('toClientTicket', () => {
-  it('shows the public thread with the seen marks, without a rating, a token or any staff detail', () => {
+  it('shows the public thread with the seen marks, without a token or any staff detail, whatever an old row holds in its retired columns', () => {
     const view = toClientTicket(
-      ticket({ requesterSeenMessageId: 9001, requesterSeenAt: at(12), csatScore: 5 }),
+      ticket({ requesterSeenMessageId: 9001, requesterSeenAt: at(12), csatScore: 5, surveySentAt: at(11) }),
       [
         { message: message(9000, 'client', 'Re-issue it, please.'), authorName: 'Zain Mobile Hub' },
         { message: message(9001, 'staff', 'Done.'), authorName: 'Lina S.' },
@@ -132,6 +132,8 @@ describe('toClientTicket', () => {
       seenBySupportAt: '2026-11-15T10:05:00.000Z',
     });
     expect(JSON.stringify(view)).not.toContain('Lina');
+    expect(Object.keys(view)).not.toContain('csatScore');
+    expect(Object.keys(view)).not.toContain('canRate');
   });
 
   it('leaves out an attachment whose file is gone and keeps the others in order', () => {

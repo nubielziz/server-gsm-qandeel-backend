@@ -32,7 +32,6 @@ import { RetailPriceChangesController } from './controllers/retail-price-changes
 import { RetailPriceRulesController } from './controllers/retail-price-rules.controller';
 import { ServiceGridController } from './controllers/service-grid.controller';
 import { ServicesController } from './controllers/services.controller';
-import { V1ServicesController } from './controllers/v1-services.controller';
 import { TacCatalogController } from './controllers/tac-catalog.controller';
 
 /**
@@ -40,7 +39,7 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
  * `bulk-price`, `price-grid` and `order`), `/admin/client-prices`, `/admin/pricing-rules`, `/admin/retail-price-rules` (with `preview`),
  * `/admin/retail-price-changes` (with `resolve`), `/admin/pricing/resolve`, `/admin/inventory-codes`,
  * `/admin/services/:id/inventory/import`, the portal's `/client/services` and `/client/prices/export`, and the merchant's catalog over
- * REST v1 and Dhru (`/v1/services`, `/v1/services/:id`, `imeiservicelist`).
+ * Dhru (`imeiservicelist`).
  *
  * Why: these use cases need the global database, audit, crypto, cache and clock providers, merchant counts from identity and credit
  * limits from money, which a database-less test app does not have; `ClientGroupDirectory` and the resolver (the global
@@ -59,7 +58,6 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     RetailPriceChangesController,
     InventoryController,
     ClientCatalogController,
-    V1ServicesController,
     TacCatalogController,
   ],
   providers: [

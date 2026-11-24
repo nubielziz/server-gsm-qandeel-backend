@@ -34,7 +34,6 @@ export interface ApiKeyListRequest {
 /** What a merchant sends to create a key. */
 export interface CreateApiKeyInput {
   readonly name: string;
-  readonly scopes: readonly string[];
   readonly allowedIps?: readonly string[] | undefined;
   readonly expiresAt?: string | undefined;
 }
@@ -48,7 +47,7 @@ export interface CreatedApiKey {
 /**
  * Manages the API keys of the signed-in merchant.
  *
- * Why: B155 and decision 019. A key authenticates REST v1 and Dhru calls (P2.5c); the merchant creates, limits and revokes its
+ * Why: B155 and decision 019. A key authenticates Dhru calls (P2.5c); the merchant creates, limits and revokes its
  * own. Only the keyed hash of a key and its first 8 characters are stored, so the full key exists only in the answer of the
  * creation. A key that belongs to another merchant is `404`, like an unknown one, so a merchant cannot probe other ids. Merchant
  * routes write no audit row (B121); staff see the keys in `GET /admin/clients/:id/api-keys`. A new key sends the merchant a notice that says
@@ -88,9 +87,9 @@ export class MerchantApiKeyService {
    * Creates a key and returns it once.
    *
    * @param principal the signed-in merchant
-   * @param input the name, the scopes, the allowed addresses and an optional expiry
+   * @param input the name, the allowed addresses and an optional expiry
    * @returns the stored key and the full key text
-   * @throws {AppError} `VALIDATION_FAILED` (422) on `scopes.N` (an unknown scope), `allowedIps.N` (not an address or range),
+   * @throws {AppError} `VALIDATION_FAILED` (422) on `allowedIps.N` (not an address or range),
    *   `expiresAt` (not in the future) or `name` (the merchant already holds 10 live keys); `FORBIDDEN` (403: the account's password or
    *   email address is one staff set); `UNAUTHORIZED` (401: the session ended meanwhile)
    */
@@ -101,7 +100,6 @@ export class MerchantApiKeyService {
       const key = await this.issuer.issue(work.tx, {
         clientId: principal.clientId,
         name: input.name,
-        scopes: input.scopes,
         allowedIps: input.allowedIps ?? [],
         expiresAt: input.expiresAt,
         rateLimitPerMin: DEFAULT_RATE_LIMIT_PER_MIN,

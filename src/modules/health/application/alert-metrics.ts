@@ -1,4 +1,4 @@
-// The values of the eleven alert metrics (feature 12b): where each one is read from, per subject. The evaluator asks for a metric and gets one
+// The values of the ten alert metrics (feature 12b): where each one is read from, per subject. The evaluator asks for a metric and gets one
 // reading per supplier, per queue or one for the platform, from the sources feature 9 already reads (Prometheus, Postgres, the queues, Redis).
 import { Inject, Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
@@ -10,7 +10,7 @@ import { OutboxService } from '../../platform';
 import { SYSTEM_SUBJECT, type AlertSubject } from '../domain/alert-evaluation';
 import { INTEGRITY_JOB } from '../domain/integrity';
 import type { MetricKey } from '../domain/metric-registry';
-import { stuckOrders, suppliersForHealth, supplierCalls, webhookOutcomes } from '../infra/foreign-reads.repository';
+import { stuckOrders, suppliersForHealth, supplierCalls } from '../infra/foreign-reads.repository';
 import { PrometheusClient } from './prometheus.client';
 import { expressions } from './traffic.service';
 
@@ -84,10 +84,6 @@ export class AlertMetricReader {
         return system(await this.connectionUsage());
       case 'redis.memory_usage':
         return system(await this.redisMemory());
-      case 'webhooks.success_rate': {
-        const { delivered, failed } = await webhookOutcomes(this.db.db, since);
-        return system(delivered + failed === 0 ? null : (delivered / (delivered + failed)) * 100);
-      }
     }
   }
 

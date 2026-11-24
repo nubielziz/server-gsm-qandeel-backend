@@ -13,7 +13,7 @@ import { PUBLIC_IMAGE_MAX_BYTES, inspectImage } from './image-inspect';
 /**
  * The name of a public picture: the hex SHA-256 of its cleaned bytes and its extension.
  *
- * Why: the media route builds the object key only from a name that matches this pattern, so no other object of the bucket (a KYC
+ * Why: the media route builds the object key only from a name that matches this pattern, so no other object of the bucket (an identity
  * document, an order file, an invoice) can ever be reached through it: their keys never have this form under `media/`.
  */
 export const PUBLIC_IMAGE_NAME = /^[0-9a-f]{64}\.(jpg|png|webp)$/;
@@ -62,7 +62,7 @@ export interface PublicImageBytes {
  * Stores, names and reads the public service pictures.
  *
  * Why: feature 22 (§2.6 of its plan): staff upload a picture per service and the storefront shows it to everyone. The bucket stays
- * private (it also holds KYC documents and order files); the API serves the pictures itself from `GET /store/v1/media/:name`, and since
+ * private (it also holds identity documents and order files); the API serves the pictures itself from `GET /store/v1/media/:name`, and since
  * the name is the SHA-256 of the bytes the answer never changes and is cached for a year. Every picture passes {@link inspectImage}
  * first (type from the magic bytes, structure walk, limits, metadata removed), so what is stored and served is a clean JPEG, PNG or WebP.
  * The same bytes uploaded twice are one object and one `files` row.

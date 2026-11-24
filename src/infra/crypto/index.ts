@@ -10,7 +10,6 @@ export { MAX_PASSWORD_BYTES, PasswordHasher } from './password-hasher';
 export { TokenService } from './token.service';
 export { MIN_TOKEN_BYTES, constantTimeEqual, hashToken, randomToken } from './tokens';
 export {
-  WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TOLERANCE_SECONDS,
   assertWebhookSignature,
   signWebhook,

@@ -64,10 +64,10 @@ export interface CustomerPrincipal {
 export type SessionPrincipal = StaffPrincipal | MerchantPrincipal | CustomerPrincipal;
 
 /**
- * A merchant's API key (REST v1 with a Bearer key, Dhru with username and `apiaccesskey`).
+ * A merchant's API key (Dhru with username and `apiaccesskey`).
  *
- * Why: decision 018: both resolve an `api_keys` row, and the orders, wallet and catalog handlers act for `clientId`; the key id
- * goes into the order's `api_key_id` and the scopes say what the key may call. The key itself is never kept.
+ * Why: decision 018: it resolves an `api_keys` row, and the orders, wallet and catalog handlers act for `clientId`; the key id
+ * goes into the order's `api_key_id`. The key itself is never kept.
  */
 export interface ApiKeyPrincipal {
   readonly kind: 'api-key';
@@ -75,7 +75,6 @@ export interface ApiKeyPrincipal {
   /** The merchant's name, the audit log's actor snapshot (RESOLUTIONS identity-platform-7). */
   readonly clientName: string;
   readonly keyId: number;
-  readonly scopes: readonly string[];
   readonly ip: string;
 }
 

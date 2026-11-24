@@ -19,13 +19,10 @@ import { RealtimeHubModule, RealtimeModule } from '@src/infra/realtime';
 import { RedisModule } from '@src/infra/redis';
 import { StorageModule } from '@src/infra/storage';
 import { CatalogAdminModule, CatalogPricesModule } from '@src/modules/catalog';
-import { CommissionsAdminModule } from '@src/modules/commissions';
 import { CustomersAccountsModule } from '@src/modules/customers';
 import { AccessAdminModule } from '@src/modules/identity/access-admin.module';
 import { ApiKeysModule } from '@src/modules/identity/api-keys.module';
-import { KycModule } from '@src/modules/identity/kyc.module';
 import { MerchantNotificationsModule } from '@src/modules/identity/merchant-notifications.module';
-import { MerchantWebhookRoutesModule } from '@src/modules/identity/merchant-webhook-routes.module';
 import { MerchantAdminModule } from '@src/modules/identity/merchant-admin.module';
 import { MerchantAuthModule } from '@src/modules/identity/merchant-auth.module';
 import { StaffAuthModule } from '@src/modules/identity/staff-auth.module';
@@ -35,7 +32,7 @@ import { HealthAdminModule } from '@src/modules/health';
 import { MoneyAdminModule } from '@src/modules/money/money-admin.module';
 import { OrderTrackingModule, OrdersAdminModule } from '@src/modules/orders';
 import { CheckoutModule, GrowthModule } from '@src/modules/customers';
-import { ImeiCheckModule, RiskAdminModule } from '@src/modules/risk';
+import { RiskAdminModule } from '@src/modules/risk';
 import {
   PublishEngineModule,
   PublishHttpModule,
@@ -50,11 +47,9 @@ import { SupportClientModule } from '@src/modules/support/support-client.module'
 import {
   LookupKeyCheckModule,
   MaintenanceModule,
-  MerchantWebhooksModule,
   NotificationAdminModule,
   NotificationDeliveryModule,
   SettingsModule,
-  WebhookDeliveryModule,
 } from '@src/modules/platform';
 import { PlatformAdminModule } from '@src/modules/platform/platform-admin.module';
 import { logSink } from './log-sink';
@@ -129,8 +124,6 @@ const NEEDS_DATABASE_AND_CACHE = [
   PlatformAdminModule,
   MerchantAuthModule,
   ApiKeysModule,
-  MerchantWebhookRoutesModule,
-  KycModule,
   MerchantNotificationsModule,
   MoneyAdminModule,
   CatalogPricesModule,
@@ -145,15 +138,11 @@ const NEEDS_DATABASE_AND_CACHE = [
   // Feature 31: the bulk publish's engine needs the database and the catalog's price version; its routes read Postgres.
   PublishEngineModule,
   PublishHttpModule,
-  ImeiCheckModule,
   RiskAdminModule,
   CheckoutModule,
-  CommissionsAdminModule,
   CustomersAccountsModule,
   GrowthModule,
   StorefrontContentModule,
-  MerchantWebhooksModule,
-  WebhookDeliveryModule,
   HealthAdminModule,
   NotificationAdminModule,
   NotificationDeliveryModule,

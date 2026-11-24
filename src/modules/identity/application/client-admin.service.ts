@@ -1,5 +1,5 @@
 // ClientAdminService: the use cases of the merchant management routes (map domain A, stage 2): list, show, invite a merchant,
-// approve, suspend, reactivate and move to another group. Groups, wallets and order figures come from their own modules.
+// suspend, reactivate and move to another group. Groups, wallets and order figures come from their own modules.
 import { randomInt } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
@@ -22,7 +22,6 @@ import { type ClientChangeInput, kindOfClientChange } from '../domain/client-det
 import {
   MERCHANT_EMAIL_CHANGE_PERMISSION,
   canMoveClient,
-  referralCode,
   statusChangePermission,
   suspendReasonProblem,
   usernameBase,
@@ -66,7 +65,7 @@ function invalid(field: string, message: string): AppError {
   return new AppError('VALIDATION_FAILED', { errors: [{ field, code: 'invalid', message }] });
 }
 
-/** Thrown inside a transaction when a generated value (username, referral code) lost a race: the caller retries once more. */
+/** Thrown inside a transaction when the generated username lost a race: the caller retries once more. */
 class GeneratedValueTaken extends Error {}
 
 const MAX_CREATE_ATTEMPTS = 4;
@@ -75,10 +74,11 @@ const MAX_CREATE_ATTEMPTS = 4;
  * Manages merchants.
  *
  * Why: scenario "merchants" of the console (RULES merchants) and RESOLUTIONS identity-platform-1 to -3. A merchant is created
- * `pending` by staff with an invitation, its ledger accounts are opened in the same transaction (so no merchant exists without a
- * wallet), the status machine is `pending → active → suspended → active`, and a group move prices new orders only. User rule 2:
+ * `active` by staff with an invitation (decision 062: the owner makes every account, so nothing waits for an approval), its ledger accounts
+ * are opened in the same transaction (so no merchant exists without a wallet), the status machine is `active → suspended → active`
+ * (a row still `pending` from before can become `active` or `suspended`), and a group move prices new orders only. User rule 2:
  * a credit limit above zero needs a group with `overdraft_allowed`, at creation (`MerchantAccounts.open`) and on a group move
- * while the wallet's limit is above zero. User rule 1 (promotion by spend) belongs to feature 4a.
+ * while the wallet's limit is above zero. Ranks (groups) are set by hand: no job moves a merchant.
  *
  * Side effects: writes `clients`, `ledger_accounts` (through the money module), `auth_tokens`, `outbox_events` and `audit_logs`; a
  * status change clears the cached API key views (`ApiKeyDirectory.invalidateClient`) and session views after the commit and a
@@ -86,7 +86,7 @@ const MAX_CREATE_ATTEMPTS = 4;
  *
  * Second permissions (decision 046, checked here, not by the route's guard): a credit limit above zero at invitation needs
  * `wallet:credit_limit`; a group other than the default one at invitation, and a group move, need `groups:update`; suspending,
- * declining and reactivating need `clients:security`; changing the email address needs `clients:security` too (decision 047). A credit
+ * and reactivating need `clients:security`; changing the email address needs `clients:security` too (decision 047). A credit
  * limit above the approval limit of adjustments at invitation needs an Owner, and so does one that takes the inviting staff member's
  * 24-hour sum of credits and credit-limit raises above it (decision 049).
  *
@@ -143,7 +143,7 @@ export class ClientAdminService {
    *
    * @param caller the signed-in staff member
    * @param input name, email, country, group and credit limit
-   * @returns the new merchant (status `pending`)
+   * @returns the new merchant (status `active`; it has no password until it follows the invitation)
    * @throws {AppError} `VALIDATION_FAILED` (422 on `groupId` for an unknown group, the retail group or no default group, on
    *   `creditLimit` for a negative limit or a group without credit), `EMAIL_TAKEN` (409), `FORBIDDEN` (403: a `creditLimit` above
    *   zero needs `wallet:credit_limit`; a `groupId` other than the default group needs `groups:update`, checked after the group is
@@ -165,14 +165,14 @@ export class ClientAdminService {
       try {
         return await this.createOnce(caller, input, ceiling);
       } catch (error) {
-        // Two merchants invited at the same moment may draw the same username or code: draw again.
+        // Two merchants invited at the same moment may draw the same username: draw again.
         if (!(error instanceof GeneratedValueTaken) || attempt >= MAX_CREATE_ATTEMPTS) throw error;
       }
     }
   }
 
   /**
-   * Approves, suspends or reactivates a merchant, moves it to another group, or edits its details.
+   * Activates, suspends or reactivates a merchant, moves it to another group, or edits its details.
    *
    * @param caller the signed-in staff member
    * @param id the merchant id
@@ -243,9 +243,10 @@ export class ClientAdminService {
           name,
           country: input.country,
           groupId: group.id,
-          status: 'pending',
-          kycStatus: 'none',
-          referralCode: referralCode((max) => randomInt(max)),
+          status: 'active',
+          // Retired column (decision 062): NOT NULL and unique until the accounts migration drops it, and read by nothing. The merchant's
+          // own username fills it: already unique, so no second generated value can clash.
+          referralCode: username,
           // The console shows it: written from the clock, not the column default (decision 031).
           createdAt: this.clock.now(),
         });
@@ -253,9 +254,7 @@ export class ClientAdminService {
         if (isUniqueViolation(error, 'clients_email_uq')) {
           throw new AppError('EMAIL_TAKEN', { detail: `A merchant with ${input.email} already exists.` });
         }
-        if (isUniqueViolation(error, 'clients_username_uq') || isUniqueViolation(error, 'clients_referral_code_uq')) {
-          throw new GeneratedValueTaken();
-        }
+        if (isUniqueViolation(error, 'clients_username_uq')) throw new GeneratedValueTaken();
         throw error;
       }
       // Rule 2 is checked here: a credit limit above zero on a group without credit is `422` on `creditLimit`.
@@ -282,7 +281,7 @@ export class ClientAdminService {
           email: client.email,
           country: client.country,
           groupId: group.id,
-          status: 'pending',
+          status: 'active',
           creditLimit: input.creditLimit ?? '0.0000',
         },
       });
@@ -303,7 +302,7 @@ export class ClientAdminService {
         errors: [{ field: 'status', code: 'INVALID_TRANSITION', message: `Cannot go from ${client.status} to ${to}.` }],
       });
     }
-    // Decision 046: who may use the account (suspend, decline, reactivate) is an account-security decision.
+    // Decision 046: who may use the account (suspend, reactivate) is an account-security decision.
     const needed = statusChangePermission(client.status, to);
     if (needed !== null) requirePermission(caller, needed);
     const suspending = to === 'suspended';
@@ -325,15 +324,15 @@ export class ClientAdminService {
       await voidOpenClientTokens(work.tx, client.id, CLIENT_TOKEN_PURPOSES, this.clock.now());
     } else await this.sessions.invalidateSubject('client', client.id, work);
     await this.apiKeys.invalidateClient(client.id, work);
-    // The mail rides on the same guarded change: transactional, so a suspended merchant gets the suspension notice too.
+    // The mail rides on the same guarded change: transactional, so a suspended merchant gets the suspension notice too. A row that
+    // is still `pending` from before the owner made every account active becomes active without a mail: nobody applied.
     if (suspending) await this.lifecycleMails.suspended(work, client);
-    else if (client.status === 'pending') await this.lifecycleMails.approved(work, client);
-    else await this.lifecycleMails.reactivated(work, client);
+    else if (client.status === 'suspended') await this.lifecycleMails.reactivated(work, client);
     await this.audit.record(work.tx, {
       action: suspending
         ? 'suspended merchant'
         : client.status === 'pending'
-          ? 'approved merchant'
+          ? 'activated merchant'
           : 'reactivated merchant',
       entityType: 'merchant',
       entityId: client.id,
@@ -372,7 +371,7 @@ export class ClientAdminService {
       const candidate = usernameCandidate(base, attempt);
       if (!(await usernameTaken(tx, candidate))) return candidate;
     }
-    // Fifty merchants with the same name: a random tail keeps the signup working.
+    // Fifty merchants with the same name: a random tail keeps the invitation working.
     return `${base}-${randomInt(100_000, 1_000_000)}`;
   }
 }

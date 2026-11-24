@@ -38,7 +38,6 @@ export interface HeldRow {
   readonly customerName: string;
   readonly customerEmail: string;
   readonly customerCountry: string;
-  readonly customerRisk: 'low' | 'medium' | 'high';
 }
 
 /**
@@ -79,7 +78,6 @@ export async function heldOrders(db: DbExecutor): Promise<HeldRow[]> {
       customerName: s.customers.name,
       customerEmail: s.customers.email,
       customerCountry: s.customers.country,
-      customerRisk: s.customers.riskLevel,
     })
     .from(s.riskAssessments)
     .innerJoin(s.orders, eq(s.orders.id, s.riskAssessments.orderId))
@@ -541,79 +539,4 @@ export async function hasAnyCurrentTaxRate(db: DbExecutor, now: Date): Promise<b
     )
     .limit(1);
   return rows.length > 0;
-}
-
-/** What the IMEI log shows next to a check besides the check itself: the order it led to and two names. */
-export interface CheckLinks {
-  /** `checkout_sessions.order_id` by session id (absent or `null` while the checkout has no order). */
-  readonly orderOfSession: ReadonlyMap<number, number | null>;
-  readonly customerNames: ReadonlyMap<number, string>;
-  readonly supplierNames: ReadonlyMap<number, string>;
-}
-
-/**
- * Looks up the order, the customer name and the supplier name the IMEI log shows for a page of checks.
- *
- * Why: GET /admin/imei-checks (B78): `orderId` is the order the check led to (through its checkout session), `customer` and `supplier`
- * are the people it was made for. The three tables are other modules', so the log asks here for the ids of its page instead of joining.
- *
- * @param db the database or a transaction
- * @param checks the session, customer and supplier ids of the checks on the page
- * @returns the three lookups
- */
-export async function checkLinks(
-  db: DbExecutor,
-  checks: ReadonlyArray<{ checkoutSessionId: number | null; customerId: number | null; supplierId: number | null }>,
-): Promise<CheckLinks> {
-  const idsOf = (pick: (check: (typeof checks)[number]) => number | null): number[] => [
-    ...new Set(checks.flatMap((check) => pick(check) ?? [])),
-  ];
-  const sessionIds = idsOf((check) => check.checkoutSessionId);
-  const customerIds = idsOf((check) => check.customerId);
-  const supplierIds = idsOf((check) => check.supplierId);
-  // One after the other: the executor may be a transaction, which is one connection.
-  const sessions =
-    sessionIds.length === 0
-      ? []
-      : await db
-          .select({ id: s.checkoutSessions.id, orderId: s.checkoutSessions.orderId })
-          .from(s.checkoutSessions)
-          .where(inArray(s.checkoutSessions.id, sessionIds));
-  const customers =
-    customerIds.length === 0
-      ? []
-      : await db
-          .select({ id: s.customers.id, name: s.customers.name })
-          .from(s.customers)
-          .where(inArray(s.customers.id, customerIds));
-  const suppliers =
-    supplierIds.length === 0
-      ? []
-      : await db
-          .select({ id: s.suppliers.id, name: s.suppliers.name })
-          .from(s.suppliers)
-          .where(inArray(s.suppliers.id, supplierIds));
-  return {
-    orderOfSession: new Map(sessions.map((row) => [row.id, row.orderId])),
-    customerNames: new Map(customers.map((row) => [row.id, row.name])),
-    supplierNames: new Map(suppliers.map((row) => [row.id, row.name])),
-  };
-}
-
-/**
- * Lists the checkout sessions of a customer.
- *
- * Why: anonymization erases the IMEI checks a customer made from a checkout session of theirs (B50), and the sessions are the customers
- * module's table.
- *
- * @param db the caller's transaction
- * @param customerId the customer
- * @returns the session ids
- */
-export async function checkoutSessionIdsOfCustomer(db: DbExecutor, customerId: number): Promise<number[]> {
-  const rows = await db
-    .select({ id: s.checkoutSessions.id })
-    .from(s.checkoutSessions)
-    .where(eq(s.checkoutSessions.customerId, customerId));
-  return rows.map((row) => row.id);
 }

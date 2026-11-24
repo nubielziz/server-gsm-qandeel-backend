@@ -12,11 +12,9 @@ import type { RiskRuleSet } from './risk-rules';
 export const SIGNAL_POINTS = {
   disposableEmail: 22,
   firstOrderAbove: 18,
-  proxyIp: 15,
   ipCountryMismatch: 25,
   prepaidCard: 12,
   orderBurst: 20,
-  blacklistedBefore: 30,
   tooManyOrders: 50,
   /** Below every default threshold (review 50): the signal informs staff, it never holds a payment by itself (plan 24C § 2.4). */
   cardDetailsMissing: 10,
@@ -54,9 +52,6 @@ export interface ScreeningFacts {
   readonly prepaidCard: boolean;
   /** The gateway did not give the card's details (the read failed or timed out): the card blocklist could not be checked. */
   readonly cardDetailsMissing?: boolean;
-  readonly proxyIp: boolean;
-  /** An earlier IMEI check of this IMEI said blacklisted. */
-  readonly imeiBlacklistedBefore: boolean;
   /** What the blocklist matched: one sentence per hit (an email, a domain, an IMEI, a card, a country). */
   readonly blocklistHits: readonly string[];
 }
@@ -123,8 +118,8 @@ export function taxEvidenceSignal(facts: {
 /**
  * Scores a payment against the rules.
  *
- * Why: orders-suppliers-11 and the map: "rules score a B2C payment; a flagged order is placed held". A blocklist hit, a
- * blacklisted IMEI while its rule is on, and a disposable mailbox while its rule is on are hard blocks (score 100). Every other
+ * Why: orders-suppliers-11 and the map: "rules score a B2C payment; a flagged order is placed held". A blocklist hit and a
+ * disposable mailbox while its rule is on are hard blocks (score 100). Every other
  * signal adds its points; the sum is capped at 100. Then the thresholds decide: at or above the block threshold the payment is
  * cancelled (`block`), at or above the review threshold the order is held (`review`), else `allow`. A threshold whose switch is
  * off does not apply. The review threshold below the block threshold is kept by the rules route, so a score never needs both
@@ -143,12 +138,6 @@ export function scorePayment(facts: ScreeningFacts, rules: RiskRuleSet): Screeni
     points += value;
   };
 
-  if (facts.imeiBlacklistedBefore) {
-    if (rules.blockBlacklistedImei.on) {
-      signals.push('IMEI was checked blacklisted before');
-      hardBlock = true;
-    } else add('IMEI was checked blacklisted before', SIGNAL_POINTS.blacklistedBefore);
-  }
   if (facts.disposableEmail) {
     if (rules.blockDisposableEmail.on) {
       signals.push('Disposable email domain');
@@ -169,7 +158,6 @@ export function scorePayment(facts: ScreeningFacts, rules: RiskRuleSet): Screeni
       SIGNAL_POINTS.firstOrderAbove,
     );
   }
-  if (facts.proxyIp) add('VPN or proxy IP', SIGNAL_POINTS.proxyIp);
   if (
     rules.reviewIpCountryMismatch.on &&
     facts.paymentMethod === 'card' &&

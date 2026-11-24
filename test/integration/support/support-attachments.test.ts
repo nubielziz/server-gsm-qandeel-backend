@@ -21,7 +21,7 @@ import { eventually } from '../../support/infra';
 import { multipartRequest } from '../../support/machine-orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { rejectionOf } from '../../support/rejection';
-import { insertUsd } from '../../support/webhooks';
+import { insertUsd } from '../../support/portal-orders';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
 import { makeCustomer } from '../../support/store';
 import {

@@ -253,7 +253,7 @@ describe('the blocks that follow a guest order', () => {
     );
     expect(signedIn.statusCode).toBe(201);
     const [customer] = await db.select().from(s.customers).where(eq(s.customers.id, account.id));
-    expect(customer).toMatchObject({ status: 'active', riskLevel: account.row.riskLevel });
+    expect(customer).toMatchObject({ status: 'active' });
     expect(await t.app.get(Blocklist).isEmailBlocked(db, 'owner@mail.example')).toBe(false);
   });
 
@@ -376,21 +376,15 @@ describe('the boot warning of the rules without an input', () => {
   const warnings = () =>
     logSink.lines.filter((line) => line.level === 40 && typeof line.msg === 'string' && line.msg.startsWith(NAMED));
 
-  it('names the IP-country rule, the blacklisted-IMEI rule and the VPN signal when the visitor country has no header', async () => {
+  it('names the IP-country rule, and only it, when the visitor country has no header', async () => {
     logSink.clear();
     const bare = await createTestApp({ clock });
     try {
       const texts = warnings().map((line) => line.msg as string);
       expect(texts).toEqual([
-        `${NAMED}Block blacklisted IMEIs before payment. No IMEI blacklist lookup is connected: only an IMEI check stored as blacklisted matches.`,
         `${NAMED}Hold when the IP country differs from the card country. No visitor country: GEOIP_COUNTRY_HEADER is not set.`,
-        `${NAMED}VPN or proxy IP. No VPN or proxy lookup is connected.`,
       ]);
-      expect((await bare.app.get(RiskInputCheck).gaps()).map((gap) => gap.name)).toEqual([
-        'blockBlacklistedImei',
-        'reviewIpCountryMismatch',
-        'proxyIp',
-      ]);
+      expect((await bare.app.get(RiskInputCheck).gaps()).map((gap) => gap.name)).toEqual(['reviewIpCountryMismatch']);
     } finally {
       await bare.close();
     }
@@ -401,12 +395,8 @@ describe('the boot warning of the rules without an input', () => {
     const withHeader = await createTestApp({ clock, env: ENV });
     try {
       const texts = warnings().map((line) => line.msg as string);
-      expect(texts.some((text) => text.includes('IP country'))).toBe(false);
-      expect(texts).toHaveLength(2);
-      expect((await withHeader.app.get(RiskInputCheck).gaps()).map((gap) => gap.name)).toEqual([
-        'blockBlacklistedImei',
-        'proxyIp',
-      ]);
+      expect(texts).toEqual([]);
+      expect(await withHeader.app.get(RiskInputCheck).gaps()).toEqual([]);
     } finally {
       await withHeader.close();
     }

@@ -10,7 +10,6 @@ import {
   type NewNotificationCampaign,
   type NotificationCampaign,
   type NotificationCampaignStatus,
-  type NotificationChannel,
   type NotificationRecipientType,
   notificationCampaigns,
   notificationInbox,
@@ -131,7 +130,7 @@ export async function listCampaigns(
   return { rows, total: count?.total ?? 0 };
 }
 
-/** The email and Telegram counters of a campaign. */
+/** The email counters of a campaign. */
 export interface ChannelDelivery {
   readonly queued: number;
   readonly sent: number;
@@ -139,28 +138,23 @@ export interface ChannelDelivery {
 }
 
 /**
- * Counts a campaign's email and Telegram rows by status.
+ * Counts a campaign's email rows by status.
  *
- * Why: the detail's `delivery` is live (index-only on `notifications_campaign_idx`); the list never computes it.
+ * Why: the detail's `delivery` is live (index-only on `notifications_campaign_idx`); the list never computes it. Only email rows count:
+ * a row of a retired channel that an older campaign still has is history, not delivery.
  *
  * @param db the pool or a transaction
  * @param campaignId the campaign
- * @returns the counters per channel
+ * @returns the email counters
  */
-export async function campaignDelivery(
-  db: DbExecutor,
-  campaignId: number,
-): Promise<Record<NotificationChannel, ChannelDelivery>> {
+export async function campaignDelivery(db: DbExecutor, campaignId: number): Promise<ChannelDelivery> {
   const rows = await db
-    .select({ channel: notifications.channel, status: notifications.status, n: sql<number>`count(*)::int` })
+    .select({ status: notifications.status, n: sql<number>`count(*)::int` })
     .from(notifications)
-    .where(eq(notifications.campaignId, campaignId))
-    .groupBy(notifications.channel, notifications.status);
-  const result: Record<NotificationChannel, { queued: number; sent: number; failed: number }> = {
-    email: { queued: 0, sent: 0, failed: 0 },
-    telegram: { queued: 0, sent: 0, failed: 0 },
-  };
-  for (const row of rows) result[row.channel][row.status] = row.n;
+    .where(and(eq(notifications.campaignId, campaignId), eq(notifications.channel, 'email')))
+    .groupBy(notifications.status);
+  const result = { queued: 0, sent: 0, failed: 0 };
+  for (const row of rows) result[row.status] = row.n;
   return result;
 }
 
@@ -171,7 +165,6 @@ export interface RecipientRow {
   readonly recipientId: number;
   /** The person's current address (never answered unmasked). */
   readonly email: string | null;
-  readonly telegramChatId: string | null;
   readonly status: string;
   readonly error: string | null;
   readonly attempts: number | null;
@@ -190,7 +183,7 @@ const ADDRESS = sql<string | null>`coalesce(${s.clients.email}, ${s.staffUsers.e
  *
  * @param db the pool
  * @param campaignId the campaign
- * @param channel `in_app` (the inbox), `email` or `telegram` (the log)
+ * @param channel `in_app` (the inbox) or `email` (the log)
  * @param statuses the status filter (empty = every status)
  * @param range the page
  * @param order `asc` or `desc` by id
@@ -199,7 +192,7 @@ const ADDRESS = sql<string | null>`coalesce(${s.clients.email}, ${s.staffUsers.e
 export async function listRecipients(
   db: DbExecutor,
   campaignId: number,
-  channel: 'in_app' | 'email' | 'telegram',
+  channel: 'in_app' | 'email',
   statuses: readonly RecipientStatus[],
   range: { start: number; limit: number },
   order: 'asc' | 'desc',
@@ -244,7 +237,6 @@ export async function listRecipients(
     return {
       rows: rows.map((row) => ({
         ...row,
-        telegramChatId: null,
         status: row.readAt ? 'read' : 'delivered',
         error: null,
         attempts: null,
@@ -267,7 +259,6 @@ export async function listRecipients(
         recipientType: n.recipientType,
         recipientId: n.recipientId,
         email: ADDRESS,
-        telegramChatId: s.clients.telegramChatId,
         status: n.status,
         error: n.error,
         attempts: n.attempts,
@@ -293,16 +284,16 @@ export async function listRecipients(
   };
 }
 
-/** One email or Telegram row the fan-out makes. */
+/** One email row the fan-out makes. */
 export interface CampaignMessageRow {
   readonly recipientType: NotificationRecipientType;
   readonly recipientId: number;
-  readonly channel: NotificationChannel;
+  readonly channel: 'email';
   readonly dedupeKey: string;
 }
 
 /**
- * Inserts the email and Telegram rows of a fan-out chunk, once each.
+ * Inserts the email rows of a fan-out chunk, once each.
  *
  * Why: a chunk that runs twice inserts nothing twice (`ON CONFLICT (dedupe_key) DO NOTHING`); only the rows made by this call come
  * back, so only they get a send job.
@@ -312,7 +303,7 @@ export interface CampaignMessageRow {
  * @param event the event key (`broadcast.announcement`)
  * @param rows the rows
  * @param now the clock's time
- * @returns the ids and channels of the rows this call made
+ * @returns the ids of the rows this call made
  */
 export async function insertCampaignMessages(
   db: DbExecutor,
@@ -320,7 +311,7 @@ export async function insertCampaignMessages(
   event: string,
   rows: readonly CampaignMessageRow[],
   now: Date,
-): Promise<Array<{ id: number; channel: NotificationChannel }>> {
+): Promise<Array<{ id: number }>> {
   if (rows.length === 0) return [];
   return db
     .insert(notifications)
@@ -336,7 +327,7 @@ export async function insertCampaignMessages(
       })),
     )
     .onConflictDoNothing({ target: notifications.dedupeKey, where: sql`${notifications.dedupeKey} is not null` })
-    .returning({ id: notifications.id, channel: notifications.channel });
+    .returning({ id: notifications.id });
 }
 
 /**

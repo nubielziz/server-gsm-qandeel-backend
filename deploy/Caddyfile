@@ -2,7 +2,7 @@
 #   SHOP_HOST   the storefront (container `site`); /client/* and /store/v1/* go straight to the API, so there is no CORS
 #   ADMIN_HOST  the console (container `console`); /admin/*, /health, the internal reference and the pictures under /store/v1/media/*
 #               (the console's listing pictures and payment logos load on its own origin) go to the API
-#   API_HOST    machine clients only: Dhru, REST v1, incoming webhooks and the public docs; every other path is a 404
+#   API_HOST    machine clients only: Dhru, incoming webhooks and the public docs; every other path is a 404
 #   FILES_HOST  signed file downloads only: reads of the files bucket that carry a signature go to MinIO, everything else is a 404
 #               (decision 055)
 # /metrics matches no route on any host. Caddy sets X-Forwarded-For itself (it drops a client-sent value), and the API trusts
@@ -12,7 +12,7 @@
 # API's own headers.
 # Every host removes the visitor-country header (GEOIP_COUNTRY_HEADER) before the API: this edge writes no country, so no visitor can
 # choose the one the API reads (decision 050).
-# Every host writes the same access log (decision 054): the token part of the shop's link addresses, the Telegram webhook path, link
+# Every host writes the same access log (decision 054): the token part of the shop's link addresses, link
 # tokens, searches and IMEIs in the query, and credential headers are not written.
 # Every host imports the edge gate first (see (edge_gate) below): while the server holds the operator's closing file, only the operator's
 # address reaches any host.
@@ -57,7 +57,7 @@
 }
 
 # The access log of every host (decision 054). Caddy writes the request address, the Referer and the headers of each request and answer.
-# Here the token part of the shop's link pages and of their API routes, the Telegram webhook path, and the values of the query parameters
+# Here the token part of the shop's link pages and of their API routes, and the values of the query parameters
 # that carry a link token, a typed search or an IMEI are replaced, in the address and in the Referer alike; the headers that carry a
 # credential are not written (Caddy itself hides Cookie, Set-Cookie, Authorization and Proxy-Authorization), nor the two headers in which
 # the shop's pages send their own address with every prefetch, refresh and navigation (Next-Url, Next-Router-State-Tree). A redirect's
@@ -77,7 +77,6 @@
 				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
 				regexp "/track/[^/?#]+" "/track/[token]"
 				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
-				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
 				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
 				regexp "([?&])(X-Amz-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
 				regexp "([?&])(response-content-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
@@ -89,7 +88,6 @@
 				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
 				regexp "/track/[^/?#]+" "/track/[token]"
 				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
-				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
 				regexp "([?&])(token|q|order|next|imei|apiaccesskey)=[^&#]*" "${1}${2}=[redacted]"
 				regexp "([?&])(X-Amz-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
 				regexp "([?&])(response-content-[A-Za-z-]+)=[^&#]*" "${1}${2}=[redacted]"
@@ -97,7 +95,6 @@
 			request>headers>X-Csrf-Token delete
 			request>headers>X-Turnstile-Token delete
 			request>headers>Idempotency-Key delete
-			request>headers>X-Telegram-Bot-Api-Secret-Token delete
 			request>headers>Stripe-Signature delete
 			request>headers>X-Gsm-Signature delete
 			request>headers>Next-Url delete
@@ -111,7 +108,6 @@
 				regexp "/unsubscribe/[^/?#]+" "/unsubscribe/[token]"
 				regexp "/track/[^/?#]+" "/track/[token]"
 				regexp "/checkout/[^/?#]{16,}" "/checkout/[token]"
-				regexp "/webhooks/telegram/[^/?#]+" "/webhooks/telegram/[secret]"
 				regexp "[?].*" "?[redacted]"
 			}
 		}
@@ -183,7 +179,7 @@
 	import access_log
 	# Decision 050: see the shop host.
 	request_header -{$GEOIP_COUNTRY_HEADER:X-Visitor-Country}
-	@api path /api/index.php /v1/* /webhooks/* /docs /docs/*
+	@api path /api/index.php /webhooks/* /docs /docs/*
 	handle @api {
 		reverse_proxy api:3000
 	}

@@ -5,14 +5,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bu
 import { eq, sql } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { IpRuleCache } from '@src/modules/identity';
-import { MaintenanceService, SettingsReader } from '@src/modules/platform';
-import { IMEI_RETENTION_MAX_DAYS } from '@src/modules/platform/settings/settings-registry';
+import { MaintenanceService, SUPPORT_SETTINGS, SettingsReader } from '@src/modules/platform';
 import { adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 
+/** A setting the route accepts as a whole number of days from 0 to 3650: the example every test here edits. */
+const DAYS_KEY = SUPPORT_SETTINGS.attachmentRetentionDays.key;
 const clock = new TestClock();
 let t: TestApp;
 
@@ -52,7 +53,7 @@ describe('GET /admin/settings', () => {
 
     await putSettings({
       adminAllowlistOnly: false,
-      imeiRetentionDays: 90,
+      [DAYS_KEY]: 90,
       'payments.auto_credit_delay_minutes': 10,
       'sessions.staff_idle_minutes': 45,
       storefrontNote: 'Back on Monday',
@@ -66,7 +67,7 @@ describe('GET /admin/settings', () => {
     const res = await reader.get('/admin/settings');
     expect(res.body).toEqual({
       adminAllowlistOnly: false,
-      imeiRetentionDays: 90,
+      [DAYS_KEY]: 90,
       'payments.auto_credit_delay_minutes': 10,
       'sessions.staff_idle_minutes': 45,
       storefrontNote: 'Back on Monday',
@@ -79,7 +80,7 @@ describe('GET /admin/settings', () => {
   it('never sends a key whose name marks a secret', async () => {
     const reader = await adminWith(t, ['settings:read']);
     await putSettings({
-      imeiRetentionDays: 30,
+      [DAYS_KEY]: 30,
       smtpPassword: 'hunter2',
       telegramBotToken: '123:abc',
       webhookSecret: 'whsec_x',
@@ -94,7 +95,7 @@ describe('GET /admin/settings', () => {
       tokenizerMode: 'fast',
     });
     const res = await reader.get('/admin/settings');
-    expect(Object.keys(res.body).sort()).toEqual(['imeiRetentionDays', 'keyboardLayout', 'tokenizerMode']);
+    expect(Object.keys(res.body).sort()).toEqual(['keyboardLayout', DAYS_KEY, 'tokenizerMode']);
     expect(JSON.stringify(res.body)).not.toMatch(/hunter2|whsec_|sk_live|argon2id|sealed|Bearer/);
   });
 
@@ -108,37 +109,37 @@ describe('GET /admin/settings', () => {
 });
 
 describe('PATCH /admin/settings', () => {
-  it('stores imeiRetentionDays and answers the whole settings object after the change, without secrets', async () => {
+  it('stores a whole-number setting and answers the whole settings object after the change, without secrets', async () => {
     const admin = await adminWith(t, ['settings:update']);
     await putSettings({ adminAllowlistOnly: false, smtpPassword: 'hunter2' });
-    const res = await admin.patch('/admin/settings', { imeiRetentionDays: 30 });
+    const res = await admin.patch('/admin/settings', { [DAYS_KEY]: 30 });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ adminAllowlistOnly: false, imeiRetentionDays: 30 });
+    expect(res.body).toEqual({ adminAllowlistOnly: false, [DAYS_KEY]: 30 });
     expect((await settingRows()).map((row) => [row.key, row.value])).toEqual([
       ['adminAllowlistOnly', false],
-      ['imeiRetentionDays', 30],
       ['smtpPassword', 'hunter2'],
+      [DAYS_KEY, 30],
     ]);
     // Changing it again updates the same row.
-    expect((await admin.patch('/admin/settings', { imeiRetentionDays: 45 })).body.imeiRetentionDays).toBe(45);
+    expect((await admin.patch('/admin/settings', { [DAYS_KEY]: 45 })).body[DAYS_KEY]).toBe(45);
     const { db } = await testDb();
-    expect(await db.select().from(s.settings).where(eq(s.settings.key, 'imeiRetentionDays'))).toHaveLength(1);
+    expect(await db.select().from(s.settings).where(eq(s.settings.key, DAYS_KEY))).toHaveLength(1);
   });
 
   it('accepts the whole range 0 to 3650 and nothing outside it or that is not a whole JSON number (422 on the key)', async () => {
     const admin = await adminWith(t, ['settings:update']);
-    expect(IMEI_RETENTION_MAX_DAYS).toBe(3650);
+    expect(SUPPORT_SETTINGS.attachmentRetentionDays.max).toBe(3650);
     for (const days of [0, 1, 90, 3650]) {
-      const res = await admin.patch('/admin/settings', { imeiRetentionDays: days });
+      const res = await admin.patch('/admin/settings', { [DAYS_KEY]: days });
       expect(res.status, String(days)).toBe(200);
-      expect(res.body.imeiRetentionDays).toBe(days);
+      expect(res.body[DAYS_KEY]).toBe(days);
     }
     const before = await settingRows();
     for (const bad of [-1, 3651, 1.5, '30', null, true, [30], { days: 30 }, Number.MAX_SAFE_INTEGER]) {
-      const res = await admin.patch('/admin/settings', { imeiRetentionDays: bad });
+      const res = await admin.patch('/admin/settings', { [DAYS_KEY]: bad });
       expect(res.status, JSON.stringify(bad)).toBe(422);
       expect(res.body.code).toBe('VALIDATION_FAILED');
-      expect(res.body.errors.map((error: { field: string }) => error.field)).toEqual(['imeiRetentionDays']);
+      expect(res.body.errors.map((error: { field: string }) => error.field)).toEqual([DAYS_KEY]);
     }
     expect(await settingRows()).toEqual(before);
   });
@@ -164,7 +165,7 @@ describe('PATCH /admin/settings', () => {
   it('judges every key of the patch and writes nothing when one is refused (one error per refused key)', async () => {
     const admin = await adminWith(t, ['settings:update']);
     const res = await admin.patch('/admin/settings', {
-      imeiRetentionDays: 30,
+      [DAYS_KEY]: 30,
       maintenance: {},
       other: 'x',
       adminAllowlistOnly: false,
@@ -196,14 +197,14 @@ describe('PATCH /admin/settings', () => {
     const maintenanceSpy = spyOn(maintenance, 'invalidate');
     try {
       // Warm the snapshot: it says "not set".
-      expect(await reader.get('imeiRetentionDays')).toBeUndefined();
-      expect((await admin.patch('/admin/settings', { imeiRetentionDays: 400 })).status).toBe(200);
+      expect(await reader.get(DAYS_KEY)).toBeUndefined();
+      expect((await admin.patch('/admin/settings', { [DAYS_KEY]: 400 })).status).toBe(200);
       expect(readerSpy).toHaveBeenCalledTimes(1);
       expect(maintenanceSpy).toHaveBeenCalledTimes(1);
       // The snapshot was dropped: the next read sees the new value, not the cached "not set".
-      expect(await reader.get('imeiRetentionDays')).toBe(400);
+      expect(await reader.get(DAYS_KEY)).toBe(400);
 
-      expect((await admin.patch('/admin/settings', { imeiRetentionDays: -5 })).status).toBe(422);
+      expect((await admin.patch('/admin/settings', { [DAYS_KEY]: -5 })).status).toBe(422);
       expect(readerSpy).toHaveBeenCalledTimes(1);
       expect(maintenanceSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -214,32 +215,32 @@ describe('PATCH /admin/settings', () => {
 
   it('audits one row with the before and after of the changed keys, no secret in it, and the key as the label', async () => {
     const admin = await adminWith(t, ['settings:update'], { name: 'Rami K.', ip: '203.0.113.50' });
-    await putSettings({ imeiRetentionDays: 90, smtpPassword: 'hunter2' });
-    await admin.patch('/admin/settings', { imeiRetentionDays: 30 });
-    await admin.patch('/admin/settings', { imeiRetentionDays: 0 });
+    await putSettings({ [DAYS_KEY]: 90, smtpPassword: 'hunter2' });
+    await admin.patch('/admin/settings', { [DAYS_KEY]: 30 });
+    await admin.patch('/admin/settings', { [DAYS_KEY]: 0 });
     const [first, second] = await auditRows();
     expect(first).toMatchObject({
       action: 'changed settings',
       entityType: 'setting',
       entityId: 0,
-      entityLabel: 'imeiRetentionDays',
+      entityLabel: DAYS_KEY,
       actorType: 'staff',
       actorId: admin.staffId,
       actorName: 'Rami K.',
       ip: '203.0.113.50',
     });
-    expect(first!.before).toEqual({ imeiRetentionDays: 90 });
-    expect(first!.after).toEqual({ imeiRetentionDays: 30 });
-    expect(second!.before).toEqual({ imeiRetentionDays: 30 });
-    expect(second!.after).toEqual({ imeiRetentionDays: 0 });
+    expect(first!.before).toEqual({ [DAYS_KEY]: 90 });
+    expect(first!.after).toEqual({ [DAYS_KEY]: 30 });
+    expect(second!.before).toEqual({ [DAYS_KEY]: 30 });
+    expect(second!.after).toEqual({ [DAYS_KEY]: 0 });
     expect(JSON.stringify(await auditRows())).not.toContain('hunter2');
 
     // The first change of a key that was never set has a null "before".
     await resetDb();
     await clearIdentityCaches(t);
     const another = await adminWith(t, ['settings:update']);
-    await another.patch('/admin/settings', { imeiRetentionDays: 15 });
-    expect((await auditRows())[0]!.before).toEqual({ imeiRetentionDays: null });
+    await another.patch('/admin/settings', { [DAYS_KEY]: 15 });
+    expect((await auditRows())[0]!.before).toEqual({ [DAYS_KEY]: null });
   });
 
   it('lets only an Owner change suppliers.allowPlainHttp; the other keys keep settings:update', async () => {
@@ -256,11 +257,11 @@ describe('PATCH /admin/settings', () => {
     // The value is judged first: a refused value is a 422 whoever sends it.
     expect((await limited.patch('/admin/settings', { 'suppliers.allowPlainHttp': 'yes' })).status).toBe(422);
     // A patch that mixes an ordinary key with the reserved one changes nothing.
-    expect(
-      (await limited.patch('/admin/settings', { imeiRetentionDays: 30, 'suppliers.allowPlainHttp': true })).status,
-    ).toBe(403);
+    expect((await limited.patch('/admin/settings', { [DAYS_KEY]: 30, 'suppliers.allowPlainHttp': true })).status).toBe(
+      403,
+    );
     expect(await settingRows()).toHaveLength(0);
-    expect((await limited.patch('/admin/settings', { imeiRetentionDays: 30 })).status).toBe(200);
+    expect((await limited.patch('/admin/settings', { [DAYS_KEY]: 30 })).status).toBe(200);
 
     const owner = await adminWith(t, ['*']);
     const done = await owner.patch('/admin/settings', { 'suppliers.allowPlainHttp': true });
@@ -285,7 +286,7 @@ describe('PATCH /admin/settings', () => {
     }
     // One reserved key makes the whole patch refused, beside ordinary keys and beside the other reserved ones.
     const mixed = await limited.patch('/admin/settings', {
-      imeiRetentionDays: 30,
+      [DAYS_KEY]: 30,
       'fx.max_rate_age_hours': 72,
       'wallet.customer.adjust_approval_limit': 500,
     });
@@ -298,7 +299,7 @@ describe('PATCH /admin/settings', () => {
 
     // The value is judged first: a refused value is a 422 whoever sends it; the other keys keep settings:update.
     expect((await limited.patch('/admin/settings', { 'fx.max_refresh_move_percent': 0 })).status).toBe(422);
-    expect((await limited.patch('/admin/settings', { imeiRetentionDays: 30 })).status).toBe(200);
+    expect((await limited.patch('/admin/settings', { [DAYS_KEY]: 30 })).status).toBe(200);
 
     const owner = await adminWith(t, ['*']);
     for (const [key, value] of keys) {
@@ -309,7 +310,7 @@ describe('PATCH /admin/settings', () => {
     }
     const changed = (await auditRows()).filter((row) => row.action === 'changed settings');
     expect(changed.map((row) => row.entityLabel)).toEqual([
-      'imeiRetentionDays',
+      DAYS_KEY,
       'fx.max_refresh_move_percent',
       'fx.max_rate_age_hours',
       'wallet.customer.adjust_approval_limit',
@@ -319,11 +320,11 @@ describe('PATCH /admin/settings', () => {
 
   it('needs settings:update and a CSRF token', async () => {
     const reader = await adminWith(t, ['settings:read']);
-    const refused = await reader.patch('/admin/settings', { imeiRetentionDays: 30 });
+    const refused = await reader.patch('/admin/settings', { [DAYS_KEY]: 30 });
     expect(refused.status).toBe(403);
     expect(refused.body.detail).toContain('settings:update');
     const admin = await adminWith(t, ['settings:update']);
-    const noCsrf = await admin.withoutCsrf('PATCH', '/admin/settings', { imeiRetentionDays: 30 });
+    const noCsrf = await admin.withoutCsrf('PATCH', '/admin/settings', { [DAYS_KEY]: 30 });
     expect(noCsrf.status).toBe(403);
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
     expect(await settingRows()).toHaveLength(0);

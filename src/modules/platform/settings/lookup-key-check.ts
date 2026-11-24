@@ -24,7 +24,7 @@ export type LookupKeyVerdict = 'first' | 'same' | 'changed' | 'unreachable';
 
 /** The sentence of a changed key; it names the setting, never a value. */
 export const LOOKUP_KEY_CHANGED =
-  'is not the key the stored lookups were made with: blocklist entries, IMEI history, duplicate checks, unsubscribe links and the ' +
+  'is not the key the stored lookups were made with: blocklist entries, duplicate checks, unsubscribe links and the ' +
   "shop's link tokens would stop matching. Set it back to that key (docs/OPERATIONS.md section 5).";
 
 /** The sentence of a check the database did not answer. */

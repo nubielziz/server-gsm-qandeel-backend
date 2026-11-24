@@ -1,7 +1,7 @@
 // Integration tests of the campaign branch of the delivery and the bulk sender (feature 23, slice B, plan sections 8.2 and 9.1): the
-// text and HTML part of an email (English, left to right), the link per audience, Telegram for a merchant with a chat, the
-// send-time re-check (consent withdrawn, a merchant's switch turned off, a suspended person), the per-channel budget and a short
-// Telegram "retry after" waited for inside the attempt.
+// text and HTML part of an email (English, left to right), the link per audience, the send-time re-check (consent withdrawn, a
+// merchant's switch turned off, a suspended person), the per-channel budget, a short "retry after" waited for inside the attempt, and
+// a row of the retired Telegram channel that an older campaign queued.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
@@ -55,7 +55,7 @@ async function fannedOut(changes: Record<string, unknown>) {
 beforeAll(async () => {
   t = await createTestApp({
     clock,
-    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { BULL_PREFIX: prefix, TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
   db = (await testDb()).db;
 });
@@ -66,10 +66,7 @@ beforeEach(async () => {
   await t.app.get(QueuesService).queue(BROADCAST_QUEUE).obliterate({ force: true });
   await t.app.get(RedisService).cache.flushdb();
   // The highest rate keeps the real budget out of the way of the tests that do not look at it.
-  await db.insert(s.settings).values([
-    { key: 'notifications.broadcast_email_per_second', value: 30 },
-    { key: 'notifications.broadcast_telegram_per_second', value: 30 },
-  ]);
+  await db.insert(s.settings).values([{ key: 'notifications.broadcast_email_per_second', value: 30 }]);
   await t.app.get(SettingsReader).invalidate();
   mailbox(t).reset();
   telegramOutbox(t).sent.length = 0;
@@ -104,21 +101,18 @@ describe('the campaign branch of the delivery', () => {
     expect(rows.find((row) => row.recipientId === huda)).toBeDefined();
   });
 
-  it('sends Telegram to a merchant with a chat, with the site link, and an email to staff without a link', async () => {
-    await insertMerchant(db, { telegramChatId: '555', name: 'Zain Mobile Hub' });
-    const { rows } = await fannedOut({
-      channels: ['email', 'telegram'],
-      audience: { staff: {}, merchants: {} },
+  it('sends a merchant the email with the site link, and staff an email without a link', async () => {
+    await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zainmobilehub.example' });
+    const { rows } = await fannedOut({ channels: ['email'], audience: { staff: {}, merchants: {} } });
+    const merchant = rows.find((row) => row.recipientType === 'client')!;
+    expect(await sendBroadcast(t, merchant.id, 'email')).toEqual({ outcome: 'sent' });
+    // The site path joins the site's root once (PORTAL_BASE_URL already ends at /merchant in production).
+    expect(mailbox(t).sent.at(-1)).toMatchObject({
+      to: 'ops@zainmobilehub.example',
+      subject: 'Maintenance for Zain Mobile Hub',
+      text: 'The portal is read-only on Friday.\n\nhttp://localhost:5175/merchant/wallet',
     });
-    const telegram = rows.find((row) => row.channel === 'telegram')!;
-    expect(await sendBroadcast(t, telegram.id, 'telegram')).toEqual({ outcome: 'sent' });
-    expect(telegramOutbox(t).sent).toEqual([
-      {
-        chatId: '555',
-        // The site path joins the site's root once (PORTAL_BASE_URL already ends at /merchant in production).
-        text: 'Maintenance for Zain Mobile Hub\n\nThe portal is read-only on Friday.\nhttp://localhost:5175/merchant/wallet',
-      },
-    ]);
+    expect(telegramOutbox(t).sent).toEqual([]);
     const staff = rows.find((row) => row.recipientType === 'staff')!;
     await sendBroadcast(t, staff.id, 'email');
     expect(mailbox(t).sent.at(-1)?.text).toBe('The portal is read-only on Friday.');
@@ -147,16 +141,17 @@ describe('the campaign branch of the delivery', () => {
   });
 
   it('re-checks the merchant switch at send time, and a merchant suspended since the fan-out', async () => {
-    const off = await insertMerchant(db, { telegramChatId: '777' });
+    const off = await insertMerchant(db);
     const suspended = await insertMerchant(db);
-    const { rows } = await fannedOut({ channels: ['email', 'telegram'], audience: { merchants: {} } });
+    const kept = await insertMerchant(db);
+    const { rows } = await fannedOut({ channels: ['email'], audience: { merchants: {} } });
     await db
       .update(s.clients)
-      .set({ notificationPrefs: { events: { 'broadcast.announcement': { telegram: false } } } })
+      .set({ notificationPrefs: { events: { 'broadcast.announcement': { email: false } } } })
       .where(eq(s.clients.id, off));
     await db.update(s.clients).set({ status: 'suspended' }).where(eq(s.clients.id, suspended));
-    const telegram = rows.find((row) => row.channel === 'telegram')!;
-    expect(await sendBroadcast(t, telegram.id, 'telegram')).toEqual({
+    const toOff = rows.find((row) => row.recipientId === off)!;
+    expect(await sendBroadcast(t, toOff.id, 'email')).toEqual({
       outcome: 'failed',
       reason: 'The recipient turned this message off.',
     });
@@ -165,8 +160,8 @@ describe('the campaign branch of the delivery', () => {
       outcome: 'failed',
       reason: 'The recipient is no longer eligible.',
     });
-    const toOff = rows.find((row) => row.recipientId === off && row.channel === 'email')!;
-    expect(await sendBroadcast(t, toOff.id, 'email')).toEqual({ outcome: 'sent' });
+    const toKept = rows.find((row) => row.recipientId === kept)!;
+    expect(await sendBroadcast(t, toKept.id, 'email')).toEqual({ outcome: 'sent' });
   });
 
   it('sends once when the job runs twice, and retries a transient failure through the queue', async () => {
@@ -181,19 +176,52 @@ describe('the campaign branch of the delivery', () => {
     expect((await campaignMessages(db, rows[0]!.campaignId!))[0]).toMatchObject({ status: 'sent', attempts: 2 });
   });
 
-  it('waits once for a short Telegram "retry after" inside the same attempt', async () => {
-    await insertMerchant(db, { telegramChatId: '555' });
-    const { rows } = await fannedOut({ channels: ['telegram'], audience: { merchants: {} } });
+  it('waits once for a short "retry after" of the mail provider inside the same attempt', async () => {
+    await insertMerchant(db);
+    const { rows } = await fannedOut({ channels: ['email'], audience: { merchants: {} } });
     const budget = t.app.get(BroadcastBudget);
     const wait = spyOn(budget, 'wait').mockResolvedValue(undefined);
-    telegramOutbox(t).failNext(new DeliveryError('Too many requests.', { retryAfterSeconds: 3 }));
+    mailbox(t).failNext(new DeliveryError('Too many requests.', { retryAfterSeconds: 3 }));
     try {
-      expect(await sendBroadcast(t, rows[0]!.id, 'telegram')).toEqual({ outcome: 'sent' });
+      expect(await sendBroadcast(t, rows[0]!.id, 'email')).toEqual({ outcome: 'sent' });
       expect(wait.mock.calls).toEqual([[3000]]);
-      expect(telegramOutbox(t).sent).toHaveLength(1);
+      expect(mailbox(t).sent).toHaveLength(1);
     } finally {
       wait.mockRestore();
     }
+  });
+
+  it('ends a Telegram row that an older campaign queued as failed, takes no budget for it and sends nothing', async () => {
+    const merchant = await insertMerchant(db, { telegramChatId: '555' });
+    const { id } = await fannedOut({ channels: ['email'], audience: { merchants: {} } });
+    const [older] = await db
+      .insert(s.notifications)
+      .values({
+        recipientType: 'client',
+        recipientId: merchant,
+        channel: 'telegram',
+        event: 'broadcast.announcement',
+        payload: {},
+        status: 'queued',
+        campaignId: id,
+        dedupeKey: `campaign-${id}:telegram:client-${merchant}`,
+      })
+      .returning();
+    const take = spyOn(t.app.get(BroadcastBudget), 'take');
+    try {
+      // The bulk job of such a row names the old channel: it is not refused as malformed, it ends as a failed row.
+      expect(await sendBroadcast(t, older!.id, 'telegram')).toEqual({
+        outcome: 'failed',
+        reason: 'Campaigns no longer send on this channel.',
+      });
+      expect(take).not.toHaveBeenCalled();
+    } finally {
+      take.mockRestore();
+    }
+    expect(telegramOutbox(t).sent).toEqual([]);
+    expect(
+      (await campaignMessages(db, id)).filter((row) => row.channel === 'telegram').map((row) => row.status),
+    ).toEqual(['failed']);
   });
 });
 

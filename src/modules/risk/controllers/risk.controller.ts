@@ -77,7 +77,7 @@ export class RiskController {
   /**
    * Reads the rules.
    *
-   * @returns the eight rules
+   * @returns the seven rules
    * @route GET /admin/risk/rules
    */
   @Route(getRiskRules)

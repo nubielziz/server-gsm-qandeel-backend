@@ -1,45 +1,10 @@
-// The two access handlers that authenticate with a merchant API key: REST v1 (`Authorization: Bearer <key>`, scope = the
-// contract's permission) and the Dhru surface (`username` + `apiaccesskey` in the body, scope `dhru`).
-import type { ExecutionContext } from '@nestjs/common';
-import type { FastifyReply, FastifyRequest } from 'fastify';
+// The access handler that authenticates with a merchant API key: the Dhru surface (`username` + `apiaccesskey` in the body).
+import type { FastifyRequest } from 'fastify';
 import type { AnyRouteContract } from '../../../../../common/contract';
-import type { RateLimitResult } from '../../../../../infra/rate-limit';
 import type { AccessHandler } from '../../access-handlers';
 import type { AccessState } from '../../access-state';
 import type { ApiKeyAuthenticator } from './api-key.authenticator';
-import { DHRU_SCOPE } from './api-key.rules';
 import { requestPoints } from './request-points';
-
-/**
- * Reads the key of an `Authorization: Bearer <key>` header.
- *
- * Why: REST v1 sends the merchant API key this way (ALIGNMENT § 7). The scheme is case-insensitive (RFC 9110); anything else
- * (Basic, a missing key, extra words) carries no key.
- *
- * @param header the value of the `Authorization` header
- * @returns the key, or `undefined` when the header is not `Bearer <key>`
- */
-export function bearerKeyOf(header: string | undefined): string | undefined {
-  const match = header === undefined ? null : /^bearer +(\S+)$/i.exec(header.trim());
-  return match?.[1];
-}
-
-/**
- * Puts the key's limit figures on a REST v1 answer.
- *
- * Why: ALIGNMENT § 7 and B157: every v1 answer after the key was counted says `RateLimit-Limit` (calls per window),
- * `RateLimit-Remaining` (calls left) and `RateLimit-Reset` (seconds until the window starts over), so an integration can pace
- * itself without waiting for a `429`. The headers stay on the answer when a later guard or the handler refuses the request.
- *
- * @param reply the Fastify reply of the request
- * @param result the figures of the call that was just counted
- */
-export function setRateLimitHeaders(reply: FastifyReply, result: RateLimitResult): void {
-  void reply
-    .header('ratelimit-limit', String(result.limit))
-    .header('ratelimit-remaining', String(result.remaining))
-    .header('ratelimit-reset', String(result.resetSeconds));
-}
 
 /** The credentials of a Dhru request. */
 export interface DhruCredentials {
@@ -65,47 +30,11 @@ export function dhruCredentialsOf(body: unknown): DhruCredentials | undefined {
 }
 
 /**
- * Authenticates REST v1 routes with a Bearer API key.
- *
- * Why: decision 018; the scope the key must list is the contract's `permission` (`orders:write`), checked with the key's other
- * rules by {@link ApiKeyAuthenticator}.
- */
-export class ApiKeyAccessHandler implements AccessHandler {
-  constructor(private readonly authenticator: ApiKeyAuthenticator) {}
-
-  /**
-   * Authenticates a request with the Bearer key.
-   *
-   * @param request the Fastify request
-   * @param contract the route contract (its `permission` is the scope)
-   * @param context the Nest execution context, to reach the reply for the `RateLimit-*` headers
-   * @returns the API-key principal
-   * @throws {AppError} see {@link ApiKeyAuthenticator.authenticate}
-   */
-  async authenticate(
-    request: FastifyRequest,
-    contract: AnyRouteContract,
-    context?: ExecutionContext,
-  ): Promise<AccessState> {
-    const reply = context?.switchToHttp().getResponse<FastifyReply>();
-    const principal = await this.authenticator.authenticate(request, {
-      key: bearerKeyOf(request.headers.authorization),
-      // A v1 route without a scope cannot exist (defineRoute refuses it); the empty scope is refused for every key, `*` included.
-      scope: contract.permission ?? '',
-      points: requestPoints(contract.key, request.body),
-      surface: contract.surface,
-      onRateLimit: reply ? (result) => setRateLimitHeaders(reply, result) : undefined,
-    });
-    return { principal };
-  }
-}
-
-/**
  * Authenticates the Dhru endpoint with `username` + `apiaccesskey`.
  *
- * Why: decision 026: the `apiaccesskey` is a merchant API key that carries the `dhru` scope and belongs to the merchant with that
- * username. Every refusal is answered in the Dhru envelope with HTTP 200 (the surface's error formatter), and a credential
- * that is not accepted says `Authentication Failed`.
+ * Why: decision 026: the `apiaccesskey` is a merchant API key that belongs to the merchant with that username. Every refusal is
+ * answered in the Dhru envelope with HTTP 200 (the surface's error formatter), and a credential that is not accepted says
+ * `Authentication Failed`.
  */
 export class DhruCredentialsAccessHandler implements AccessHandler {
   constructor(private readonly authenticator: ApiKeyAuthenticator) {}
@@ -123,9 +52,7 @@ export class DhruCredentialsAccessHandler implements AccessHandler {
     const principal = await this.authenticator.authenticate(request, {
       key: credentials?.apiAccessKey,
       username: credentials?.username,
-      scope: DHRU_SCOPE,
       points: requestPoints(contract.key, request.body),
-      surface: contract.surface,
     });
     return { principal };
   }

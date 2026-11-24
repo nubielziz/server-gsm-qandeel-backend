@@ -1,18 +1,16 @@
-// Drizzle queries of the storefront's view of the catalog (feature 14a): the services a group may buy, their order fields, and
-// the TAC catalogue. Read only; the visibility rule is the merchant catalog's (live, active, active category, group allowed).
+// Drizzle queries of the storefront's view of the catalog (feature 14a): the services a group may buy and their order fields.
+// Read only; the visibility rule is the merchant catalog's (live, active, active category, group allowed).
 import { type SQL, and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import {
   type Service,
   type ServiceField,
   type ServiceType,
-  type TacCatalogEntry,
   serviceCategories,
   serviceFields,
   serviceGroupPrices,
   serviceOptions,
   services,
-  tacCatalog,
 } from '../db/schema';
 import { visibleTo } from './merchant-catalog.repository';
 
@@ -309,16 +307,4 @@ export async function findServiceFields(db: DbExecutor, serviceId: number): Prom
     .from(serviceFields)
     .where(eq(serviceFields.serviceId, serviceId))
     .orderBy(asc(serviceFields.sort), asc(serviceFields.id));
-}
-
-/**
- * Reads one TAC catalogue entry.
- *
- * @param db the database or a transaction
- * @param tac the first 8 digits of an IMEI
- * @returns the entry, or `undefined` when the TAC is not in the catalogue
- */
-export async function findTacEntry(db: DbExecutor, tac: string): Promise<TacCatalogEntry | undefined> {
-  const [row] = await db.select().from(tacCatalog).where(eq(tacCatalog.tac, tac)).limit(1);
-  return row;
 }

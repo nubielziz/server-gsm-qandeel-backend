@@ -1,5 +1,5 @@
 // The pattern of a field keyed imei judges the IMEI the buyer typed at the storefront checkout (the value that is stored and sent to the
-// supplier), as it does on the portal, REST v1 and Dhru. A value the buyer also puts under inputs.imei never stands in for it, and a
+// supplier), as it does on the portal and Dhru. A value the buyer also puts under inputs.imei never stands in for it, and a
 // required field keyed imei is satisfied by the typed IMEI. Real application, Postgres and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';

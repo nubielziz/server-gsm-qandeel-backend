@@ -1,5 +1,5 @@
-// URL secrets (decision 018, 019): a webhook whose only credential is a secret in its URL path, such as the Telegram bot
-// webhook `POST /webhooks/telegram/:secret`. The secret is stored hashed or encrypted and compared in constant time.
+// URL secrets (decision 018, 019): a webhook whose only credential is a secret in its URL path. The secret is stored hashed or
+// encrypted and compared in constant time.
 import { Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import type { AnyRouteContract } from '../../../../common/contract';
@@ -13,7 +13,7 @@ import type { AccessState } from '../access-state';
  * The stored form of a URL secret.
  *
  * Why: decision 019 keeps credentials as keyed hashes, and secrets the system must send back out (supplier and gateway
- * credentials) encrypted. A URL secret that the system also registers with the provider (Telegram `setWebhook`) is stored
+ * credentials) encrypted. A URL secret that the system also registers with the provider is stored
  * encrypted and handed over decrypted for the comparison; one it only checks can be stored as a hash.
  */
 export type StoredUrlSecret =
@@ -28,23 +28,21 @@ export type StoredUrlSecret =
 /**
  * Where the expected secret of one webhook route comes from.
  *
- * Why: the secret belongs to the module that owns the integration (notifications for Telegram); the identity module only
- * compares.
+ * Why: the secret belongs to the module that owns the integration; the identity module only compares.
  */
 export interface UrlSecretSource {
-  /** The manifest key of the route, for example `POST /webhooks/telegram/:secret`. */
+  /** The manifest key of the route, for example `POST /webhooks/example/:secret`. */
   readonly routeKey: string;
   /** The path parameter that holds the secret (default `secret`). */
   readonly param?: string;
   /**
    * A request header (lower case) that must match as well, compared in constant time: both must match. It carries the same value as
-   * the path unless the stored secret names a separate header value (decision 054). Telegram's `X-Telegram-Bot-Api-Secret-Token` is
-   * the use (MISMATCHES B165).
+   * the path unless the stored secret names a separate header value (decision 054).
    */
   readonly header?: string;
   /**
    * What a refused request is answered with: `unauthorized` (401, the default) or `not_found` (404, so a scanner cannot tell the
-   * route exists; B165 uses it for the Telegram webhook).
+   * route exists).
    */
   readonly refusal?: 'unauthorized' | 'not_found';
   /**
@@ -98,7 +96,7 @@ export class UrlSecretVerifiers {
 /**
  * Authenticates the routes whose credential is a secret in the URL.
  *
- * Why: a Telegram-style webhook cannot sign its requests; the long random path segment is the credential. The comparison is
+ * Why: a webhook that cannot sign its requests relies on the long random path segment as its credential. The comparison is
  * constant time, a missing configuration is indistinguishable from a wrong secret, and the answer is the same `401` for both.
  */
 export class UrlSecretAccessHandler implements AccessHandler {

@@ -14,7 +14,7 @@ import { auditOfCustomer, insertAnyService } from '../../support/customers';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { type OrdersWorld, ordersWorld } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
-import { blocklistRows, insertBlock, insertHeldOrder, insertImeiCheck } from '../../support/risk';
+import { blocklistRows, insertBlock, insertHeldOrder } from '../../support/risk';
 import { CONSOLE_ORIGIN } from '../../support/staff-console';
 import { insertSupportMessage, insertSupportTicket } from '../../support/support';
 import { insertFileRow } from '../../support/support-accounts';
@@ -80,7 +80,7 @@ async function buyer(options: { fingerprint?: string; name?: string } = {}) {
 }
 
 describe('POST /admin/customers/:id/block', () => {
-  it('blocks: status, risk level, notes, sessions, and the email, cards and IMEIs on the blocklist linked to the customer', async () => {
+  it('blocks: status, notes, sessions, and the email, cards and IMEIs on the blocklist linked to the customer', async () => {
     const { customer, order, store, db } = await buyer({ fingerprint: 'fp_card_1' });
     const res = await staff.post(`/admin/customers/${customer.id}/block`, {
       blocked: true,
@@ -89,7 +89,6 @@ describe('POST /admin/customers/:id/block', () => {
     expect(res.status).toBe(204);
     expect(await customerRow(customer.id)).toMatchObject({
       status: 'blocked',
-      riskLevel: 'high',
       internalNotes: 'Likes email.\nBlocked: Chargeback or dispute',
     });
     expect((await store.me()).statusCode).toBe(401);
@@ -161,7 +160,7 @@ describe('POST /admin/customers/:id/block', () => {
     });
   });
 
-  it('unblocks: active, risk high to medium, and deletes only the manual entries this block added', async () => {
+  it('unblocks: active, and deletes only the manual entries this block added', async () => {
     const { customer, db } = await buyer({ fingerprint: 'fp_card_1' });
     const other = await insertBlock(t, db, 'domain', 'evil.example', { createdBy: staff.staffId });
     const chargeback = await insertBlock(t, db, 'card', 'fp_other', { source: 'chargeback' });
@@ -170,7 +169,7 @@ describe('POST /admin/customers/:id/block', () => {
     expect((await blocklistRows(db)).filter((entry) => entry.customerId === customer.id)).toHaveLength(3);
     const res = await staff.post(`/admin/customers/${customer.id}/block`, { blocked: false });
     expect(res.status).toBe(204);
-    expect(await customerRow(customer.id)).toMatchObject({ status: 'active', riskLevel: 'medium' });
+    expect(await customerRow(customer.id)).toMatchObject({ status: 'active' });
     expect((await blocklistRows(db)).map((entry) => entry.id).sort()).toEqual(
       [other.id, chargeback.id, refunded.id].sort(),
     );
@@ -184,13 +183,13 @@ describe('POST /admin/customers/:id/block', () => {
     expect((await new StoreClient(t).login(customer.email)).statusCode).toBe(200);
   });
 
-  it('takes an optional reason when lifting and keeps a lower risk level as it was', async () => {
-    const customer = await makeCustomer(t, { status: 'blocked', riskLevel: 'low' });
+  it('takes an optional reason when lifting', async () => {
+    const customer = await makeCustomer(t, { status: 'blocked' });
     expect(
       (await staff.post(`/admin/customers/${customer.id}/block`, { blocked: false, reason: 'Resolved with the bank' }))
         .status,
     ).toBe(204);
-    expect(await customerRow(customer.id)).toMatchObject({ status: 'active', riskLevel: 'low' });
+    expect(await customerRow(customer.id)).toMatchObject({ status: 'active' });
     expect((await auditOfCustomer((await testDb()).db, customer.id))[0]!.after).toMatchObject({
       reason: 'Resolved with the bank',
     });
@@ -263,7 +262,6 @@ describe('GET /admin/customers/:id/export', () => {
 
   it('answers a JSON file with everything held about the customer, the IMEIs decrypted and no card data', async () => {
     const { customer, order, db } = await buyer({ fingerprint: 'fp_secret_card' });
-    await insertImeiCheck(t, db, IMEI_ORDER, { customerId: customer.id, ip: '203.0.113.9' });
     await db.update(s.checkoutSessions).set({ ipCountry: 'DE' }).where(eq(s.checkoutSessions.id, order.sessionId));
     await db
       .insert(s.consentRecords)
@@ -314,7 +312,9 @@ describe('GET /admin/customers/:id/export', () => {
       ipCountry: 'DE',
       userAgent: 'Mozilla/5.0',
     });
-    expect(file.imeiChecks[0]).toMatchObject({ imei: IMEI_ORDER, ip: '203.0.113.9' });
+    // The export format 3 has no list of IMEI checks: the free IMEI check was retired.
+    expect(file.format).toBe(3);
+    expect(file).not.toHaveProperty('imeiChecks');
     expect(file.payments[0]).toMatchObject({ amount: '14.9900', method: 'card', status: 'captured' });
     expect(file.consents[0]).toMatchObject({ purpose: 'terms', granted: true });
     expect(file.supportTickets[0].messages.map((message: { body: string }) => message.body)).toEqual([
@@ -357,16 +357,16 @@ describe('GET /admin/customers/:id/export', () => {
     expect(after.text).toContain('Words typed by somebody.');
   });
 
-  it('leaves out what staff keep to protect the shop: the notes, the risk level, the reason of a suspension and the blocklist entries', async () => {
+  it('leaves out what staff keep to protect the shop: the notes, the reason of a suspension and the blocklist entries', async () => {
     const { customer, db } = await buyer({ fingerprint: 'fp_secret_card' });
-    // The customer is blocked: the block writes a note, a risk level, a reason and blocklist entries linked to the customer.
+    // The customer is blocked: the block writes a note and blocklist entries linked to the customer, and a reason is set.
     expect(
       (await staff.post(`/admin/customers/${customer.id}/block`, { blocked: true, reason: 'Chargeback or dispute' }))
         .status,
     ).toBe(204);
     await db.update(s.customers).set({ suspendedReason: 'Account may be compromised' });
     const before = await customerRow(customer.id);
-    expect(before).toMatchObject({ riskLevel: 'high', suspendedReason: 'Account may be compromised' });
+    expect(before).toMatchObject({ suspendedReason: 'Account may be compromised' });
     expect(before.internalNotes).toContain('Likes email.');
     const res = await download(customer.id, { 'sec-fetch-site': 'same-origin' });
     expect(res.statusCode).toBe(200);
@@ -380,8 +380,7 @@ describe('GET /admin/customers/:id/export', () => {
     });
     expect(file.orders).toHaveLength(1);
     // What staff think of them goes.
-    for (const key of ['internalNotes', 'riskLevel', 'suspendedReason'])
-      expect(file.profile, key).not.toHaveProperty(key);
+    for (const key of ['internalNotes', 'suspendedReason']) expect(file.profile, key).not.toHaveProperty(key);
     expect(Object.keys(file)).not.toContain('blocklist');
     for (const text of [
       'Likes email.',
@@ -515,15 +514,8 @@ describe('POST /admin/customers/:id/anonymize', () => {
     });
   });
 
-  it('cuts every stored IMEI to the TAC, on the orders, the checkout sessions and the IMEI checks, and keeps payments and amounts', async () => {
+  it('cuts every stored IMEI to the TAC, on the orders and the checkout sessions, and keeps payments and amounts', async () => {
     const { customer, order, db } = await buyer({ fingerprint: 'fp_card_1' });
-    const check = await insertImeiCheck(t, db, IMEI_ORDER, {
-      customerId: customer.id,
-      ip: '203.0.113.9',
-      cachedUntil: new Date('2026-11-09T00:00:00.000Z'),
-    });
-    const viaSession = await insertImeiCheck(t, db, IMEI_SESSION, { checkoutSessionId: order.sessionId });
-    const stranger = await insertImeiCheck(t, db, '352905112490861');
     await db
       .update(s.orders)
       .set({ inputs: { imei: IMEI_ORDER, note: 'keep me' } })
@@ -550,15 +542,6 @@ describe('POST /admin/customers/:id/anonymize', () => {
       grossAmount: '14.9900',
       currency: 'USD',
     });
-    for (const erased of [check, viaSession]) {
-      expect(await db.select().from(s.imeiChecks).where(eq(s.imeiChecks.id, erased.id))).toMatchObject([
-        { imeiEnc: null, imeiHash: null, cachedUntil: null, ip: null, brand: 'Apple' },
-      ]);
-    }
-    expect((await db.select().from(s.imeiChecks).where(eq(s.imeiChecks.id, stranger.id)))[0]!.imeiEnc).not.toBeNull();
-    // The staff log shows the mask.
-    const reader = await adminWith(t, ['risk:read']);
-    expect((await reader.get(`/admin/imei-checks/${check.id}`)).body.imei).toBe('•'.repeat(15));
     // Payments, ledger entries and amounts stay for accounting.
     const [payment] = await db.select().from(s.payments).where(eq(s.payments.customerId, customer.id));
     expect(payment).toMatchObject({ amount: '14.9900', status: 'captured', cardFingerprint: 'fp_card_1' });

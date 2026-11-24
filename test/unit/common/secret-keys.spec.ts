@@ -4,7 +4,6 @@ import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { isSecretKey, keyWords } from '@src/common/secret-keys';
 import * as schema from '@src/infra/db/schema';
 import { ADMIN_ALLOWLIST_KEY } from '@src/modules/identity/security/ip-rules/ip-rule-cache';
-import { ABANDONED_MINUTES_KEY } from '@src/modules/customers/domain/recovery';
 import { ADJUST_APPROVAL_LIMIT_KEY } from '@src/modules/money/domain/wallet-rules';
 import { B2B_VAT_RATE_KEY, INVOICE_DUE_DAYS_KEY } from '@src/modules/money/domain/invoice-rules';
 import { LOW_BALANCE_THRESHOLD_KEY } from '@src/modules/money/domain/low-balance';
@@ -13,7 +12,6 @@ import { MAINTENANCE_KEY } from '@src/modules/platform/maintenance/maintenance-s
 import { LOOKUP_KEY_CHECK_SETTING } from '@src/modules/platform/settings/lookup-key-check';
 import { EDITABLE_SETTINGS } from '@src/modules/platform/settings/settings-registry';
 import { REQUIRE_3DS_KEY, RISK_RULES_KEY } from '@src/modules/risk/domain/risk-rules';
-import { IMEI_RETENTION_KEY } from '@src/modules/risk/jobs/imei-retention';
 import { POLICY_KEYS } from '@src/modules/storefront/domain/policy-rules';
 
 describe('isSecretKey', () => {
@@ -161,9 +159,7 @@ describe('isSecretKey (decision 054)', () => {
       RISK_RULES_KEY,
       REQUIRE_3DS_KEY,
       MAINTENANCE_KEY,
-      ABANDONED_MINUTES_KEY,
       LOW_BALANCE_THRESHOLD_KEY,
-      IMEI_RETENTION_KEY,
       ADJUST_APPROVAL_LIMIT_KEY,
       B2B_VAT_RATE_KEY,
       INVOICE_DUE_DAYS_KEY,

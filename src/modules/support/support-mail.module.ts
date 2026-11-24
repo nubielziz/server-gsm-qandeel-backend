@@ -1,4 +1,4 @@
-// The sending side of the support module (stage 17): the job that sends a ticket's receipt, reply and survey. Loaded by the API (the
+// The sending side of the support module (stage 17): the job that sends a ticket's receipt and reply. Loaded by the API (the
 // processor class is resolved there, like the other notification processors) and by the worker, which runs it. It needs the database
 // and the notification delivery, so a test app built without them leaves it out.
 import { Module } from '@nestjs/common';

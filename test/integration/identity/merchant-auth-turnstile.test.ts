@@ -1,4 +1,4 @@
-// Integration tests of the anti-bot check on the public merchant sign-up, sign-in and forgot-password routes (feature 24A, decision 034
+// Integration tests of the anti-bot check on the public merchant sign-in and forgot-password routes (feature 24A, decision 034
 // amendment) with TURNSTILE_MERCHANT_AUTH on: a missing or bad token is refused before anything else, the dummy token passes. With the
 // switch off (the default outside production) the routes answer as before: the existing merchant tests and
 // test/integration/customers/smart-sign-in.test.ts show it. In production the switch is on unless it is set to false (decision 052).
@@ -37,23 +37,13 @@ beforeEach(async () => {
 const WITH_TOKEN = { headers: { 'x-turnstile-token': TURNSTILE_TEST_TOKEN } };
 const BAD_TOKEN = { headers: { 'x-turnstile-token': 'not-the-dummy-token' } };
 const code = (res: { json: () => unknown }) => (res.json() as { code: string }).code;
-const registration = (email: string) => ({
-  name: 'Ali Hassan',
-  email,
-  password: 'a-long-enough-password-1',
-  country: 'JO',
-});
 
 describe('TURNSTILE_MERCHANT_AUTH=true', () => {
-  it('refuses register, login and forgot without a token or with a bad one: 403 TURNSTILE_FAILED, nothing set', async () => {
+  it('refuses login and forgot without a token or with a bad one: 403 TURNSTILE_FAILED, nothing set', async () => {
     const merchant = await makeMerchant(t);
     const p = new MerchantPortal(t, freshClientIp());
     for (const options of [{}, BAD_TOKEN]) {
-      const answers = [
-        await p.register(registration('new-merchant@example.com'), options),
-        await p.login(merchant.email, undefined, options),
-        await p.forgot(merchant.email, options),
-      ];
+      const answers = [await p.login(merchant.email, undefined, options), await p.forgot(merchant.email, options)];
       for (const res of answers) {
         expect(res.statusCode).toBe(403);
         expect(code(res)).toBe('TURNSTILE_FAILED');
@@ -82,10 +72,9 @@ describe('TURNSTILE_MERCHANT_AUTH=true', () => {
     }
   });
 
-  it('lets register, login and forgot through with the dummy token, answering as before', async () => {
+  it('lets login and forgot through with the dummy token, answering as before', async () => {
     const merchant = await makeMerchant(t);
     const p = new MerchantPortal(t, freshClientIp());
-    expect((await p.register(registration('another-merchant@example.com'), WITH_TOKEN)).statusCode).toBe(204);
     expect((await p.forgot(merchant.email, WITH_TOKEN)).statusCode).toBe(204);
     const login = await p.login(merchant.email, undefined, WITH_TOKEN);
     expect(login.statusCode).toBe(200);
@@ -105,7 +94,7 @@ describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
   const productionApp = (extra: Record<string, string> = {}) =>
     createTestApp({ env: productionEnvOnTestInstances({ SHOP_ORIGINS: PORTAL_ORIGIN, ...extra }) });
 
-  it('is on by default: register, login and forgot without a token are 403 TURNSTILE_FAILED before any counter or hash', async () => {
+  it('is on by default: login and forgot without a token are 403 TURNSTILE_FAILED before any counter or hash', async () => {
     const production = await productionApp();
     const hasher = production.app.get(PasswordHasher);
     const verify = spyOn(hasher, 'verify');
@@ -115,11 +104,7 @@ describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
       verify.mockClear();
       hash.mockClear();
       const p = new MerchantPortal(production, freshClientIp());
-      for (const res of [
-        await p.register(registration('new-merchant@example.com')),
-        await p.login(merchant.email),
-        await p.forgot(merchant.email),
-      ]) {
+      for (const res of [await p.login(merchant.email), await p.forgot(merchant.email)]) {
         expect(res.statusCode).toBe(403);
         expect(code(res)).toBe('TURNSTILE_FAILED');
         expect(res.cookies).toEqual([]);
@@ -138,7 +123,6 @@ describe('TURNSTILE_MERCHANT_AUTH in production (decision 052)', () => {
     try {
       const merchant = await makeMerchant(production);
       const p = new MerchantPortal(production, freshClientIp());
-      expect((await p.register(registration('another-merchant@example.com'))).statusCode).toBe(204);
       expect((await p.forgot(merchant.email)).statusCode).toBe(204);
       const login = await p.login(merchant.email);
       expect(login.statusCode, login.body).toBe(200);

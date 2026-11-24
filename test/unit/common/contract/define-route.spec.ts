@@ -118,14 +118,6 @@ describe('defineRoute', () => {
       expect(define({ key: 'PUT /admin/spec/p5', ...admin, permission: 'risk:*' }).permission).toBe('risk:*');
     });
 
-    it('is required for api-key as the scope the key must list, one action and no area wildcard', () => {
-      const v1 = { surface: 'v1', access: 'api-key' };
-      expect(() => define({ key: 'GET /v1/spec/p7', ...v1 })).toThrow(/api-key routes need the scope/);
-      expect(() => define({ key: 'GET /v1/spec/p8', ...v1, permission: 'Orders:Read' })).toThrow(/scope/);
-      expect(() => define({ key: 'GET /v1/spec/p9', ...v1, permission: 'orders:*' })).toThrow(/scope/);
-      expect(define({ key: 'GET /v1/spec/p10', ...v1, permission: 'orders:read' }).permission).toBe('orders:read');
-    });
-
     it('is refused on any other access kind', () => {
       expect(() => define({ permission: 'staff:read' })).toThrow(/only staff-permission/);
       expect(() =>
@@ -269,10 +261,9 @@ describe('defineRoute', () => {
       expect(define({ ...signIn, key: 'POST /admin/spec/cs2', csrf: false }).csrf).toBe(false);
       expect(
         define({
-          key: 'POST /v1/spec/cs3',
-          surface: 'v1',
-          access: 'api-key',
-          permission: 'orders:write',
+          key: 'POST /webhooks/spec/cs3',
+          surface: 'hooks',
+          access: 'gateway-signature',
           body: z.object({}),
           success: { status: 204 },
           csrf: false,
@@ -298,7 +289,9 @@ describe('defineRoute', () => {
     it('lists every kind once, and says which ones use a session cookie', () => {
       expect(new Set(ACCESS_KINDS).size).toBe(ACCESS_KINDS.length);
       expect(ACCESS_KINDS.filter(isSessionAccess)).toEqual([...SESSION_ACCESS_KINDS]);
-      expect(isSessionAccess('api-key')).toBe(false);
+      expect(isSessionAccess('dhru-credentials')).toBe(false);
+      // The Bearer API key of the retired REST API v1 is not a kind any more.
+      expect<string[]>([...ACCESS_KINDS]).not.toContain('api-key');
       expect(isSessionAccess('public')).toBe(false);
     });
   });
@@ -478,10 +471,9 @@ describe('defineRoute turnstile option (decision 034)', () => {
     ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);
     expect(() =>
       define({
-        key: 'POST /v1/spec-turnstile',
-        surface: 'v1',
-        access: 'api-key',
-        permission: 'orders:read',
+        key: 'POST /webhooks/spec-turnstile',
+        surface: 'hooks',
+        access: 'gateway-signature',
         turnstile: true,
       }),
     ).toThrow(/only applies to \/store\/v1 routes and public \/client routes/);

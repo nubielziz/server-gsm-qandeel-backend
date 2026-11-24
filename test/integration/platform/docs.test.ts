@@ -1,10 +1,9 @@
 // Integration tests of the documentation routes (decision 017): GET /openapi.json and /docs (public, map routes),
 // GET /reference and /reference/openapi.json (internal, gated by REFERENCE_DOCS), the public/internal filter on a
-// small fixture API, the outgoing events as webhooks, and the Content-Security-Policy that only the pages relax.
+// small fixture API, and the Content-Security-Policy that only the pages relax.
 import { createHash } from 'node:crypto';
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { z } from 'zod';
-import { EventRegistry, contractRegistry, defineEvent, zId } from '@src/common/contract';
+import { contractRegistry } from '@src/common/contract';
 import { DOCUMENTATION_ROUTES, OpenApiService, SCALAR_BUNDLE_URL } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, productionEnvOnTestInstances, signInStaff } from '../../support/auth';
@@ -19,12 +18,11 @@ type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any -- Op
 const STRICT_CSP = "default-src 'none';base-uri 'none';form-action 'none';frame-ancestors 'none'";
 
 const apps: TestApp[] = [];
-/** A fresh app with the fixture API (REST v1, merchant, admin, Dhru-like and system routes). */
+/** A fresh app with the fixture API (merchant, admin, Dhru-like and system routes). */
 async function appWith(options: Parameters<typeof createTestApp>[0] = {}): Promise<TestApp> {
   const t = await createTestApp({ controllers: [TestController, DocsFixtureController], ...options });
   apps.push(t);
-  // The real app registers the four merchant webhook events at load (feature 7b); these tests are about the fixture API, which has none.
-  t.app.get(OpenApiService).publish(t.app, { events: [] });
+  t.app.get(OpenApiService).publish(t.app);
   return t;
 }
 afterAll(async () => {
@@ -46,9 +44,7 @@ function directives(policy: string): Record<string, string[]> {
 
 /** Checks that a document holds together: references resolve, ids are unique, tags and security names are defined. */
 function expectConsistent(doc: Json): void {
-  const operations: Json[] = [...Object.values(doc.paths), ...Object.values(doc.webhooks ?? {})].flatMap((item: Json) =>
-    Object.values(item),
-  );
+  const operations: Json[] = Object.values(doc.paths).flatMap((item: Json) => Object.values(item));
   const ids = operations.map((operation) => operation.operationId);
   expect(new Set(ids).size, 'operationIds are unique').toBe(ids.length);
 
@@ -78,19 +74,12 @@ function expectConsistent(doc: Json): void {
 }
 
 describe('GET /openapi.json (public document)', () => {
-  it('lists the four merchant webhook events of the real registry under `webhooks` (feature 7b)', async () => {
+  it('has no `webhooks` member: the outgoing webhook events to merchants are retired', async () => {
     const t = await createTestApp();
     apps.push(t);
     const doc = (await get(t, '/openapi.json')).json();
-    expect(Object.keys(doc.webhooks)).toEqual([
-      'invoice.paid',
-      'order.status_changed',
-      'service.price_changed',
-      'wallet.low_balance',
-    ]);
-    expect(
-      doc.webhooks['order.status_changed'].post.parameters.map((parameter: { name: string }) => parameter.name),
-    ).toEqual(['X-GSM-Signature', 'X-GSM-Event-Id']);
+    expect(doc.webhooks).toBeUndefined();
+    expect(Object.keys(doc.components.securitySchemes)).not.toContain('webhookSignature');
   });
 
   it('answers 200 JSON with the exact text the service published, cacheable for five minutes', async () => {
@@ -103,35 +92,18 @@ describe('GET /openapi.json (public document)', () => {
     expect(res.body.endsWith('}\n')).toBe(true);
   });
 
-  it('keeps only the REST v1 and Dhru operations: the real ones (feature 7a) and the fixture API', async () => {
+  it('keeps only the Dhru operation: the real one (feature 7a), and nothing of the fixture API or of the retired REST API v1', async () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
     expect(doc.openapi).toBe('3.1.0');
-    const paths = Object.keys(doc.paths);
-    // The Dhru transport and the fixture's v1 route are there, and nothing else that is not REST v1.
-    expect(paths).toContain('/api/index.php');
-    expect(paths).toContain('/v1/t/orders');
-    expect(paths.filter((path) => path !== '/api/index.php' && !path.startsWith('/v1/'))).toEqual([]);
-    // The twelve real v1 routes are documented on the public document (decision 017).
-    for (const path of [
-      '/v1/services',
-      '/v1/services/{id}',
-      '/v1/account',
-      '/v1/transactions',
-      '/v1/orders',
-      '/v1/orders/bulk',
-      '/v1/orders/{id}',
-      '/v1/orders/{id}/cancel',
-      '/v1/orders/{id}/verify',
-      '/v1/files',
-      '/v1/files/{id}',
-    ]) {
-      expect(paths, path).toContain(path);
-    }
-    expect(Object.keys(doc.paths['/v1/t/orders'])).toEqual(['get', 'post']);
-    expect(doc.paths['/v1/t/orders'].post['x-gsm-surface']).toBe('v1');
+    expect(Object.keys(doc.paths)).toEqual(['/api/index.php']);
     expect(doc.paths['/api/index.php'].post['x-gsm-surface']).toBe('dhru');
     for (const hidden of [
+      '/v1/orders',
+      '/v1/services',
+      '/v1/account',
+      '/v1/files',
+      '/client/t/orders',
       '/admin/t/orders',
       '/admin/t/secure',
       '/client/t/wallet',
@@ -147,68 +119,38 @@ describe('GET /openapi.json (public document)', () => {
   it('keeps the x-gsm-alias markers of the shared types and drops the $schema keyword', async () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
-    const order = doc.paths['/v1/t/orders'].post.responses['201'].content['application/json'].schema;
+    expect(JSON.stringify(doc)).not.toContain('$schema');
+    const internal = (await get(t, '/reference/openapi.json')).json();
+    const order = internal.paths['/client/t/orders'].post.responses['201'].content['application/json'].schema;
     expect(order.properties.total['x-gsm-alias']).toBe('Money');
     expect(order.properties.createdAt['x-gsm-alias']).toBe('IsoDateTime');
     expect(order.properties.id['x-gsm-alias']).toBe('Id');
-    const internal = (await get(t, '/reference/openapi.json')).json();
     expect(JSON.stringify(internal)).toContain('"x-gsm-alias":"Money"');
     expect(JSON.stringify(internal)).not.toContain('$schema');
   });
 
-  it('defines only the security schemes its operations use, plus the API key', async () => {
+  it('defines only the security schemes its operations use', async () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
-    expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey', 'dhruCredentials']);
+    expect(Object.keys(doc.components.securitySchemes)).toEqual(['dhruCredentials']);
     expect(JSON.stringify(doc)).not.toMatch(/staffSession|merchantSession|gsm_admin_session/);
   });
 
-  it('is a consistent OpenAPI document with the v1 tag shown under its surface', async () => {
+  it('is a consistent OpenAPI document with the Dhru tag shown under its surface', async () => {
     const t = await appWith();
     const doc = (await get(t, '/openapi.json')).json();
     expectConsistent(doc);
-    // The fixture's `orders` tag is shared with the real v1 orders routes; the real account, files and services tags come with them.
-    expect(doc['x-tagGroups']).toEqual([
-      { name: 'REST API v1', tags: ['account', 'files', 'orders', 'services'] },
-      { name: 'Dhru Fusion API', tags: ['dhru'] },
-    ]);
+    expect(doc['x-tagGroups']).toEqual([{ name: 'Dhru Fusion API', tags: ['dhru'] }]);
   });
 
-  it('answers the same on the app without the fixture API: a valid public document with the real v1 and Dhru routes only', async () => {
+  it('answers the same on the app without the fixture API: a valid public document with the real Dhru route only', async () => {
     const t = await createTestApp();
     apps.push(t);
-    t.app.get(OpenApiService).publish(t.app, { events: [] });
+    t.app.get(OpenApiService).publish(t.app);
     const doc = (await get(t, '/openapi.json')).json();
     expectConsistent(doc);
-    const paths = Object.keys(doc.paths);
-    expect(paths).toContain('/api/index.php');
-    expect(paths).not.toContain('/v1/t/orders');
-    expect(paths.filter((path) => path !== '/api/index.php' && !path.startsWith('/v1/'))).toEqual([]);
-    expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey', 'dhruCredentials']);
-  });
-
-  it('lists the events of the registry as webhooks when they exist', async () => {
-    const t = await appWith();
-    const events = new EventRegistry();
-    defineEvent(
-      {
-        key: 'EVENT order.status_changed',
-        summary: 'An order changed status',
-        payload: z.object({ orderId: zId, status: z.string() }),
-        example: { orderId: 7, status: 'completed' },
-      },
-      events,
-    );
-    t.app.get(OpenApiService).publish(t.app, { events: events.all() });
-    const doc = (await get(t, '/openapi.json')).json();
-    expect(Object.keys(doc.webhooks)).toEqual(['order.status_changed']);
-    expect(doc.webhooks['order.status_changed'].post.security).toEqual([{ webhookSignature: [] }]);
-    expect(Object.keys(doc.components.securitySchemes)).toEqual(['apiKey', 'dhruCredentials', 'webhookSignature']);
-    expect(doc['x-tagGroups'].map((group: Json) => group.name)).toContain('Webhook events');
-    expectConsistent(doc);
-    // The internal document never carries them.
-    const internal = (await get(t, '/reference/openapi.json')).json();
-    expect(internal.webhooks).toBeUndefined();
+    expect(Object.keys(doc.paths)).toEqual(['/api/index.php']);
+    expect(Object.keys(doc.components.securitySchemes)).toEqual(['dhruCredentials']);
   });
 });
 
@@ -222,7 +164,7 @@ describe('GET /reference/openapi.json (internal document)', () => {
     expect(res.body).toBe(t.app.get(OpenApiService).documents().internalJson);
     const doc = res.json();
     for (const path of [
-      '/v1/t/orders',
+      '/client/t/orders',
       '/api/index.php',
       '/admin/t/orders',
       '/admin/t/secure',
@@ -253,22 +195,22 @@ describe('GET /reference/openapi.json (internal document)', () => {
     expect(securitySchemes.staffSession).toMatchObject({ type: 'apiKey', in: 'cookie', name: 'gsm_admin_session' });
     expect(securitySchemes.merchantSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
     expect(securitySchemes.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_store_session' });
-    expect(securitySchemes.apiKey).toMatchObject({ type: 'http', scheme: 'bearer' });
-    expect(securitySchemes.webhookSignature).toMatchObject({ in: 'header', name: 'X-GSM-Signature' });
+    expect(securitySchemes.apiKey).toBeUndefined();
+    expect(securitySchemes.dhruCredentials).toMatchObject({ type: 'http', scheme: 'dhru' });
+    expect(securitySchemes.webhookSignature).toBeUndefined();
   });
 
   it('shows a tag that two surfaces share under each surface, so their operations do not merge', async () => {
     const t = await appWith();
     const doc = (await get(t, '/reference/openapi.json')).json();
-    expect(doc.paths['/v1/t/orders'].get.tags).toEqual(['v1: orders']);
+    expect(doc.paths['/client/t/orders'].post.tags).toEqual(['client: orders']);
     expect(doc.paths['/admin/t/orders'].get.tags).toEqual(['admin: orders']);
     const groups = Object.fromEntries(doc['x-tagGroups'].map((group: Json) => [group.name, group.tags]));
-    // The real v1 routes (feature 7a) are in the group too: `v1: files` and `v1: services` share their tags with the portal's files and services.
-    expect(groups['REST API v1']).toEqual(expect.arrayContaining(['v1: orders']));
+    expect(groups['REST API v1']).toBeUndefined();
     // The real sign-in routes (map group `auth`) are in the group too; only the tags of this test's routes are checked.
     expect(groups['Admin console']).toEqual(expect.arrayContaining(['admin: orders', 'admin: test']));
     // The real portal routes are in the group too (the wallet routes are map group `catalog`, the sign-in ones `auth`).
-    expect(groups['Merchant portal']).toEqual(expect.arrayContaining(['wallet']));
+    expect(groups['Merchant portal']).toEqual(expect.arrayContaining(['client: orders', 'wallet']));
   });
 
   it('describes GET /openapi.json as JSON and GET /docs as HTML', async () => {
@@ -291,7 +233,7 @@ describe('GET /docs and GET /reference (Scalar pages)', () => {
     expect(pub.headers['cache-control']).toBe('public, max-age=300');
     expect(pub.body).toContain('<title>IMEI-HUB API</title>');
     expect(pub.body).toContain(`<script src="${SCALAR_BUNDLE_URL}" integrity="sha384-`);
-    expect(pub.body).toContain('"/v1/t/orders"');
+    expect(pub.body).toContain('"/api/index.php"');
     expect(pub.body).not.toContain('/admin/t/orders');
 
     const internal = await get(t, '/reference');

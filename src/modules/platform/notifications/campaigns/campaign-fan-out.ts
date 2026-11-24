@@ -1,4 +1,4 @@
-// CampaignFanOut: turns a queued campaign into in-app items and queued email and Telegram rows, chunk by chunk (feature 23, plan
+// CampaignFanOut: turns a queued campaign into in-app items and queued email rows, chunk by chunk (feature 23, plan
 // section 8.1). Each chunk is one transaction that locks the campaign row, reads one keyset page of one recipient type, inserts its rows
 // idempotently and moves the cursor; after the commit the chunk rings the inbox doorbell (decision 037) and adds the send jobs to the
 // bulk queue.
@@ -61,7 +61,7 @@ export interface FanOutCursor {
 /** What one run of the fan-out job did. */
 export interface FanOutResult {
   readonly chunks: number;
-  /** Email and Telegram rows made (and handed to the bulk queue). */
+  /** Email rows made (and handed to the bulk queue). */
   readonly rows: number;
   /** `sent` when the campaign finished, `continued` when a continuation took over, `paused` for backpressure, `stopped` when there was nothing to do. */
   readonly outcome: 'sent' | 'continued' | 'paused' | 'stopped';
@@ -77,7 +77,7 @@ export interface FanOutJobData {
 /** What one chunk did. */
 interface ChunkResult {
   readonly state: 'more' | 'sent' | 'stopped' | 'failed';
-  readonly rows: Array<{ id: number; channel: 'email' | 'telegram' }>;
+  readonly rows: Array<{ id: number; channel: 'email' }>;
   readonly chunksDone: number;
   readonly error?: string;
   /** The people of one type who got an in-app item in this chunk (none when the chunk ran before). */
@@ -128,7 +128,7 @@ export class CampaignFanOut {
   ) {
     this.counter = new Counter({
       name: 'notification_campaign_fanout_rows_total',
-      help: 'Rows the campaign fan-out made, by channel (in_app, email, telegram).',
+      help: 'Rows the campaign fan-out made, by channel (in_app, email).',
       labelNames: ['channel'],
       registers: [metrics.registry],
     });
@@ -209,22 +209,19 @@ export class CampaignFanOut {
     for (const member of members) {
       const plan = rowsFor(member, channels);
       if (plan.inApp) inbox.push(member.id);
-      for (const channel of ['email', 'telegram'] as const) {
-        if (plan[channel]) {
-          messages.push({
-            recipientType: selection.type,
-            recipientId: member.id,
-            channel,
-            dedupeKey: campaignDedupeKey(campaign.id, channel, selection.type, member.id),
-          });
-        }
+      if (plan.email) {
+        messages.push({
+          recipientType: selection.type,
+          recipientId: member.id,
+          channel: 'email',
+          dedupeKey: campaignDedupeKey(campaign.id, 'email', selection.type, member.id),
+        });
       }
-      if (plan.inApp || plan.email || plan.telegram) reached += 1;
+      if (plan.inApp || plan.email) reached += 1;
       stats = addStats(stats, {
-        planned: { inApp: plan.inApp ? 1 : 0, email: plan.email ? 1 : 0, telegram: plan.telegram ? 1 : 0 },
+        planned: { inApp: plan.inApp ? 1 : 0, email: plan.email ? 1 : 0 },
         skipped: {
           optedOut: plan.skipped.optedOut ? 1 : 0,
-          noTelegram: plan.skipped.noTelegram ? 1 : 0,
           noAccount: plan.skipped.noAccount ? 1 : 0,
         },
       });
@@ -234,7 +231,7 @@ export class CampaignFanOut {
     const created = await insertCampaignMessages(tx, campaign.id, BROADCAST_ANNOUNCEMENT_EVENT, messages, now);
     this.counter.inc({ channel: 'in_app' }, items.length);
     const inApp = { type: selection.type, ids: items };
-    for (const row of created) this.counter.inc({ channel: row.channel });
+    this.counter.inc({ channel: 'email' }, created.length);
 
     const last = members[members.length - 1];
     let next: FanOutCursor | undefined =
@@ -243,7 +240,7 @@ export class CampaignFanOut {
       const following = selections[index + 1];
       next = following ? { type: following.type, afterId: 0 } : undefined;
     }
-    const rows = created.map((row) => ({ id: row.id, channel: row.channel }));
+    const rows = created.map((row) => ({ id: row.id, channel: 'email' as const }));
     if (!next) return { ...(await this.finish(tx, campaign, stats, reached, now, rows)), inApp };
 
     const updated = await updateCampaignIf(tx, campaign.id, FANOUT_STATUSES, {

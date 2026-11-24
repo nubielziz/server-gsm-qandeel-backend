@@ -171,7 +171,7 @@ export class OrderActionsService {
   }
 
   /**
-   * Adds an internal note: a `note` event and the order's latest note. Never shown to the buyer or in a webhook.
+   * Adds an internal note: a `note` event and the order's latest note. Never shown to the buyer or in the merchant portal.
    *
    * @param staff the acting staff member
    * @param orderId the order

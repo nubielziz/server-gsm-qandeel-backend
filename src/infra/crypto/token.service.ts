@@ -9,7 +9,7 @@ import { constantTimeEqual, hashToken, randomToken } from './tokens';
  * Why: decision 019: sessions, `auth_tokens` and API keys are stored as `HMAC-SHA256(TOKEN_PEPPER, token)`. Rotating the
  * pepper invalidates every stored token, so it is a planned operation, and the pepper never leaves this class. Decision 054 keeps
  * the two uses apart: `hash` is for credentials (sessions, one-time links, API keys) and short-lived limiter keys; `lookupHash` is
- * for hashes stored for later matching (blocklist, IMEI history, duplicates, unsubscribe links, Idempotency-Key requests, the
+ * for hashes stored for later matching (blocklist, duplicates, unsubscribe links, Idempotency-Key requests, the
  * shop's link tokens), under their own key `LOOKUP_HASH_KEY`, so changing the pepper does not switch those lookups off.
  *
  * @see docs/decisions/019-encryption-and-token-hashing.md
@@ -35,8 +35,8 @@ export class TokenService {
   }
 
   /**
-   * Hashes a value that is stored to be matched later (decision 054): a blocklist entry, an IMEI check, an inventory code, an order
-   * fingerprint, an unsubscribe link, an Idempotency-Key request, a webhook event id, a link token of the shop.
+   * Hashes a value that is stored to be matched later (decision 054): a blocklist entry, an inventory code, an order
+   * fingerprint, an unsubscribe link, an Idempotency-Key request, a link token of the shop.
    *
    * Why: these hashes live as long as their rows; their own key (`LOOKUP_HASH_KEY`) lets `TOKEN_PEPPER` change without switching them off.
    *

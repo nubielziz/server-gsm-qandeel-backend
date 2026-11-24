@@ -1,6 +1,6 @@
 // Integration tests of the price change scan (feature 7b, user rule 9 (5), MISMATCHES B117): after a price change, a merchant who ordered
 // a service in the last 30 days and would now pay another price than its last order gets one outbox event `service.price_changed`,
-// which the webhook fan-out turns into a delivery. Real Postgres and Redis; time moves on a TestClock (decision 031).
+// which the notifications queue turns into the merchant's daily digest. Real Postgres and Redis; time moves on a TestClock (decision 031).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
@@ -8,15 +8,14 @@ import { QueuesService } from '@src/infra/queues';
 import { RedisService } from '@src/infra/redis';
 import { CatalogPriceVersion, PriceChangeScan } from '@src/modules/catalog';
 import { recentOrderPrices } from '@src/modules/catalog/infra/foreign-reads.repository';
-import { WebhookFanOut } from '@src/modules/platform';
-import { EncryptionService } from '@src/infra/crypto';
+import { OutboxRouteRegistry } from '@src/modules/platform';
 import { type TestApp, createTestApp } from '../../support/app';
 import { insertMerchant } from '../../support/auth';
 import { insertCategory, insertService } from '../../support/catalog';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { deleteBullKeys, testBullPrefix } from '../../support/queues';
-import { WebhookTestModule, insertEndpoint, insertOrder, insertUsd } from '../../support/webhooks';
+import { insertOrder, insertUsd } from '../../support/portal-orders';
 
 const prefix = testBullPrefix();
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
@@ -25,7 +24,7 @@ let db: Database;
 
 beforeAll(async () => {
   ({ db } = await testDb());
-  t = await createTestApp({ clock, env: { BULL_PREFIX: prefix }, imports: [WebhookTestModule] });
+  t = await createTestApp({ clock, env: { BULL_PREFIX: prefix } });
 });
 afterAll(async () => {
   await deleteBullKeys(t.app.get(RedisService).queue, prefix);
@@ -131,32 +130,13 @@ describe('PriceChangeScan.run', () => {
     expect((await scan().run()).announced).toBe(0);
   });
 
-  it('turns into a delivery through the webhook fan-out, for a merchant subscribed to the event', async () => {
-    const { serviceId, clientId } = await buyer({ paid: '10.0000' });
-    await insertEndpoint(t.app.get(EncryptionService), db, clientId, { events: ['service.price_changed'] });
-    await db.update(s.services).set({ basePrice: '12.5000' }).where(eq(s.services.id, serviceId));
-    await scan().run();
-    const [event] = await events();
-    const result = await t.app.get(WebhookFanOut).run({
-      eventId: event!.id,
-      type: event!.type,
-      aggregateType: event!.aggregateType,
-      aggregateId: event!.aggregateId,
-      payload: Object.fromEntries(Object.entries(event!.payload).filter(([key]) => key !== 'meta')) as never,
-      requestId: 'test',
-    });
-    expect(result).toEqual({ endpoints: 1, created: 1 });
-    const [delivery] = await db.select().from(s.webhookDeliveries);
-    expect(delivery?.payload).toMatchObject({
-      type: 'service.price_changed',
-      data: {
-        serviceId,
-        serviceName: 'iPhone iCloud Clean',
-        previousPrice: '10.0000',
-        price: '12.5000',
-        currency: 'USD',
-      },
-    });
+  it('is routed to the notifications queue only: the merchant hears of it in its daily digest', () => {
+    expect(
+      t.app
+        .get(OutboxRouteRegistry)
+        .routesOf('service.price_changed')
+        .map((route) => [route.queue, route.jobName]),
+    ).toEqual([['notifications', 'notification.plan']]);
   });
 });
 

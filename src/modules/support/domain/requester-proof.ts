@@ -1,5 +1,5 @@
-// When a ticket's requester address counts as proven (decision 053): the one rule the public ticket form, the customer's list, the live
-// streams and the resolve survey share.
+// When a ticket's requester address counts as proven (decision 053): the one rule the public ticket form, the customer's list and the live
+// streams share.
 import type { SupportTicket } from '../db/schema';
 
 /**
@@ -21,7 +21,7 @@ export const PROVEN_TICKET_NOTE =
 /**
  * Tells whether the requester's address of a ticket is proven.
  *
- * Why: decision 053. An unproven ticket stays off the customer's account list and live account stream and gets no satisfaction survey.
+ * Why: decision 053. An unproven ticket stays off the customer's account list and live account stream.
  *
  * @param ticket the ticket (only `requesterProvenAt` is read)
  * @returns true when the address was proven when the ticket was made or later

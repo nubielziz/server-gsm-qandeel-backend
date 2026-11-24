@@ -1,12 +1,10 @@
 // Integration tests of the support chat on the live streams (feature 28, plan § 7): a staff reply reaches the ticket link's stream and the
 // customer's account stream at once as the requester view; a requester message reaches staff with support:read only; an internal note and a
 // system message never reach a requester stream, and the requester view carries no staff name, assignee or priority; a merchant's stream
-// gets only its own tickets and a ticket stream only its ticket; ticket.updated on a PATCH and a new ticket; typing (throttled, a note's to
-// staff only, nothing stored); read marks (forward only, 422 for another message, the event, updated_at kept); replay and resync; the
-// ticket stream's cap; erasure; the ticket-chat limiter. A listening test app on real Postgres and Redis, with a test clock.
+// gets only its own tickets and a ticket stream only its ticket; ticket.updated on a PATCH and a new ticket; read marks (forward only, 422 for
+// another message, the event, updated_at kept); replay and resync; the ticket stream's cap; erasure; the ticket-chat limiter. A listening test app on real Postgres and Redis, with a test clock.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { CacheKeys } from '@src/infra/cache';
 import { schema as s } from '@src/infra/db';
 import { RealtimeHub, RealtimePublisher, type Doorbell, type StreamViewer } from '@src/infra/realtime';
 import { RedisService } from '@src/infra/redis';
@@ -178,8 +176,6 @@ describe('a staff reply', () => {
       status: 'pending',
       updatedAt: NOW,
       resolvedAt: null,
-      canRate: false,
-      csatScore: null,
       hasUnread: true,
     });
     expect((await account.next('ticket.updated')).data).toEqual(updated.data);
@@ -278,7 +274,7 @@ describe('the requester view', () => {
     expect(system.data.message).toMatchObject({ authorType: 'system', isInternal: true });
     for (const requester of [page, account]) {
       const update = await requester.next('ticket.updated');
-      expect(update.data).toMatchObject({ status: 'resolved', canRate: true, resolvedAt: NOW });
+      expect(update.data).toMatchObject({ status: 'resolved', resolvedAt: NOW });
     }
     await barrier(ticket.id);
     for (const requester of [page, account]) {
@@ -298,7 +294,7 @@ describe('the requester view', () => {
           expect(text, secret).not.toContain(secret);
         }
         expect(Object.keys(frame.data).sort()).toEqual(
-          ['canRate', 'csatScore', 'hasUnread', 'number', 'resolvedAt', 'status', 'ticketId', 'updatedAt'].sort(),
+          ['hasUnread', 'number', 'resolvedAt', 'status', 'ticketId', 'updatedAt'].sort(),
         );
       }
     }
@@ -381,83 +377,6 @@ describe('the staff view of a ticket (decision 047)', () => {
     // The REST answer still gives the holder of customers:read the address in full.
     expect((await reader.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(customer.email);
     expect((await staff.get(`/admin/support-tickets/${ticket.id}`)).body.requester.email).toBe(masked);
-  });
-});
-
-describe('typing', () => {
-  it('rings once per 2.5 s however many pings, shows the requester to staff, and stores nothing', async () => {
-    const { ticket } = await customerTicket();
-    const team = await staffStream(staff);
-    const before = await (await testDb()).db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id));
-    for (let ping = 0; ping < 5; ping++) {
-      expect((await onTicket('POST', ticket.token, '/typing')).statusCode).toBe(204);
-    }
-    expect((await team.next('ticket.typing')).data).toEqual({
-      ticketId: ticket.id,
-      by: 'requester',
-      staffId: null,
-      staffName: null,
-      mode: null,
-    });
-    await barrier(ticket.id);
-    await team.next('ticket.updated');
-    expect(team.frames.filter((frame) => frame.event === 'ticket.typing')).toHaveLength(1);
-    // Nothing stored: the ticket row and the thread are as they were; the throttle key lives at most 2.5 s.
-    const { db } = await testDb();
-    expect(await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, ticket.id))).toEqual(before);
-    expect(await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.ticketId, ticket.id))).toHaveLength(1);
-    const ttl = await t.app.get(RedisService).cache.pttl(t.app.get(CacheKeys).supportTyping(ticket.id, 'r'));
-    expect(ttl).toBeGreaterThan(0);
-    expect(ttl).toBeLessThanOrEqual(2500);
-  });
-
-  it('rings nothing for the requester on a resolved ticket (still 204, no throttle key) and rings again after a staff reopen (B220)', async () => {
-    const { db, ticket } = await customerTicket();
-    await db
-      .update(s.supportTickets)
-      .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()) })
-      .where(eq(s.supportTickets.id, ticket.id));
-    const team = await staffStream(staff);
-    for (let ping = 0; ping < 3; ping++) {
-      expect((await onTicket('POST', ticket.token, '/typing')).statusCode).toBe(204);
-    }
-    await barrier(ticket.id);
-    await team.next('ticket.updated');
-    expect(team.frames.filter((frame) => frame.event === 'ticket.typing')).toEqual([]);
-    // -2: the key does not exist, so the first ping after a reopen is not absorbed.
-    expect(await t.app.get(RedisService).cache.pttl(t.app.get(CacheKeys).supportTyping(ticket.id, 'r'))).toBe(-2);
-
-    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
-    expect((await onTicket('POST', ticket.token, '/typing')).statusCode).toBe(204);
-    expect((await team.next('ticket.typing')).data).toMatchObject({ ticketId: ticket.id, by: 'requester' });
-  });
-
-  it('shows a staff reply’s typing to the requester and a note’s to other staff only', async () => {
-    const { ticket } = await customerTicket();
-    const page = await ticketStream(ticket.token);
-    const colleague = await supportStaff(t, ['support:*'], 'Rami K.');
-    const team = await staffStream(colleague);
-    const note = await staff.post(`/admin/support-tickets/${ticket.id}/typing`, { mode: 'note' });
-    expect(note.status).toBe(204);
-    expect((await team.next('ticket.typing')).data).toEqual({
-      ticketId: ticket.id,
-      by: 'staff',
-      staffId: staff.staffId,
-      staffName: 'Lina S.',
-      mode: 'note',
-    });
-    await barrier(ticket.id);
-    await page.next('ticket.updated');
-    expect(page.frames.filter((frame) => frame.event === 'ticket.typing')).toEqual([]);
-
-    const reply = await colleague.post(`/admin/support-tickets/${ticket.id}/typing`, { mode: 'reply' });
-    expect(reply.status).toBe(204);
-    expect((await page.next('ticket.typing')).data).toEqual({ ticketId: null, number: ticket.number });
-    expect((await team.next('ticket.typing')).data).toMatchObject({ staffName: 'Rami K.', mode: 'reply' });
-    expect((await staff.post('/admin/support-tickets/999999/typing', { mode: 'reply' })).status).toBe(404);
-    expect((await staff.post(`/admin/support-tickets/${ticket.id}/typing`, { mode: 'shout' })).status).toBe(422);
-    const { db } = await testDb();
-    expect(await db.select().from(s.auditLogs)).toEqual([]);
   });
 });
 
@@ -600,12 +519,17 @@ describe('the ticket stream', () => {
 });
 
 describe('the ticket-chat limiter', () => {
-  it('counts typing and read marks apart from the token lookups', async () => {
-    const { ticket } = await customerTicket();
+  it('counts read marks apart from the token lookups', async () => {
+    const { db, ticket } = await customerTicket();
+    const reply = await insertSupportMessage(db, ticket.id, {
+      authorType: 'staff',
+      authorId: staff.staffId,
+      body: 'On its way.',
+    });
     const ip = freshClientIp();
-    // 35 typing pings from one address: more than the 30 token lookups a minute, all accepted.
-    for (let ping = 0; ping < 35; ping++) {
-      expect((await onTicket('POST', ticket.token, '/typing', undefined, ip)).statusCode).toBe(204);
+    // 35 read marks from one address: more than the 30 token lookups a minute, all accepted.
+    for (let mark = 0; mark < 35; mark++) {
+      expect((await onTicket('POST', ticket.token, '/read', { upToMessageId: reply.id }, ip)).statusCode).toBe(204);
     }
     expect((await onTicket('GET', ticket.token, '', undefined, ip)).statusCode).toBe(200);
   });

@@ -67,7 +67,7 @@ export function toClientTicketRow(row: AccountTicketRow): ClientTicketRowView {
  * Builds a merchant's ticket with its conversation.
  *
  * Why: the portal shows the public thread like the storefront does (no note, no system message, no staff name, assignee, priority or
- * timer), without the satisfaction rating (a merchant is not surveyed), and with the seen marks of both sides.
+ * timer), and with the seen marks of both sides.
  *
  * @param ticket the stored ticket
  * @param messages the public messages, oldest first

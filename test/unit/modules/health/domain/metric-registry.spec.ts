@@ -1,10 +1,16 @@
-// Unit tests of the alert metric registry: eleven keys, their wire units and the subject each one raises.
+// Unit tests of the alert metric registry: ten keys, their wire units and the subject each one raises.
 import { describe, expect, it } from 'bun:test';
-import { METRICS, METRIC_KEYS, isMetricKey, unitOf } from '@src/modules/health/domain/metric-registry';
+import {
+  METRICS,
+  METRIC_KEYS,
+  RETIRED_METRIC_KEYS,
+  isMetricKey,
+  unitOf,
+} from '@src/modules/health/domain/metric-registry';
 
 describe('the metric registry', () => {
-  it('has the eleven keys of the console with the units of health-commissions-13', () => {
-    expect(METRIC_KEYS).toHaveLength(11);
+  it('has the ten keys of the console with the units of health-commissions-13', () => {
+    expect(METRIC_KEYS).toHaveLength(10);
     const units = Object.fromEntries(METRIC_KEYS.map((key) => [key, METRICS[key].unit]));
     expect(units).toEqual({
       'supplier.timeout_rate': 'percent',
@@ -17,7 +23,6 @@ describe('the metric registry', () => {
       'ledger.mismatch_count': 'count',
       'db.connection_usage': 'percent',
       'redis.memory_usage': 'percent',
-      'webhooks.success_rate': 'percent',
     });
   });
 
@@ -30,7 +35,6 @@ describe('the metric registry', () => {
       'queue.oldest_age': 'queue',
       'api.p95': 'system',
       'ledger.mismatch_count': 'system',
-      'webhooks.success_rate': 'system',
     });
   });
 
@@ -47,7 +51,6 @@ describe('the metric registry', () => {
       'ledger.mismatch_count': 'run',
       'db.connection_usage': 'held',
       'redis.memory_usage': 'held',
-      'webhooks.success_rate': 'measured',
     });
   });
 
@@ -61,5 +64,12 @@ describe('the metric registry', () => {
     expect(unitOf('api.p95')).toBe('ms');
     expect(unitOf('supplier.balance')).toBeNull();
     expect(unitOf('made.up')).toBeNull();
+  });
+
+  it('keeps the retired metric of the deliveries to merchants readable on old alerts, but no rule can watch it', () => {
+    expect(RETIRED_METRIC_KEYS).toEqual(['webhooks.success_rate']);
+    expect(isMetricKey('webhooks.success_rate')).toBe(false);
+    expect(unitOf('webhooks.success_rate')).toBeNull();
+    expect(METRIC_KEYS as readonly string[]).not.toContain('webhooks.success_rate');
   });
 });

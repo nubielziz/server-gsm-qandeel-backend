@@ -1643,7 +1643,7 @@
       "description": "Profit by day, service, supplier or merchant.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 11,
+        "line": 19,
         "fn": "getProfitReport"
       }
     },
@@ -1676,7 +1676,7 @@
       "description": "Balances, overdraft and reserved amounts.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 25,
+        "line": 33,
         "fn": "getWalletExposure"
       }
     },
@@ -2313,7 +2313,7 @@
       "description": "VAT due by country and period, computed from ledger entries rather than invoices.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 35,
+        "line": 43,
         "fn": "getVatReport"
       }
     },

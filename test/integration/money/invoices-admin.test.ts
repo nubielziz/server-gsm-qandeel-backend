@@ -198,6 +198,20 @@ describe('GET /admin/invoices', () => {
     expect((await admin.get('/admin/invoices?_sort=number')).status).toBe(422);
   });
 
+  it('no longer filters by the retired kind statement, and still reads an invoice stored with it', async () => {
+    const { db } = await testDb();
+    const zain = await insertWalletMerchant(db, { name: 'Zain Mobile Hub' });
+    const old = await insertInvoiceRow(db, zain.id, { amount: '50.0000', kind: 'statement' });
+    const admin = await adminWith(t, ['invoices:read']);
+
+    const refused = await admin.get('/admin/invoices?kind=statement');
+    expect(refused.status).toBe(422);
+    expect(refused.body.code).toBe('VALIDATION_FAILED');
+    const all = await admin.get('/admin/invoices');
+    expect(all.status).toBe(200);
+    expect(all.body.map((row: { id: number; kind: string }) => [row.id, row.kind])).toEqual([[old.id, 'statement']]);
+  });
+
   it("masks a storefront receipt's customer address without customers:read (decision 047)", async () => {
     const { db } = await testDb();
     const zain = await insertWalletMerchant(db, { name: 'Zain' });

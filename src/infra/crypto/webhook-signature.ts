@@ -1,15 +1,7 @@
-// Webhook signatures (decision 019): `t=<unix>,v1=<hex>` where v1 = HMAC-SHA256(secret, "<t>.<body>"). Outgoing merchant
-// webhooks are signed with it (header X-GSM-Signature); incoming gateway webhooks that use the same scheme are verified
-// with a 5-minute window. Pure functions.
+// Webhook signatures (decision 019): `t=<unix>,v1=<hex>` where v1 = HMAC-SHA256(secret, "<t>.<body>"). Incoming gateway
+// webhooks that use this scheme are verified with a 5-minute window. Pure functions.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { AppError } from '../../common/errors';
-
-/**
- * Name of the header that carries the signature of an outgoing webhook.
- *
- * Why: the public API document lists it with the delivery envelope (decision 019, map events).
- */
-export const WEBHOOK_SIGNATURE_HEADER = 'X-GSM-Signature';
 
 /**
  * How far the signed timestamp may be from the clock of the verifier: 5 minutes.
@@ -51,10 +43,11 @@ function digest(secret: string, timestamp: number, body: string | Uint8Array): B
 /**
  * Signs a webhook body.
  *
- * Why: a merchant verifies that a delivery really comes from us and was not replayed (decision 019). The timestamp is
- * part of the signed text, so it cannot be changed without invalidating the signature.
+ * Why: the pair of {@link verifyWebhookSignature}: the senders of the gateway scheme (and the tests that stand in for them) build the
+ * header the guard verifies (decision 019). The timestamp is part of the signed text, so it cannot be changed without invalidating the
+ * signature.
  *
- * @param secret the endpoint secret (`webhook_endpoints.secret`)
+ * @param secret the shared secret of the gateway
  * @param timestamp unix time in seconds when the delivery is sent
  * @param body the exact bytes of the request body
  * @returns the header value `t=<unix>,v1=<hex>`
@@ -100,7 +93,7 @@ function parseHeader(header: string): { timestamp: number; signatures: Buffer[] 
  * timestamps without a valid signature.
  *
  * @param secret the shared secret
- * @param header the `X-GSM-Signature` value
+ * @param header the value of the gateway's signature header
  * @param body the exact bytes of the request body (not a re-serialised object)
  * @param options window and clock
  * @returns `{ valid: true, timestamp }`, or `{ valid: false, reason }`

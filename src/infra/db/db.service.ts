@@ -47,7 +47,7 @@ export class DbService implements OnApplicationShutdown {
   /**
    * Runs `fn` in one transaction and keeps its changes only when it answers `true`.
    *
-   * Why: see {@link runOrDiscard}; the forgot-password, sign-in link and registration routes run the same statements for every
+   * Why: see {@link runOrDiscard}; the forgot-password and sign-in link routes run the same statements for every
    * email and roll them back when nothing may be kept (decision 052).
    *
    * @param fn the work, given `tx` and `afterCommit`; answer `true` to commit, `false` to roll back

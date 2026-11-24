@@ -5,7 +5,7 @@ import type { Customer } from '../db/schema';
 import type { ExportRows } from '../infra/privacy-reads.repository';
 
 /** The format version of the file, so a reader can tell when the shape changes. */
-export const EXPORT_FORMAT = 2;
+export const EXPORT_FORMAT = 3;
 
 const iso = (date: Date | null): string | null => (date === null ? null : date.toISOString());
 
@@ -14,17 +14,18 @@ const iso = (date: Date | null): string | null => (date === null ? null : date.t
  *
  * Why: the console downloads it as `customer-<id>.json` (B49, RESOLUTIONS b2c-8). It holds the profile, the orders (service, IMEI,
  * status, totals, dates), the payments without card data (no brand, fingerprint or gateway payload), the consents, the checkout
- * sessions, the support tickets with their public messages (never the internal notes), the IMEI checks and the data requests. Passwords,
+ * sessions, the support tickets with their public messages (never the internal notes) and the data requests. Passwords,
  * sessions and tokens are not personal data the customer can use and are never included. What staff keep to protect the shop is left out too:
- * the internal notes, the risk level, the reason of a suspension and the blocklist entries made from the customer's data. The file has
+ * the internal notes, the reason of a suspension and the blocklist entries made from the customer's data. The file has
  * what the customer gave and did, not what the shop thinks of them. An IMEI is decrypted for the file, and an erased one is `null`.
  * Feature 21 adds the store balance and its statement (`wallet`, staff reasons hidden; an added key, the format stayed 1). Format 2 (decision 039,
- * English only): `profile.locale` is gone, because a customer has no saved language any more.
+ * English only): `profile.locale` is gone, because a customer has no saved language any more. Format 3: `imeiChecks` is gone, because the log it listed
+ * is retired and no longer read.
  *
  * @param customer the customer row
  * @param rows the rows read about the customer
  * @param exportedAt the clock's time
- * @param imeiOf decrypts a stored IMEI (`null` stays `null`; an unreadable text becomes `null`)
+ * @param imeiOf decrypts the stored IMEI of a checkout session (`null` stays `null`; an unreadable text becomes `null`)
  * @param wallet the customer's store balance and its lines (money's `CustomerWallets.exportOf`); left out when not given
  * @returns a JSON-serialisable object
  */
@@ -32,7 +33,7 @@ export function buildCustomerExport(
   customer: Customer,
   rows: ExportRows,
   exportedAt: Date,
-  imeiOf: (kind: 'checkout' | 'check', ciphertext: string | null) => string | null,
+  imeiOf: (ciphertext: string | null) => string | null,
   wallet?: WalletExport,
 ): Record<string, unknown> {
   return {
@@ -92,7 +93,7 @@ export function buildCustomerExport(
       id: session.id,
       email: session.email,
       service: session.service,
-      imei: imeiOf('checkout', session.imeiEnc),
+      imei: imeiOf(session.imeiEnc),
       quantity: session.quantity,
       currency: session.currency,
       netAmount: session.netAmount,
@@ -118,15 +119,6 @@ export function buildCustomerExport(
         body: message.body,
         createdAt: message.createdAt.toISOString(),
       })),
-    })),
-    imeiChecks: rows.imeiChecks.map((check) => ({
-      id: check.id,
-      imei: imeiOf('check', check.imeiEnc),
-      source: check.source,
-      type: check.checkType,
-      status: check.status,
-      ip: check.ip,
-      createdAt: check.createdAt.toISOString(),
     })),
     dataRequests: rows.requests.map((request) => ({
       id: request.id,

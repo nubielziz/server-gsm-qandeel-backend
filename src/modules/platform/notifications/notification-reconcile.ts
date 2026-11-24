@@ -44,8 +44,7 @@ export interface ReconcileResult {
  * Re-adds the lost jobs of queued notifications.
  *
  * Why: a message is a `queued` row plus a job (the relay's `outbox-<event id>`, the fan-out's `notification-<row id>`, a digest's delayed
- * job). When the queue Redis is lost the row stays `queued` for ever and the log shows a message that never leaves (docs/queues.md names
- * the same gap for webhooks). Every re-add is a no-op while the original job exists (the job id is deterministic) and the delivery
+ * job). When the queue Redis is lost the row stays `queued` for ever and the log shows a message that never leaves. Every re-add is a no-op while the original job exists (the job id is deterministic) and the delivery
  * guards the row, so a repeat or a parallel run cannot send twice. Rows made by `sendNow` hold a secret link, have no outbox event and
  * are never re-sent: a generic job has no secret. Expiry runs first, so a row that old is ended instead of sent.
  *

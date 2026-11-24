@@ -8,7 +8,7 @@
           "key": "GET /admin/files/:id",
           "successStatus": 302,
           "query": "",
-          "request": "Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`); merchants' KYC document links use the same route (M47).",
+          "request": "Never fetched: the console renders a plain link `<a href=API_BASE/admin/files/:id target=_blank>` (orders.ts:63, OrderResult.tsx:26-31, OrderDetails.tsx:30), so the browser sends only the session cookie (no X-CSRF-Token, no Accept: application/json). :id is orders.input_file_id (`inputFileId`) or orders.result_file_id (`result.fileId`).",
           "response": "302 with Location = short-lived presigned object-storage URL (Content-Disposition attachment; filename from files.filename). Any error is rendered raw in the new tab, so keep `detail` readable. Proposal: audit-log the access (files hold personal data).",
           "errors": [
             { "status": 401, "code": "UNAUTHORIZED", "when": "no or expired staff session", "ui": "raw error page in the new tab" },

@@ -1,6 +1,6 @@
 // Integration tests of the email fallback of staff replies (feature 28, rule 9): an email reply waits support.replyEmailDelayMinutes for
 // the requester to see it; then one mail carries every unseen reply. No mail when the requester read in time, a new delay after a mail,
-// at once with a delay of 0, Telegram at once and never by email, two sweeps at once mail once, an anonymized customer gets nothing,
+// at once with a delay of 0, a ticket of the retired Telegram channel answered by email, two sweeps at once mail once, an anonymized customer gets nothing,
 // and a merchant's mail links to the portal. Real Postgres and Redis, a test clock.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
@@ -36,7 +36,7 @@ beforeAll(async () => {
   t = await createTestApp({
     clock,
     imports: [SupportJobsModule],
-    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token', TELEGRAM_BOT_USERNAME: 'gsm_test_bot' },
+    env: { TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token' },
   });
 });
 beforeEach(async () => {
@@ -78,7 +78,7 @@ async function customerTicket() {
   return { db, customer, ticket: { ...ticket, token: ticket.token! } };
 }
 
-const reply = async (ticketId: number, body: string, channel?: 'email' | 'telegram') => {
+const reply = async (ticketId: number, body: string, channel?: 'email') => {
   const res = await staff.post(`/admin/support-tickets/${ticketId}/reply`, { body, ...(channel ? { channel } : {}) });
   expect(res.status).toBe(201);
   return res.body.id as number;
@@ -188,7 +188,7 @@ describe('an email reply', () => {
 
   it('carries the portal link in a merchant’s mail', async () => {
     const { db } = await testDb();
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', telegramChatId: null });
+    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
     const ticket = await insertSupportTicket(db, {
       requesterType: 'client',
       requesterId: merchant,
@@ -217,8 +217,8 @@ describe('an email reply', () => {
   });
 });
 
-describe('a Telegram reply', () => {
-  it('is sent at once and never mailed', async () => {
+describe('a merchant ticket that came from Telegram', () => {
+  it('is answered by email like any other (the delay, then the sweep), and nothing goes to the chat still stored', async () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', telegramChatId: '555001' });
     const ticket = await insertSupportTicket(db, {
@@ -229,20 +229,18 @@ describe('a Telegram reply', () => {
       subject: 'Invoice question',
       status: 'open',
     });
-    const id = await reply(ticket.id, 'Issued in USD.', 'telegram');
-    expect((await replyEvents()).map((event) => event.payload)).toEqual([
-      { kind: 'reply', messageId: id, channel: 'telegram' },
-    ]);
-    expect((await ticketOf(ticket.id)).replyMailDueAt).toBeNull();
+    const id = await reply(ticket.id, 'Issued in USD.');
+    // An email reply waits for the requester to see it: no event yet, a due time, and the message says it went by email.
+    expect(await replyEvents()).toEqual([]);
+    expect((await ticketOf(ticket.id)).replyMailDueAt).not.toBeNull();
     expect((await db.select().from(s.ticketMessages).where(eq(s.ticketMessages.id, id)))[0]!.notifyChannel).toBe(
-      'telegram',
+      'email',
     );
+    clock.advance(5 * MINUTE);
+    expect(await sweep()).toMatchObject({ mailed: 1 });
     expect(await sendTicketMails(t)).toEqual([{ sent: true }]);
-    clock.advance(10 * MINUTE);
-    expect(await sweep()).toEqual({ tickets: 0, mailed: 0, seen: 0 });
-    await sendTicketMails(t);
-    expect(telegramOutbox(t).sent).toHaveLength(1);
-    expect(mailbox(t).sent).toEqual([]);
+    expect(mailbox(t).sent).toHaveLength(1);
+    expect(telegramOutbox(t).sent).toEqual([]);
   });
 });
 
@@ -264,7 +262,7 @@ describe('the sweep', () => {
     ]);
   });
 
-  it('records a run only when a ticket was due, like checkout_recovery_sweep', async () => {
+  it('records a run only when a ticket was due', async () => {
     const processor = t.app.get(ReplyMailSweepProcessor);
     const job = { data: {} } as never;
     const { db } = await testDb();

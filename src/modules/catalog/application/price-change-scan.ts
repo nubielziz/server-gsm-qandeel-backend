@@ -37,7 +37,7 @@ export interface PriceScanResult {
  * affected, the version's bump asks for one scan (at most one a minute): for every merchant and service of the last 30 days of
  * orders, it resolves the price a new order would pay now and compares it with the price of the merchant's latest order. A
  * difference is announced once: the outbox row is written only if no row for that change exists (`OutboxService.hasEvent`), and the
- * webhook fan-out is idempotent on the same change as well. The event carries ids and the two prices (public to the merchant).
+ * digest of the notifications is idempotent on the same event as well. The event carries ids and the two prices (public to the merchant).
  *
  * Side effects: `schedule` adds a delayed job to the `maintenance` queue; `run` reads `orders`, `clients` and the pricing tables and
  * inserts `outbox_events` rows (type `service.price_changed`, aggregate `services`).

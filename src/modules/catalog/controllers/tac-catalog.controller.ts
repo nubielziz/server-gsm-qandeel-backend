@@ -8,8 +8,8 @@ import { createTacEntry, getTacEntry, listTacEntries, updateTacEntry } from '../
 /**
  * The TAC catalog routes of the console's Storefront page.
  *
- * Why: staff look up and correct which brand and model an IMEI prefix names (RULES storefront); the IMEI check of the storefront
- * reads the same table.
+ * Why: staff look up and correct which brand and model an IMEI prefix names (RULES storefront); the review queue, the order tracking
+ * and the storefront read the same table.
  *
  * @route GET /admin/tac-catalog
  * @route GET /admin/tac-catalog/:id

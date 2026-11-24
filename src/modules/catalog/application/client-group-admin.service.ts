@@ -39,7 +39,6 @@ export interface GroupView {
   readonly kind: string;
   readonly discountPercent: string;
   readonly isDefault: boolean;
-  readonly earnThreshold: string;
   readonly depositLimit: string;
   readonly overdraftAllowed: boolean;
   readonly sort: number;
@@ -52,7 +51,6 @@ export interface GroupView {
 export interface CreateGroupInput {
   readonly name: string;
   readonly discountPercent?: string | undefined;
-  readonly earnThreshold?: string | undefined;
   readonly depositLimit?: string | undefined;
   readonly overdraftAllowed?: boolean | undefined;
   readonly isDefault?: boolean | undefined;
@@ -74,7 +72,6 @@ const snapshot = (group: ClientGroup) => ({
   name: group.name,
   discountPercent: group.discountPercent,
   isDefault: group.isDefault,
-  earnThreshold: group.earnThreshold,
   depositLimit: group.depositLimit,
   overdraftAllowed: group.overdraftAllowed,
 });
@@ -85,7 +82,6 @@ const toView = (group: ClientGroup, merchants: number | undefined): GroupView =>
   kind: group.kind,
   discountPercent: group.discountPercent,
   isDefault: group.isDefault,
-  earnThreshold: group.earnThreshold,
   depositLimit: group.depositLimit,
   overdraftAllowed: group.overdraftAllowed,
   sort: group.sort,
@@ -96,9 +92,9 @@ const toView = (group: ClientGroup, merchants: number | undefined): GroupView =>
 /**
  * Manages merchant groups.
  *
- * Why: the groups price the catalog (discount), decide who is promoted (earn threshold), cap deposits and say whether credit is
+ * Why: the groups price the catalog (discount), cap deposits and say whether credit is
  * allowed (docs/contract/endpoints/catalog.md, RESOLUTIONS catalog-5 and catalog-17). A default group must always exist, because
- * merchants register and are invited into it: making another group the default moves the mark in one transaction, and the
+ * merchants are invited into it: making another group the default moves the mark in one transaction, and the
  * default group cannot be deleted or unmarked. Group rows are locked `FOR UPDATE` while they change; the code that moves a
  * merchant into a group or sets a credit limit takes `FOR SHARE` on the same row, so user rule 2 holds under concurrency.
  *
@@ -168,7 +164,6 @@ export class ClientGroupAdminService {
           kind: 'b2b',
           discountPercent: percentText(input.discountPercent ?? '0'),
           isDefault: input.isDefault ?? false,
-          earnThreshold: input.earnThreshold ?? '0.0000',
           depositLimit: input.depositLimit ?? '0.0000',
           overdraftAllowed: input.overdraftAllowed ?? false,
           sort: await nextGroupSort(tx),
@@ -228,7 +223,6 @@ export class ClientGroupAdminService {
         after = await updateGroupRow(tx, id, {
           ...(changes.name === undefined ? {} : { name: changes.name }),
           ...(changes.discountPercent === undefined ? {} : { discountPercent: percentText(changes.discountPercent) }),
-          ...(changes.earnThreshold === undefined ? {} : { earnThreshold: changes.earnThreshold }),
           ...(changes.depositLimit === undefined ? {} : { depositLimit: changes.depositLimit }),
           ...(changes.overdraftAllowed === undefined ? {} : { overdraftAllowed: changes.overdraftAllowed }),
           ...(changes.isDefault === undefined ? {} : { isDefault: changes.isDefault }),

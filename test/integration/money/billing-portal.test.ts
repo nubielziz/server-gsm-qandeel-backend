@@ -21,7 +21,7 @@ import { OPEN_TOPUPS_DETAIL, PENDING_RECEIPTS_DETAIL } from '@src/modules/money/
 import { pgErrorInfo } from '@src/infra/db';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { insertWalletMerchant } from '../../support/money';
-import { portalFor } from '../../support/webhooks';
+import { portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-01T10:00:00.000Z');
 const fake = new FakeGateway();

@@ -4,7 +4,7 @@
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
 import { ALERT_COMPARATORS, ALERT_SEVERITIES, ALERT_STATUSES, ALERT_SUBJECT_TYPES, ALERT_UNITS } from '../db/schema';
-import { METRIC_KEYS } from '../domain/metric-registry';
+import { METRIC_KEYS, RETIRED_METRIC_KEYS } from '../domain/metric-registry';
 import { zStaffRef } from './system-common';
 
 const id = z.object({ id: zIdParam });
@@ -14,7 +14,7 @@ const RuleRef = z.object({
   id: zId,
   key: z.string(),
   name: z.string(),
-  metric: z.enum(METRIC_KEYS),
+  metric: z.enum([...METRIC_KEYS, ...RETIRED_METRIC_KEYS]),
   comparator: z.enum(ALERT_COMPARATORS),
   threshold: z.number(),
   windowSeconds: z.number().int(),

@@ -60,7 +60,7 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
     rule: 'enum',
     mismatch: 'B101',
     reason:
-      'The console types the metric as a string and offers 11 keys; the backend owns the registry (B101, health-commissions-13) and answers 422 on `metric` for any other key, and OpenAPI carries the 11 keys as an enum.',
+      'The console types the metric as a string and offers its own list of keys; the backend owns the registry of ten keys (B101, health-commissions-13, decision 062) and answers 422 on `metric` for any other key, and OpenAPI carries the ten keys as an enum.',
   },
   {
     route: 'PATCH /admin/alert-rules/:id',
@@ -68,7 +68,91 @@ export const ALLOWLIST: readonly AllowlistEntry[] = [
     path: 'body.metric',
     rule: 'enum',
     mismatch: 'B101',
-    reason: "Same as POST /admin/alert-rules: the metric is one of the backend registry's 11 keys (B101).",
+    reason: "Same as POST /admin/alert-rules: the metric is one of the backend registry's ten keys (B101).",
+  },
+  {
+    route: 'GET /admin/alert-rules',
+    part: 'fixture',
+    path: 'data[].metric',
+    rule: 'fixture',
+    mismatch: 'B244',
+    reason:
+      "Decision 062: the success rate of the retired outgoing webhooks left the metric registry, so a rule cannot use it; the console's " +
+      'mock still holds one rule on it, which the harvested fixture is made of (alerts that fired with it still read).',
+  },
+  {
+    route: 'GET /admin/notification-templates',
+    part: 'response',
+    path: 'data[].channel',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason:
+      'Decision 062 keeps Telegram for the operations alerts: the staff templates of alert.fired, alert.resolved and ' +
+      'retail.prices_followed stay on that channel. The console types a template as email only and leaves the Telegram rows out ' +
+      'of its list, so it tolerates them; the lead rules whether the console shows them again.',
+  },
+  {
+    route: 'GET /admin/notification-templates/:id',
+    part: 'response',
+    path: 'channel',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason: 'Same as GET /admin/notification-templates: a staff alert template may be on Telegram (decision 062).',
+  },
+  {
+    route: 'POST /admin/notification-templates',
+    part: 'response',
+    path: 'channel',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason: 'Same as GET /admin/notification-templates: a staff alert template may be on Telegram (decision 062).',
+  },
+  {
+    route: 'PATCH /admin/notification-templates/:id',
+    part: 'response',
+    path: 'channel',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason: 'Same as GET /admin/notification-templates: a staff alert template may be on Telegram (decision 062).',
+  },
+  {
+    route: 'GET /admin/invoices',
+    part: 'response',
+    path: 'data[].kind',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason:
+      'Decision 062 retires the invoice kind statement as a list filter and keeps it on the wire for the old rows that may hold it ' +
+      '(nothing writes it any more). The console no longer types it and shows a kind it does not know in plain words.',
+  },
+  {
+    route: 'GET /admin/invoices/:id',
+    part: 'response',
+    path: 'kind',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason: 'Same as GET /admin/invoices: an old invoice may be of kind statement (decision 062).',
+  },
+  {
+    route: 'POST /admin/invoices',
+    part: 'response',
+    path: 'kind',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason:
+      'Same as GET /admin/invoices: the answer is the invoice row, whose kind keeps statement for old rows (decision 062); ' +
+      'a new invoice is always manual.',
+  },
+  {
+    route: 'POST /admin/support-tickets/:id/reply',
+    part: 'request',
+    path: 'body.channel',
+    rule: 'enum',
+    mismatch: 'B244',
+    reason:
+      'Decision 062 retires Telegram for merchants and customers with its driver, so a reply goes by email only and a ticket lists ' +
+      'only email in replyChannels. The console still types telegram for an older backend, but it offers only the channels the ' +
+      'ticket lists, so it never sends it against this one.',
   },
   {
     route: 'GET /admin/customers',

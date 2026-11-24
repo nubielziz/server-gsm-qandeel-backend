@@ -14,13 +14,12 @@ const SettingValue = z.union([z.string(), z.number(), z.boolean(), z.array(AnyJs
 /**
  * The flat settings object: every non-secret key with its JSON value.
  *
- * Why: the console reads two typed keys and shows every other key read-only as JSON (MISMATCHES B66); a key that was never
+ * Why: the console reads one typed key and shows every other key read-only as JSON (MISMATCHES B66); a key that was never
  * set is absent.
  */
 const Settings = z
   .object({
     adminAllowlistOnly: z.boolean().optional(),
-    imeiRetentionDays: z.number().int().optional(),
   })
   .catchall(SettingValue);
 
@@ -37,7 +36,7 @@ export const getSettings = defineRoute({
   permission: 'settings:read',
   success: { status: 200, schema: Settings },
   errors: ['UNAUTHORIZED', 'FORBIDDEN'],
-  examples: { response: { adminAllowlistOnly: true, imeiRetentionDays: 90 } },
+  examples: { response: { adminAllowlistOnly: true, 'pricing.price_change_tolerance_percent': 10 } },
 });
 
 /** `PATCH /admin/settings`: change allow-listed settings. */
@@ -46,8 +45,8 @@ export const updateSettings = defineRoute({
   summary: 'Change system settings',
   description:
     'Only keys of the settings registry (`settings/settings-registry.ts`) are accepted, each with its validator (for example ' +
-    '`imeiRetentionDays`, a whole number of days from 0 to 3650, and `pricing.price_change_tolerance_percent`, a whole number of percent ' +
-    'from 0 to 100, default 10; `fx.max_refresh_move_percent`, a whole number of percent from 1 to 100, default 20, and ' +
+    '`pricing.price_change_tolerance_percent`, a whole number of percent from 0 to 100, default 10; ' +
+    '`fx.max_refresh_move_percent`, a whole number of percent from 1 to 100, default 20, and ' +
     '`fx.max_rate_age_hours`, a whole number of hours from 1 to 720, default 48, and `wallet.receipt_approval_limit`, a whole number ' +
     'of dollars, default 10000, decision 049). Any other ' +
     'key, including the keys that have their own guarded routes (`adminAllowlistOnly`, `maintenance`, the risk rules, the ' +
@@ -63,5 +62,8 @@ export const updateSettings = defineRoute({
   body: Settings,
   success: { status: 200, schema: Settings },
   errors: ['UNAUTHORIZED', 'FORBIDDEN', 'CSRF_FAILED', 'VALIDATION_FAILED'],
-  examples: { request: { imeiRetentionDays: 30 }, response: { adminAllowlistOnly: true, imeiRetentionDays: 30 } },
+  examples: {
+    request: { 'pricing.price_change_tolerance_percent': 5 },
+    response: { adminAllowlistOnly: true, 'pricing.price_change_tolerance_percent': 5 },
+  },
 });

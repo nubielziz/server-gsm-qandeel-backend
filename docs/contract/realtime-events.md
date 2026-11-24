@@ -174,7 +174,7 @@ system message, a staff name, the assignee, the priority or a timer, and never t
 merchant (the portal addresses tickets by id) and `null` for a customer (match the ticket by `number`). Only
 `ticket.message.created` has an `id` (`t<message id>`, see the frame format) and is replayed after a reconnect: staff get the
 messages of every ticket, an account stream the public messages of its own tickets, a ticket stream the public messages of that
-ticket, at most 100, else `resync` with `topics: ["ticket"]` (refetch the open ticket or list). Typing is never replayed.
+ticket, at most 100, else `resync` with `topics: ["ticket"]` (refetch the open ticket or list).
 
 ### `ticket.message.created`
 
@@ -204,7 +204,7 @@ data: {"ticketId":null,"number":"T-1042","message":{"id":9003,"from":"support","
 
 ### `ticket.updated`
 
-The ticket changed: a new ticket, a message, a status, assignee or priority change, a rating. No `id`. Staff view: `ticket` is exactly
+The ticket changed: a new ticket, a message, a status, assignee or priority change. No `id`. Staff view: `ticket` is exactly
 a row of `GET /admin/support-tickets` (with `hasUnread` and the seen marks). Requester view: the fields of the ticket page and the
 requester's own `hasUnread` (a support reply after their seen mark). The staff view carries a storefront customer's address masked
 (decision 047).
@@ -213,7 +213,7 @@ Staff view:
 
 ```
 event: ticket.updated
-data: {"ticket":{"id":1042,"number":"T-1042","subject":"Where is my unlock? (SF-20431)","channel":"web","requesterType":"customer","requesterId":28,"requester":{"name":"Victor Hale","email":"vi•••@mail.example"},"orderId":20431,"category":"delay","priority":"normal","status":"open","assigneeId":2,"assignee":{"id":2,"name":"Lina S."},"slaDueAt":"2026-11-08T19:00:00.000Z","firstResponseAt":"2026-11-08T10:12:00.000Z","resolvedAt":null,"csatScore":null,"createdAt":"2026-11-08T09:30:00.000Z","updatedAt":"2026-11-08T11:00:00.000Z","lastPublicAt":"2026-11-08T11:00:00.000Z","late":false,"hasUnread":true,"requesterSeenMessageId":9001,"requesterSeenAt":"2026-11-08T10:20:00.000Z","staffSeenMessageId":9000,"staffSeenAt":"2026-11-08T10:05:00.000Z"}}
+data: {"ticket":{"id":1042,"number":"T-1042","subject":"Where is my unlock? (SF-20431)","channel":"web","requesterType":"customer","requesterId":28,"requester":{"name":"Victor Hale","email":"vi•••@mail.example"},"orderId":20431,"category":"delay","priority":"normal","status":"open","assigneeId":2,"assignee":{"id":2,"name":"Lina S."},"slaDueAt":"2026-11-08T19:00:00.000Z","firstResponseAt":"2026-11-08T10:12:00.000Z","resolvedAt":null,"createdAt":"2026-11-08T09:30:00.000Z","updatedAt":"2026-11-08T11:00:00.000Z","lastPublicAt":"2026-11-08T11:00:00.000Z","late":false,"hasUnread":true,"requesterSeenMessageId":9001,"requesterSeenAt":"2026-11-08T10:20:00.000Z","staffSeenMessageId":9000,"staffSeenAt":"2026-11-08T10:05:00.000Z"}}
 
 ```
 
@@ -221,7 +221,7 @@ Requester view (a merchant's account stream):
 
 ```
 event: ticket.updated
-data: {"ticketId":1043,"number":"T-1043","status":"pending","updatedAt":"2026-11-08T11:02:00.000Z","resolvedAt":null,"canRate":false,"csatScore":null,"hasUnread":true}
+data: {"ticketId":1043,"number":"T-1043","status":"pending","updatedAt":"2026-11-08T11:02:00.000Z","resolvedAt":null,"hasUnread":true}
 
 ```
 
@@ -244,31 +244,11 @@ data: {"ticketId":null,"number":"T-1042","by":"support","upToMessageId":9002,"at
 
 ```
 
-### `ticket.typing`
-
-Someone is typing: at most one event per person every 2.5 s while they type; show it for 6 s after the last one and clear it when that
-person's message arrives. Never stored, never replayed. No `id`. Staff view: the requester (`by: "requester"`, the rest `null`; never for a resolved ticket, whose requester cannot write, B220) or a
-colleague with their name and `mode` (`reply` or `note`; skip your own `staffId`). Requester view: only while a staff member types a
-**reply** ("Support is typing…"); a note's typing never reaches the requester.
-
-```
-event: ticket.typing
-data: {"ticketId":1042,"by":"staff","staffId":2,"staffName":"Lina S.","mode":"note"}
-
-```
-
-```
-event: ticket.typing
-data: {"ticketId":null,"number":"T-1042"}
-
-```
-
 ### The routes beside the streams
 
-`POST /store/v1/tickets/:token/typing` and `POST /admin/support-tickets/:id/typing` (`{ "mode": "reply" | "note" }`) send typing;
-`POST /store/v1/tickets/:token/read` and `POST /admin/support-tickets/:id/read` (`{ "upToMessageId": <id> }`) move the seen mark (a
-message the other side wrote on that ticket, else `422 unknown_message`); all four answer `204`. The two typing and read routes of the
-ticket page count against `ticket-chat` (120 a minute per address), not the token limit. Attachments: `POST …/files` (multipart, one
+`POST /store/v1/tickets/:token/read`, `POST /client/tickets/:id/read` and `POST /admin/support-tickets/:id/read` (`{ "upToMessageId": <id> }`) move the seen
+mark (a message the other side wrote on that ticket, else `422 unknown_message`); all three answer `204`. The read route of the ticket page
+counts against `ticket-chat` (120 a minute per address), not the token limit. Attachments: `POST …/files` (multipart, one
 part `file`: PDF, JPEG or PNG, 5 MiB) and `GET …/files/:fileId` (`302` to a 5-minute download link; never show a file inline).
 
 ## What the client does

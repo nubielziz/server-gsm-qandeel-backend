@@ -15,7 +15,7 @@ import { NotificationTransportModule } from './notification-transport.module';
  * engine (fan-out, sweep, in-app writer) and the sender of the bulk queue `notification-broadcasts`.
  *
  * Why: decision 020: the worker turns each event into notifications and sends them. Only the worker starts a BullMQ worker for the
- * processors; the API loads the classes and never runs them (like the webhook delivery module).
+ * processors; the API loads the classes and never runs them.
  */
 @Module({
   imports: [NotificationTransportModule, NotificationCampaignEngineModule],

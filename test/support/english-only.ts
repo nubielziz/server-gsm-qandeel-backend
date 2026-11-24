@@ -296,10 +296,12 @@ export async function fillOtherLanguages(pool: Pool): Promise<Filled> {
     english: await customer('eo-en@example.test', 'en'),
     other: await customer('eo-tr@example.test', 'tr'),
   };
+  // Active: the data step of decision 062 (0065) suspends a merchant that is still pending, which would rewrite the rows the
+  // migration test proves the English-only step leaves alone.
   const client = (username: string, locale: string) =>
     id(
-      `insert into clients (username, email, name, group_id, referral_code, locale, created_at, updated_at)
-       values ($1, $2, 'EO merchant', $3, $4, $5, $6, $6)`,
+      `insert into clients (username, email, name, group_id, referral_code, locale, status, created_at, updated_at)
+       values ($1, $2, 'EO merchant', $3, $4, $5, 'active', $6, $6)`,
       [username, `${username}@example.test`, group, `REF-${username}`, locale, KEPT_AT],
     );
   const clients = { english: await client('eo-en', 'en'), other: await client('eo-ar', 'ar') };

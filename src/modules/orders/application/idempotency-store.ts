@@ -1,5 +1,5 @@
-// IdempotencyStore: the replay logic of REST v1's `Idempotency-Key` (ALIGNMENT § 7, decision 026) around feature 5's placement. It opens
-// nothing itself: the caller's transaction places the orders and this stores the answer in the same commit.
+// IdempotencyStore: the replay logic of the merchant portal's `Idempotency-Key` (ALIGNMENT § 7, decision 026) around feature 5's placement.
+// It opens nothing itself: the caller's transaction places the orders and this stores the answer in the same commit.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { type JsonObject } from '../../../common/contract';
@@ -42,18 +42,18 @@ function canonical(value: unknown): string {
 /**
  * Makes a placement happen once per `Idempotency-Key`.
  *
- * Why: brief 7a, decision 026: a merchant's integration retries a request whose answer it never saw; the retry must neither place a
- * second order nor spend the wallet twice. Inside the placement's own transaction the key is locked (without waiting), the stored answer
+ * Why: brief 7a, decision 026: a merchant's browser retries a request whose answer it never saw (a double click); the retry must
+ * neither place a second order nor spend the wallet twice. Inside the placement's own transaction the key is locked (without waiting), the stored answer
  * is read, and when there is none the placement runs and its answer is stored before the commit, so the orders and the answer exist
  * together or not at all (nothing is stored for a refusal: the key may be tried again). The same key with the same body replays the
- * stored status and body; with another body or on the other route it is `409 IDEMPOTENCY_KEY_REUSED`; while another request with the key
+ * stored status and body; with another body it is `409 IDEMPOTENCY_KEY_REUSED`; while another request with the key
  * still runs it is `409 IDEMPOTENCY_IN_PROGRESS`. Keys are per merchant and remembered for exactly 7 days (`IDEMPOTENCY_WINDOW_DAYS`, B166):
  * the row's `created_at` is the clock's time, and a stored answer older than the window (the same strict `<` as the job) is forgotten here,
- * under the lock, before anything else: its row is deleted, `orders.idempotency_key` is cleared and the request runs as a first one. The
- * daily job `idempotency_purge` only cleans the keys nobody sends again.
+ * under the lock, before anything else: its row is deleted and the request runs as a first one. The daily job `idempotency_purge` only
+ * cleans the keys nobody sends again.
  *
  * Side effects: one `idempotency_keys` row in the caller's transaction on the first answer; an advisory transaction lock; on an expired key
- * its row is deleted and the merchant's `orders.idempotency_key` for it is cleared.
+ * its row is deleted.
  *
  * @see docs/contract/ALIGNMENT.md (§ 7)
  */
@@ -67,7 +67,7 @@ export class IdempotencyStore {
   /**
    * Hashes what a key stands for.
    *
-   * @param scope the route kind (`order`, `bulk`)
+   * @param scope the route kind (`portal`)
    * @param body the validated request body
    * @returns a keyed hash (`LOOKUP_HASH_KEY`, decision 054), equal for two spellings of the same body
    */

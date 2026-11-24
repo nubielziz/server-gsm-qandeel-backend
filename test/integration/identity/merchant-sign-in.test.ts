@@ -93,7 +93,7 @@ describe('POST /client/auth/login', () => {
     expect((await p.login(merchant.email)).json()).toEqual({ next: 'done' });
     const me = await p.me();
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({ id: merchant.id, status: 'pending', kycStatus: 'none' });
+    expect(me.json()).toMatchObject({ id: merchant.id, status: 'pending' });
   });
 
   it('gives an unknown email, a wrong password and a merchant with no password yet the same 401', async () => {
@@ -193,7 +193,12 @@ describe('the authenticator step', () => {
     expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_totp' }]);
 
     // Nothing but the code step and logout works on a pending session.
-    for (const res of [await p.me(), await p.profile({ name: 'X' }), await p.sessions(), await p.setupTwoFactor()]) {
+    for (const res of [
+      await p.me(),
+      await p.profile({ name: 'X' }),
+      await p.call('GET', '/client/notifications'),
+      await p.setupTwoFactor(),
+    ]) {
       expect(res.statusCode).toBe(401);
     }
 
@@ -356,7 +361,6 @@ describe('GET /client/auth/me', () => {
       phone: '+962791234567',
       country: 'JO',
       emailVerifiedAt: new Date('2026-10-30T08:00:00.000Z'),
-      kycStatus: 'pending',
     });
     const p = portal();
     await p.login(merchant.email);
@@ -373,10 +377,8 @@ describe('GET /client/auth/me', () => {
       phone: '+962791234567',
       country: 'JO',
       status: 'pending',
-      kycStatus: 'pending',
       emailVerifiedAt: '2026-10-30T08:00:00.000Z',
       twofaEnabled: false,
-      referralCode: merchant.row.referralCode,
       group: { id: defaultGroupId, name: 'Standard', discountPercent: '5.0000' },
       createdAt: merchant.row.createdAt.toISOString(),
       address: '',
@@ -542,14 +544,12 @@ describe('a merchant waiting for approval (user decision B153)', () => {
     const open = [
       await p.me(),
       await p.profile({ company: 'Co' }),
-      await p.sessions(),
       await p.setupTwoFactor(),
       await p.enableTwoFactor('000000'),
       await p.disableTwoFactor('000000'),
       await p.changePassword('wrong-current-password', 'a-long-new-password'),
-      await p.endSession(999_999),
     ];
-    expect(open.map((res) => res.statusCode)).toEqual([200, 200, 200, 200, 422, 409, 422, 404]);
+    expect(open.map((res) => res.statusCode)).toEqual([200, 200, 200, 422, 409, 422]);
     expect(open.some((res) => res.statusCode === 403)).toBe(false);
 
     // A route that does not opt in (the sample merchant routes of the security tests, default deny) is refused.
@@ -602,7 +602,7 @@ describe('the forced password change (feature 20: POST /client/auth/password/cha
 
     expect((await p.me()).statusCode).toBe(401);
     expect((await p.call('GET', '/client/wallet')).statusCode).toBe(401);
-    expect((await p.call('GET', '/client/sessions')).statusCode).toBe(401);
+    expect((await p.call('GET', '/client/notifications')).statusCode).toBe(401);
     expect((await p.logout()).statusCode).toBe(204);
     expect(await sessionsOf(merchant.id)).toMatchObject([{ stage: 'pending_password', revokedAt: expect.any(Date) }]);
   });

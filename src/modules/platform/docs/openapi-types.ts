@@ -18,7 +18,7 @@ export interface OpenApiOperation extends PlainObject {
   tags?: string[];
   operationId?: string;
   security?: Array<Record<string, string[]>>;
-  /** Surface of the route (`admin`, `client`, `v1`, `store`, `dhru`, `hooks`, `system`; `events` for webhooks). */
+  /** Surface of the route (`admin`, `client`, `store`, `dhru`, `hooks`, `system`). */
   'x-gsm-surface'?: string;
 }
 
@@ -62,6 +62,5 @@ export interface OpenApiDocument extends PlainObject {
   tags?: OpenApiTag[];
   'x-tagGroups'?: OpenApiTagGroup[];
   paths: Record<string, OpenApiPathItem>;
-  webhooks?: Record<string, OpenApiPathItem>;
   components?: Record<string, Record<string, unknown>>;
 }

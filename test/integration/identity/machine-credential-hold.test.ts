@@ -1,13 +1,12 @@
 // Integration tests of the hold that a password set by staff puts on a merchant's machine credentials (decision 046: a key that spends a
 // merchant's money is made by the merchant or by an Owner). While the account's password is one staff set, a portal session does not
-// create API keys and does not create or change webhook endpoints; the rest of the portal works. A password chosen from a link mailed to
+// create API keys; the rest of the portal works. A password chosen from a link mailed to
 // the merchant's address lifts the hold. A change of the email address by a staff member who is not an Owner puts on the same hold, and a
 // link mailed to the new address (an address staff chose) does not lift it; an Owner's change of the address sets none, and an Owner's
-// details edit that carries the stored address lifts it. Connecting a Telegram chat (`POST /client/telegram/link`) is held the same way. A
+// details edit that carries the stored address lifts it. A
 // key made in the portal sends the merchant a notice that says so; a key staff made keeps the notice that names the support team.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
-import { EncryptionService } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import { ClientDetailsEditor } from '@src/modules/identity/application/client-details-editor';
 import {
@@ -34,7 +33,6 @@ import {
 } from '../../support/merchant-portal';
 import { mailbox, notificationRows, sendAllQueued, tokenIn } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
-import { WebhookTestModule, insertEndpoint, resetWebhookPolicy } from '../../support/webhooks';
 
 const clock = new TestClock('2026-11-11T09:00:00.000Z');
 let t: TestApp;
@@ -43,11 +41,8 @@ beforeAll(async () => {
   t = await createTestApp({
     env: {
       CORS_ORIGINS: PORTAL_ORIGIN,
-      TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token',
-      TELEGRAM_BOT_USERNAME: 'gsm_test_bot',
     },
     clock,
-    imports: [WebhookTestModule],
   });
 });
 afterEach(() => {
@@ -60,7 +55,6 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   clock.set('2026-11-11T09:00:00.000Z');
-  resetWebhookPolicy();
   await resetDb();
   await clearIdentityCaches(t);
   await clearPortalRateLimits(t);
@@ -70,8 +64,7 @@ beforeEach(async () => {
   captureEmailedLinks(t);
 });
 
-const KEY = { name: 'Integration', scopes: ['orders:read'] };
-const ENDPOINT = { url: 'https://hooks.example.com/gsm', events: ['order.status_changed'] };
+const KEY = { name: 'Integration' };
 
 /** Sets a temporary password through the staff route and signs in with it to a full portal session. */
 async function signedInWithStaffPassword(merchant: { id: number; email: string }): Promise<MerchantPortal> {
@@ -99,10 +92,9 @@ async function resetFromMailedLink(email: string, password: string): Promise<voi
 }
 
 describe('machine credentials while the password is one staff set', () => {
-  it('refuses API keys and webhook endpoint writes with 403 until a password is set from a mailed link', async () => {
+  it('refuses API keys with 403 until a password is set from a mailed link', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const { db } = await testDb();
-    const endpointId = await insertEndpoint(t.app.get(EncryptionService), db, merchant.id);
     const portal = await signedInWithStaffPassword(merchant);
 
     const key = await portal.call('POST', '/client/api-keys', KEY);
@@ -110,25 +102,14 @@ describe('machine credentials while the password is one staff set', () => {
     const problem = key.json<{ code: string; detail: string }>();
     expect(problem.code).toBe('FORBIDDEN');
     expect(problem.detail).toContain('Forgot password');
-    // The sentence names the third thing the hold covers.
+    // The sentence names what the hold covers.
     expect(problem.detail).toBe(STAFF_SET_PASSWORD_HOLD);
-    expect(problem.detail).toEndWith('before you create API keys or webhook endpoints or connect Telegram.');
-    const created = await portal.call('POST', '/client/webhooks', ENDPOINT);
-    expect(created.statusCode).toBe(403);
-    expect(created.json<{ code: string }>().code).toBe('FORBIDDEN');
-    const changed = await portal.call('PATCH', `/client/webhooks/${endpointId}`, {
-      url: 'https://other.example.com/gsm',
-    });
-    expect(changed.statusCode).toBe(403);
+    expect(problem.detail).toEndWith('before you create API keys.');
     expect(await db.select().from(s.apiKeys)).toEqual([]);
-    const [endpoint] = await db.select().from(s.webhookEndpoints).where(eq(s.webhookEndpoints.id, endpointId));
-    expect(endpoint!.url).not.toBe('https://other.example.com/gsm');
-    expect(await db.select().from(s.webhookEndpoints)).toHaveLength(1);
 
     // The rest of the portal works in that session.
     expect((await portal.me()).statusCode).toBe(200);
     expect((await portal.call('GET', '/client/api-keys')).statusCode).toBe(200);
-    expect((await portal.call('GET', '/client/webhooks')).statusCode).toBe(200);
 
     // A change on the security page is not a mailed link: the hold stays.
     expect((await portal.changePassword('chosen-after-temporary-31', 'changed-on-security-page-47')).statusCode).toBe(
@@ -143,16 +124,13 @@ describe('machine credentials while the password is one staff set', () => {
     const owner = new MerchantPortal(t, freshClientIp());
     expect((await owner.login(merchant.email, 'owner-chose-from-link-58')).json()).toEqual({ next: 'done' });
     expect((await owner.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-    expect((await owner.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
-    expect((await owner.call('PATCH', `/client/webhooks/${endpointId}`, { isActive: false })).statusCode).toBe(200);
   });
 
-  it('leaves a merchant that never had a staff-set password free to create both', async () => {
+  it('leaves a merchant that never had a staff-set password free to create a key', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
   });
 });
 
@@ -163,7 +141,7 @@ async function staffChangesEmail(merchantId: number, email: string): Promise<voi
 }
 
 describe('machine credentials after staff changed the email address', () => {
-  it('refuses API keys and webhook endpoints with 403, and a password set from a link to the new address does not lift it', async () => {
+  it('refuses API keys with 403, and a password set from a link to the new address does not lift it', async () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     await staffChangesEmail(merchant.id, 'desk-inbox@example.com');
     clock.advance(60_000);
@@ -179,13 +157,9 @@ describe('machine credentials after staff changed the email address', () => {
       code: 'FORBIDDEN',
       detail: STAFF_SET_EMAIL_HOLD,
     });
-    expect(STAFF_SET_EMAIL_HOLD).toEndWith('before you create API keys or webhook endpoints or connect Telegram.');
-    const created = await portal.call('POST', '/client/webhooks', ENDPOINT);
-    expect(created.statusCode).toBe(403);
-    expect(created.json<{ code: string }>().code).toBe('FORBIDDEN');
+    expect(STAFF_SET_EMAIL_HOLD).toEndWith('before you create API keys.');
     const { db } = await testDb();
     expect(await db.select().from(s.apiKeys)).toEqual([]);
-    expect(await db.select().from(s.webhookEndpoints)).toEqual([]);
     expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
     // The rest of the portal works in that session.
     expect((await portal.me()).statusCode).toBe(200);
@@ -209,7 +183,6 @@ describe('machine credentials after staff changed the email address', () => {
     });
 
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(403);
     expect(await clientRow(merchant.id)).toMatchObject({ emailSetByStaff: true, passwordSetByStaff: false });
   });
 });
@@ -303,7 +276,6 @@ describe('the hold of an email address and an Owner', () => {
     expect((await portal.me()).statusCode).toBe(200);
 
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
   });
 
   it('stays after the same form from a staff member who is not an Owner, and after an Owner edit without the email', async () => {
@@ -320,7 +292,6 @@ describe('the hold of an email address and an Owner', () => {
     expect((await owner.patch(`/admin/clients/${merchant.id}`, { phone: '+962 79 555' })).status).toBe(200);
     expect(await clientRow(merchant.id)).toMatchObject({ phone: '+962 79 555', emailSetByStaff: true });
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(403);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(403);
   });
 
   it('is not set by an Owner change of the address, which still ends the sessions, voids the links and tells the old address', async () => {
@@ -352,7 +323,6 @@ describe('the hold of an email address and an Owner', () => {
 
     const portal = await signedIn('owner-typed@example.com');
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
   });
 
   it('is cleared by an Owner change of an address a staff member who is not an Owner set', async () => {
@@ -389,76 +359,6 @@ describe('the hold of a password staff set and the invitation link', () => {
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login(merchant.email, 'chosen-from-invitation-64')).json()).toEqual({ next: 'done' });
     expect((await portal.call('POST', '/client/api-keys', KEY)).statusCode).toBe(201);
-    expect((await portal.call('POST', '/client/webhooks', ENDPOINT)).statusCode).toBe(201);
-  });
-});
-
-/** The Telegram link tokens that exist. */
-async function telegramLinkTokens() {
-  const { db } = await testDb();
-  return db.select().from(s.authTokens).where(eq(s.authTokens.purpose, 'telegram_link'));
-}
-
-describe('POST /client/telegram/link while a credential is one staff set', () => {
-  it('refuses with 403 and writes no link while the password is one staff set, and links again after a password from a mailed link', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const portal = await signedInWithStaffPassword(merchant);
-
-    const refused = await portal.call('POST', '/client/telegram/link');
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json<{ code: string; detail: string }>()).toMatchObject({
-      code: 'FORBIDDEN',
-      detail: STAFF_SET_PASSWORD_HOLD,
-    });
-    expect(await telegramLinkTokens()).toEqual([]);
-    // The rest of the portal works in that session, the notification settings included.
-    expect((await portal.call('GET', '/client/notification-preferences')).statusCode).toBe(200);
-
-    // A change on the security page is not a mailed link: the hold stays.
-    expect((await portal.changePassword('chosen-after-temporary-31', 'changed-on-security-page-47')).statusCode).toBe(
-      204,
-    );
-    expect((await portal.call('POST', '/client/telegram/link')).statusCode).toBe(403);
-    expect(await telegramLinkTokens()).toEqual([]);
-
-    // A password set from the link mailed to the merchant's address lifts it.
-    clock.advance(60_000);
-    await resetFromMailedLink(merchant.email, 'owner-chose-from-link-71');
-    const owner = new MerchantPortal(t, freshClientIp());
-    expect((await owner.login(merchant.email, 'owner-chose-from-link-71')).json()).toEqual({ next: 'done' });
-    const linked = await owner.call('POST', '/client/telegram/link');
-    expect(linked.statusCode).toBe(201);
-    expect(linked.json<{ url: string }>().url).toMatch(/^https:\/\/t\.me\/gsm_test_bot\?start=/);
-    expect(await telegramLinkTokens()).toHaveLength(1);
-  });
-
-  it('refuses with 403 and writes no link after a staff member who is not an Owner changed the email address', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    await staffChangesEmail(merchant.id, 'desk-inbox-tg@example.com');
-    clock.advance(60_000);
-    // A password from a link to the new address does not end this hold.
-    await resetFromMailedLink('desk-inbox-tg@example.com', 'chosen-from-new-address-72');
-    const portal = new MerchantPortal(t, freshClientIp());
-    expect((await portal.login('desk-inbox-tg@example.com', 'chosen-from-new-address-72')).json()).toEqual({
-      next: 'done',
-    });
-
-    const refused = await portal.call('POST', '/client/telegram/link');
-    expect(refused.statusCode).toBe(403);
-    expect(refused.json<{ code: string; detail: string }>()).toMatchObject({
-      code: 'FORBIDDEN',
-      detail: STAFF_SET_EMAIL_HOLD,
-    });
-    expect(await telegramLinkTokens()).toEqual([]);
-  });
-
-  it('leaves a merchant without a mark free to connect Telegram', async () => {
-    const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
-    const portal = new MerchantPortal(t, freshClientIp());
-    expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
-    const linked = await portal.call('POST', '/client/telegram/link');
-    expect(linked.statusCode).toBe(201);
-    expect(await telegramLinkTokens()).toHaveLength(1);
   });
 });
 
@@ -511,9 +411,7 @@ describe('the notice of a new API key', () => {
     const merchant = await makeMerchant(t, { emailVerifiedAt: new Date('2026-11-01T00:00:00.000Z') });
     const portal = new MerchantPortal(t, freshClientIp());
     expect((await portal.login(merchant.email, MERCHANT_PASSWORD)).json()).toEqual({ next: 'done' });
-    expect((await portal.call('POST', '/client/api-keys', { name: 'Bad', scopes: ['nope:read'] })).statusCode).toBe(
-      422,
-    );
+    expect((await portal.call('POST', '/client/api-keys', { name: 'Bad', allowedIps: ['nope'] })).statusCode).toBe(422);
     const { db } = await testDb();
     expect(await notificationRows(db)).toEqual([]);
   });

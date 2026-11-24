@@ -1,4 +1,4 @@
-// OrderPlacement: the one shared path that creates an order (portal now, Dhru, REST v1 and the storefront later). It prices the order
+// OrderPlacement: the one shared path that creates an order (portal now, Dhru and the storefront later). It prices the order
 // with the catalog's resolver, applies the price-change guard and the duplicate rule, writes the order with its first timeline lines,
 // holds the price and writes the dispatch row, all in the caller's transaction (decision 025, user rule 9).
 import { Inject, Injectable } from '@nestjs/common';
@@ -19,7 +19,7 @@ import {
   checkPriceChange,
 } from '../../catalog';
 import { SettingsReader } from '../../platform';
-import type { Order, OrderSource } from '../db/schema';
+import type { Order } from '../db/schema';
 import { mainInputOf } from '../domain/main-input';
 import { placementDispatchState } from '../domain/order-machine';
 import {
@@ -30,6 +30,7 @@ import {
   manualReviewLine,
 } from '../domain/order-timeline';
 import {
+  type PlacedOrderSource,
   type PlacementField,
   inputProblems,
   isValidImei,
@@ -46,7 +47,6 @@ import {
   serviceFieldsOf,
 } from '../infra/foreign-reads.repository';
 import { findOpenDuplicate, insertEvents, insertOrder, lockFingerprint } from '../infra/order.repository';
-import { OrderCompletionListeners } from './order-completion-listeners';
 import { OrderLedger } from './order-ledger';
 import { OrderOutbox } from './order-outbox';
 
@@ -63,8 +63,8 @@ export interface PlacementItem {
 /** What placement needs; one order is created per item. */
 export interface PlacementRequest {
   readonly clientId: number;
-  readonly source: OrderSource;
-  /** The merchant key that placed the order (REST v1, Dhru). */
+  readonly source: PlacedOrderSource;
+  /** The merchant key that placed the order (Dhru). */
   readonly apiKeyId?: number | null;
   readonly serviceId: number;
   /** The quantity of each order; the service's minimum when left out. */
@@ -72,8 +72,6 @@ export interface PlacementRequest {
   readonly items: readonly PlacementItem[];
   /** The uploaded input file of a File service. */
   readonly fileId?: number | undefined;
-  /** The REST v1 `Idempotency-Key`, kept on the order (a single item only). */
-  readonly idempotencyKey?: string | undefined;
   /** Who is recorded as placing it. */
   readonly actor: TimelineActor;
 }
@@ -114,7 +112,6 @@ export class OrderPlacement {
     private readonly outbox: OrderOutbox,
     private readonly tokens: TokenService,
     private readonly stock: InventoryStock,
-    private readonly completions: OrderCompletionListeners,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -241,7 +238,6 @@ export class OrderPlacement {
         pricingSnapshot: snapshot,
         fingerprint,
         inputFileId: file?.id ?? null,
-        idempotencyKey: prepared.length === 1 ? (request.idempotencyKey ?? null) : null,
       });
       const lines = [
         createdLine(request.source, request.actor),
@@ -268,8 +264,6 @@ export class OrderPlacement {
       completedBefore: 0,
       costBooked: false,
     });
-    // A stock delivery is a completion: the commission listeners accrue for it exactly as for a staff reply (feature 11).
-    await this.completions.completed(tx, order, { type: 'system', id: null });
     await insertEvents(tx, eventRows(order.id, stockDeliveryLines(claim.codes.length, moved)));
     await this.outbox.statusChanged(tx, {
       orderId: order.id,

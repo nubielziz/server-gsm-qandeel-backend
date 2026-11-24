@@ -1,16 +1,9 @@
 // Builds the two OpenAPI 3.1 documents of the API (decisions 008, 009, 017) from the metadata every @Route writes:
-// the internal document (every route) and the public one (REST v1, the Dhru reference, the outgoing events).
+// the internal document (every route) and the public one (the Dhru reference).
 // Pure functions over plain JSON plus one call into @nestjs/swagger; the generator script and the app share them.
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import {
-  type AnySupplierCall,
-  type EventContract,
-  eventRegistry,
-  supplierCallRegistry,
-  toJsonSchema,
-  zIsoDateTime,
-} from '../../../common/contract';
+import { type AnySupplierCall, supplierCallRegistry } from '../../../common/contract';
 import { type AnyDhruAction, dhruActionRegistry } from '../../../common/dhru';
 import { describeDhruActions } from './dhru-reference';
 import { describeSupplierCalls } from './supplier-calls-reference';
@@ -22,26 +15,22 @@ import type {
   OpenApiTagGroup,
   PlainObject,
 } from './openapi-types';
-import { SECURITY_SCHEMES, WEBHOOK_SIGNATURE_SCHEME } from './security-schemes';
+import { SECURITY_SCHEMES } from './security-schemes';
 
 /**
  * Version of the public contract: `info.version` of both documents.
  *
- * Why: merchants pin their integration to the documented API; bump it on a breaking change of REST v1 or of an event.
+ * Why: merchants pin their integration to the documented API; bump it on a breaking change of the Dhru reference.
  */
 export const API_VERSION = '1.0.0';
 
 const OPENAPI_VERSION = '3.1.0';
 const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head', 'trace'] as const;
-/** Surfaces whose operations the public document keeps: the REST API v1 and the Dhru Fusion reference (decision 017). */
-const PUBLIC_SURFACES: readonly string[] = ['v1', 'dhru'];
-/** The surface webhook events carry in `x-gsm-surface`. */
-const EVENTS_SURFACE = 'events';
+/** Surfaces whose operations the public document keeps: the Dhru Fusion reference (decision 017). */
+const PUBLIC_SURFACES: readonly string[] = ['dhru'];
 /** Public surfaces come first in the sidebar, then the merchant, storefront and staff surfaces, then plumbing. */
 const SURFACE_TITLES: Readonly<Record<string, string>> = {
-  v1: 'REST API v1',
   dhru: 'Dhru Fusion API',
-  [EVENTS_SURFACE]: 'Webhook events',
   client: 'Merchant portal',
   store: 'Storefront (B2C)',
   admin: 'Admin console',
@@ -58,7 +47,6 @@ const DOCUMENT_KEY_ORDER = [
   'tags',
   'x-tagGroups',
   'paths',
-  'webhooks',
   'components',
 ];
 const CONVENTIONS =
@@ -76,8 +64,8 @@ const PUBLIC_INFO = {
   title: 'IMEI-HUB API',
   version: API_VERSION,
   description: [
-    'REST API v1 and the Dhru Fusion compatible endpoint for GSM merchants, plus the webhook events we send.',
-    '**Authentication.** REST API v1 takes `Authorization: Bearer <API key>`; a key has scopes, an optional IP allowlist and its own rate limit. The Dhru Fusion endpoint takes the `username` and `apiaccesskey` form fields.',
+    'The Dhru Fusion compatible endpoint for GSM merchants.',
+    '**Authentication.** The Dhru Fusion endpoint takes the `username` and `apiaccesskey` form fields; a key has an optional IP allowlist and its own rate limit.',
     `**Conventions.** ${CONVENTIONS}`,
   ].join('\n\n'),
 };
@@ -86,8 +74,8 @@ const INTERNAL_INFO = {
   title: 'IMEI-HUB API: internal reference',
   version: API_VERSION,
   description: [
-    'Every route of the API: admin console, merchant portal, storefront, REST API v1, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.',
-    'Each operation shows its access kind (`x-gsm-access`), the permission a staff route, or the scope an API key, needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).',
+    'Every route of the API: admin console, merchant portal, storefront, Dhru Fusion, incoming webhooks and system routes. Generated from the route contracts; the public subset is `/openapi.json`.',
+    'Each operation shows its access kind (`x-gsm-access`), the permission a staff route needs (`x-gsm-permission`) and the manifest key (`x-gsm-key`).',
     `**Conventions.** ${CONVENTIONS}`,
   ].join('\n\n'),
 };
@@ -100,18 +88,16 @@ const INTERNAL_INFO = {
 export interface OpenApiDocuments {
   /** Every route, for staff (`GET /reference`). */
   readonly internal: OpenApiDocument;
-  /** REST API v1, the Dhru reference and the outgoing events, for merchants (`GET /openapi.json`). */
+  /** The Dhru reference, for merchants (`GET /openapi.json`). */
   readonly public: OpenApiDocument;
 }
 
 /**
  * What {@link buildOpenApiDocuments} can be told.
  *
- * Why: the generator and the tests can supply the events explicitly; the app uses the process-wide registry.
+ * Why: the generator and the tests can supply the Dhru actions and the supplier calls explicitly; the app uses the process-wide registries.
  */
 export interface BuildOptions {
-  /** Outgoing events to publish as `webhooks`; defaults to the process-wide registry. */
-  readonly events?: readonly EventContract[];
   /** Dhru actions to describe in the Dhru operation; defaults to the process-wide registry. */
   readonly dhruActions?: readonly AnyDhruAction[];
   /** Supplier calls to list in the internal document only; defaults to the process-wide registry. */
@@ -126,7 +112,7 @@ function isOperation(value: unknown): value is OpenApiOperation {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Walks the operations of a `paths` or `webhooks` map in method order. */
+/** Walks the operations of a `paths` map in method order. */
 function* operationsOf(items: Readonly<Record<string, OpenApiPathItem>> | undefined): Generator<OpenApiOperation> {
   for (const item of Object.values(items ?? {})) {
     for (const method of HTTP_METHODS) {
@@ -223,82 +209,6 @@ function pickPaths(
   return paths;
 }
 
-function pascalCase(name: string): string {
-  return name
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join('');
-}
-
-/**
- * Describes outgoing webhook events as OpenAPI 3.1 `webhooks`.
- *
- * Why: merchants build their receivers from this (decision 017): the envelope `{ id, type, createdAt, data }`, the
- * signature header and the retry rule (ALIGNMENT § 7) are the same for every event, only `data` differs.
- *
- * @param events the event contracts to publish
- * @returns one path item per event, keyed by the event type; empty when there are no events
- */
-export function buildWebhooks(events: readonly EventContract[]): Record<string, OpenApiPathItem> {
-  const webhooks: Record<string, OpenApiPathItem> = {};
-  for (const event of [...events].sort((a, b) => byCodeUnit(a.name, b.name))) {
-    const envelope = {
-      type: 'object',
-      required: ['id', 'type', 'createdAt', 'data'],
-      properties: {
-        id: { type: 'string', description: 'Id of this event. Also sent as `X-GSM-Event-Id`; use it to drop retries.' },
-        type: { type: 'string', const: event.name },
-        createdAt: toJsonSchema(zIsoDateTime, 'output'),
-        data: toJsonSchema(event.payload, 'output'),
-      },
-      additionalProperties: false,
-    };
-    const example =
-      event.example === undefined
-        ? undefined
-        : { id: 'evt_1', type: event.name, createdAt: '2026-03-01T09:30:00.000Z', data: event.example };
-    webhooks[event.name] = {
-      post: {
-        operationId: `webhook${pascalCase(event.name)}`,
-        summary: event.summary,
-        ...(event.description ? { description: event.description } : {}),
-        tags: [EVENTS_SURFACE],
-        'x-gsm-key': event.key,
-        'x-gsm-surface': EVENTS_SURFACE,
-        security: [{ [WEBHOOK_SIGNATURE_SCHEME]: [] }],
-        parameters: [
-          {
-            in: 'header',
-            name: 'X-GSM-Signature',
-            required: true,
-            description: 'Signature of the raw body: `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.',
-            schema: { type: 'string' },
-          },
-          {
-            in: 'header',
-            name: 'X-GSM-Event-Id',
-            required: true,
-            description: 'Id of the event; the same id is repeated on every retry.',
-            schema: { type: 'string' },
-          },
-        ],
-        requestBody: {
-          required: true,
-          content: { 'application/json': { schema: envelope, ...(example ? { example } : {}) } },
-        },
-        responses: {
-          '200': {
-            description:
-              'Delivered. Any 2xx status counts; anything else (or no answer within the timeout) is retried with exponential backoff, 8 attempts over about 24 hours.',
-          },
-        },
-      },
-    };
-  }
-  return webhooks;
-}
-
 /**
  * Names the tags of a document and groups them by surface in the sidebar.
  *
@@ -308,7 +218,7 @@ export function buildWebhooks(events: readonly EventContract[]): Record<string, 
  */
 function organizeTags(doc: OpenApiDocument): void {
   const surfaceOf = (operation: OpenApiOperation) => operation['x-gsm-surface'] ?? 'system';
-  const all = [...operationsOf(doc.paths), ...operationsOf(doc.webhooks)];
+  const all = [...operationsOf(doc.paths)];
   const surfacesOfTag = new Map<string, Set<string>>();
   for (const operation of all) {
     for (const tag of operation.tags ?? []) {
@@ -357,7 +267,7 @@ function definitionsOf(names: Iterable<string>): Record<string, PlainObject> {
 /** The security scheme names the operations of a document use; an undefined name is a programming error. */
 function usedSecuritySchemes(doc: OpenApiDocument): Set<string> {
   const used = new Set<string>();
-  for (const operation of [...operationsOf(doc.paths), ...operationsOf(doc.webhooks)]) {
+  for (const operation of operationsOf(doc.paths)) {
     for (const requirement of operation.security ?? []) {
       for (const name of Object.keys(requirement)) {
         if (!Object.hasOwn(SECURITY_SCHEMES, name)) {
@@ -384,7 +294,6 @@ function orderDocument(doc: OpenApiDocument): OpenApiDocument {
   for (const key of DOCUMENT_KEY_ORDER) if (doc[key] !== undefined) ordered[key] = doc[key];
   for (const key of Object.keys(doc).sort(byCodeUnit)) if (!(key in ordered)) ordered[key] = doc[key];
   ordered.paths = orderMap(doc.paths);
-  if (doc.webhooks) ordered.webhooks = orderMap(doc.webhooks);
   if (doc.components) {
     ordered.components = Object.fromEntries(
       Object.entries(sortedKeys(doc.components)).map(([section, entries]) => [section, sortedKeys(entries)]),
@@ -427,26 +336,22 @@ export function buildInternalDocument(
 /**
  * Builds the public document: the filter of decision 017.
  *
- * Why: merchants see only what they integrate with. Operations are kept only when their surface is `v1` or `dhru`
- * (an operation without a surface is dropped), the outgoing events become `webhooks`, and components and security
+ * Why: merchants see only what they integrate with. Operations are kept only when their surface is `dhru`
+ * (an operation without a surface is dropped), and components and security
  * schemes that no kept operation reaches are left out, so no internal model leaks.
  *
  * @param raw the document `SwaggerModule.createDocument` produced (not modified)
- * @param events the outgoing events to publish as `webhooks`
- * @returns a new document with the public operations, the events and what they reference
+ * @returns a new document with the public operations and what they reference
  */
-export function buildPublicDocument(raw: OpenApiDocument, events: readonly EventContract[] = []): OpenApiDocument {
-  const webhooks = buildWebhooks(events);
+export function buildPublicDocument(raw: OpenApiDocument): OpenApiDocument {
   const doc: OpenApiDocument = {
     openapi: raw.openapi,
     info: { ...PUBLIC_INFO },
     servers: clone(SERVERS),
     paths: pickPaths(raw, (surface) => surface !== undefined && PUBLIC_SURFACES.includes(surface)),
-    ...(Object.keys(webhooks).length > 0 ? { webhooks } : {}),
   };
-  // The API key scheme is always documented: it is how a merchant authenticates, even before the first v1 route exists.
-  const schemes = usedSecuritySchemes(doc).add('apiKey');
-  const referenced = reachableComponents([doc.paths, doc.webhooks], raw.components);
+  const schemes = usedSecuritySchemes(doc);
+  const referenced = reachableComponents([doc.paths], raw.components);
   doc.components = { ...referenced, securitySchemes: definitionsOf(schemes) };
   organizeTags(doc);
   return orderDocument(doc);
@@ -459,7 +364,7 @@ export function buildPublicDocument(raw: OpenApiDocument, events: readonly Event
  * code. Nothing connects to infrastructure: the contracts live in decorator metadata, so no `init()` is needed.
  *
  * @param app the Nest application with every controller registered
- * @param options the events to publish (defaults to the process-wide registry)
+ * @param options the Dhru actions and supplier calls to describe (default: the process-wide registries)
  * @returns the internal and the public document
  * @throws {Error} when an operation uses a security scheme that has no definition
  */
@@ -476,7 +381,7 @@ export function buildOpenApiDocuments(app: INestApplication, options: BuildOptio
   describeDhruActions(raw, options.dhruActions ?? dhruActionRegistry.all());
   return {
     internal: buildInternalDocument(raw, options.supplierCalls ?? supplierCallRegistry.all()),
-    public: buildPublicDocument(raw, options.events ?? eventRegistry.all()),
+    public: buildPublicDocument(raw),
   };
 }
 

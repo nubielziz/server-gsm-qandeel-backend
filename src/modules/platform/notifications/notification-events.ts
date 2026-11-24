@@ -2,7 +2,6 @@
 // notification can be about. Built-in events are data here; later features add their own with NotificationEventRegistry.register.
 import { Injectable } from '@nestjs/common';
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
-import { WEBHOOK_ENDPOINT_DISABLED_EVENT } from '../webhooks/webhook-delivery.rules';
 import { DEFAULT_TEMPLATES, type DefaultTemplate } from './default-templates';
 import type { TemplateKey } from './notification-template.repository';
 
@@ -29,13 +28,11 @@ export interface NotificationEventDefinition {
   readonly sample: Readonly<Record<string, string>>;
   /**
    * A transactional message is always sent and never listed in a merchant's preferences (the verification, reset and invitation
-   * links, the Telegram replies): the recipient cannot work without it.
+   * links): the recipient cannot work without it.
    */
   readonly transactional: boolean;
   /** Whether a merchant that never saved this event gets it by email (B165: yes, except the opt-in order results). */
   readonly defaultEmail: boolean;
-  /** Whether a merchant that never saved this event gets it on Telegram (always off until chosen). */
-  readonly defaultTelegram: boolean;
   /** True for an event that is collected and sent once a day (the price change digest, user rule 9). */
   readonly digest?: boolean;
   /**
@@ -126,7 +123,7 @@ function samplesOf(
 }
 
 function merchantEvent(
-  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail'> &
+  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultEmail'> &
     Partial<Pick<NotificationEventDefinition, 'defaultEmail'>>,
 ): NotificationEventDefinition {
   return {
@@ -134,7 +131,6 @@ function merchantEvent(
     audience: 'merchant',
     sample: samplesOf(MERCHANT_SAMPLE, spec.variables),
     defaultEmail: spec.defaultEmail ?? true,
-    defaultTelegram: false,
   };
 }
 
@@ -144,7 +140,7 @@ function merchantEvent(
  * Why: feature 12b, RULES health 6: the messages of alerts go to the ops mailbox and chat (`ALERTS_EMAIL_TO`, `ALERTS_TELEGRAM_CHAT_ID`).
  */
 function staffEvent(
-  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail' | 'transactional'>,
+  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultEmail' | 'transactional'>,
 ): NotificationEventDefinition {
   return {
     ...spec,
@@ -152,20 +148,16 @@ function staffEvent(
     sample: samplesOf(STAFF_SAMPLE, spec.variables),
     transactional: true,
     defaultEmail: false,
-    defaultTelegram: false,
   };
 }
 
 /**
  * A customer event. `transactional: true` marks a message that reports on the customer's own purchase or ticket (feature 23, S6): it
- * still reaches a suspended or blocked customer, who would otherwise stop hearing about an order they paid for. Marketing and surveys
- * stay non-transactional.
+ * still reaches a suspended or blocked customer, who would otherwise stop hearing about an order they paid for. Marketing
+ * stays non-transactional.
  */
 function customerEvent(
-  spec: Omit<
-    NotificationEventDefinition,
-    'audience' | 'sample' | 'defaultTelegram' | 'defaultEmail' | 'transactional'
-  > &
+  spec: Omit<NotificationEventDefinition, 'audience' | 'sample' | 'defaultEmail' | 'transactional'> &
     Partial<Pick<NotificationEventDefinition, 'transactional'>>,
 ): NotificationEventDefinition {
   return {
@@ -174,7 +166,6 @@ function customerEvent(
     sample: samplesOf(CUSTOMER_SAMPLE, spec.variables),
     transactional: spec.transactional ?? false,
     defaultEmail: true,
-    defaultTelegram: false,
   };
 }
 
@@ -193,11 +184,6 @@ export const CUSTOMER_MAIL_EVENT_KEYS = [
   'customer.email_verification',
 ] as const;
 
-/** The event of the bot's answer when a merchant links a chat. */
-export const TELEGRAM_LINKED_EVENT = 'telegram.linked';
-/** The event of the bot's answer when a merchant sends `/stop`. */
-export const TELEGRAM_UNLINKED_EVENT = 'telegram.unlinked';
-
 /** The customer event of the notice about a staff change of the account's email (decision 047): it goes to the address before the change. */
 export const CUSTOMER_SECURITY_NOTICE_EVENT = 'customer.security_notice';
 
@@ -207,7 +193,7 @@ export const RETAIL_PRICES_FOLLOWED_EVENT = 'retail.prices_followed';
 /**
  * The events built into the platform: the merchant events 12a wires now, the four transactional customer account mails of
  * feature 14b (sign-in link, password reset, invitation, email verification), the customer events the console's templates list
- * (their producers are the storefront money flows of feature 16, support and recovery), the two staff events of the alerts (feature 12b),
+ * (their producers are the storefront money flows of feature 16 and support), the two staff events of the alerts (feature 12b),
  * the staff event of the shop's following retail prices (feature 31) and the customer's security notice (`customer.security_notice`, decision 047:
  * it goes to the address an account had before a staff change of its email).
  *
@@ -218,7 +204,8 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
   merchantEvent({
     key: 'merchant.email_verification',
     label: 'Verify your email address',
-    description: 'Sent after a merchant registers: the link that confirms the address.',
+    description:
+      'Sent when staff change a merchant’s address or the merchant asks again: the link that confirms the address.',
     channels: ['email'],
     variables: ['merchantName', 'link', 'expiresAt'],
     transactional: true,
@@ -249,7 +236,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     key: 'wallet.low_balance',
     label: 'Low wallet balance',
     description: 'The available balance fell below the merchant’s alert threshold (`lowBalanceThreshold`).',
-    channels: ['email', 'telegram'],
+    channels: ['email'],
     variables: ['merchantName', 'currency', 'available', 'threshold'],
     transactional: false,
   }),
@@ -258,24 +245,16 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     label: 'Price changes',
     description:
       'A daily digest of the services the merchant ordered in the last 30 days whose price changed (user rule 9): at most one a day.',
-    channels: ['email', 'telegram'],
+    channels: ['email'],
     variables: ['merchantName', 'count', 'changes'],
     transactional: false,
     digest: true,
   }),
   merchantEvent({
-    key: 'deposit.approved',
-    label: 'Deposit approved',
-    description: 'A deposit was approved and the wallet was credited.',
-    channels: ['email', 'telegram'],
-    variables: ['merchantName', 'amount', 'currency'],
-    transactional: false,
-  }),
-  merchantEvent({
     key: 'invoice.paid',
     label: 'Invoice paid',
     description: 'An invoice was paid and its amount credited to the wallet.',
-    channels: ['email', 'telegram'],
+    channels: ['email'],
     variables: ['merchantName', 'invoiceNumber', 'amount', 'currency'],
     transactional: false,
   }),
@@ -283,7 +262,7 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     key: 'order.completed',
     label: 'Order completed',
     description: 'One of the merchant’s orders was completed. Off until the merchant chooses it.',
-    channels: ['email', 'telegram'],
+    channels: ['email'],
     variables: ['merchantName', 'orderId', 'service', 'resultCode', 'resultComment'],
     transactional: false,
     defaultEmail: false,
@@ -292,35 +271,10 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
     key: 'order.failed',
     label: 'Order failed',
     description: 'One of the merchant’s orders was rejected. Off until the merchant chooses it.',
-    channels: ['email', 'telegram'],
+    channels: ['email'],
     variables: ['merchantName', 'orderId', 'service', 'resultCode', 'resultComment'],
     transactional: false,
     defaultEmail: false,
-  }),
-  merchantEvent({
-    key: WEBHOOK_ENDPOINT_DISABLED_EVENT,
-    label: 'Webhook endpoint switched off',
-    description:
-      'One of the merchant’s webhook endpoints did not accept 20 deliveries in a row and was switched off (decision 053).',
-    channels: ['email'],
-    variables: ['merchantName', 'url', 'count'],
-    transactional: true,
-  }),
-  merchantEvent({
-    key: TELEGRAM_LINKED_EVENT,
-    label: 'Telegram linked',
-    description: 'The bot’s answer when a merchant connects a Telegram chat.',
-    channels: ['telegram'],
-    variables: ['merchantName'],
-    transactional: true,
-  }),
-  merchantEvent({
-    key: TELEGRAM_UNLINKED_EVENT,
-    label: 'Telegram unlinked',
-    description: 'The bot’s answer when a merchant sends /stop.',
-    channels: ['telegram'],
-    variables: ['merchantName'],
-    transactional: true,
   }),
   staffEvent({
     key: 'alert.fired',
@@ -390,14 +344,6 @@ export const BUILT_IN_EVENTS: readonly NotificationEventDefinition[] = [
       link: 'https://shop.example.com/support/tickets/example',
     },
   },
-  customerEvent({
-    key: 'checkout.abandoned',
-    label: 'Abandoned checkout',
-    description: 'A checkout was started and not paid.',
-    channels: ['email'],
-    variables: ['customerName', 'device', 'link'],
-    secretLink: true,
-  }),
   customerEvent({
     key: 'payment.failed',
     transactional: true,
@@ -548,7 +494,7 @@ export class NotificationEventRegistry {
    * Finds the shipped text of an event, channel and audience.
    *
    * @param key the event, channel and audience
-   * @returns the shipped template, or `undefined` when the event has none (`checkout.abandoned`)
+   * @returns the shipped template, or `undefined` when the event has none
    */
   builtInTemplate(key: TemplateKey): DefaultTemplate | undefined {
     return this.builtInTemplates.get(`${key.audience}:${key.event}:${key.channel}`);

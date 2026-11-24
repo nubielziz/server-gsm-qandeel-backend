@@ -1,11 +1,6 @@
 // Unit tests of the TAC catalog input rules: the release year bounds and the wire form of an unknown year.
 import { describe, expect, it } from 'bun:test';
-import {
-  MIN_RELEASE_YEAR,
-  checkReleaseYear,
-  tacInUseMessage,
-  wireReleaseYear,
-} from '@src/modules/catalog/domain/tac-input';
+import { MIN_RELEASE_YEAR, checkReleaseYear, wireReleaseYear } from '@src/modules/catalog/domain/tac-input';
 
 describe('checkReleaseYear', () => {
   it('accepts a whole year from 1990 up to next year', () => {
@@ -25,15 +20,9 @@ describe('checkReleaseYear', () => {
   });
 });
 
-describe('wireReleaseYear and tacInUseMessage', () => {
+describe('wireReleaseYear', () => {
   it('sends an unknown year as 0', () => {
     expect(wireReleaseYear(null)).toBe(0);
     expect(wireReleaseYear(2021)).toBe(2021);
-  });
-
-  it('words the refusal exactly as RESOLUTIONS catalog-7 does', () => {
-    expect(tacInUseMessage(3, '35389011')).toBe(
-      '3 IMEI checks already use TAC 35389011; add a new entry for the new TAC instead.',
-    );
   });
 });

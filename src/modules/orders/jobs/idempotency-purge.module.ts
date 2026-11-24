@@ -34,7 +34,7 @@ export class IdempotencyPurgeModule implements OnModuleInit {
       queue: 'maintenance',
       jobName: IDEMPOTENCY_PURGE_JOB,
       pattern: '10 4 * * *',
-      description: `Forgets REST v1 Idempotency-Keys older than ${IDEMPOTENCY_WINDOW_DAYS} days: deletes the stored answers and clears orders.idempotency_key.`,
+      description: `Forgets the merchant portal's Idempotency-Keys older than ${IDEMPOTENCY_WINDOW_DAYS} days: deletes the stored answers.`,
     });
   }
 }

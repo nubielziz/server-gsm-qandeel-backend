@@ -70,7 +70,7 @@ real shop but not what case 51 describes. The load script builds terms from ever
 ## What is not here
 
 - Prices: never in the index; `search-resolver.ts` and `StorefrontQuotes` price from Postgres on every request.
-- Merchant, REST v1, Dhru and console searches: unchanged (merchant prices are personal and recorded).
+- Merchant, Dhru and console searches: unchanged (merchant prices are personal and recorded).
 - Other languages: none since decision 039 (feature 30). A service has one listing, and the searchable rule asks the same
   `listedServiceIds` as the checkout, so what the search shows and what can be bought agree. A visitor may still type Arabic: it is
   normalised like any text and answers 200 with no hits (`test/integration/storefront/search-golden.test.ts`).

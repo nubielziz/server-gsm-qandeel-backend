@@ -49,12 +49,12 @@ const KEY_SHAPE = /^[\x21-\x7e]{16,256}$/;
 /**
  * Looks merchant API keys up.
  *
- * Why: REST v1 and Dhru authenticate every request with a key (decision 018), so the lookup must not cost a query each time. The
+ * Why: Dhru authenticates every request with a key (decision 018), so the lookup must not cost a query each time. The
  * cached view also carries the merchant's status; the features that change a key or a merchant call `invalidate` /
  * `invalidateClient` after their commit, so a revoke or a suspension applies on the next request. A cached view is used only when it
  * belongs to the presented key (decision 055).
  *
- * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}` (an invalidation is retried
+ * Side effects: reads `api_keys` and `clients`; reads and deletes `gsm:{env}:identity:api-key:{keyHash}:v2` (an invalidation is retried
  * and reported when Redis fails, decision 055); writes `api_keys.last_used_at` / `last_used_ip`.
  *
  * @see docs/cache-keys.md
@@ -90,7 +90,7 @@ export class ApiKeyDirectory {
    * Side effects: on a view that does not belong to the key, deletes its cache key (best effort) and logs one warning a minute; a
    * cached view with less than {@link API_KEY_CACHE_REFRESH_AHEAD_SECONDS} left is loaded again in the background (decision 053).
    *
-   * @param key the key as sent (`Authorization: Bearer ...` or Dhru `apiaccesskey`)
+   * @param key the key as sent (the Dhru `apiaccesskey`)
    * @returns the view, or `undefined` for an unknown key, text that cannot be a key, or a cached view of another key. Revoked and
    *   expired keys are returned: judge them with `checkApiKey`. The view can be up to a minute old.
    */
@@ -170,7 +170,7 @@ export class ApiKeyDirectory {
   /**
    * Forgets the cached views of keys.
    *
-   * Why: revoking a key, changing its scopes or allowed IPs must apply at once, not after the minute the view lives
+   * Why: revoking a key or changing its allowed IPs must apply at once, not after the minute the view lives
    * (`DELETE /admin/api-keys/:id`: "effective at once").
    *
    * Side effects: deletes the cache keys (after the commit when `work` is given). Never throws: a failed delete is retried and

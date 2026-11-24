@@ -495,7 +495,7 @@ describe('deploy/Caddyfile', () => {
   });
 
   it('answers 404 on the API host except for the machine surfaces', () => {
-    expect(block('API_HOST')).toContain('@api path /api/index.php /v1/* /webhooks/* /docs /docs/*');
+    expect(block('API_HOST')).toContain('@api path /api/index.php /webhooks/* /docs /docs/*');
     expect(block('API_HOST')).toContain('respond 404');
   });
 
@@ -552,7 +552,8 @@ describe('deploy/Caddyfile', () => {
     expect(address.length).toBeGreaterThan(5);
     expect(fieldRules('request>headers>Referer')).toEqual(address);
     const pathRules = address.filter((line) => !line.startsWith('regexp "([?&])'));
-    expect(pathRules).toHaveLength(7);
+    // Six path rules since the Telegram webhook path went with its route (decision 062).
+    expect(pathRules).toHaveLength(6);
     expect(fieldRules('resp_headers>Location')).toEqual([...pathRules, QUERY_CUT]);
     expect(accessLog).not.toMatch(/^\s*(request|resp_headers)>[^\n]* regexp /m);
   });
@@ -577,8 +578,7 @@ describe('deploy/Caddyfile', () => {
       ['/store/v1/search?q=356938035643809&page=2', '/store/v1/search?q=[redacted]&page=2'],
       ['/admin/customers?_start=0&_end=25&q=rania%40example.com', '/admin/customers?_start=0&_end=25&q=[redacted]'],
       ['/admin/orders?_sort=createdAt&_order=desc', '/admin/orders?_sort=createdAt&_order=desc'],
-      ['/v1/orders?imei=356938035643809&limit=50', '/v1/orders?imei=[redacted]&limit=50'],
-      ['/webhooks/telegram/0123456789abcdef0123', '/webhooks/telegram/[secret]'],
+      ['/client/orders?imei=356938035643809&limit=50', '/client/orders?imei=[redacted]&limit=50'],
       ['/admin/orders/123', '/admin/orders/123'],
       ['/admin/support-tickets/9', '/admin/support-tickets/9'],
       ['/store/v1/me/tickets', '/store/v1/me/tickets'],
@@ -620,7 +620,6 @@ describe('deploy/Caddyfile', () => {
       'request>headers>X-Csrf-Token',
       'request>headers>X-Turnstile-Token',
       'request>headers>Idempotency-Key',
-      'request>headers>X-Telegram-Bot-Api-Secret-Token',
       'request>headers>Stripe-Signature',
       'request>headers>X-Gsm-Signature',
       // The shop's pages send their own address (a link token in it) with every prefetch, refresh and navigation.
@@ -903,10 +902,10 @@ describe('Dockerfile and .dockerignore', () => {
     expect(dockerfile).toContain("'search-keys'");
   });
 
-  it('carries the Telegram webhook tool the runbook runs in the api container, in the allow-list, the copy and the import check', () => {
-    expect(read('.dockerignore').split('\n')).toContain('!scripts/telegram-webhook.ts');
-    expect(dockerfile).toMatch(/^COPY [^\n]*scripts\/telegram-webhook\.ts [^\n]*\.\/scripts\/$/m);
-    expect(dockerfile).toContain("'telegram-webhook'");
+  it('carries no tool of the retired Telegram webhook: not in the allow-list, the copy, the import check or the access log', () => {
+    expect(read('.dockerignore')).not.toContain('telegram');
+    expect(dockerfile).not.toMatch(/telegram/i);
+    expect(read('deploy/Caddyfile')).not.toMatch(/telegram/i);
   });
 
   it('carries the English-only export the release-30 runbook runs in the migrate container, in the allow-list, the copy and the import check', () => {

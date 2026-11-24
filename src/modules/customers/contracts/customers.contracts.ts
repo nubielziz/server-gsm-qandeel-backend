@@ -2,7 +2,7 @@
 // `Customer` and `CustomerDetail` (src/features/customers/types) and docs/contract/endpoints/customers.md.
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime, zMoney } from '../../../common/contract';
-import { CUSTOMER_STATUSES, RISK_LEVELS } from '../db/schema';
+import { CUSTOMER_STATUSES } from '../db/schema';
 import {
   CountryField,
   CustomerStatusWire,
@@ -11,7 +11,6 @@ import {
   NotesField,
   PasswordModeField,
   PhoneField,
-  RiskLevelWire,
 } from './shared';
 
 /**
@@ -32,7 +31,6 @@ export const CustomerSchema = z.object({
   hasAccount: z.boolean(),
   createdBy: zId.nullable().describe('The staff member who added the customer; null for self-signup or checkout.'),
   marketingOptIn: z.boolean(),
-  riskLevel: RiskLevelWire,
   status: CustomerStatusWire,
   suspendedAt: zIsoDateTime.nullable(),
   suspendedReason: z.string().nullable(),
@@ -98,7 +96,6 @@ const sample = {
   hasAccount: true,
   createdBy: null,
   marketingOptIn: true,
-  riskLevel: 'low',
   status: 'active',
   suspendedAt: null,
   suspendedReason: null,
@@ -139,20 +136,18 @@ export const listCustomers = defineRoute({
   key: 'GET /admin/customers',
   summary: 'Storefront customers',
   description:
-    'Customers of the storefront (guests and accounts). Filters: `status` and `riskLevel` (repeat the key for IN), `country`, ' +
-    '`hasAccount`. `q` searches name and email. Sort by `name`, `country`, `hasAccount`, `ordersCount`, `totalSpent` (default, ' +
-    'highest first), `lastOrderAt`, `riskLevel` (low, medium, high) or `status`. `ordersCount` and `lastOrderAt` are worked ' +
-    'out from the customer’s orders.',
+    'Customers of the storefront (guests and accounts). Filters: `status` (repeat the key for IN), `country`, `hasAccount`. ' +
+    '`q` searches name and email. Sort by `name`, `country`, `hasAccount`, `ordersCount`, `totalSpent` (default, highest ' +
+    'first), `lastOrderAt` or `status`. `ordersCount` and `lastOrderAt` are worked out from the customer’s orders.',
   tags: ['customers'],
   surface: 'admin',
   access: 'staff-permission',
   permission: 'customers:read',
   query: listQuery({
-    sorts: ['name', 'country', 'hasAccount', 'ordersCount', 'totalSpent', 'lastOrderAt', 'riskLevel', 'status'],
+    sorts: ['name', 'country', 'hasAccount', 'ordersCount', 'totalSpent', 'lastOrderAt', 'status'],
     defaultSort: { field: 'totalSpent', order: 'desc' },
     filters: {
       status: { type: 'enum', values: CUSTOMER_STATUSES },
-      riskLevel: { type: 'enum', values: RISK_LEVELS },
       country: { type: 'string', ops: ['eq'] },
       hasAccount: { type: 'boolean' },
     },

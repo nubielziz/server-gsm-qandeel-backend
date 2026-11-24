@@ -554,7 +554,7 @@ export class ServiceAdminService {
    * Archives or deletes a service.
    *
    * Why: RESOLUTIONS catalog-3 (user decision): a service that orders, supplier links, listings, inventory codes, checkout
-   * sessions, help articles or IMEI checks refer to is archived (disabled, hidden, its service pricing rules switched off, its
+   * sessions or help articles refer to is archived (disabled, hidden, its service pricing rules switched off, its
    * history kept); any other service is deleted with its service pricing rules (fields, options, prices and links go by
    * cascade). The service row is locked first, so nothing can start to refer to it between the check and the write.
    *

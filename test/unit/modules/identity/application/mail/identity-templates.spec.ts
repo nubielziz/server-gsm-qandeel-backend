@@ -2,7 +2,9 @@
 // uses only that event's placeholders, every event has one English email, the custom migration that shipped them holds each row (except
 // the events whose text is only shipped with the code), and `identityTemplatesSql()` writes today's shape (no language, decision 039).
 import { describe, expect, it } from 'bun:test';
-import { insertedTemplates } from '../../../../../support/applied-templates';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { appliedMigration, insertedTemplates } from '../../../../../support/applied-templates';
 import { NotificationEventRegistry } from '@src/modules/platform';
 import { IDENTITY_MAIL_EVENTS } from '@src/modules/identity/application/mail/identity-mail-events';
 import {
@@ -11,6 +13,22 @@ import {
   IDENTITY_TEMPLATES_MIGRATION,
   identityTemplatesSql,
 } from '@src/modules/identity/application/mail/identity-templates';
+
+// The events that were retired after migration 0025 inserted their rows: the two of the document check (decision 061) and the approval mail
+// (decision 062). The applied file still inserts their rows and a later migration deletes them again, so they are the only rows of the file
+// that the code no longer has. A migration is found by the end of its name, not its number: the number is given again when the branch is merged.
+const DRIZZLE = join(import.meta.dir, '../../../../../../drizzle');
+const RETIRED: ReadonlyArray<{ readonly events: readonly string[]; readonly migration: string | undefined }> = [
+  {
+    events: ['merchant.kyc_approved', 'merchant.kyc_rejected'],
+    migration: readdirSync(DRIZZLE).find((file) => file.endsWith('_merchant_verification_retired.sql')),
+  },
+  {
+    events: ['merchant.approved'],
+    migration: readdirSync(DRIZZLE).find((file) => file.endsWith('_retired_features.sql')),
+  },
+];
+const RETIRED_EVENTS = RETIRED.flatMap((entry) => entry.events);
 
 const placeholdersOf = (text: string): string[] => [
   ...new Set([...text.matchAll(/\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*\}\}/g)].map((match) => match[1]!)),
@@ -26,11 +44,8 @@ describe('IDENTITY_MAIL_EVENTS', () => {
   it('register next to the platform events (no duplicate key) and every variable has a sample', () => {
     const events = registry();
     expect(IDENTITY_MAIL_EVENTS.map((e) => e.key)).toEqual([
-      'merchant.approved',
       'merchant.suspended',
       'merchant.reactivated',
-      'merchant.kyc_approved',
-      'merchant.kyc_rejected',
       'merchant.security_notice',
       'merchant.portal_api_key_created',
       'staff.invited',
@@ -47,7 +62,6 @@ describe('IDENTITY_MAIL_EVENTS', () => {
       expect(definition.transactional, definition.key).toBe(true);
       expect(definition.channels, definition.key).toEqual(['email']);
       expect(definition.defaultEmail, definition.key).toBe(true);
-      expect(definition.defaultTelegram, definition.key).toBe(false);
     }
     const preferences = registry().merchantPreferenceEvents();
     expect(preferences.some((event) => IDENTITY_MAIL_EVENTS.some((own) => own.key === event.key))).toBe(false);
@@ -57,7 +71,7 @@ describe('IDENTITY_MAIL_EVENTS', () => {
 describe('IDENTITY_DEFAULT_TEMPLATES', () => {
   it('belong to a registered event and channel, use only that event’s placeholders, and have a subject and a body', () => {
     const events = registry();
-    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(9);
+    expect(IDENTITY_DEFAULT_TEMPLATES).toHaveLength(6);
     for (const template of IDENTITY_DEFAULT_TEMPLATES) {
       const label = `${template.event} ${template.channel} ${template.audience}`;
       const definition = events.get(template.event, template.audience);
@@ -87,14 +101,12 @@ describe('IDENTITY_DEFAULT_TEMPLATES', () => {
     }
   });
 
-  it('carry the staff link and its expiry in both staff mails, and the reason in the KYC rejection', () => {
+  it('carry the staff link and its expiry in both staff mails', () => {
     for (const key of ['staff.invited', 'staff.password_reset']) {
       const template = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === key)!;
       expect(template.body).toContain('{{link}}');
       expect(template.body).toContain('{{expiresAt}}');
     }
-    const rejected = IDENTITY_DEFAULT_TEMPLATES.find((t) => t.event === 'merchant.kyc_rejected')!;
-    expect(rejected.body).toContain('{{reason}}');
   });
 
   it('never put the staff reason of a suspension in the suspension mail', () => {
@@ -108,12 +120,33 @@ describe(`migration ${IDENTITY_TEMPLATES_MIGRATION}`, () => {
   it('holds every template of the code that a migration installs, in English, with the same event, channel, audience, subject and body', () => {
     const shipped = insertedTemplates(IDENTITY_TEMPLATES_MIGRATION);
     // The file also holds the Arabic rows it shipped with (migration 0035 deletes them): every English row is one of the code's.
-    const english = shipped.filter((row) => row.locale === 'en');
+    const english = shipped.filter((row) => row.locale === 'en' && !RETIRED_EVENTS.includes(row.event));
     const installed = IDENTITY_DEFAULT_TEMPLATES.filter(
       (template) => !IDENTITY_SHIPPED_TEXT_ONLY.includes(template.event),
     );
     expect(english).toHaveLength(installed.length);
     for (const template of installed) expect(english, template.event).toContainEqual({ ...template, locale: 'en' });
+  });
+
+  it('still shows the retired events in the applied file, and a later migration deletes their stored rows', () => {
+    const inMigration = insertedTemplates(IDENTITY_TEMPLATES_MIGRATION).map((row) => row.event);
+    for (const { events, migration } of RETIRED) {
+      expect(migration, events.join(', ')).toBeDefined();
+      const deleting = appliedMigration(migration ?? 'missing');
+      for (const event of events) {
+        expect(inMigration, event).toContain(event);
+        expect(
+          IDENTITY_DEFAULT_TEMPLATES.some((template) => template.event === event),
+          event,
+        ).toBe(false);
+        expect(
+          IDENTITY_MAIL_EVENTS.some((definition) => definition.key === event),
+          event,
+        ).toBe(false);
+        expect(deleting, event).toContain(`'${event}'`);
+      }
+      expect(deleting).toContain('DELETE FROM "notification_templates"');
+    }
   });
 
   it('names only events of the code as shipped with the code alone, and none of them is in the migration', () => {

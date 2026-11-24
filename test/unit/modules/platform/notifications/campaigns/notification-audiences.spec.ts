@@ -21,7 +21,7 @@ const provider = (type: AudienceProvider['type']): AudienceProvider => ({
 
 const dialect = new PgDialect();
 const text = (query: ReturnType<typeof reachableSql>) => dialect.sqlToQuery(query).sql;
-const FLAGS = { inApp: sql`IN_APP`, email: sql`EMAIL`, telegram: sql`TELEGRAM` };
+const FLAGS = { inApp: sql`IN_APP`, email: sql`EMAIL` };
 
 describe('NotificationAudiences', () => {
   it('registers one provider per type and finds it', () => {
@@ -48,7 +48,9 @@ describe('NotificationAudiences', () => {
 describe('reachableSql', () => {
   it('is true when any chosen channel reaches the person', () => {
     expect(text(reachableSql(FLAGS, ['in_app', 'email']))).toBe('((IN_APP) or (EMAIL))');
-    expect(text(reachableSql(FLAGS, ['telegram']))).toBe('((TELEGRAM))');
+    expect(text(reachableSql(FLAGS, ['email']))).toBe('((EMAIL))');
+    // A channel the code no longer knows (an older campaign may list one) counts nobody.
+    expect(text(reachableSql(FLAGS, ['telegram' as never]))).toBe('false');
   });
 
   it('is false without a channel', () => {
@@ -59,7 +61,7 @@ describe('reachableSql', () => {
 describe('audienceCountFields', () => {
   it('counts the total, the reachable people and each channel', () => {
     const fields = audienceCountFields(FLAGS, ['email']);
-    expect(Object.keys(fields).sort()).toEqual(['email', 'inApp', 'reachable', 'telegram', 'total']);
+    expect(Object.keys(fields).sort()).toEqual(['email', 'inApp', 'reachable', 'total']);
     expect(text(fields.reachable)).toContain('((EMAIL))');
   });
 });
@@ -71,7 +73,7 @@ describe('memberQuery', () => {
       include: [7],
       exclude: [],
       purpose: 'marketing',
-      channels: ['in_app', 'email', 'telegram'],
+      channels: ['in_app', 'email'],
     });
   });
 });

@@ -5,7 +5,7 @@ These tests keep the backend, the map and the frontend console telling the same 
 
 | Test file | What it proves | Typical failure and fix |
 |---|---|---|
-| `route-parity.test.ts` | The registry (`defineRoute`, `defineDhruAction`, `defineSupplierCall`, `defineEvent`) equals the route manifest (the map's rows and the rows of `scripts/map-additions`, decision 035) minus `pending.ts`; every built contract has the method, path, surface, Turnstile flag, access and permission of its manifest row (`lib/manifest-parity.ts`; three access deviations are listed there with their B-entries); Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending. | `X is built but not expected`: the key is not in the manifest (typo) or the route is still listed in `pending.ts`. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. `X: permission a:b, the row says c:d (expected ...)` or `X: access ..., the row says ...`: the contract and the row disagree; fix the contract (or the row of the addition). |
+| `route-parity.test.ts` | The registry (`defineRoute`, `defineDhruAction`, `defineSupplierCall`) equals the route manifest (the map's rows and the rows of `scripts/map-additions`, decision 035) minus `pending.ts` and `retired.ts` (decision 061); a retired key is a row of the map, is not built, is not also pending and is not called by the console; every built contract has the method, path, surface, Turnstile flag, access and permission of its manifest row (`lib/manifest-parity.ts`; three access deviations are listed there with their B-entries); Fastify serves exactly the registry plus `DOCUMENTATION_ROUTES`; every route the console calls is built or pending, and none is retired. | `X is built but not expected`: the key is not in the manifest (typo), the route is still listed in `pending.ts`, or it is retired in `retired.ts` and something still builds it (delete the contract or take the key off the list). `X: retired, but the manifest has no row with this key`: a typo in `retired.ts`, or the row is an addition (delete that row of `scripts/map-additions` instead). A console route that is retired: the console must drop the call first. `X is expected but not built`: you removed a key from `pending.ts` without defining the contract. `X: permission a:b, the row says c:d (expected ...)` or `X: access ..., the row says ...`: the contract and the row disagree; fix the contract (or the row of the addition). |
 | `shape-parity.test.ts` | For every built route the console calls: the response, request and success status match what the console reads and sends; the harvested fixture satisfies the response schema. Deviations only through `allowlist.ts`. | Read the line: `GET /admin/orders [response] data[].status: backend value "x" unknown to the frontend (enum)`. Fix the contract, or record a decision in `docs/contract/MISMATCHES.md` and add an allowlist entry. |
 | `error-parity.test.ts` | The error catalog equals `docs/contract/error-codes.md` (code, status); every code the console references exists with the status it expects; backend-only codes are printed. | A code was added to one side only. Add it to `src/common/errors/catalog.ts` and, when no console screen references it, to `BACKEND_CODES` in `scripts/build-contract-docs.mjs`; `bun run contract:docs` regenerates `error-codes.md`. |
 | `openapi-examples.test.ts` | Every example in `docs/contract/openapi.json` and `openapi.public.json` validates against the schema next to it (ajv, draft 2020-12, formats). | Fix the `examples` of the contract, then `bun run docs:openapi`. |
@@ -50,12 +50,29 @@ builds its `FormData` from it) and nothing else; a function that takes a bare `F
    `scripts/map-additions/<feature>.mjs` (`CONTRIBUTING.md`, "Add a route that is not in the map"), with `successStatus`
    as soon as the console calls it; then `bun run routes:build`.
 2. Delete the route's key from `pending.ts` (every endpoint of the map is listed there under its module). Dhru actions,
-   supplier calls and events are keys too (`DHRU …`, `SUPPLIER …`, `EVENT …`); their registries (`defineDhruAction`,
-   `defineSupplierCall`, `defineEvent`) fill `built` in `route-parity.test.ts` through the snapshot, so a new one needs no
+   and supplier calls are keys too (`DHRU …`, `SUPPLIER …`); their registries (`defineDhruAction`,
+   `defineSupplierCall`) fill `built` in `route-parity.test.ts` through the snapshot, so a new one needs no
    change there.
 3. Run `bun test test/contract`. If the console calls the route, `shape-parity` now compares it with the console's types and
    with the fixture of the route; fix what it reports.
 4. The review fails if a built route is still in `pending.ts`.
+
+## Retiring a route of the map (decision 061)
+
+The map is read-only, so a row the product gives up stays in the manifest. Do not park it in `pending.ts` (that list means "still owed"):
+
+1. Add its key to `retired.ts` with the three digits of the decision file in `docs/decisions` and a one-sentence reason; that decision
+   file must name the key in backticks (`GET /client/kyc`), or the tooling test fails. A row of
+   `scripts/map-additions` is not listed: delete the row and run `bun run routes:build`.
+2. Delete the route's contract, controller and tests. The console must already have dropped every call (`route-parity` fails on a
+   retired key that `frontend-endpoints.json` still lists).
+3. Delete the fixture of each retired route the console used (`fixtures/frontend/<METHOD>_<path>.json`; `fixtures.test.ts` fails on a
+   file whose console route is gone), then run `bun run routes:build`, `contract:extract`, `contract:docs`, `docs:openapi` and
+   `coverage:build`: `COVERAGE.md` counts retired rows apart from "built of" and lists them with their decision and reason.
+
+`test/tooling/retired-routes.test.ts` proves the rules (a retired key must be a map row, must not be built and is left out of the
+"built of" total; its decision file must exist and name it) with hand-written rows, and the real list against the committed manifest
+and the decision files.
 
 ## The allowlist (`allowlist.ts`)
 

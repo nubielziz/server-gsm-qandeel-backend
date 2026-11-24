@@ -23,7 +23,6 @@ scripts/*
 !scripts/setup.ts
 !scripts/first-run.ts
 !scripts/search-keys.ts
-!scripts/telegram-webhook.ts
 !scripts/english-only-export.ts
 !scripts/lib
 scripts/lib/*

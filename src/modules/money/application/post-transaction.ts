@@ -36,8 +36,8 @@ export interface PostTransactionInput {
   readonly createdBy: { readonly type: LedgerActorType; readonly id: number | null };
   /**
    * Lets a debit take a `client_wallet` below `-overdraft_limit` instead of refusing with `INSUFFICIENT_FUNDS`. Used only by the
-   * reversal of a paid commission (user rule 5: the agent already received the money and may have spent it; the dashboard's
-   * `wallets_negative` item shows the result). Every other posting leaves it out.
+   * merchant top-up chargeback clawback (the merchant spent the disputed top-up; the dashboard's `wallets_negative` item shows the
+   * result). Every other posting leaves it out.
    */
   readonly allowBelowCreditLimit?: boolean;
   /**

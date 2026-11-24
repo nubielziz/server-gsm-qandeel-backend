@@ -1,4 +1,4 @@
-// HTTP controller of the storefront support routes (map domain J, stage 17): open a ticket, read it, write on it, rate it. Thin: the rules
+// HTTP controller of the storefront support routes (map domain J, stage 17): open a ticket, read it, write on it. Thin: the rules
 // live in StoreTicketService. The token routes read the ticket id the capability guard resolved.
 import { Body, Controller, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
@@ -6,12 +6,7 @@ import { type BodyOf, type ResultOf, Route } from '../../../common/contract';
 import { AppError } from '../../../common/errors';
 import { CurrentPrincipal, type CapabilityGrant, type Principal } from '../../identity';
 import { StoreTicketService } from '../application/store-ticket.service';
-import {
-  openStoreTicket,
-  rateStoreTicket,
-  showStoreTicket,
-  writeOnStoreTicket,
-} from '../contracts/store-tickets.contracts';
+import { openStoreTicket, showStoreTicket, writeOnStoreTicket } from '../contracts/store-tickets.contracts';
 
 /** The ticket id the capability guard found; a handler behind a `ticket-token` route always has one. */
 function ticketIdOf(principal: Principal | undefined): CapabilityGrant['id'] {
@@ -26,12 +21,11 @@ const NO_STORE = 'no-store';
  * The storefront support routes.
  *
  * Why: a visitor with no account opens a ticket from the order or contact page and follows it by the link in the receipt email
- * (scenario b2c-ticket steps 1, 6 and 8). The anti-bot check, the per-IP limit and the token lookup limit run before these.
+ * (scenario b2c-ticket steps 1 and 6). The anti-bot check, the per-IP limit and the token lookup limit run before these.
  *
  * @route POST /store/v1/tickets
  * @route GET /store/v1/tickets/:token
  * @route POST /store/v1/tickets/:token/messages
- * @route POST /store/v1/tickets/:token/csat
  */
 @Controller()
 export class StoreTicketsController {
@@ -90,24 +84,5 @@ export class StoreTicketsController {
   ): Promise<ResultOf<typeof writeOnStoreTicket>> {
     reply.header('cache-control', NO_STORE);
     return this.tickets.write(ticketIdOf(principal), body);
-  }
-
-  /**
-   * Rates a resolved ticket.
-   *
-   * @param principal the holder of the ticket token
-   * @param body the rating
-   * @param reply the reply, for the cache header
-   * @returns the ticket after the rating
-   * @route POST /store/v1/tickets/:token/csat
-   */
-  @Route(rateStoreTicket)
-  rate(
-    @CurrentPrincipal() principal: Principal | undefined,
-    @Body() body: BodyOf<typeof rateStoreTicket>,
-    @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<ResultOf<typeof rateStoreTicket>> {
-    reply.header('cache-control', NO_STORE);
-    return this.tickets.rate(ticketIdOf(principal), body.score);
   }
 }

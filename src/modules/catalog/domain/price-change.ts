@@ -1,5 +1,5 @@
 // Price protection of user rule 9 (MISMATCHES B117), pure: judges the price an order would be charged against the price the
-// merchant was last listed. Feature 5 calls it at placement; Dhru and REST v1 (7a) turn a refusal into their own error.
+// merchant was last listed. Feature 5 calls it at placement; Dhru (7a) turns a refusal into its own error.
 import { Decimal } from 'decimal.js';
 import { Money } from '../../../common/money';
 

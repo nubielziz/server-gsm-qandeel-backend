@@ -1,6 +1,6 @@
 // ListedPrices: the price-protection memory of user rule 9 (MISMATCHES B117 (4)): the last price listed to a merchant for a
-// service. The portal catalog and price export (this feature) and the Dhru and REST v1 lists (7a) record what they show; the
-// order paths (feature 5, Dhru, REST v1) read it for the PRICE_CHANGED guard.
+// service. The portal catalog and price export (this feature) and the Dhru list (7a) record what they show; the
+// order paths (feature 5, Dhru) read it for the PRICE_CHANGED guard.
 import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Money } from '../../../common/money';
@@ -30,7 +30,7 @@ const CHUNK = 500;
  *
  * Why: a merchant who saw a price on a list and orders later must not be charged much more without a refresh. The memory keeps
  * the last listed price per merchant and service; it is written only when the price changes, so its time says since when the
- * merchant has seen this price. `record` is for every list a merchant reads (portal, Dhru, REST v1); `find` and `findMany` are
+ * merchant has seen this price. `record` is for every list a merchant reads (portal, Dhru); `find` and `findMany` are
  * for the order paths, which compare the charge with it through `checkPriceChange`.
  *
  * Side effects: `record` writes `listed_prices` (no audit: it is the merchant's own read, not a staff change).

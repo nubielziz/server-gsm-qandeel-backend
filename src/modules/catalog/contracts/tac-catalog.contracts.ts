@@ -99,8 +99,7 @@ export const updateTacEntry = defineRoute({
   key: 'PATCH /admin/tac-catalog/:id',
   summary: 'Correct a TAC entry',
   description:
-    'Changes the fields sent. The `tac` itself is editable only while no IMEI check uses the old one (`422` on `tac` otherwise: ' +
-    'add a new entry for the new TAC instead); a TAC another entry has is `409 TAC_TAKEN`. `brand` and `model` cannot be emptied, ' +
+    'Changes the fields sent, the `tac` itself included; a TAC another entry has is `409 TAC_TAKEN`. `brand` and `model` cannot be emptied, ' +
     'and a year cannot be cleared. Audited with the old and new values.',
   tags: ['tac-catalog'],
   surface: 'admin',

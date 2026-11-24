@@ -1,11 +1,11 @@
 // Helpers for the risk and privacy tests (feature 18): a held storefront order with its checkout session, payment, ledger posting and
-// assessment, direct inserts of blocklist entries, IMEI checks and data requests, and the audit rows of an order.
+// assessment, direct inserts of blocklist entries and data requests, and the audit rows of an order.
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { Money } from '@src/common/money';
-import { EncryptionService, TokenService } from '@src/infra/crypto';
+import { TokenService } from '@src/infra/crypto';
 import { type Database, schema as s } from '@src/infra/db';
 import { b2cPay, postTransaction } from '@src/modules/money';
-import { IMEI_CHECK_AAD, blockHashInput, imeiHashInput } from '@src/modules/risk';
+import { blockHashInput } from '@src/modules/risk';
 import type { TestApp } from './app';
 import { insertOrderRow, type OrdersWorld } from './orders';
 
@@ -186,30 +186,6 @@ export async function insertBlock(
       valueHash: t.app.get(TokenService).lookupHash(blockHashInput(kind, value)),
       display: value,
       reason: 'Test',
-      ...values,
-    })
-    .returning();
-  return row!;
-}
-
-/** Inserts an IMEI check with the IMEI encrypted and hashed like the module does. */
-export async function insertImeiCheck(
-  t: TestApp,
-  db: Database,
-  imei: string,
-  values: Partial<typeof s.imeiChecks.$inferInsert> = {},
-) {
-  const [row] = await db
-    .insert(s.imeiChecks)
-    .values({
-      imeiHash: t.app.get(TokenService).lookupHash(imeiHashInput(imei)),
-      imeiEnc: t.app.get(EncryptionService).encrypt(imei, IMEI_CHECK_AAD),
-      tac: null,
-      brand: 'Apple',
-      model: 'iPhone 13',
-      checkType: 'basic',
-      status: 'unknown',
-      source: 'storefront_free',
       ...values,
     })
     .returning();

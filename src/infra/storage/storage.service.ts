@@ -134,7 +134,7 @@ async function collect(body: StorageBody, maxBytes: number): Promise<Buffer> {
 /**
  * Stores and serves files in the S3-compatible bucket.
  *
- * Why: decision 004: uploads (File services, KYC documents, receipts) and result files live in object storage, not in
+ * Why: decision 004: uploads (File services, receipts) and result files live in object storage, not in
  * Postgres; downloads go through short-lived signed links so the API never proxies large files. The app speaks plain S3
  * through `@aws-sdk/client-s3` (path-style for MinIO), so production can use any S3-compatible store.
  *

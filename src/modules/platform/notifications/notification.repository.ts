@@ -27,7 +27,7 @@ export type NotificationSortField = 'createdAt' | 'id';
  */
 export interface NotificationPayload {
   readonly variables?: Readonly<Record<string, string>>;
-  /** A Telegram chat that overrides the recipient's linked chat (the bot's answer to `/stop` goes to a chat that is no longer linked). */
+  /** The Telegram chat of an operations message (an alert's Telegram message, feature 12b). */
   readonly chatId?: string;
   /** The addresses of an email that goes to the ops mailbox named by configuration, joined by commas (an alert's message, feature 12b). */
   readonly to?: string;
@@ -49,7 +49,7 @@ export interface OnceResult {
 /**
  * Inserts a notification unless its dedupe key exists.
  *
- * Why: a job that runs twice (a retry, a crash after the insert) and an update that Telegram repeats must not make a second
+ * Why: a job that runs twice (a retry, a crash after the insert) must not make a second
  * message. The partial unique index on `dedupe_key` is the final word; a row without a key is always inserted.
  *
  * @param db the database or the caller's transaction
@@ -232,11 +232,10 @@ function logWhere(query: ParsedListQuery<NotificationSortField>, contact: Custom
   return base ? sql`${base} and ${matchesSearch}` : matchesSearch;
 }
 
-/** A log row with what the masks need: the recipient's current address and linked chat. */
+/** A log row with what the masks need: the recipient's current address. */
 export interface LogRow {
   readonly notification: Notification;
   readonly email: string | null;
-  readonly telegramChatId: string | null;
 }
 
 function logSelect(db: DbExecutor) {
@@ -244,7 +243,6 @@ function logSelect(db: DbExecutor) {
     .select({
       notification: notifications,
       email: sql<string | null>`${RECIPIENT_ADDRESS}`,
-      telegramChatId: s.clients.telegramChatId,
     })
     .from(notifications)
     .leftJoin(

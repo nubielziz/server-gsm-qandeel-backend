@@ -83,6 +83,7 @@ export const LEDGER_REF_TYPES = [
   'invoice',
   'refund',
   'dispute',
+  // Only the journals of the retired commissions carry `accrual` (decision 062); nothing posts it any more, every reader keeps it valid.
   'accrual',
   'supplier',
   'client',
@@ -107,6 +108,9 @@ export type LedgerActorType = (typeof LEDGER_ACTOR_TYPES)[number];
  * Invoice kinds: wallet top-up, manual, B2C tax receipt and statement.
  *
  * Why: the console's invoice wire enum (GET /admin/invoices).
+ *
+ * `statement` is retired (decision 062): nothing ever created one and no filter offers it (`INVOICE_FILTER_KINDS` of the invoice rules); the
+ * value stays here because the check constraint and the readers must accept an old row.
  */
 export const INVOICE_KINDS = ['topup', 'manual', 'receipt', 'statement'] as const;
 
@@ -683,6 +687,8 @@ export type NewPayment = typeof payments.$inferInsert;
  * Withdrawal requests, for a later phase.
  *
  * Why: Merchant withdrawal requests; no route uses the table yet (the map keeps it for a later phase).
+ *
+ * Retired (decision 062): unread and unwritten, no code names it; the accounts migration drops it.
  */
 export const withdrawalRequests = pgTable(
   'withdrawal_requests',
@@ -707,12 +713,6 @@ export const withdrawalRequests = pgTable(
   ],
 );
 
-/** A row read from `withdrawal_requests`. */
-export type WithdrawalRequest = typeof withdrawalRequests.$inferSelect;
-
-/** A row to insert into `withdrawal_requests`. */
-export type NewWithdrawalRequest = typeof withdrawalRequests.$inferInsert;
-
 /**
  * Refunds: full or partial, to the card, the wallet or store credit.
  *
@@ -725,6 +725,7 @@ export const refunds = pgTable(
     paymentId: fk((): AnyPgColumn => payments.id),
     orderId: fk((): AnyPgColumn => orders.id),
     customerId: fk((): AnyPgColumn => customers.id),
+    /** Retired (decision 062): nothing ever wrote it and nothing reads it; the accounts migration drops it. */
     clientId: fk((): AnyPgColumn => clients.id),
     amount: money().notNull(),
     currency: text()

@@ -7,7 +7,7 @@ import { PublicImages } from './files/public-images';
 /**
  * Provides {@link FileUploadService} and {@link PublicImages} to every module.
  *
- * Why: B157: `POST /v1/files`, `POST /client/files` and the Dhru file order store a merchant's file the same way. It needs the database
+ * Why: B157: `POST /client/files` and the Dhru file order store a merchant's file the same way. It needs the database
  * and object storage, which a database-less test app does not have, so it is imported by `PlatformAdminModule`, which such an app leaves
  * out.
  */

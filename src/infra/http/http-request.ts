@@ -15,7 +15,7 @@ const DNS_TIMEOUT_MS = 3_000;
 /**
  * Options of {@link httpRequest}.
  *
- * Why: decision 023: every outbound call (suppliers, gateways, merchant webhooks) states its timeout, never retries by
+ * Why: decision 023: every outbound call (suppliers, gateways, the FX provider) states its timeout, never retries by
  * itself (the caller owns the retry policy) and never follows a redirect.
  */
 export interface HttpRequestOptions {

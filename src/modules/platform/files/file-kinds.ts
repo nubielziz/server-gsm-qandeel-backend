@@ -8,7 +8,7 @@
  * pages that show it.
  */
 export const FILE_KINDS = [
-  'identity_document', // a KYC submission lists it
+  'identity_document', // a document stored with a verification request of the retired document check (decision 061); the rows stay
   'payment_proof', // a payment's receipt (merchant or customer top-up)
   'dispute_evidence',
   'order_file', // an order's input or result
@@ -23,10 +23,12 @@ export type FileKind = (typeof FILE_KINDS)[number];
 /**
  * The read permission a staff download of a file of each kind needs besides `files:read`.
  *
- * Why: decision 047: the permission of the page that lists the record (`kyc:read` lists KYC submissions, `payments:read` the payments, …).
+ * Why: decision 047: the permission of the page that lists the record (`payments:read` the payments, `orders:read` the orders, …). An
+ * identity document is a stored document of a merchant: the page that listed its verification request is gone with the document check
+ * (decision 061), so the merchant's own read permission `clients:read` opens it.
  */
 export const FILE_KIND_PERMISSIONS: Readonly<Record<FileKind, string>> = {
-  identity_document: 'kyc:read',
+  identity_document: 'clients:read',
   payment_proof: 'payments:read',
   dispute_evidence: 'disputes:read',
   order_file: 'orders:read',
@@ -66,11 +68,15 @@ export function permissionsForFile(kinds: readonly FileKind[]): string[] {
 /**
  * What uses a file: the answer of `fileReferencesOf`.
  *
- * Why: decision 047: the newest KYC submission and the newest payment name the audit rows, the other kinds are yes or no.
+ * Why: decision 047: the newest verification request and the newest payment name the audit rows, the other kinds are yes or no.
  */
 export interface FileReferences {
-  /** The newest KYC submission that lists the file, with its merchant (`clientName` is empty when the merchant row is gone). */
-  readonly kyc?: { readonly submissionId: number; readonly clientId: number; readonly clientName: string };
+  /**
+   * The newest verification request of the retired document check that lists the file (a row of the table that stays in the database
+   * until the owner decides how long to keep those documents, decision 061), with its merchant (`clientName` is empty when the merchant
+   * row is gone).
+   */
+  readonly identityDocument?: { readonly submissionId: number; readonly clientId: number; readonly clientName: string };
   /** The newest payment whose receipt is the file. */
   readonly paymentId?: number;
   readonly disputeEvidence: boolean;
@@ -88,7 +94,7 @@ export interface FileReferences {
  */
 export function fileKindsOf(refs: FileReferences): FileKind[] {
   const present: Record<FileKind, boolean> = {
-    identity_document: refs.kyc !== undefined,
+    identity_document: refs.identityDocument !== undefined,
     payment_proof: refs.paymentId !== undefined,
     dispute_evidence: refs.disputeEvidence,
     order_file: refs.orderFile,

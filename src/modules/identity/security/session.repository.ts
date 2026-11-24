@@ -173,9 +173,8 @@ export type IdleLimits = Readonly<Record<SubjectType, number>>;
  * The one "live session" predicate (RESOLUTIONS identity-platform-6): not revoked, not past its absolute end, and, for a full
  * session, used within the idle limit of its subject type. A pending sign-in step has no idle limit, only its short lifetime.
  *
- * Why: `GET /admin/sessions`, `StaffMember.activeSessions` (which enables "Sign out all devices"), the
- * `DELETE /admin/sessions/:id` 404 and the merchant `GET /client/sessions` must agree on what "active" means, so the rule is
- * written once. `now` is the injected clock's time (decision 031), never the database's `now()`. `revokeAllOf` is not
+ * Why: `GET /admin/sessions`, `StaffMember.activeSessions` and a merchant's `security.activeSessions` (which enable "Sign out all
+ * devices") and the `DELETE /admin/sessions/:id` 404 must agree on what "active" means, so the rule is written once. `now` is the injected clock's time (decision 031), never the database's `now()`. `revokeAllOf` is not
  * limited by it: it still revokes every non-revoked row, idle-dead ones included.
  *
  * @param now the current time

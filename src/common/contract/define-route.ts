@@ -31,7 +31,6 @@ export const ACCESS_KINDS = [
   'staff-permission',
   'merchant-session',
   'customer-session',
-  'api-key',
   'dhru-credentials',
   'gateway-signature',
   'url-secret',
@@ -111,7 +110,7 @@ export const DEFAULT_PENDING_MERCHANT_POLICY: PendingMerchantPolicy = 'deny';
 /**
  * The switches that turn the anti-bot check on for routes whose callers are still learning to send the token.
  *
- * Why: feature 24A declares Turnstile on the public merchant sign-up, sign-in and forgot-password routes (decision 034 amendment) but
+ * Why: feature 24A declares Turnstile on the public merchant sign-in and forgot-password routes (decision 034 amendment) but
  * enforces it only when `TURNSTILE_MERCHANT_AUTH` is on (on by default in production, decision 052), so callers that do not send the
  * token yet keep working elsewhere. A closed list: one value today.
  */
@@ -177,9 +176,7 @@ export interface RouteSpec<
   readonly surface: Surface;
   readonly access: AccessKind;
   /**
-   * `resource:action` the caller needs; required for `staff-permission` (the staff role must grant it) and for `api-key`
-   * (the API key's scopes must cover it by the permission grammar: the permission itself, its `area:*` or `*`; a required
-   * `area:*` is refused for an `api-key` route), forbidden otherwise.
+   * `resource:action` the caller needs; required for `staff-permission` (the staff role must grant it), forbidden otherwise.
    */
   readonly permission?: string | null;
   /** Path parameters; an object schema with exactly the `:names` of the path. */
@@ -208,7 +205,7 @@ export interface RouteSpec<
   /**
    * `allow` lets a merchant that is still `pending` approval call this `merchant-session` route (default `deny`: the guard
    * answers `403 ACCOUNT_PENDING_APPROVAL`, which never signs the caller out; B153). Only for `merchant-session` routes:
-   * API-key and Dhru calls of a pending merchant are always refused.
+   * Dhru calls of a pending merchant are always refused.
    */
   readonly pendingMerchant?: PendingMerchantPolicy;
   /**
@@ -225,7 +222,7 @@ export interface RouteSpec<
   /**
    * `true` makes the route need a passing anti-bot token in the `X-Turnstile-Token` header (decision 034): a missing or bad
    * one is `403 TURNSTILE_FAILED`. Only for `/store/v1` routes (the public storefront writes the map flags with Turnstile) and
-   * public `/client` routes (the merchant sign-up and sign-in forms, feature 24A). It adds `TURNSTILE_FAILED` to the route's
+   * public `/client` routes (the merchant sign-in and forgot-password forms, feature 24A). It adds `TURNSTILE_FAILED` to the route's
    * errors and the header to its OpenAPI parameters.
    */
   readonly turnstile?: boolean;
@@ -272,7 +269,7 @@ export interface RouteContract<
   readonly tags: readonly string[];
   readonly surface: Surface;
   readonly access: AccessKind;
-  /** The permission a `staff-permission` route needs, or the scope an `api-key` route needs; `null` for every other kind. */
+  /** The permission a `staff-permission` route needs; `null` for every other kind. */
   readonly permission: string | null;
   readonly params: P;
   readonly query: Q;
@@ -502,17 +499,13 @@ export function defineRoute<
   if (surfaceOfPath(path) !== spec.surface)
     problem(`surface "${spec.surface}" does not match the path (expected "${surfaceOfPath(path)}")`);
 
-  // Access and permission. A staff-permission route names the permission the role needs; an api-key route names the scope
-  // the key needs (the manifest writes both in its `permission` column).
+  // Access and permission. A staff-permission route names the permission the role needs (the manifest writes it in its `permission` column).
   const permission = spec.permission ?? null;
   if (spec.access === 'staff-permission') {
     if (!permission || !PERMISSION_PATTERN.test(permission))
       problem('staff-permission routes need a permission like "staff:read"');
-  } else if (spec.access === 'api-key') {
-    if (!permission || !PERMISSION_PATTERN.test(permission) || permission.endsWith(':*'))
-      problem('api-key routes need the scope the key must list, like "orders:write" (one action, no "area:*")');
   } else if (permission !== null) {
-    problem(`only staff-permission and api-key routes carry a permission (access is "${spec.access}")`);
+    problem(`only staff-permission routes carry a permission (access is "${spec.access}")`);
   }
 
   // Session stages, audit duty and CSRF declaration (decision 018).
@@ -572,7 +565,7 @@ export function defineRoute<
   if (spec.turnstile === true && !(spec.surface === 'store' || (spec.surface === 'client' && spec.access === 'public')))
     problem(
       'turnstile: true only applies to /store/v1 routes and public /client routes (the anti-bot check guards the public storefront ' +
-        'writes and the merchant sign-up and sign-in forms)',
+        'writes and the merchant sign-in forms)',
     );
   if (spec.turnstileRollout !== undefined) {
     if (!TURNSTILE_ROLLOUTS.includes(spec.turnstileRollout))

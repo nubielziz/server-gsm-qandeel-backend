@@ -1,4 +1,4 @@
-// Risk tables (map domain K): IMEI checks, risk assessments, the blocklist and data-subject requests.
+// Risk tables (map domain K): risk assessments, the blocklist and data-subject requests (and the retired IMEI check log).
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, pgTable, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -112,10 +112,11 @@ export const DATA_REQUEST_STATUSES = ['open', 'in_progress', 'completed', 'rejec
 export type DataRequestStatus = (typeof DATA_REQUEST_STATUSES)[number];
 
 /**
- * IMEI checks: blacklist, lock and iCloud, free or before an order, with a cache.
+ * Retired with the free IMEI check (decision 062): unread and unwritten, kept until the accounts migration drops it.
  *
- * Why: IMEI checks (blacklist, lock, iCloud), free or before an order, cached by IMEI hash (routes
- * /admin/imei-checks).
+ * Why: the log of the free IMEI check (blacklist, lock and iCloud, free or before an order). The routes that wrote and read it, its
+ * retention job and the risk signals that read it are gone; no code names this table now. Its rows hold an IMEI only as ciphertext and
+ * a keyed hash.
  */
 export const imeiChecks = pgTable(
   'imei_checks',

@@ -16,8 +16,8 @@ Frontend features covering this module: `customers`, `risk` (rules in `RULES.md`
 | `GET /admin/risk/queue` | admin | staff-permission `risk:read` | 18 | `getRiskQueue` |
 | `POST /admin/risk/orders/:id/approve` | admin | staff-permission `risk:decide` | 18 | `approveHeldOrder` |
 | `POST /admin/risk/orders/:id/refund` | admin | staff-permission `risk:decide` | 18 | `refundHeldOrder` |
-| `GET /admin/imei-checks` | admin | staff-permission `risk:read` | 18 | `listImeiChecks` |
-| `GET /admin/imei-checks/:id` | admin | staff-permission `risk:read` | 18 | `getImeiCheck` |
+| `GET /admin/imei-checks` | admin | staff-permission `risk:read` | 18 |  |
+| `GET /admin/imei-checks/:id` | admin | staff-permission `risk:read` | 18 |  |
 | `GET /admin/blocklist` | admin | staff-permission `risk:*` | 18 | `listBlocklist` |
 | `GET /admin/blocklist/:id` | admin | staff-permission `risk:*` | 18 | `getBlocklistEntry` |
 | `POST /admin/blocklist` | admin | staff-permission `risk:*` | 18 | `createBlocklistEntry` |
@@ -28,6 +28,7 @@ Frontend features covering this module: `customers`, `risk` (rules in `RULES.md`
 ## POST /store/v1/imei/check
 
 - **Map**: IMEI check before payment: checksum and TAC (stage 14), then blacklist and lock status through the supplier (stage 18). (فحص IMEI قبل الدفع: checksum و TAC (Stage 14)، ثم الحظر والقفل عبر المورد (Stage 18)) · public · stage 14 · tables tac_catalog, imei_checks, blocklist_entries
+- **Retired** (decision 062): The free IMEI check was retired: nobody used it and no lookup service stands behind it. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## POST /store/v1/me/data-export
@@ -108,7 +109,8 @@ _sort is one of requestedAt|dueAt|status; the tab defaults to dueAt asc (lib/fil
 ## GET /admin/imei-checks
 
 - **Map**: Log of IMEI checks and their results (erased or hashed after the retention period). (سجل فحوص IMEI ونتائجها (يُمسح أو يُهشَّر بعد فترة الاحتفاظ)) · staff-permission `risk:read` · stage 18 · tables imei_checks
-- **Frontend**: `listImeiChecks` (src/features/risk/api/imeiChecks.ts:13) · params `query?: ListQuery` · returns `ListResult<ImeiCheck>` · success 200 · assumed contract
+- **Retired** (decision 062): The free IMEI check was retired: nobody used it and no lookup service stands behind it. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: Pages of 15 (_start/_end); _sort in model|checkType|status|createdAt (default createdAt desc), _order; filters checkType=blacklist|basic|icloud|sim_lock, status=clean|blacklisted|locked|unknown, source=pre_order|storefront_free; q = IMEI digits (spaces stripped by the console), brand or model (risk/lib/view.ts:24-32, 71-84). Four count calls every 30 s with _start=0&_end=1: no filter, source=storefront_free, source=pre_order, status=blacklisted (hooks/useImeiChecks.ts:50-66).
 - **Response**: JSON array + x-total-count. imei = decrypt(imei_enc) (the 15 digits) while imei_enc is set; after erasure the mask: the tac followed by '•' repeated (15 - length(tac)) times, or 15 bullets when tac is null. Erasure is imei_enc NULL and imei_hash NULL together (and cached_until NULL; CHECK imei_checks_imei_erased_check ((imei_enc IS NULL) = (imei_hash IS NULL)), no extra marker column); both the retention job (imeiRetentionDays) and POST /admin/customers/:id/anonymize (B50) do exactly that. brand, model; checkType; status; source; country (imei_checks.country, ISO-2 upper case, nullable, stored when the check runs from the first non-null of: the linked checkout_sessions.tax_country (checkout_session_id set), the known customer's customers.country, the country header of a trusted proxy when configured (optional config GEOIP_COUNTRY_HEADER, e.g. cf-ipcountry; unset = skipped), else null; the storefront IMEI-check route writes it) and ip nullable; orderId = the order the check led to (via checkout_sessions.order_id) or null; customer {id, name} or null; supplier {id, name} or null; result = result jsonb or null; cost and price 4-dp money; cachedUntil; createdAt. No updatedAt.
 - **Errors**: 403 FORBIDDEN (caller lacks risk:read)
@@ -118,7 +120,8 @@ _sort is one of requestedAt|dueAt|status; the tab defaults to dueAt asc (lib/fil
 ## GET /admin/imei-checks/:id
 
 - **Map**: Log of IMEI checks and their results (erased or hashed after the retention period). (سجل فحوص IMEI ونتائجها (يُمسح أو يُهشَّر بعد فترة الاحتفاظ)) · staff-permission `risk:read` · stage 18 · tables imei_checks
-- **Frontend**: `getImeiCheck` (src/features/risk/api/imeiChecks.ts:22) · params `id: number` · returns `ImeiCheck` · success 200 · assumed contract
+- **Retired** (decision 062): The free IMEI check was retired: nobody used it and no lookup service stands behind it. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: :id numeric check id (opened from ?check=<id>).
 - **Response**: Same row as the list.
 - **Errors**: 404 NOT_FOUND (no check with that id); 403 FORBIDDEN (caller lacks risk:read)

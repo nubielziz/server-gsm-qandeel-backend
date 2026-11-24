@@ -34,7 +34,6 @@ const WIDEN_KEY_DETAIL = 'Only an owner can widen the allowed addresses of an AP
 /** What staff send to create a key for a merchant. */
 export interface CreateClientApiKeyInput {
   readonly name: string;
-  readonly scopes: readonly string[];
   readonly allowedIps?: readonly string[] | undefined;
   readonly expiresAt?: string | undefined;
   readonly rateLimitPerMin?: number | undefined;
@@ -92,10 +91,10 @@ export class ApiKeyAdminService {
    *
    * @param caller the signed-in staff member
    * @param clientId the merchant id
-   * @param input the name, scopes, allowed addresses, expiry and per-minute limit
+   * @param input the name, allowed addresses, expiry and per-minute limit
    * @returns the stored key (`createdByStaff: true`) and the full key text
    * @throws {AppError} `FORBIDDEN` (403: only an Owner creates a key for a merchant, decision 046), `NOT_FOUND` (404), `NOT_ACTIVE`
-   *   (409: the merchant is pending or suspended, so the key could not be used), `VALIDATION_FAILED` (422) on `scopes.N`,
+   *   (409: the merchant is pending or suspended, so the key could not be used), `VALIDATION_FAILED` (422) on
    *   `allowedIps.N`, `expiresAt`, `rateLimitPerMin` or `name` (10 live keys already)
    */
   async create(caller: StaffPrincipal, clientId: number, input: CreateClientApiKeyInput): Promise<CreatedClientApiKey> {
@@ -116,7 +115,6 @@ export class ApiKeyAdminService {
       const { row, secret } = await this.issuer.issue(work.tx, {
         clientId,
         name: input.name,
-        scopes: input.scopes,
         allowedIps: input.allowedIps ?? [],
         expiresAt: input.expiresAt,
         rateLimitPerMin: input.rateLimitPerMin ?? DEFAULT_RATE_LIMIT_PER_MIN,
@@ -134,7 +132,6 @@ export class ApiKeyAdminService {
           keyId: row.id,
           name: row.name,
           prefix: row.prefix,
-          scopes: row.scopes,
           allowedIps: row.allowedIps,
           rateLimitPerMin: row.rateLimitPerMin,
           expiresAt: row.expiresAt?.toISOString() ?? null,

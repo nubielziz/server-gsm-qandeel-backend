@@ -10,7 +10,7 @@
       "client": 2,
       "admin": 13
     },
-    "frontendCalled": 13
+    "frontendCalled": 0
   },
   "stages": [
     11
@@ -194,11 +194,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 21,
-        "fn": "listPlans"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-plans/:id",
@@ -227,11 +223,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 30,
-        "fn": "getPlan"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-plans",
@@ -260,11 +252,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 39,
-        "fn": "createPlan"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/commission-plans/:id",
@@ -293,11 +281,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 48,
-        "fn": "updatePlan"
-      }
+      "frontend": null
     },
     {
       "key": "DELETE /admin/commission-plans/:id",
@@ -326,11 +310,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 57,
-        "fn": "deletePlan"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-assignments",
@@ -359,11 +339,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 22,
-        "fn": "listAssignments"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-assignments/:id",
@@ -392,11 +368,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 34,
-        "fn": "getAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-assignments",
@@ -425,11 +397,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 44,
-        "fn": "createAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/commission-assignments/:id",
@@ -458,11 +426,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 53,
-        "fn": "updateAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "DELETE /admin/commission-assignments/:id",
@@ -491,11 +455,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 66,
-        "fn": "deleteAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-accruals",
@@ -524,11 +484,7 @@
       },
       "module": "commissions",
       "description": "Accrued commissions and their status.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 21,
-        "fn": "listAccruals"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-accruals/:id",
@@ -557,11 +513,7 @@
       },
       "module": "commissions",
       "description": "Accrued commissions and their status.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 30,
-        "fn": "getAccrual"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-accruals/approve",
@@ -591,11 +543,7 @@
       },
       "module": "commissions",
       "description": "Approve and pay out in bulk, with a ledger entry on the wallet.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 40,
-        "fn": "approveAccruals"
-      }
+      "frontend": null
     }
   ],
   "scenarios": []

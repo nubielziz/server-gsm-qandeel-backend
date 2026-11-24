@@ -21,7 +21,7 @@ import { CONTRACT_HEADERS_MARKER, ContractInputGuard, ContractValidationPipe } f
 /**
  * Reflect metadata key under which a handler stores its contract (read by guards and docs).
  *
- * Why: guards (permission, CSRF, API scopes) read `access` and `permission` from the route without a second registry.
+ * Why: guards (permission, CSRF) read `access` and `permission` from the route without a second registry.
  */
 export const CONTRACT_METADATA = Symbol.for('gsm.contract');
 
@@ -63,7 +63,7 @@ export function Route(contract: AnyRouteContract): MethodDecorator {
 /**
  * Reads the contract a handler was bound to with {@link Route}.
  *
- * Why: guards (permission, CSRF, API scopes) and the docs read `access`, `permission` and `surface` from the route.
+ * Why: guards (permission, CSRF) and the docs read `access`, `permission` and `surface` from the route.
  *
  * @param handler the controller method (`context.getHandler()`)
  * @returns the contract, or `undefined` for a handler without `@Route`

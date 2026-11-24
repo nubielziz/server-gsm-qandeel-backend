@@ -156,8 +156,8 @@ let handMade = 900_000;
 /**
  * Builds the job data of an event without writing an outbox row.
  *
- * Why: the planning job needs only the job data, so a test can plan an event whose route another feature registers (`invoice.paid`,
- * `deposit.approved`: feature 8 owns the producers, the lead adds their `notifications` routes when 8 is merged).
+ * Why: the planning job needs only the job data, so a test can plan an event whose route another feature registers (`invoice.paid`:
+ * feature 8 owns the producer, the lead adds its `notifications` route when 8 is merged).
  *
  * @param type the event type
  * @param aggregateType the aggregate's table name

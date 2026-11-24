@@ -1,17 +1,15 @@
 // Unit tests of the document builders (decision 017): the public/internal filter, tags, security schemes, components,
-// the outgoing events as webhooks and the stable key order, all on hand-made documents (no Nest, no HTTP).
+// and the stable key order, all on hand-made documents (no Nest, no HTTP).
 import { describe, expect, it } from 'bun:test';
-import { z } from 'zod';
-import { EventRegistry, SECURITY_SCHEME, defineEvent, zId } from '@src/common/contract';
+import { SECURITY_SCHEME } from '@src/common/contract';
 import {
   buildInternalDocument,
   buildPublicDocument,
-  buildWebhooks,
   serializeOpenApiDocument,
   stripSchemaKeyword,
 } from '@src/modules/platform/docs/openapi-documents';
 import type { OpenApiDocument, OpenApiOperation } from '@src/modules/platform/docs/openapi-types';
-import { SECURITY_SCHEMES, WEBHOOK_SIGNATURE_SCHEME } from '@src/modules/platform/docs/security-schemes';
+import { SECURITY_SCHEMES } from '@src/modules/platform/docs/security-schemes';
 
 let sequence = 0;
 const operation = (surface: string | undefined, over: Partial<OpenApiOperation> = {}): OpenApiOperation => ({
@@ -30,15 +28,22 @@ function rawDocument(): OpenApiDocument {
     openapi: '3.1.0',
     info: { title: 'raw', version: '0' },
     paths: {
-      '/v1/orders': {
-        post: operation('v1', {
+      '/client/orders': {
+        post: operation('client', {
           tags: ['orders'],
-          security: [{ apiKey: [] }],
+          security: [{ merchantSession: [] }],
           requestBody: json(ref('NewOrder')),
         }),
-        get: operation('v1', { tags: ['orders'], security: [{ apiKey: [] }] }),
+        get: operation('client', { tags: ['orders'], security: [{ merchantSession: [] }] }),
       },
-      '/api/index.php': { post: operation('dhru', { tags: ['dhru'], security: [{ dhruCredentials: [] }] }) },
+      '/api/index.php': {
+        post: operation('dhru', {
+          tags: ['dhru'],
+          security: [{ dhruCredentials: [] }],
+          requestBody: json(ref('NewOrder')),
+        }),
+        get: operation('dhru', { tags: ['dhru'], security: [{ dhruCredentials: [] }] }),
+      },
       '/admin/orders': {
         get: operation('admin', {
           tags: ['orders'],
@@ -47,7 +52,7 @@ function rawDocument(): OpenApiDocument {
         }),
       },
       '/client/wallet': { get: operation('client', { tags: ['wallet'], security: [{ merchantSession: [] }] }) },
-      '/webhooks/telegram/{secret}': { post: operation('hooks', { tags: ['telegram'], security: [{ urlSecret: [] }] }) },
+      '/webhooks/example/{secret}': { post: operation('hooks', { tags: ['example'], security: [{ urlSecret: [] }] }) },
       '/health': { get: operation('system', { tags: ['system'] }) },
       // A controller without @Route has no surface: the filter must treat it as internal.
       '/legacy': { get: operation(undefined, { tags: ['legacy'] }) },
@@ -64,22 +69,6 @@ function rawDocument(): OpenApiDocument {
   };
 }
 
-const events = new EventRegistry();
-const orderChanged = defineEvent(
-  {
-    key: 'EVENT order.status_changed',
-    summary: 'An order changed status',
-    description: 'Sent after every status change.',
-    payload: z.object({ orderId: zId, status: z.string() }),
-    example: { orderId: 7, status: 'completed' },
-  },
-  events,
-);
-const walletLow = defineEvent(
-  { key: 'EVENT wallet.low_balance', summary: 'The balance is low', payload: z.object({ balance: z.string() }) },
-  events,
-);
-
 const pathsOf = (doc: OpenApiDocument) => Object.keys(doc.paths);
 const operationsOf = (doc: OpenApiDocument) =>
   Object.entries(doc.paths).flatMap(([path, item]) =>
@@ -87,37 +76,44 @@ const operationsOf = (doc: OpenApiDocument) =>
   );
 
 describe('buildPublicDocument: the filter', () => {
-  it('keeps only the operations of the v1 and dhru surfaces', () => {
+  it('keeps only the operations of the dhru surface', () => {
     const doc = buildPublicDocument(rawDocument());
-    expect(pathsOf(doc)).toEqual(['/api/index.php', '/v1/orders']);
-    expect(Object.keys(doc.paths['/v1/orders'] ?? {})).toEqual(['get', 'post']);
+    expect(pathsOf(doc)).toEqual(['/api/index.php']);
+    expect(Object.keys(doc.paths['/api/index.php'] ?? {})).toEqual(['get', 'post']);
   });
 
   it('drops everything else: admin, client, hooks, system and an operation without a surface', () => {
     const doc = buildPublicDocument(rawDocument());
-    for (const hidden of ['/admin/orders', '/client/wallet', '/webhooks/telegram/{secret}', '/health', '/legacy']) {
+    for (const hidden of [
+      '/admin/orders',
+      '/client/orders',
+      '/client/wallet',
+      '/webhooks/example/{secret}',
+      '/health',
+      '/legacy',
+    ]) {
       expect(doc.paths[hidden], hidden).toBeUndefined();
     }
   });
 
   it('removes a path whose operations are all filtered out, and keeps one that has a public method left', () => {
     const raw = rawDocument();
-    raw.paths['/v1/orders'] = { ...raw.paths['/v1/orders'], delete: operation('admin') };
+    raw.paths['/api/index.php'] = { ...raw.paths['/api/index.php'], delete: operation('admin') };
     const doc = buildPublicDocument(raw);
-    expect(Object.keys(doc.paths['/v1/orders'] ?? {})).toEqual(['get', 'post']);
+    expect(Object.keys(doc.paths['/api/index.php'] ?? {})).toEqual(['get', 'post']);
     expect(doc.paths['/admin/orders']).toBeUndefined();
   });
 
   it('does not change the raw document, and shares no objects with it', () => {
     const raw = rawDocument();
     const before = JSON.stringify(raw);
-    const doc = buildPublicDocument(raw, [orderChanged]);
+    const doc = buildPublicDocument(raw);
     expect(JSON.stringify(raw)).toBe(before);
-    (doc.paths['/v1/orders']?.get as OpenApiOperation).summary = 'changed afterwards';
+    (doc.paths['/api/index.php']?.get as OpenApiOperation).summary = 'changed afterwards';
     expect(JSON.stringify(raw)).toBe(before);
   });
 
-  it('is a valid OpenAPI 3.1 document even before the first v1 route exists', () => {
+  it('is a valid OpenAPI 3.1 document even when no route is public', () => {
     const raw = rawDocument();
     raw.paths = { '/admin/orders': raw.paths['/admin/orders'] ?? {} };
     const doc = buildPublicDocument(raw);
@@ -126,7 +122,6 @@ describe('buildPublicDocument: the filter', () => {
     expect(Object.keys(doc.components ?? {})).toEqual(['securitySchemes']);
     expect(doc.tags).toBeUndefined();
     expect(doc['x-tagGroups']).toBeUndefined();
-    expect(doc.webhooks).toBeUndefined();
   });
 
   it('uses the public title and version, not the raw ones', () => {
@@ -156,42 +151,37 @@ describe('buildPublicDocument: components and security schemes', () => {
 
   it('keeps no components section that is empty', () => {
     const raw = rawDocument();
-    raw.paths = { '/v1/orders': { get: operation('v1', { tags: ['orders'], security: [{ apiKey: [] }] }) } };
+    raw.paths = { '/api/index.php': { get: operation('dhru', { tags: ['dhru'], security: [{ dhruCredentials: [] }] }) } };
     expect(Object.keys(buildPublicDocument(raw).components ?? {})).toEqual(['securitySchemes']);
   });
 
-  it('defines only the schemes public operations use, and always the API key', () => {
+  it('defines only the schemes public operations use', () => {
     const doc = buildPublicDocument(rawDocument());
-    expect(Object.keys(doc.components?.securitySchemes ?? {})).toEqual(['apiKey', 'dhruCredentials']);
+    expect(Object.keys(doc.components?.securitySchemes ?? {})).toEqual(['dhruCredentials']);
     const raw = rawDocument();
     raw.paths = {};
-    expect(Object.keys(buildPublicDocument(raw).components?.securitySchemes ?? {})).toEqual(['apiKey']);
-  });
-
-  it('adds the webhook signature scheme when there are events', () => {
-    const doc = buildPublicDocument(rawDocument(), [orderChanged]);
-    expect(Object.keys(doc.components?.securitySchemes ?? {})).toEqual(['apiKey', 'dhruCredentials', 'webhookSignature']);
+    expect(Object.keys(buildPublicDocument(raw).components?.securitySchemes ?? {})).toEqual([]);
   });
 
   it('refuses an operation that uses a security scheme nobody defined', () => {
     const raw = rawDocument();
-    raw.paths['/v1/orders'] = { get: operation('v1', { security: [{ madeUpScheme: [] }] }) };
+    raw.paths['/api/index.php'] = { post: operation('dhru', { security: [{ madeUpScheme: [] }] }) };
     expect(() => buildPublicDocument(raw)).toThrow(/undefined security scheme "madeUpScheme"/);
     expect(() => buildInternalDocument(raw)).toThrow(/undefined security scheme "madeUpScheme"/);
   });
 
-  it('defines a scheme for every access kind the contract layer can document, and for webhooks', () => {
+  it('defines a scheme for every access kind the contract layer can document, and none for the retired outgoing webhooks', () => {
     const names = Object.values(SECURITY_SCHEME).filter((name): name is string => name !== undefined);
     expect(names.length).toBeGreaterThan(5);
     for (const name of names) expect(SECURITY_SCHEMES[name], name).toBeDefined();
-    expect(SECURITY_SCHEMES[WEBHOOK_SIGNATURE_SCHEME]).toMatchObject({ type: 'apiKey', in: 'header', name: 'X-GSM-Signature' });
+    expect(SECURITY_SCHEMES.webhookSignature).toBeUndefined();
   });
 
   it('documents the three session cookies with the names of decision 018', () => {
     expect(SECURITY_SCHEMES.staffSession).toMatchObject({ type: 'apiKey', in: 'cookie', name: 'gsm_admin_session' });
     expect(SECURITY_SCHEMES.merchantSession).toMatchObject({ in: 'cookie', name: 'gsm_client_session' });
     expect(SECURITY_SCHEMES.customerSession).toMatchObject({ in: 'cookie', name: 'gsm_store_session' });
-    expect(SECURITY_SCHEMES.apiKey).toMatchObject({ type: 'http', scheme: 'bearer' });
+    expect(SECURITY_SCHEMES.apiKey).toBeUndefined();
   });
 });
 
@@ -201,11 +191,11 @@ describe('buildInternalDocument', () => {
     expect(pathsOf(doc)).toEqual([
       '/admin/orders',
       '/api/index.php',
+      '/client/orders',
       '/client/wallet',
       '/health',
       '/legacy',
-      '/v1/orders',
-      '/webhooks/telegram/{secret}',
+      '/webhooks/example/{secret}',
     ]);
   });
 
@@ -220,95 +210,43 @@ describe('buildInternalDocument', () => {
     for (const line of operationsOf(buildPublicDocument(rawDocument()))) expect(internal.has(line), line).toBe(true);
   });
 
-  it('never carries webhooks (they are part of the public contract only)', () => {
-    expect(buildInternalDocument(rawDocument()).webhooks).toBeUndefined();
+  it('carries no webhooks member: the outgoing events are retired', () => {
+    expect('webhooks' in buildInternalDocument(rawDocument())).toBe(false);
+    expect('webhooks' in buildPublicDocument(rawDocument())).toBe(false);
   });
 });
 
 describe('tags', () => {
   it('prefixes a tag that two surfaces share, so their operations never merge', () => {
     const doc = buildInternalDocument(rawDocument());
-    expect(doc.paths['/v1/orders']?.get).toMatchObject({ tags: ['v1: orders'] });
+    expect(doc.paths['/client/orders']?.get).toMatchObject({ tags: ['client: orders'] });
     expect(doc.paths['/admin/orders']?.get).toMatchObject({ tags: ['admin: orders'] });
     expect(doc.paths['/client/wallet']?.get).toMatchObject({ tags: ['wallet'] });
   });
 
-  it('leaves a tag alone when one surface uses it (the public document has only v1)', () => {
+  it('leaves a tag alone when one surface uses it (the public document has only dhru)', () => {
     const doc = buildPublicDocument(rawDocument());
-    expect(doc.paths['/v1/orders']?.get).toMatchObject({ tags: ['orders'] });
+    expect(doc.paths['/api/index.php']?.get).toMatchObject({ tags: ['dhru'] });
   });
 
   it('groups tags by surface, public surfaces first, then merchant, storefront, staff and plumbing', () => {
     const doc = buildInternalDocument(rawDocument());
     expect(doc['x-tagGroups']).toEqual([
-      { name: 'REST API v1', tags: ['v1: orders'] },
       { name: 'Dhru Fusion API', tags: ['dhru'] },
-      { name: 'Merchant portal', tags: ['wallet'] },
+      { name: 'Merchant portal', tags: ['client: orders', 'wallet'] },
       { name: 'Admin console', tags: ['admin: orders'] },
-      { name: 'Incoming webhooks', tags: ['telegram'] },
+      { name: 'Incoming webhooks', tags: ['example'] },
       { name: 'System', tags: ['legacy', 'system'] },
     ]);
     expect(doc.tags?.map((tag) => tag.name)).toEqual([
-      'v1: orders',
       'dhru',
+      'client: orders',
       'wallet',
       'admin: orders',
-      'telegram',
+      'example',
       'legacy',
       'system',
     ]);
-  });
-
-  it('puts webhook events in their own group', () => {
-    const doc = buildPublicDocument(rawDocument(), [orderChanged]);
-    expect(doc['x-tagGroups']?.map((group) => group.name)).toEqual(['REST API v1', 'Dhru Fusion API', 'Webhook events']);
-  });
-});
-
-describe('buildWebhooks', () => {
-  it('describes each event as a POST with the envelope, the signature headers and the retry rule', () => {
-    const webhooks = buildWebhooks([orderChanged]);
-    const post = webhooks['order.status_changed']?.post as OpenApiOperation & Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- walking free-form JSON
-    expect(post.operationId).toBe('webhookOrderStatusChanged');
-    expect(post.summary).toBe('An order changed status');
-    expect(post.description).toBe('Sent after every status change.');
-    expect(post['x-gsm-key']).toBe('EVENT order.status_changed');
-    expect(post.security).toEqual([{ webhookSignature: [] }]);
-    expect(post.parameters.map((p: { name: string; in: string }) => `${p.in}:${p.name}`)).toEqual([
-      'header:X-GSM-Signature',
-      'header:X-GSM-Event-Id',
-    ]);
-    const body = post.requestBody.content['application/json'];
-    expect(body.schema.required).toEqual(['id', 'type', 'createdAt', 'data']);
-    expect(body.schema.properties.type).toEqual({ type: 'string', const: 'order.status_changed' });
-    expect(body.schema.properties.createdAt).toMatchObject({ type: 'string', format: 'date-time' });
-    expect(body.schema.properties.data.required).toEqual(['orderId', 'status']);
-    expect(body.example).toEqual({
-      id: 'evt_1',
-      type: 'order.status_changed',
-      createdAt: '2026-03-01T09:30:00.000Z',
-      data: { orderId: 7, status: 'completed' },
-    });
-    expect(post.responses['200'].description).toContain('8 attempts');
-  });
-
-  it('omits the example when the event has none, and sorts events by name', () => {
-    const webhooks = buildWebhooks([walletLow, orderChanged]);
-    expect(Object.keys(webhooks)).toEqual(['order.status_changed', 'wallet.low_balance']);
-    const post = webhooks['wallet.low_balance']?.post as { requestBody: { content: Record<string, Record<string, unknown>> }; description?: string };
-    expect(post.requestBody.content['application/json']?.example).toBeUndefined();
-    expect(post.description).toBeUndefined();
-  });
-
-  it('returns nothing for no events, and the public document then has no webhooks member', () => {
-    expect(buildWebhooks([])).toEqual({});
-    expect('webhooks' in buildPublicDocument(rawDocument(), [])).toBe(false);
-  });
-
-  it('puts the events into the public document only', () => {
-    const doc = buildPublicDocument(rawDocument(), [orderChanged, walletLow]);
-    expect(Object.keys(doc.webhooks ?? {})).toEqual(['order.status_changed', 'wallet.low_balance']);
-    expect(buildInternalDocument(rawDocument()).webhooks).toBeUndefined();
   });
 });
 
@@ -332,25 +270,16 @@ describe('stable output', () => {
     expect(serializeOpenApiDocument(buildInternalDocument(reversed(raw)))).toBe(
       serializeOpenApiDocument(buildInternalDocument(raw)),
     );
-    expect(serializeOpenApiDocument(buildPublicDocument(reversed(raw), [walletLow, orderChanged]))).toBe(
-      serializeOpenApiDocument(buildPublicDocument(raw, [orderChanged, walletLow])),
+    expect(serializeOpenApiDocument(buildPublicDocument(reversed(raw)))).toBe(
+      serializeOpenApiDocument(buildPublicDocument(raw)),
     );
   });
 
   it('orders the members of the document, paths, methods and components', () => {
-    const doc = buildPublicDocument(rawDocument(), [orderChanged]);
-    expect(Object.keys(doc)).toEqual([
-      'openapi',
-      'info',
-      'servers',
-      'tags',
-      'x-tagGroups',
-      'paths',
-      'webhooks',
-      'components',
-    ]);
+    const doc = buildPublicDocument(rawDocument());
+    expect(Object.keys(doc)).toEqual(['openapi', 'info', 'servers', 'tags', 'x-tagGroups', 'paths', 'components']);
     expect(Object.keys(doc.paths)).toEqual([...Object.keys(doc.paths)].sort());
-    expect(Object.keys(doc.paths['/v1/orders'] ?? {})).toEqual(['get', 'post']);
+    expect(Object.keys(doc.paths['/api/index.php'] ?? {})).toEqual(['get', 'post']);
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(['Item', 'NewOrder']);
   });
 
@@ -364,9 +293,9 @@ describe('stable output', () => {
 
   it('keeps the order of schema properties and example members as the contract wrote them', () => {
     const raw = rawDocument();
-    raw.paths['/v1/orders'] = {
-      get: operation('v1', {
-        security: [{ apiKey: [] }],
+    raw.paths['/api/index.php'] = {
+      get: operation('dhru', {
+        security: [{ dhruCredentials: [] }],
         responses: { '200': { description: 'ok', ...json({ type: 'object', properties: { zeta: {}, alpha: {} } }) } },
       }),
     };

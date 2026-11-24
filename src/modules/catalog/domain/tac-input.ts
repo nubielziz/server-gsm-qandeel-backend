@@ -1,4 +1,4 @@
-// Input rules of the TAC catalog routes (catalog-7, catalog-8): the release year bounds and the wire form of an unknown year.
+// Input rules of the TAC catalog routes (catalog-8): the release year bounds and the wire form of an unknown year.
 // Pure functions, unit-tested.
 import type { FieldError } from '../../../common/errors';
 
@@ -32,18 +32,4 @@ export function checkReleaseYear(year: number, currentYear: number): FieldError 
  */
 export function wireReleaseYear(stored: number | null): number {
   return stored ?? 0;
-}
-
-/**
- * Words the refusal of a TAC change that IMEI checks block.
- *
- * Why: catalog-7: `imei_checks.tac` records the TAC of the IMEI actually checked, a historical fact that a catalog edit must not
- * change, so a used TAC keeps its value.
- *
- * @param count how many IMEI checks use the old TAC
- * @param tac the old TAC
- * @returns the message of the `422` on `tac`
- */
-export function tacInUseMessage(count: number, tac: string): string {
-  return `${count} IMEI checks already use TAC ${tac}; add a new entry for the new TAC instead.`;
 }

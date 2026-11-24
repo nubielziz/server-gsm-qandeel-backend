@@ -8,7 +8,7 @@ import { PRICE_SCAN_JOB, type PriceScanResult, PriceChangeScan } from '../applic
  * Runs the price change scan when its delayed job arrives.
  *
  * Why: every move of the catalog price version asks for a scan one minute later (`PriceChangeScan.schedule`); the scan writes the
- * `service.price_changed` outbox events that the webhook fan-out turns into deliveries. It is event-driven, not scheduled, so it
+ * `service.price_changed` outbox events that the notifications queue turns into the merchant's daily digest. It is event-driven, not scheduled, so it
  * writes no `job_runs` row (like the merchant mail jobs); a repeated run writes nothing new.
  */
 @Injectable()

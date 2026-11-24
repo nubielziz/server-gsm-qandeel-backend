@@ -1,23 +1,15 @@
 // EventNotifier: turns an outbox event that a merchant may want to hear about into notifications (platform module, feature 12a): low
-// balance, an order result, a paid invoice, an approved deposit, an endpoint switched off after failed deliveries, and the daily digest of
-// price changes.
+// balance, an order result, a paid invoice, an approved deposit, and the daily digest of price changes.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { DbService } from '../../../infra/db';
 import { QueuesService, UnrecoverableError, queueJobId } from '../../../infra/queues';
 import type { OutboxJobData } from '../outbox/outbox.types';
-import { WALLET_LOW_BALANCE_EVENT, SERVICE_PRICE_CHANGED_EVENT } from '../webhooks/merchant-event-routes';
-import {
-  WEBHOOK_ENDPOINT_DISABLED_EVENT,
-  WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES,
-} from '../webhooks/webhook-delivery.rules';
-import { findEndpoint } from '../webhooks/webhook-endpoint.repository';
-import { invoiceForEvent, serviceNameOf } from '../webhooks/webhook-foreign-reads';
 import { addDigestItem, digestCycleOf, digestKey, digestSendDelay, shortMoney, type DigestItem } from './digest-rules';
 import { NotificationInbox } from './inbox/notification-inbox';
 import { channelsFor } from './merchant-preferences';
 import { NotificationEventRegistry } from './notification-events';
-import { orderFacts, recipientOf } from './notification-foreign-reads';
+import { invoiceFacts, orderFacts, recipientOf, serviceNameOf } from './notification-foreign-reads';
 import { itemsOf } from './notification-payload';
 import { NOTIFICATION_SEND_EVENT, NotificationService } from './notification.service';
 import {
@@ -30,10 +22,12 @@ import type { NotificationChannel } from '../db/schema';
 
 /** The outbox event type of a paid invoice (written by feature 8, whose merge adds its `notifications` route). */
 export const INVOICE_PAID_EVENT = 'invoice.paid';
-/** The outbox event type of an approved deposit (written by feature 8, whose merge adds its `notifications` route). */
-export const DEPOSIT_APPROVED_EVENT = 'deposit.approved';
-/** The outbox event type of an order's status change (registered by the orders module). */
+/** The outbox event type of an order's status change (written by the orders module). */
 export const ORDER_STATUS_CHANGED_EVENT = 'order.status_changed';
+/** The outbox event type of the low-balance alert (written by the money module's posting hook). */
+export const WALLET_LOW_BALANCE_EVENT = 'wallet.low_balance';
+/** The outbox event type of a price change (written by the catalog's price change scan). */
+export const SERVICE_PRICE_CHANGED_EVENT = 'service.price_changed';
 /** The job name of the planning job: it handles the outbox events routed to `notifications` for merchants. */
 export const NOTIFICATION_PLAN_JOB = 'notification.plan';
 /** The job name of the sending job. */
@@ -54,11 +48,11 @@ const text = (value: unknown): string | undefined => (typeof value === 'string' 
 /**
  * Plans the notifications of an outbox event.
  *
- * Why: brief 12a. The events reach the `notifications` queue next to the merchant webhooks (decision 020 amended: one job per route).
+ * Why: brief 12a. The events reach the `notifications` queue (decision 020: the relay adds one job per route of an event type).
  * This job decides who hears about it and how: the merchant's own preferences pick the channels (`merchant-preferences.ts`), a message
  * needs an active template, and each notification is a row plus a `notification.send` event written in one transaction. The job is safe
  * to run twice: the dedupe key of a row is `outbox-<event id>:<channel>`, so a retry after a crash finds the rows and writes nothing new.
- * The price change event does not send at once: it joins the merchant's digest row for the day (one email or Telegram message a day,
+ * The price change event does not send at once: it joins the merchant's digest row for the day (one email a day,
  * user rule 9).
  *
  * Side effects: inserts `notifications` and `outbox_events` rows; for a new digest row adds a delayed `notification.send` job.
@@ -92,12 +86,8 @@ export class EventNotifier {
         return this.lowBalance(job);
       case INVOICE_PAID_EVENT:
         return this.invoicePaid(job);
-      case DEPOSIT_APPROVED_EVENT:
-        return this.depositApproved(job);
       case SERVICE_PRICE_CHANGED_EVENT:
         return this.priceChanged(job);
-      case WEBHOOK_ENDPOINT_DISABLED_EVENT:
-        return this.endpointDisabled(job);
       default:
         return { created: 0, skipped: 'unknown_event' };
     }
@@ -143,41 +133,13 @@ export class EventNotifier {
 
   /** `invoice.paid`: feature 8 writes it with the invoice as the aggregate. */
   private async invoicePaid(job: OutboxJobData): Promise<PlanResult> {
-    const invoice = await invoiceForEvent(this.db.db, whole(job.payload['invoiceId']) ?? job.aggregateId);
+    const invoice = await invoiceFacts(this.db.db, whole(job.payload['invoiceId']) ?? job.aggregateId);
     if (!invoice) return { created: 0, skipped: 'source_gone' };
     return this.notifyMerchant(job, 'invoice.paid', invoice.clientId, (merchantName) => ({
       merchantName,
       invoiceNumber: invoice.number,
       amount: shortMoney(invoice.amount),
       currency: invoice.currency,
-    }));
-  }
-
-  /** `deposit.approved`: feature 8 writes it with `clientId`, `amount` and `currency`. */
-  private async depositApproved(job: OutboxJobData): Promise<PlanResult> {
-    const clientId = this.merchantOf(job);
-    const amount = text(job.payload['amount']);
-    const currency = text(job.payload['currency']);
-    if (amount === undefined || currency === undefined) {
-      throw new UnrecoverableError(`The ${job.type} event ${job.eventId} lacks its amount.`);
-    }
-    return this.notifyMerchant(job, 'deposit.approved', clientId, (merchantName) => ({
-      merchantName,
-      amount: shortMoney(amount),
-      currency,
-    }));
-  }
-
-  /** `webhook.endpoint_disabled` (decision 053): the merchant is told once that an endpoint was switched off; the email is transactional. */
-  private async endpointDisabled(job: OutboxJobData): Promise<PlanResult> {
-    const clientId = this.merchantOf(job);
-    const endpointId = whole(job.payload['endpointId']) ?? job.aggregateId;
-    const endpoint = await findEndpoint(this.db.db, endpointId);
-    if (!endpoint || endpoint.clientId !== clientId) return { created: 0, skipped: 'source_gone' };
-    return this.notifyMerchant(job, WEBHOOK_ENDPOINT_DISABLED_EVENT, clientId, (merchantName) => ({
-      merchantName,
-      url: endpoint.url,
-      count: String(WEBHOOK_PAUSE_AFTER_FAILED_DELIVERIES),
     }));
   }
 
@@ -201,7 +163,7 @@ export class EventNotifier {
       if (!merchant) return { created: 0, skipped: 'merchant_gone' };
       const definition = this.registry.get(key, 'merchant');
       if (!definition) return { created: 0, skipped: 'unknown_event' };
-      // Feature 23, S9: the in-app item comes before the channel check, so a merchant who switched email and Telegram off still gets it;
+      // Feature 23, S9: the in-app item comes before the channel check, so a merchant who switched email off still gets it;
       // the same occurrence key makes the item of `NotificationService.enqueue` below a no-op.
       await this.inbox.addForEvent(tx, {
         recipient: { type: 'client', id: clientId },
@@ -209,7 +171,7 @@ export class EventNotifier {
         variables: variables(merchant.name),
         occurrence: `outbox-${job.eventId}`,
       });
-      const channels = channelsFor(definition, merchant.prefs, merchant.telegramChatId !== null);
+      const channels = channelsFor(definition, merchant.prefs);
       if (channels.length === 0) return { created: 0, skipped: 'opted_out' };
       let created = 0;
       let skipped: string | undefined;
@@ -252,7 +214,7 @@ export class EventNotifier {
     if (!merchant) return { created: 0, skipped: 'merchant_gone' };
     const definition = this.registry.get('service.price_changed', 'merchant');
     if (!definition) return { created: 0, skipped: 'unknown_event' };
-    const channels = channelsFor(definition, merchant.prefs, merchant.telegramChatId !== null);
+    const channels = channelsFor(definition, merchant.prefs);
     if (channels.length === 0) return { created: 0, skipped: 'opted_out' };
     let created = 0;
     for (const channel of channels) if (await this.collect(clientId, merchant.name, channel, item)) created += 1;

@@ -69,9 +69,7 @@ feature 6.
 `TacCatalogAdminService` (`application/tac-catalog-admin.service.ts`, `infra/tac-catalog.repository.ts`, `domain/tac-input.ts`) serves
 `/admin/tac-catalog` (`catalog:read|create|update`, audit entity type `tac_entry`): list with `q` over TAC (a typed prefix finds it), brand, model code and
 marketing name, an exact `brand` filter, sorts by `tac` (default), `brand`, `model` and `releaseYear`; add (`source` `manual`) and correct. A TAC appears once
-(`409 TAC_TAKEN` on `tac`, also for two requests at once through the unique index). RESOLUTIONS catalog-7: the `tac` of an entry is editable only while no `imei_checks`
-row has it (`imei_checks.tac` is history, no `ON UPDATE CASCADE`): otherwise `422` on `tac` with "N IMEI checks already use TAC <old>; add a new entry for the new TAC
-instead." (the count is a foreign read of risk's table, `infra/tac-foreign-reads.repository.ts`). RESOLUTIONS catalog-8: `release_year` stays nullable and an unknown year is
+(`409 TAC_TAKEN` on `tac`, also for two requests at once through the unique index). RESOLUTIONS catalog-8: `release_year` stays nullable and an unknown year is
 sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year by the clock (0 and null are `422` on `releaseYear`); a year cannot be cleared; `brand` and
 `model` cannot be emptied. The seed loads the demo's eight TACs (`scripts/seed/customers.ts`).
 
@@ -110,12 +108,9 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   `changed prices of` entry.
 - **Merchant catalog** (`merchant-catalog.ts`, `client-catalog.service.ts`, `infra/merchant-catalog.repository.ts`): the live,
   `active` services in an active category open to the merchant's group, at the merchant's price; cost, floor and supplier names are
-  never sent. `MerchantCatalog` (`page`, `pageAfter`, `find`, `all`) is the public piece the Dhru and REST v1 lists (7a) reuse. Shapes: B159.
-- **Merchant machine surfaces** (`merchant-api-catalog.ts`, `controllers/v1-services.controller.ts`, feature 7a): `GET /v1/services` (cursor
-  pages in id order: `?limit=` 1 to 100, default 50, `?cursor=`; filters `type`, `categoryId` and `q`), `GET /v1/services/:id` (adds the
-  custom `fields` and the model, network and MEP `options`) and the Dhru `imeiservicelist`, which the service binds to the `DhruGateway` at
-  start. Visibility, prices and the quantity rules are the portal's (B159); each row also says `allowCancel`, `allowVerify` and
-  `verifyWindowH`. The Dhru `LIST` is grouped by category (`GROUPNAME`, `GROUPTYPE` IMEI, SERVER or REMOTE; two categories with one name
+  never sent. `MerchantCatalog` (`page`, `find`, `all`) is the public piece the Dhru list (7a) reuses. Shapes: B159.
+- **Merchant machine surface** (`merchant-api-catalog.ts`, feature 7a): the Dhru `imeiservicelist`, which the service binds to the
+  `DhruGateway` at start. Visibility, prices and the quantity rules are the portal's (B159). The Dhru `LIST` is grouped by category (`GROUPNAME`, `GROUPTYPE` IMEI, SERVER or REMOTE; two categories with one name
   keep unique group keys by adding the type), `SERVICES` by service id with the keys of decision 026 (`SERVICEID`, `SERVICETYPE`,
   `SERVICENAME`, `CREDIT`, `INFO`, `TIME`, `QNT`, `QNTOPTIONS`, `MINQNT`, `MAXQNT`, the twelve `Requires.*` flags and `Requires.Custom`
   built from the service's fields; an IMEI service's own `imei` field is not repeated there). File services are not in the Dhru list.
@@ -169,7 +164,7 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   `ServiceImporter` now injects `CatalogSignals` (the supplier engine module provides both for the worker).
 - **Price protection** (user rule 9, MISMATCHES B117): `ListedPrices.record(db, clientId, entries, at)` remembers the last price
   listed to a merchant (table `listed_prices`, written only when the price changes); the three portal routes call it, and so do
-  7a's lists (`GET /v1/services[/:id]`, `imeiservicelist`; API key calls, no browser check). The portal's list and show reads carry
+  7a's list (`imeiservicelist`; API key calls, no browser check). The portal's list and show reads carry
   `originCheck: 'fetch-metadata'` (decision 045): a request that the browser marks `cross-site` or `same-site`, without an `Origin`
   of the shop, is `403 CSRF_FAILED` and records nothing; the portal's own server calls, which carry neither header, are answered.
   The export carries `originCheck: true` (same-origin or an `Origin` of the shop): the browser downloads it. `checkPriceChange(listed, current, tolerance, { floorRaised? })` is the pure guard feature 5 calls at placement: above the
@@ -201,7 +196,7 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   catalog price version moves after the commit. The answer is `{ updated }`.
 - **Who follows it**: the portal catalog (its `category` sort is category position, then the service position, then the caller's next key; the
   default order is category, name), the price export and the Dhru service list (`MerchantCatalog.all`: category position, `services.sort`, name).
-  `_sort=sort` of the admin list and of the grid is the same order. One definition: `infra/service-order.sql.ts`. REST v1 stays in id order (its cursor).
+  `_sort=sort` of the admin list and of the grid is the same order. One definition: `infra/service-order.sql.ts`.
   Inside a Dhru group `SERVICES` is an object keyed by service id, which a JSON reader sorts by key whatever the writer did.
 
 ### Retail price rules (feature 31, decision 040, B229)
@@ -259,7 +254,7 @@ sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year 
   figure of now).
 
 Known deviation (tech debt): `infra/foreign-reads.repository.ts` reads supplier links, `orders`, `service_listings`,
-`listing_publish_items`, `checkout_sessions`, `help_articles` and `imei_checks` with plain selects, because those modules export
+`listing_publish_items`, `checkout_sessions` and `help_articles` with plain selects, because those modules export
 no service yet (the supplier chain of a service row, the archive-or-delete decision and the Catalog page's facts of decision 060;
 the storefront imports the catalog, so the catalog cannot call it, decision 032); replace its bodies with their public services as
 they appear (orders 5, suppliers 6, storefront 14a and 15, customers, risk 18). Nothing outside that file and the fragments it hands
@@ -268,9 +263,9 @@ to `infra/service-attention.sql.ts` knows.
 ## Public API (`index.ts`)
 
 Exports `CatalogModule` (global) and `CatalogAdminModule` (the routes; a database-less test app leaves it out), the read-only
-`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `findRetail` (the storefront's `b2c_retail` group, feature 14a), `refsOf`, `promotionLadder`; a `ClientGroupRef` has id,
-name, kind, discountPercent, isDefault, overdraftAllowed, earnThreshold, depositLimit; identity uses it for the group a new
-merchant joins, the group inside a merchant row and the nightly promotion), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
+`ClientGroupDirectory` (`find(db, id, { lock: 'share' }?)`, `findDefault`, `findRetail` (the storefront's `b2c_retail` group, feature 14a), `refsOf`; a `ClientGroupRef` has id,
+name, kind, discountPercent, isDefault, overdraftAllowed, depositLimit; identity uses it for the group a new
+merchant joins and the group inside a merchant row), `recomputeEffectiveCost(tx, serviceIds)` (feature 6
 calls it from sync, import and link changes), the figure rules (`defaultMinProfit`, `effectiveMinProfit`, `floorPrice`,
 `marginPercent`, `isBelowFloor`, `deliveryTimeText`), the closed vocabularies `SERVICE_PRICE_MODES`, `SERVICE_DUPLICATE_RULES` and
 `SERVICE_TYPES`, the inventory helpers the seed uses, and the storefront's read-only views (feature 14a): `StorefrontServices`
@@ -279,7 +274,7 @@ sellable ids that also have a fixed price for the group, optionally narrowed by 
 `SellableFilter`, the SQL test `IN_STOCK_SQL`); `inStockIds(db, ids)`: which services have enough available inventory codes for their
 smallest order (`smallestOrder` / `coversSmallestOrder`, `domain/storefront-availability.ts`); `categoriesOf(db, ids)`: the categories of
 some services with counts (a category has one name, English only since decision 039); `names(db, ids)`: name, type and delivery time whatever the service's state;
-`fields(db, serviceId)`) and `TacDirectory.find(db, tac)` (brand, model, marketing name and year of a TAC). Other modules import only `src/modules/catalog/index.ts` (lint rule
+`fields(db, serviceId)`). Other modules import only `src/modules/catalog/index.ts` (lint rule
 `gsm/module-boundaries`). The export order matters (decision 032): the leaves identity injects come first, `CatalogAdminModule`
 (whose controllers use identity's decorators) last.
 
@@ -322,7 +317,7 @@ Only this module reads and writes these 10 tables, `listed_prices`, `retail_pric
 | `service_client_prices` | A negotiated price of a service for one specific merchant. |
 | `pricing_rules` | Margin and discount rules for automatic pricing. |
 | `inventory_codes` | Stock of digital codes. |
-| `tac_catalog` | The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition, IMEI checks and SEO pages. |
+| `tac_catalog` | The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition and SEO pages. |
 | `listed_prices` | The last price listed to a merchant for a service (price protection, user rule 9). A backend addition to the map's tables (B158), migration `0006_listed_prices.sql`. |
 | `retail_price_rules` | The retail price rules (feature 31, decision 040): general, per service type, per category; soft-deleted. Migration `0041_retail_price_rules.sql`. |
 | `retail_price_follows` | The services whose retail price a rule wrote last (feature 31, decision 040). Migration `0041_retail_price_rules.sql`. |
@@ -330,7 +325,7 @@ Only this module reads and writes these 10 tables, `listed_prices`, `retail_pric
 
 ## Routes
 
-43 endpoints (admin 37, client 3, v1 2, dhru 1). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
+41 endpoints (admin 37, client 3, dhru 1); the two `GET /v1/services` rows of the map are retired (see `test/contract/retired.ts`). Source: `docs/slices/catalog.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built: the 20 routes of feature 4a are in `contracts/{client-groups,categories,services,inventory}.contracts.ts`, the 16 of feature 4b in `contracts/{pricing,client-prices,pricing-rules,merchant-catalog}.contracts.ts`, the rest are pending (`test/contract/pending.ts`).
 
 Decision 063 adds two admin routes beyond the map (`scripts/map-additions/47.mjs`, `contracts/service-grid.contracts.ts`):
 `GET /admin/services/price-grid` (`catalog:read` and `pricing:read`) and `POST /admin/services/order` (`catalog:update`).
@@ -391,13 +386,6 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 | `GET /client/services` | merchant-session | Catalog at my prices, grouped by category. | 4 |
 | `GET /client/services/:id` | merchant-session | Field schema for the dynamic order form. | 4 |
 
-### REST API v1 (2)
-
-| Route | Access | What it does | Stage |
-|---|---|---|---|
-| `GET /v1/services` | api-key · `services:read` | Catalog at the merchant's prices; filter by type, category and search. | 7 |
-| `GET /v1/services/:id` | api-key · `services:read` | Service details with the field schema and quantities. | 7 |
-
 ### Dhru Fusion API (1)
 
 | Route | Access | What it does | Stage |
@@ -419,14 +407,12 @@ Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touc
 Staff permissions the map requires on this module's admin routes: `catalog:*`, `catalog:update`, `groups:*`, `inventory:read`, `inventory:write`, `pricing:*`, `pricing:read`, `pricing:update`. A `*` row means the action of the method: `groups:read|create|update|delete` (client groups), `catalog:read|create|update|delete` (categories, services), `pricing:read|create|update|delete` (client prices, pricing rules); fields and options need `catalog:update`; group prices and the bulk price change `pricing:update`; the resolver `pricing:read`; the inventory routes `inventory:read` and `inventory:write`. Audit entity types written: `client_group`, `category`, `service` (also the group prices and the bulk change), `merchant` (client prices), `pricing_rule`, `retail_price_rule` (feature 31) and `inventory_code` (a void; the import is audited on the `service`). The retail price
 rules (feature 31, routes beyond the map) use `pricing:read` (list, preview), `pricing:create`, `pricing:update` and `pricing:delete`. A `basePrice` or `minProfit` change on `PATCH /admin/services/:id` also needs `pricing:update` (decision 046). `GET /admin/services/price-grid` (decision 063) needs `catalog:read` and also `pricing:read`; `POST /admin/services/order` needs `catalog:update` and writes the audit entry `changed the order of` (entity `service`).
 
-API key scopes on its REST v1 routes: `services:read`.
-
 Keep this list in step with the contracts (`permission` of each `defineRoute`).
 
 ## Events
 
-Outbox events produced: `service.price_changed` (queue `merchant-webhooks`, aggregate `services`, payload `{ clientId, serviceId, previousPrice, price, currency }`), written by
-`PriceChangeScan` (feature 7b, user rule 9 (5)): see "Jobs and schedules". Consumed: none. The route is registered by the platform module.
+Outbox events produced: `service.price_changed` (queue `notifications`, aggregate `services`, payload `{ clientId, serviceId, previousPrice, price, currency }`), written by
+`PriceChangeScan` (feature 7b, user rule 9 (5)): see "Jobs and schedules". Consumed by the merchant's daily digest (feature 12a). The route is registered by the platform module (`NotificationRoutes`).
 
 Feature 29 (storefront search, decision 038): `CatalogSignals` (`application/catalog-signals.ts`) writes `catalog.services_changed`
 (`{ serviceIds, reason }`, 1-50 ids per event, aggregate `services`; reason `service`, `price`, `options` or `stock`) and
@@ -444,7 +430,7 @@ registered by the storefront's search module. `StorefrontServices` gained `price
 catalog price version tells its listeners (`PriceVersionListeners`), and `PriceChangeScan` adds a delayed job (60 s, job id `price-scan-<minute>`, so at most one a minute).
 The scan compares, for every active merchant and service of the last 30 days of orders (read through the foreign reads of `infra/foreign-reads.repository.ts`), the price a
 new order would pay now (`PriceResolver`, floor included) with the unit price of the merchant's latest order, and writes `service.price_changed` for each difference
-that has no event with the same ids yet (`OutboxService.hasEvent`; the webhook fan-out is idempotent on the same change as well). Event-driven, so no `job_runs` row.
+that has no event with the same ids yet (`OutboxService.hasEvent`; the digest is idempotent on the same event as well). Event-driven, so no `job_runs` row.
 A merchant who has not ordered the service in 30 days is not told; a price that goes back to the last order's price is not announced.
 
 `category_names_clean` (queue `maintenance`, processor `jobs/category-name-cleanup.processor.ts`, module `CategoryNameCleanupModule` in the worker; feature 31): runs once,
@@ -465,14 +451,12 @@ move of the catalog price version asks for a pass (`RetailFollowScheduler` in th
 `retail-follow-<minute>`), and the scheduler `retail_price_follow_hourly` runs one every hour at minute 10. The delayed job is unrecorded; the hourly and the manual run write
 `job_runs`. See "The follow pass" above and `docs/queues.md`.
 
-Otherwise none in this module. The nightly group promotion (`client_group_promotion`) writes `clients.group_id`, so it lives in identity
-(`src/modules/identity/jobs/`); it reads thresholds through `ClientGroupDirectory.promotionLadder` and is documented in
-`docs/queues.md`.
+Otherwise none in this module. Ranks (client groups) are set by hand: no job moves a merchant between groups.
 
 ## Data migration
 
 `drizzle/0005_default_client_groups.sql` makes sure a default merchant group and the storefront retail group exist (a fresh
-database had none, so `POST /client/auth/register` and `POST /admin/clients` answered 500). It marks the first merchant group as the
+database had none, so `POST /admin/clients` answered 500). It marks the first merchant group as the
 default when groups exist without one, inserts `Standard` (default, no discount, threshold 0, no deposit limit, no overdraft) when
 there is no merchant group, and inserts `Storefront retail` when there is no `b2c_retail` group. The seed's demo groups reuse or
 replace these rows (`scripts/seed/identity.ts`).

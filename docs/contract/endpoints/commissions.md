@@ -9,34 +9,37 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 |---|---|---|---|---|
 | `GET /client/referrals` | client | merchant-session | 11 |  |
 | `GET /client/commissions` | client | merchant-session | 11 |  |
-| `GET /admin/commission-plans` | admin | staff-permission `commissions:*` | 11 | `listPlans` |
-| `GET /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 | `getPlan` |
-| `POST /admin/commission-plans` | admin | staff-permission `commissions:*` | 11 | `createPlan` |
-| `PATCH /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 | `updatePlan` |
-| `DELETE /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 | `deletePlan` |
-| `GET /admin/commission-assignments` | admin | staff-permission `commissions:*` | 11 | `listAssignments` |
-| `GET /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 | `getAssignment` |
-| `POST /admin/commission-assignments` | admin | staff-permission `commissions:*` | 11 | `createAssignment` |
-| `PATCH /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 | `updateAssignment` |
-| `DELETE /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 | `deleteAssignment` |
-| `GET /admin/commission-accruals` | admin | staff-permission `commissions:read` | 11 | `listAccruals` |
-| `GET /admin/commission-accruals/:id` | admin | staff-permission `commissions:read` | 11 | `getAccrual` |
-| `POST /admin/commission-accruals/approve` | admin | staff-permission `commissions:approve` | 11 | `approveAccruals` |
+| `GET /admin/commission-plans` | admin | staff-permission `commissions:*` | 11 |  |
+| `GET /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `POST /admin/commission-plans` | admin | staff-permission `commissions:*` | 11 |  |
+| `PATCH /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `DELETE /admin/commission-plans/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `GET /admin/commission-assignments` | admin | staff-permission `commissions:*` | 11 |  |
+| `GET /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `POST /admin/commission-assignments` | admin | staff-permission `commissions:*` | 11 |  |
+| `PATCH /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `DELETE /admin/commission-assignments/:id` | admin | staff-permission `commissions:*` | 11 |  |
+| `GET /admin/commission-accruals` | admin | staff-permission `commissions:read` | 11 |  |
+| `GET /admin/commission-accruals/:id` | admin | staff-permission `commissions:read` | 11 |  |
+| `POST /admin/commission-accruals/approve` | admin | staff-permission `commissions:approve` | 11 |  |
 
 ## GET /client/referrals
 
 - **Map**: Referral link and referred merchants. (رابط الإحالة والتجار المحالين) · merchant-session · stage 11 · tables clients, commission_assignments
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/commissions
 
 - **Map**: My commissions and their status. (عمولاتي وحالتها) · merchant-session · stage 11 · tables commission_accruals
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /admin/commission-plans
 
 - **Map**: Referral and rebate plans. (خطط الإحالة والـ rebate) · staff-permission `commissions:*` · stage 11 · tables commission_plans
-- **Frontend**: `listPlans` (src/features/commissions/api/plans.ts:23) · params `query?: ListQuery` · returns `ListResult<CommissionPlan>` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: Whole list: _start=0&_end=200&_sort=id&_order=asc. No filters.
 - **Response**: JSON array + x-total-count: id, name, kind (referral|rebate), basis (free text, e.g. "Order revenue of referred merchants"), percent (percent string, "3.0000" = 3%), tiers (JSON object stored as sent, {} when none and never []; a POST/PATCH whose tiers is not a plain object (array, string, null) is 422 on tiers; e.g. {minPayout: "50.0000", minReferrals: 3} or {brackets: [{from: "1000", percent: "1.0"}]}; shown as key: value, never interpreted), period (free text, e.g. "monthly"), isActive, createdAt, updatedAt.
 - **Errors**: 403 FORBIDDEN (caller lacks commissions:read)
@@ -45,7 +48,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## GET /admin/commission-plans/:id
 
 - **Map**: Referral and rebate plans. (خطط الإحالة والـ rebate) · staff-permission `commissions:*` · stage 11 · tables commission_plans
-- **Frontend**: `getPlan` (src/features/commissions/api/plans.ts:32) · params `id: number` · returns `CommissionPlan` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Response**: Same row as the list.
 - **Errors**: 404 NOT_FOUND (no plan with that id)
 - **Mock**: src/features/commissions/mocks/planRoutes.ts (Demo S.plans mapped in mocks/seed.ts (rate fraction -> percent string, tiers {minPayout, minReferrals}, one rebate plan with brackets, period monthly).)
@@ -53,7 +57,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## POST /admin/commission-plans
 
 - **Map**: Referral and rebate plans. (خطط الإحالة والـ rebate) · staff-permission `commissions:*` · stage 11 · tables commission_plans
-- **Frontend**: `createPlan` (src/features/commissions/api/plans.ts:41) · params `body: CreatePlanBody` · returns `CommissionPlan` · success 201 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {name, kind, percent (decimal text as typed, e.g. "3.5"), basis, period, tiers (JSON object), isActive}. name, kind, percent, basis and period are required (mocks/planRoutes.ts:87). No money event.
 - **Response**: 201 with the plan, percent normalised to 4 dp.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field name | kind (not referral/rebate) | percent (outside 0.5-15, demo rule; console only checks > 0 and <= 100) | basis | period | tiers (not an object)); 403 FORBIDDEN (caller lacks commissions:create)
@@ -62,7 +67,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## PATCH /admin/commission-plans/:id
 
 - **Map**: Referral and rebate plans. (خطط الإحالة والـ rebate) · staff-permission `commissions:*` · stage 11 · tables commission_plans
-- **Frontend**: `updatePlan` (src/features/commissions/api/plans.ts:50) · params `id: number`, `body: Partial<CreatePlanBody>` · returns `CommissionPlan` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Partial: only the changed fields (the dialog sends a diff). A rate change applies to orders completed after the save; accruals already earned keep their percent.
 - **Response**: 200 with the updated plan (updatedAt bumped).
 - **Errors**: 422 VALIDATION_FAILED (same field rules as POST); 409 PLAN_LOCKED (business refusal, e.g. plans cannot change during a settlement run (example from CommissionsAgents.test.tsx)); 404 NOT_FOUND (no plan with that id); 403 FORBIDDEN (caller lacks commissions:update)
@@ -71,7 +77,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## DELETE /admin/commission-plans/:id
 
 - **Map**: Referral and rebate plans. (خطط الإحالة والـ rebate) · staff-permission `commissions:*` · stage 11 · tables commission_plans
-- **Frontend**: `deletePlan` (src/features/commissions/api/plans.ts:59) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Response**: 204 empty.
 - **Errors**: 409 PLAN_IN_USE (current assignments use the plan (detail names how many: "End or move those assignments first."); also when accruals reference it (suggest isActive=false instead)); 404 NOT_FOUND (no plan with that id); 403 FORBIDDEN (caller lacks commissions:delete)
 - **Mock**: src/features/commissions/mocks/planRoutes.ts (Demo S.plans mapped in mocks/seed.ts (rate fraction -> percent string, tiers {minPayout, minReferrals}, one rebate plan with brackets, period monthly).)
@@ -79,7 +86,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## GET /admin/commission-assignments
 
 - **Map**: Assign plans to merchants. (ربط الخطط بالتجار) · staff-permission `commissions:*` · stage 11 · tables commission_assignments
-- **Frontend**: `listAssignments` (src/features/commissions/api/assignments.ts:24) · params `query?: ListQuery` · returns `ListResult<CommissionAssignment>` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: Whole list: _start=0&_end=200&_sort=createdAt&_order=desc. No filters (also feeds the accrual agent filter and the plans agent counts).
 - **Response**: JSON array + x-total-count: id, planId, beneficiaryId, scope, startsAt, endsAt, createdAt, updatedAt, beneficiary {id, name, country?} | null (the merchant), plan {id, name, percent} | null. Return current assignments only by default (ended rows would inflate the plans agent counts); the console shows "Until <endsAt>" when an end date is present.
 - **Errors**: 403 FORBIDDEN (caller lacks commissions:read)
@@ -89,7 +97,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## GET /admin/commission-assignments/:id
 
 - **Map**: Assign plans to merchants. (ربط الخطط بالتجار) · staff-permission `commissions:*` · stage 11 · tables commission_assignments
-- **Frontend**: `getAssignment` (src/features/commissions/api/assignments.ts:36) · params `id: number` · returns `CommissionAssignment` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Response**: Same row as the list.
 - **Errors**: 404 NOT_FOUND (no assignment with that id)
 - **Mock**: src/features/commissions/mocks/assignmentRoutes.ts (One assignment per demo agent merchant (mocks/seed.ts); joins in mocks/dto.ts toAssignment.)
@@ -97,7 +106,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## POST /admin/commission-assignments
 
 - **Map**: Assign plans to merchants. (ربط الخطط بالتجار) · staff-permission `commissions:*` · stage 11 · tables commission_assignments
-- **Frontend**: `createAssignment` (src/features/commissions/api/assignments.ts:46) · params `body: CreateAssignmentBody` · returns `CommissionAssignment` · success 201 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {beneficiaryId (merchant id), planId}. Server sets scope ("referrals" for referral plans, own orders for rebate plans), starts_at = now, ends_at = null. One current plan per merchant: the unique index commission_assignments_current_uq on (beneficiary_id) WHERE ends_at IS NULL; changing plan = end the current assignment (ends_at = now) and insert the new one in one transaction. The merchant menu reads GET /admin/clients (_start=0&_end=200&_sort=name). No money event.
 - **Response**: 201 with the assignment incl. beneficiary and plan joins.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field beneficiaryId (unknown merchant) | planId (unknown or inactive plan; the menu also offers plans marked "off")); 409 ALREADY_ASSIGNED (the merchant already has a current plan (ends_at null): service pre-check, and a 23505 on commission_assignments_current_uq (race) maps to the same answer; detail '<merchant name> is already on the <plan name> plan'); 403 FORBIDDEN (caller lacks commissions:create)
@@ -106,7 +116,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## PATCH /admin/commission-assignments/:id
 
 - **Map**: Assign plans to merchants. (ربط الخطط بالتجار) · staff-permission `commissions:*` · stage 11 · tables commission_assignments
-- **Frontend**: `updateAssignment` (src/features/commissions/api/assignments.ts:55) · params `id: number`, `body: UpdateAssignmentBody` · returns `CommissionAssignment` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {planId} only. Orders completed from now earn the new plan rate; accruals already earned keep theirs.
 - **Response**: 200 with the updated assignment and joins.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field planId unknown or inactive); 409 PLAN_LOCKED (business refusal (example from CommissionsAgents.test.tsx:207)); 404 NOT_FOUND (no assignment with that id); 403 FORBIDDEN (caller lacks commissions:update)
@@ -115,7 +126,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## DELETE /admin/commission-assignments/:id
 
 - **Map**: Assign plans to merchants. (ربط الخطط بالتجار) · staff-permission `commissions:*` · stage 11 · tables commission_assignments
-- **Frontend**: `deleteAssignment` (src/features/commissions/api/assignments.ts:68) · params `id: number` · returns `void` · success 204 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: No body. Ends the assignment: set ends_at = now; no accrual on orders completed afterwards; accruals already earned stay approvable.
 - **Response**: 204 empty, also when ready accruals exist (they stay approvable): the server never sends 409 HAS_PENDING (ANSWERS commissions Q6).
 - **Errors**: 404 NOT_FOUND (no assignment with that id); 403 FORBIDDEN (caller lacks commissions:delete)
@@ -124,7 +136,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## GET /admin/commission-accruals
 
 - **Map**: Accrued commissions and their status. (العمولات المستحقة وحالتها) · staff-permission `commissions:read` · stage 11 · tables commission_accruals
-- **Frontend**: `listAccruals` (src/features/commissions/api/accruals.ts:23) · params `query?: ListQuery` · returns `ListResult<CommissionAccrual>` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Query**: status=accrued|approved|reversed (omitted for All; the tab opens on accrued), beneficiaryId=<agent merchant id>, createdAt_gte=<ISO date-time at UTC midnight 30 days back> (header strip), approvedAt_gte and approvedAt_lte (ISO date-times on approved_at, whitelisted), _sort: createdAt | approvedAt | basisAmount | percent | amount | status (default createdAt desc; agent and merchant names are not sortable), _start/_end 25 per page. "Select all N" reads _start=0&_end=1000 with status=accrued (+ beneficiaryId) sorted createdAt desc (useAccrualMutations.ts:22-28); counts use _start=0&_end=1 (status=accrued; status=approved&createdAt_gte=...).
 - **Response**: JSON array + x-total-count: id, planId, beneficiaryId, orderId (always an Id: an accrual always comes from one completed order, commission_accruals.order_id is NOT NULL), period (YYYY-MM), basisAmount (order revenue), percent (rate at accrual, percent string), amount (basisAmount x percent / 100, rounded to cents in the demo: 20.9900 at 5% = 1.0500), status (accrued|approved|reversed, CHECK commission_accruals_status_check; reversed = the order was refunded or reopened before approval, approve skips it with that reason; after approval the accrual stays approved and a reversing commission entry is posted, user rule 5; the console prints unknown words raw, so reversed needs no console change), ledgerTxId (null until paid), approvedAt (ISO, null until approved; set in the approve transaction and kept when an approved accrual is later reversed), createdAt (when earned), updatedAt, beneficiary {id, name} (the agent), merchant {id, name} (the referred merchant = the order client, never null). A completed order accrues once per beneficiary: unique index on (order_id, beneficiary_id) WHERE status <> reversed.
 - **Errors**: 403 FORBIDDEN (caller lacks commissions:read)
@@ -133,7 +146,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## GET /admin/commission-accruals/:id
 
 - **Map**: Accrued commissions and their status. (العمولات المستحقة وحالتها) · staff-permission `commissions:read` · stage 11 · tables commission_accruals
-- **Frontend**: `getAccrual` (src/features/commissions/api/accruals.ts:32) · params `id: number` · returns `CommissionAccrual` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Response**: Same row as the list (orderId and merchant always set, approvedAt included).
 - **Errors**: 404 NOT_FOUND (no accrual with that id)
 - **Mock**: src/features/commissions/mocks/accrualRoutes.ts (Demo S.accruals (CA-0001 -> 1, ledgerTxId from the demo commission journals); approval posts per-agent journals via mocks/ledger.ts; tests in api/accruals.test.ts show exact query strings and the answer.)
@@ -141,7 +155,8 @@ Frontend features covering this module: `commissions` (rules in `RULES.md`).
 ## POST /admin/commission-accruals/approve
 
 - **Map**: Approve and pay out in bulk, with a ledger entry on the wallet. (اعتماد وصرف بالجملة بقيد على المحفظة) · staff-permission `commissions:approve` · stage 11 · tables commission_accruals, ledger_entries
-- **Frontend**: `approveAccruals` (src/features/commissions/api/accruals.ts:42) · params `body: ApproveAccrualsBody` · returns `ApproveAccrualsResult` · success 200 · assumed contract
+- **Retired** (decision 062): Commissions and referral links were retired: no plan is assigned, nothing accrues or pays out, and no referral code is shown. No backend route serves it and no console function calls it. The record below is how it was specified before.
+- **Frontend**: none.
 - **Request**: Body {ids: number[]} (1 to 1000, from ticked rows or Select all). Skip, do not fail: unknown id -> "This accrual does not exist.", status not accrued -> "Already approved." (and an accrual whose order was refunded -> skipped with that reason). Group the ready accruals by beneficiary and post one map moneyEvent "commission" per agent for the batch sum: Dr commission_expense / Cr client_wallet (agent), ledger kind "commission", ref_type accrual, ref_id = first accrual id, memo "Commission batch, N accruals to <agent>"; set each accrual status approved, ledger_tx_id and approved_at = now(); audit entry per agent; all in one DB transaction.
 - **Response**: 200 {approved (count approved), total (money actually posted, 4 dp), skipped: [{id, reason}]}. Clean run: toast "N commissions approved" / "$X credited to M agent wallets." from total; any skipped: summary dialog with each reason (ApproveResultDialog).
 - **Errors**: 422 VALIDATION_FAILED (errors[].field ids: empty, not an array of ids, or above the cap); 403 FORBIDDEN (caller lacks commissions:approve)

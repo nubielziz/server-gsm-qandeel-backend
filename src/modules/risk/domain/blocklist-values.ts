@@ -1,7 +1,6 @@
 // What a blocklist entry holds and how a typed value becomes one (feature 18, /admin/blocklist, RESOLUTIONS b2c-5): the kinds staff may
 // add, how each value is normalised, hashed and shown. Pure, no database.
 import { type BlocklistKind } from '../db/schema';
-import { imeiHashInput } from './imei-check';
 import { maskedImei } from './imei-mask';
 
 /** The kinds `POST /admin/blocklist` accepts (the console cannot add a device or a country, ANSWERS risk Q4). */
@@ -70,8 +69,8 @@ export function normalizeBlockValue(kind: BlocklistKind, raw: string): BlockValu
  * The text that is hashed to find an entry again.
  *
  * Why: `value_hash` is the keyed hash of decision 019, keyed with `LOOKUP_HASH_KEY` (`TokenService.lookupHash`, decision 054). An email is hashed as its normalised text, the recipe
- * the customer routes already use to refuse a blocked email (feature 14b); an IMEI uses the IMEI-check recipe, so an entry matches a
- * stored check; the other kinds sit behind their kind as a prefix.
+ * the customer routes already use to refuse a blocked email (feature 14b); an IMEI sits behind the prefix `imei:` (so an IMEI can never
+ * collide with a session, API key or inventory-code hash); the other kinds sit behind their kind as a prefix.
  *
  * @param kind what the value is
  * @param value the normalised value
@@ -81,9 +80,8 @@ export function blockHashInput(kind: BlocklistKind, value: string): string {
   switch (kind) {
     case 'email':
       return value;
-    case 'imei':
-      return imeiHashInput(value);
     case 'domain':
+    case 'imei':
     case 'card':
     case 'device':
     case 'country':

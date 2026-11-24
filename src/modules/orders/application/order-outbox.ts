@@ -8,9 +8,9 @@ import type { OrderStatus } from '../db/schema';
 /**
  * The outbox event types of the order engine.
  *
- * Why: decision 020 and the lead's ownership rule for feature 5: `order.status_changed` goes to `merchant-webhooks` (feature 7b
- * builds the webhook fan-out) and `order.dispatch_requested` to `supplier-dispatch` (feature 6 builds the dispatch job). Feature
- * 5 only writes them and registers where they go; it adds no processor for either queue.
+ * Why: decision 020 and the lead's ownership rule for feature 5: `order.status_changed` goes to the `notifications` queue (the
+ * platform's `NotificationRoutes` registers that route) and `order.dispatch_requested` to `supplier-dispatch` (feature 6 builds the
+ * dispatch job). Feature 5 only writes them and registers where `order.dispatch_requested` goes; it adds no processor for either queue.
  */
 export const ORDER_OUTBOX_EVENTS = {
   statusChanged: 'order.status_changed',
@@ -29,11 +29,11 @@ export interface StatusChangedPayload {
 /**
  * Writes order events to the transactional outbox.
  *
- * Why: a status change must reach the merchant's webhook and a new automatic order must reach the dispatch job exactly when the
+ * Why: a status change must reach the merchant's notifications and a new automatic order must reach the dispatch job exactly when the
  * change commits, never otherwise, so both are `outbox_events` rows written in the transition's own transaction. The payloads
  * are ids and status words: the consumers re-read everything else from Postgres, so no price, IMEI or name sits in Redis.
  *
- * Side effects: registers the two event types with their queues at boot; `statusChanged` and `dispatchRequested` insert one
+ * Side effects: registers `order.dispatch_requested` with its queue at boot; `statusChanged` and `dispatchRequested` insert one
  * `outbox_events` row each on the caller's transaction.
  *
  * @see docs/queues.md (outbox event types)
@@ -45,9 +45,8 @@ export class OrderOutbox implements OnModuleInit {
     private readonly routes: OutboxRouteRegistry,
   ) {}
 
-  /** Registers `order.status_changed` and `order.dispatch_requested` with their queues. */
+  /** Registers `order.dispatch_requested` with its queue (`order.status_changed` is routed by the notifications module). */
   onModuleInit(): void {
-    this.routes.register({ type: ORDER_OUTBOX_EVENTS.statusChanged, queue: 'merchant-webhooks' });
     this.routes.register({ type: ORDER_OUTBOX_EVENTS.dispatchRequested, queue: 'supplier-dispatch' });
   }
 

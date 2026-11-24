@@ -1,59 +1,41 @@
-// ApiKeyAuthenticator: turns a presented merchant API key into a principal (decision 018). REST v1 and the Dhru surface share
-// it; they differ only in where the credentials are read and which scope the key needs.
+// ApiKeyAuthenticator: turns a presented merchant API key into a principal (decision 018): the Dhru surface's `username` + `apiaccesskey`.
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { CLOCK, type Clock } from '../../../../../common/clock';
 import { constantTimeEqual } from '../../../../../infra/crypto';
 import { type IpAddress, formatIpAddress, ipRateLimitKey, parseIpAddress } from '../../../../../common/ip-address';
-import type { Surface } from '../../../../../common/surface';
-import {
-  RATE_LIMITERS,
-  type RateLimitResult,
-  RateLimitService,
-  rateLimitedError,
-} from '../../../../../infra/rate-limit';
+import { RATE_LIMITERS, RateLimitService, rateLimitedError } from '../../../../../infra/rate-limit';
 import type { ApiKeyPrincipal } from '../../principal';
 import { ApiKeyDirectory } from './api-key.directory';
 import { type ApiKeyRefusalReason, type ApiKeyView, checkApiKey, refusalFor } from './api-key.rules';
 
-/** What a route presents and needs. */
+/** What a request presents. */
 export interface ApiKeyCredentials {
   /** The key as the caller sent it; `undefined` when the request carries none. */
   readonly key: string | undefined;
-  /** The Dhru username the key must belong to; `undefined` for REST v1, which names no username. */
+  /** The Dhru username the key must belong to; `undefined` when the request carries none. */
   readonly username?: string | undefined;
-  /** The scope the key must list. */
-  readonly scope: string;
   /**
    * How many points of the key's per-minute limit the call costs, default 1: a bulk placement costs one per item, at most the key's
    * whole limit (decision 053).
    */
   readonly points?: number | undefined;
-  /** The surface, which words the refusals (problem+json, or the Dhru envelope). */
-  readonly surface: Surface;
-  /**
-   * Called with the key's own limit after the call was counted, whether it was allowed or not (REST v1 turns it into the
-   * `RateLimit-*` headers). Not called for a refusal before the count (unknown key, wrong scope, address not allowed).
-   */
-  readonly onRateLimit?: ((result: RateLimitResult) => void) | undefined;
 }
 
 /**
  * Authenticates merchant API keys.
  *
- * Why: decision 018: `Authorization: Bearer <key>` (REST v1) and `username` + `apiaccesskey` (Dhru) both resolve an `api_keys` row
- * by keyed hash, then check revoked/expired, the merchant's status, `allowed_ips` (CIDR, IPv4 and IPv6), the scope and the
- * key's per-minute limit (decision 021; the limit is counted only after every other check passed, so a refused call costs the
- * merchant nothing). Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because
- * REST v1 and Dhru have no per-IP stage in the pipeline and an unknown key has no per-key limit to hit. Decision 053: that budget is read
- * before the key is looked up, so an address that used it up costs no database lookup: its keys are answered from the key cache alone,
- * so a key in use there (its view is kept fresh by its calls) is still served, and a key the cache does not hold is refused `429`; a
- * bulk placement costs one point per item (`points`), at most the key's whole limit, in the one `consume`, so the `RateLimit-*` headers
- * stay true.
+ * Why: decision 018: `username` + `apiaccesskey` (Dhru) resolve an `api_keys` row by keyed hash, then check revoked/expired, the
+ * merchant's status, `allowed_ips` (CIDR, IPv4 and IPv6) and the key's per-minute limit (decision 021; the limit is counted only after
+ * every other check passed, so a refused call costs the merchant nothing). A key carries no scope: every live key of an active merchant
+ * is a Dhru credential. Unknown keys are counted per client address (the `ip` limiter, 300 a minute, under their own key) because Dhru
+ * has no per-IP stage in the pipeline and an unknown key has no per-key limit to hit. Decision 053: that budget is read before the key is
+ * looked up, so an address that used it up costs no database lookup: its keys are answered from the key cache alone, so a key in use
+ * there (its view is kept fresh by its calls) is still served, and a key the cache does not hold is refused `429`; a bulk placement
+ * costs one point per item (`points`), at most the key's whole limit, in the one `consume`.
  *
  * Side effects: reads the key cache and, on a miss while the address has budget left, `api_keys` and `clients`; counts points in the
- * cache Redis; writes `api_keys.last_used_at` at most once a minute; tells the caller the key's limit figures through `onRateLimit`
- * (REST v1 sends them as `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`).
+ * cache Redis; writes `api_keys.last_used_at` at most once a minute.
  *
  * @see docs/decisions/018-auth-sessions-csrf.md
  */
@@ -71,18 +53,17 @@ export class ApiKeyAuthenticator {
    * Authenticates a request or refuses it.
    *
    * @param request the Fastify request (its address is judged against the key's allowed IPs)
-   * @param credentials the key, the Dhru username if any, the scope the route needs and the surface
-   * @returns the principal: merchant id, key id and scopes
+   * @param credentials the key, the Dhru username and the points the call costs
+   * @returns the principal: merchant id and key id
    * @throws {AppError} `UNAUTHORIZED` (401: no, unknown, revoked or expired key, or a username that is not the key's),
-   *   `ACCOUNT_SUSPENDED` (403), `ACCOUNT_PENDING_APPROVAL` (403: merchant not approved, B153), `FORBIDDEN` (403: the scope is missing),
-   *   `IP_NOT_ALLOWED` (403),
+   *   `ACCOUNT_SUSPENDED` (403), `ACCOUNT_PENDING_APPROVAL` (403: merchant not approved, B153), `IP_NOT_ALLOWED` (403),
    *   `RATE_LIMITED` (429 with `Retry-After`: the key's limit, or too many unknown keys from one address and a key the cache does not
    *   hold, or a username that is not the key's)
    */
   async authenticate(request: FastifyRequest, credentials: ApiKeyCredentials): Promise<ApiKeyPrincipal> {
-    const { key, username, scope, surface, onRateLimit } = credentials;
+    const { key, username } = credentials;
     const address = parseIpAddress(request.ip);
-    const refuse = (reason: ApiKeyRefusalReason) => refusalFor(reason, surface, address, scope);
+    const refuse = (reason: ApiKeyRefusalReason) => refusalFor(reason, address);
 
     // Nothing was sent: refuse without a lookup and without counting (it costs us nothing).
     if (key === undefined) throw refuse('unauthenticated');
@@ -97,7 +78,7 @@ export class ApiKeyAuthenticator {
     }
 
     const nowMs = this.clock.nowMs();
-    const reason = checkApiKey(view, { nowMs, address, scope });
+    const reason = checkApiKey(view, { nowMs, address });
     if (reason) throw refuse(reason);
 
     // A stored limit below 1 is a data error (the limiter would throw): the limiter's default applies instead.
@@ -108,7 +89,6 @@ export class ApiKeyAuthenticator {
     const wanted = Number.isInteger(credentials.points) ? (credentials.points as number) : 1;
     const points = Math.max(1, Math.min(wanted, keyLimit));
     const limit = await this.limits.consume('api-key', String(view.id), points, options);
-    onRateLimit?.(limit);
     if (!limit.allowed) throw rateLimitedError(limit.retryAfterSeconds);
 
     await this.touchQuietly(view, address ? formatIpAddress(address) : request.ip, nowMs);
@@ -117,7 +97,6 @@ export class ApiKeyAuthenticator {
       clientId: view.clientId,
       clientName: view.client.name,
       keyId: view.id,
-      scopes: view.scopes,
       ip: request.ip,
     };
   }

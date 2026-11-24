@@ -9,7 +9,7 @@ import { EncryptionService, PasswordHasher } from '@src/infra/crypto';
 import { STAFF_TOTP_AAD } from '@src/modules/identity';
 import { schema as s } from '@src/infra/db';
 import { findBalanceDifferences } from '@src/modules/money/infra/ledger-read.repository';
-import { demoStatePath, loadDemoState } from '../../scripts/seed/demo-state';
+import { demoStatePath, frontendDir, loadDemoState } from '../../scripts/seed/demo-state';
 import { ROLES, permissionsOf } from '../../scripts/seed/identity';
 import { DEV_PASSWORD, DEV_TOTP_SECRETS, seedDevCredentials } from '../../scripts/seed/dev-credentials';
 import { runSeed } from '../../scripts/seed/run';
@@ -73,8 +73,9 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       'clients:20',
       'settings:1',
       // Feature 12a: the platform seed also writes the demo's customer email templates and the notification log.
-      'notification_templates:6',
-      'notifications:310',
+      // The abandoned-checkout mail and its 17 sent rows are retired (decision 062).
+      'notification_templates:5',
+      'notifications:293',
       // Feature 23: the notification center's three campaigns, the in-app items and the emails of the sent one.
       'notification_campaigns:3',
       'notification_inbox:3',
@@ -113,18 +114,13 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
       ['allow', 'admin', '::1/128', 'manual', null],
     ]);
 
-    // The platform seeds the IP restriction; the risk seeder (feature 18) adds the risk rules, `require3ds` and the IMEI retention.
+    // The platform seeds the IP restriction; the risk seeder (feature 18) adds the risk rules and `require3ds`.
     const settings = await db.select({ key: s.settings.key, value: s.settings.value }).from(s.settings);
     expect(settings.find((row) => row.key === 'adminAllowlistOnly')).toEqual({
       key: 'adminAllowlistOnly',
       value: true,
     });
-    expect(settings.map((row) => row.key).sort()).toEqual([
-      'adminAllowlistOnly',
-      'imeiRetentionDays',
-      'require3ds',
-      'riskRules',
-    ]);
+    expect(settings.map((row) => row.key).sort()).toEqual(['adminAllowlistOnly', 'require3ds', 'riskRules']);
 
     const accounts = await db.select().from(s.ledgerAccounts);
     const systemAccounts = accounts.filter((row) => row.ownerId === null);
@@ -162,7 +158,7 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     ]);
   });
 
-  it('writes the demo merchants and their groups with the ids, names, groups and referrers of the frontend mocks', async () => {
+  it('writes the demo merchants and their groups with the ids, names and groups of the frontend mocks', async () => {
     const { db } = await testDb();
     // A fixed "now": merchants joined N days ago, so the dates are exact.
     const now = Date.parse('2026-11-01T10:00:00.000Z');
@@ -189,21 +185,22 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
     expect(merchants[0]).toMatchObject({
       username: 'zain-mobile-hub',
       company: 'Zain Mobile Hub',
-      referralCode: 'GSM0001',
-      kycStatus: 'approved',
+      referralCode: 'zain-mobile-hub',
       passwordHash: null,
       referredById: null,
     });
     expect(merchants[0]!.createdAt.getTime()).toBe(now - 410 * 86_400_000);
     expect(merchants[0]!.emailVerifiedAt!.getTime()).toBe(now - 410 * 86_400_000 + 3_600_000);
-    // Referrers, pending and suspended merchants, the in-review KYC.
-    expect(merchants[7]).toMatchObject({ name: 'Casablanca Unlock', referredById: 1, groupId: 2 });
-    expect(merchants[11]).toMatchObject({ name: 'Jeddah Tech Bar', referredById: 5 });
-    expect(merchants.filter((row) => row.status === 'pending').map((row) => row.id)).toEqual([18, 20]);
+    // No referral link is seeded any more (decision 062), then the one legacy pending merchant, the suspended one and the
+    // invited one: active at once since the approval step is retired (decision 062), its email not proven yet.
+    expect(merchants[7]).toMatchObject({ name: 'Casablanca Unlock', groupId: 2 });
+    expect(merchants.every((row) => row.referredById === null)).toBe(true);
+    expect(merchants.filter((row) => row.status === 'pending').map((row) => row.id)).toEqual([20]);
     expect(merchants.filter((row) => row.status === 'suspended').map((row) => row.id)).toEqual([19]);
-    expect(merchants[17]).toMatchObject({ kycStatus: 'pending', emailVerifiedAt: null });
+    expect(merchants[17]).toMatchObject({ name: 'Algiers Service Plus', status: 'active', emailVerifiedAt: null });
+    expect(merchants.filter((row) => row.emailVerifiedAt === null).map((row) => row.id)).toEqual([18, 20]);
     expect(new Set(merchants.map((row) => row.username)).size).toBe(20);
-    expect(new Set(merchants.map((row) => row.referralCode)).size).toBe(20);
+    expect(merchants.map((row) => row.referralCode)).toEqual(merchants.map((row) => row.username));
     // The money seed opens every merchant's wallet and hold with the merchant (resolution identity-platform-1).
     const owned = (await db.select().from(s.ledgerAccounts)).filter((row) => row.ownerType === 'client');
     for (const kind of ['client_wallet', 'client_hold']) {
@@ -272,7 +269,8 @@ describe.skipIf(!frontendPresent)('runSeed', () => {
   });
 
   it('matches the frontend mock implementation when it can be imported', async () => {
-    const mock = join(import.meta.dir, '../../../frontend-admin/src/mocks/roles.ts');
+    // The frontend the seed reads (FRONTEND_DIR), not a fixed folder beside this repo.
+    const mock = join(frontendDir(), 'src/mocks/roles.ts');
     if (!existsSync(mock)) return;
     const roles = (await import(mock)) as {
       permissionsOf: (key: string) => string[];

@@ -47,7 +47,7 @@ function suspended(): AppError {
  * A temporary password works for 72 hours and lifts the failed-sign-in lock of the merchant's email (decision 052); it and a 2FA reset open a
  * code step closed after repeated wrong authenticator codes (`CodeStepLock`). It also sets
  * `password_set_by_staff`: until the merchant chooses a password from a link mailed to its address, its portal sessions create no API
- * key and create or change no webhook endpoint (`MachineCredentialHold`, decision 046).
+ * key (`MachineCredentialHold`, decision 046).
  *
  * Side effects: writes `clients`, `auth_tokens`, `sessions`, `outbox_events`, `notifications` and `audit_logs`; ending sessions drops their cached
  * views after the commit; a temporary password deletes the sign-in lock key of the email after the commit; the link and verification mails
@@ -118,7 +118,7 @@ export class ClientSecurityAdminService {
           tokenId: issued.id,
         });
       } else {
-        // Until the merchant chooses a password from a mailed link, its sessions hand out no API key or webhook endpoint (decision 046).
+        // Until the merchant chooses a password from a mailed link, its sessions hand out no API key (decision 046).
         await updateClientRow(work.tx, id, {
           passwordHash,
           mustChangePassword: true,

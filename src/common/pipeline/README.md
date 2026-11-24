@@ -27,8 +27,8 @@ Authentication, CSRF and permissions are Nest guards and run after these.
   own envelope through `ErrorFormatterRegistry`: Dhru, decision 026). The registry then returns the reply so Fastify stops.
 - Two phases exist: `onRequest` (before the body is read; almost everything) and `preValidation` (after the body is parsed,
   still before any guard). Only maintenance uses the second, to see the Dhru `action` field. A `multipart/form-data` body is parsed
-  before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the three routes that take one (`/api/index.php`,
-  `/v1/files`, `/client/files`; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
+  before both (`registerMultipartBodies`, `src/common/multipart.ts`, feature 7a) on the routes that take one (`/api/index.php`,
+  `/client/files` and the other upload routes; `415` elsewhere), so the `action` of a multipart Dhru call is visible to maintenance too.
 - The fourth stage (decision 053) reads no body: a multipart body of a route that signs in with a session cookie (the portal upload, the
   customer receipt upload, the three console uploads) is read only when the request carries a live session of the route's audience;
   `401` otherwise. The full checks (suspension, stage, approval, CSRF, permission) stay in the access guard.

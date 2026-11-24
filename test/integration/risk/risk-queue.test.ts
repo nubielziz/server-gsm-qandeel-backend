@@ -93,10 +93,10 @@ describe('GET /admin/risk/queue', () => {
         id: held.customerId,
         name: 'Jack Turner',
         country: 'GB',
-        riskLevel: 'low',
         history: { earlierOrders: 0, refunds: 0, disputes: 0 },
       },
     });
+    expect(res.body.held[0].customer).not.toHaveProperty('riskLevel');
     expect(res.body.held[0].fxRate).toMatch(/^1(\.0+)?$/);
   });
 
@@ -464,7 +464,7 @@ describe('POST /admin/risk/orders/:id/refund', () => {
 
   it('writes the default reason from the first signal and blocks nothing when no switch is on', async () => {
     const { db } = world;
-    const held = await insertHeldOrder(world, { signals: ['Prepaid card BIN', 'VPN or proxy IP'] });
+    const held = await insertHeldOrder(world, { signals: ['Prepaid card BIN', 'Disposable email domain'] });
     expect(
       (await staff.post(`/admin/risk/orders/${held.orderId}/refund`, { blockEmail: false, blockDevice: false })).status,
     ).toBe(204);

@@ -93,7 +93,6 @@ describe('AccessHandlers', () => {
     const { handlers } = table();
     expect<string[]>([...PLACEHOLDER_ACCESS_KINDS].sort()).toEqual(
       [
-        'api-key',
         'checkout-token',
         'dhru-credentials',
         'gateway-signature',
@@ -105,7 +104,7 @@ describe('AccessHandlers', () => {
     );
     for (const kind of PLACEHOLDER_ACCESS_KINDS) {
       expect(handlers.isPlaceholder(kind), kind).toBe(true);
-      const error = refusalOf(handlers.handlerFor(kind), fakeContract({ surface: 'v1' }));
+      const error = refusalOf(handlers.handlerFor(kind), fakeContract({ surface: 'store' }));
       expect(error, kind).toBeInstanceOf(AppError);
       expect(error, kind).toMatchObject({ code: 'UNAUTHORIZED', status: 401, detail: undefined });
     }
@@ -132,9 +131,9 @@ describe('AccessHandlers', () => {
 
   it('lets a later feature replace a placeholder', async () => {
     const { handlers } = table();
-    handlers.replace('api-key', { authenticate: () => ({ principal: undefined }) });
-    expect(handlers.isPlaceholder('api-key')).toBe(false);
-    expect(await handlers.handlerFor('api-key').authenticate(request, fakeContract({}), context)).toEqual({
+    handlers.replace('url-secret', { authenticate: () => ({ principal: undefined }) });
+    expect(handlers.isPlaceholder('url-secret')).toBe(false);
+    expect(await handlers.handlerFor('url-secret').authenticate(request, fakeContract({}), context)).toEqual({
       principal: undefined,
     });
     expect(handlers.isPlaceholder('link-token')).toBe(true);
@@ -150,7 +149,7 @@ describe('AccessHandlers', () => {
         tags: ['spec'],
         surface: 'store',
         access: kind,
-        ...(kind === 'staff-permission' || kind === 'api-key' ? { permission: 'staff:read' } : {}),
+        ...(kind === 'staff-permission' ? { permission: 'staff:read' } : {}),
         success: { status: 200, schema: z.object({}) },
         errors: [],
       };

@@ -1,5 +1,5 @@
 // Unit tests of what an Idempotency-Key stands for (ALIGNMENT § 7): the hash of the scope and the body is equal for two spellings of one
-// request and different for any other. The replay and the locking are integration tests (test/integration/orders/rest-v1-idempotency.test.ts).
+// request and different for any other. The replay and the locking are integration tests (test/integration/orders/client-orders-idempotency.test.ts).
 import { describe, expect, it } from 'bun:test';
 import type { Clock } from '@src/common/clock';
 import type { TokenService } from '@src/infra/crypto';

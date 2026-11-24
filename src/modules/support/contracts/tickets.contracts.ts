@@ -48,7 +48,6 @@ export const TicketRowSchema = z.object({
   slaDueAt: zIsoDateTime.nullable().describe('When the next reply is due; null when nobody is waiting for one.'),
   firstResponseAt: zIsoDateTime.nullable(),
   resolvedAt: zIsoDateTime.nullable(),
-  csatScore: z.number().int().min(1).max(5).nullable(),
   createdAt: zIsoDateTime,
   updatedAt: zIsoDateTime.describe('The last activity.'),
   lastPublicAt: zIsoDateTime.nullable().describe('The time of the latest message the customer could see.'),
@@ -83,7 +82,6 @@ const TICKET_EXAMPLE = {
   slaDueAt: '2026-11-08T18:00:00.000Z',
   firstResponseAt: '2026-11-08T10:12:00.000Z',
   resolvedAt: null,
-  csatScore: null,
   createdAt: '2026-11-08T09:30:00.000Z',
   updatedAt: '2026-11-08T10:00:00.000Z',
   lastPublicAt: '2026-11-08T10:00:00.000Z',
@@ -149,7 +147,7 @@ export const TicketDetailSchema = TicketRowSchema.extend({
   messages: z.array(TicketMessageSchema).describe('Oldest first, internal notes and system messages included.'),
   replyChannels: z
     .array(z.enum(REPLY_CHANNELS))
-    .describe("`['email']`, plus `'telegram'` when the requester is a merchant with a linked chat."),
+    .describe("`['email']` while the requester can be reached; an empty list for an anonymized or deleted requester."),
 });
 
 /** `GET /admin/support-tickets/:id`. */
@@ -175,8 +173,8 @@ export const updateSupportTicket = defineRoute({
   summary: 'Change a support ticket',
   description:
     'Only the keys sent change; a value equal to the current one is ignored (and a body with no change answers the row as it is). ' +
-    '`status` takes `new`, `open`, `pending` or `resolved`: `resolved` stamps `resolvedAt`, writes the internal system message and ' +
-    'emails the satisfaction survey; `open` reopens a resolved ticket (clears `resolvedAt`) or takes a new or waiting one; `pending` ' +
+    '`status` takes `new`, `open`, `pending` or `resolved`: `resolved` stamps `resolvedAt` and writes the internal system message; ' +
+    '`open` reopens a resolved ticket (clears `resolvedAt`) or takes a new or waiting one; `pending` ' +
     'marks it as waiting on the customer; a resolved ticket can only be reopened and nothing goes back to `new`. `assigneeId: null` ' +
     'unassigns; otherwise it must be an active staff member. A priority change moves `slaDueAt` to the new target. Every change is ' +
     'one audit entry.',
@@ -202,13 +200,13 @@ export const replyToSupportTicket = defineRoute({
   key: 'POST /admin/support-tickets/:id/reply',
   summary: 'Reply to the customer',
   description:
-    'Adds a public staff message and sends it on `channel` (`email` always; `telegram` only when `replyChannels` lists it; without a ' +
-    "channel the ticket's own channel when allowed, else email; a channel the ticket cannot use is `422` on `channel`). The text is " +
+    'Adds a public staff message and sends it on `channel` (`email`, when `replyChannels` lists it; without a ' +
+    'channel, email; a channel the ticket cannot use is `422` on `channel`). The text is ' +
     'stored and sent as given: the console fills the template variables. The first public reply sets `firstResponseAt`; a new or open ' +
     'ticket becomes `pending` and `slaDueAt` becomes null; an unassigned ticket is assigned to the sender. A resolved ticket is ' +
     '`409 TICKET_RESOLVED`: reopen it first. `fileIds` attaches files the sender uploaded with `POST /admin/support-tickets/:id/files` ' +
-    "(at most 5); `body` may be `''` when a file is attached. The requester sees the reply at once on an open ticket page. A Telegram " +
-    'reply is sent at once; an email reply is mailed only when the requester has not seen it after `support.replyEmailDelayMinutes` ' +
+    "(at most 5); `body` may be `''` when a file is attached. The requester sees the reply at once on an open ticket page. An " +
+    'email reply is mailed only when the requester has not seen it after `support.replyEmailDelayMinutes` ' +
     '(default 5; `0` mails at once), one mail for every unseen reply of the ticket (template event `support.reply`).',
   tags: ['support-tickets'],
   surface: 'admin',

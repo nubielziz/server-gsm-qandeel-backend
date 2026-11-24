@@ -133,7 +133,7 @@ export class PaymentCrediting {
    * Credits a storefront customer's top-up to the store balance.
    *
    * Why: plan 21 § 5.6.5: the same lock order and idempotency key as a merchant deposit (`deposit:payment:<id>`, payment ids are global),
-   * the `customer_topup` event (kind `deposit`); no `invoice.paid` (a merchant webhook event) and no PDF (P5: stored value is not a taxable
+   * the `customer_topup` event (kind `deposit`); no `invoice.paid` (a merchant event) and no PDF (P5: stored value is not a taxable
    * sale). A credit is never refused, frozen wallet or switch off (plan § 5.1 invariant 4).
    *
    * Side effects: posts one ledger transaction (opening the wallet on its first credit); updates `payments` and `invoices`; one audit row;

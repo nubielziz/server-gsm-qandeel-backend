@@ -4,22 +4,16 @@ import { DHRU_MAX_BULK_ITEMS, bulkPlacementItems } from '../../../../../common/d
 /**
  * The cost of an API-key call in points of the key's per-minute limit.
  *
- * Why: decision 053. A call used to cost one point whatever it carried, and a bulk placement takes up to 100 orders (REST v1
- * `POST /v1/orders/bulk`, Dhru `placeimeiorderbulk`), so one point could start a hundred orders. A bulk costs one point per item; the
- * authenticator caps the charge at the key's own limit, so the documented 100-item bulk still passes under the default 60 a minute.
- * `getimeiorderbulk` only reads and stays one point.
+ * Why: decision 053. A call used to cost one point whatever it carried, and a bulk placement takes up to 100 orders (Dhru
+ * `placeimeiorderbulk`), so one point could start a hundred orders. A bulk costs one point per item; the authenticator caps the charge at
+ * the key's own limit, so the documented 100-item bulk still passes under the default 60 a minute. `getimeiorderbulk` only reads and stays
+ * one point.
  *
- * @param routeKey the contract key (`POST /v1/orders/bulk`, `POST /api/index.php`)
+ * @param routeKey the contract key (`POST /api/index.php`)
  * @param body the parsed request body
- * @returns the points, from 1 to {@link DHRU_MAX_BULK_ITEMS} (the item limit of both bulks)
+ * @returns the points, from 1 to {@link DHRU_MAX_BULK_ITEMS} (the item limit of a bulk)
  */
 export function requestPoints(routeKey: string, body: unknown): number {
-  let items = 1;
-  if (routeKey === 'POST /v1/orders/bulk') {
-    const orders = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)['orders'] : undefined;
-    if (Array.isArray(orders)) items = orders.length;
-  } else if (routeKey === 'POST /api/index.php') {
-    items = bulkPlacementItems(body);
-  }
+  const items = routeKey === 'POST /api/index.php' ? bulkPlacementItems(body) : 1;
   return Math.min(DHRU_MAX_BULK_ITEMS, Math.max(1, items));
 }

@@ -146,8 +146,6 @@ export const openMyTicket = defineRoute({
       createdAt: '2026-11-08T09:30:00.000Z',
       updatedAt: '2026-11-08T09:30:00.000Z',
       resolvedAt: null,
-      csatScore: null,
-      canRate: false,
       messages: [
         {
           id: 9000,

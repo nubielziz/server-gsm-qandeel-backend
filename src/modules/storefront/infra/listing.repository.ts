@@ -124,7 +124,7 @@ export async function allListings(
  * Finds which of some services have a switched-on service page.
  *
  * Why: catalog-3 and the checkout rule of feature 14a: a service is public only when staff switched its `service_listings` row
- * on, so the list, the page, the checkout (and the pre-order IMEI check), the category menu and the search (its searchable rule,
+ * on, so the list, the page, the checkout, the category menu and the search (its searchable rule,
  * decision 038) all ask this one question. A service has one listing (decision 039), so what is buyable and what is searchable
  * cannot drift apart by language.
  *

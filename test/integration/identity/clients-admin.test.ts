@@ -1,7 +1,7 @@
 // Integration tests of the merchant management routes (feature 2a): list, show, invite a merchant (ledger accounts, invite token,
-// outbox event, credit rule), approve, suspend, reactivate and move to another group, through HTTP on the real application.
+// outbox event, credit rule), suspend, reactivate and move to another group, through HTTP on the real application.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { ApiKeyDirectory, MERCHANT_INVITED_EVENT, SessionService } from '@src/modules/identity';
 import { MERCHANT_INVITE_TTL_MS } from '@src/modules/identity/application/merchant-invites';
@@ -87,7 +87,7 @@ const invite = (api: AdminApi, body: Record<string, unknown> = {}) =>
   });
 
 describe('POST /admin/clients', () => {
-  it('invites a merchant: pending, a generated username and referral code, the group, and the wallet the ledger opened', async () => {
+  it('invites a merchant: active at once, a generated username, the group, and the wallet the ledger opened', async () => {
     const { vip } = await groups();
     const rami = await owner();
     const res = await invite(rami, {
@@ -108,16 +108,12 @@ describe('POST /admin/clients', () => {
       company: '',
       phone: '',
       groupId: vip,
-      referralCode: expect.stringMatching(/^GSM[A-HJ-NP-Z2-9]{6}$/),
       emailVerifiedAt: null,
-      status: 'pending',
-      kycStatus: 'none',
+      status: 'active',
       group: { id: vip, name: 'VIP', discountPercent: '8.0000' },
-      referredBy: null,
       address: '',
       taxId: '',
       internalNotes: '',
-      telegramLinked: false,
       security: {
         hasPassword: false,
         mustChangePassword: false,
@@ -228,7 +224,7 @@ describe('POST /admin/clients', () => {
       email: 'ops@zainmobilehub.example',
       country: 'JO',
       groupId: vip,
-      status: 'pending',
+      status: 'active',
       creditLimit: '500.0000',
     });
     const [token] = await tokensOf(res.body.id);
@@ -248,7 +244,8 @@ describe('POST /admin/clients', () => {
     expect(answers.map((answer) => answer.status)).toEqual([201, 201, 201]);
     const usernames = (await clientRows()).map((row) => row.username);
     expect(new Set(usernames).size).toBe(5);
-    expect(new Set((await clientRows()).map((row) => row.referralCode)).size).toBe(5);
+    // The retired referral column is NOT NULL and unique until the accounts migration: each row carries its own username in it.
+    expect((await clientRows()).map((row) => row.referralCode).sort()).toEqual([...usernames].sort());
   });
 
   it('refuses an email that a merchant already uses, in any case (409 EMAIL_TAKEN), and writes nothing', async () => {
@@ -371,7 +368,7 @@ describe('POST /admin/clients', () => {
 });
 
 describe('GET /admin/clients and /admin/clients/:id', () => {
-  /** Four merchants like the demo's: names, statuses, groups, a referrer and a credit limit. */
+  /** Four merchants like the demo's: names, statuses, groups and a credit limit. */
   async function seedMerchants() {
     const g = await groups();
     const { db } = await testDb();
@@ -392,7 +389,6 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
       country: 'AE',
       groupId: g.standard,
       status: 'pending',
-      referredById: zain,
       createdAt: new Date('2026-02-01T00:00:00.000Z'),
     });
     const beta = await insertMerchant(db, {
@@ -428,7 +424,7 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
     return { ...g, zain, alpha, beta, gamma };
   }
 
-  it('lists merchants by name (case-insensitive) with group, referrer, wallet and stats, and the exact total', async () => {
+  it('lists merchants by name (case-insensitive) with group, wallet and stats, and the exact total', async () => {
     const m = await seedMerchants();
     const rami = await owner();
     const res = await rami.get('/admin/clients');
@@ -443,17 +439,18 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
       company: 'Zain Trading',
       country: 'JO',
       status: 'active',
-      kycStatus: 'none',
       createdAt: '2026-01-01T00:00:00.000Z',
       group: { id: m.vip, name: 'VIP', discountPercent: '8.0000' },
-      referredBy: null,
       wallet: { balance: '1480.0000', reserved: '20.0000', creditLimit: '2000.0000', available: '3480.0000' },
       stats: { orders: 0, spend: '0.0000', profit: '0.0000', margin: null, successRate: null, lastOrderAt: null },
     });
     const alpha = res.body.find((row: { id: number }) => row.id === m.alpha);
-    expect(alpha.referredBy).toEqual({ id: m.zain, name: 'Zain Mobile Hub' });
     expect(alpha.wallet).toEqual({ balance: '0.0000', reserved: '0.0000', creditLimit: '0.0000', available: '0.0000' });
     expect(JSON.stringify(res.body)).not.toMatch(/passwordHash|totp|telegramChatId|notificationPrefs/i);
+    // The label of the retired document check left the merchant row (decision 061), and so did the referral link (decision 062).
+    expect(zain).not.toHaveProperty('kycStatus');
+    expect(zain).not.toHaveProperty('referralCode');
+    expect(zain).not.toHaveProperty('referredBy');
   });
 
   it('filters by status (equal and not equal), group and id, searches name, email, company, username and country, sorts and pages', async () => {
@@ -518,6 +515,7 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
     const shown = await rami.get(`/admin/clients/${m.alpha}`);
     expect(shown.status).toBe(200);
     expect(shown.body).toMatchObject({ id: m.alpha, name: 'Alpha Unlock', status: 'pending' });
+    expect(shown.body).not.toHaveProperty('kycStatus');
     const missing = await rami.get('/admin/clients/999999');
     expect(missing.status).toBe(404);
     expect(missing.body.code).toBe('NOT_FOUND');
@@ -528,15 +526,24 @@ describe('GET /admin/clients and /admin/clients/:id', () => {
 });
 
 describe('PATCH /admin/clients/:id', () => {
-  async function pending() {
+  /** A merchant staff invited: active at once (decision 062), with a credit limit of 300. */
+  async function fresh() {
     const g = await groups();
     const rami = await owner();
     const created = await invite(rami, { groupId: g.vip, creditLimit: '300.0000' });
     return { ...g, rami, id: created.body.id as number };
   }
 
-  it('approves a pending merchant (pending to active), audits it and clears the cached API key view', async () => {
-    const { rami, id } = await pending();
+  /** A row written before decision 062: invited and never activated. */
+  async function legacyPending() {
+    const made = await fresh();
+    const { db } = await testDb();
+    await db.update(s.clients).set({ status: 'pending' }).where(eq(s.clients.id, made.id));
+    return made;
+  }
+
+  it('activates a merchant that is still pending (pending to active) without a mail, audits it and clears the cached API key view', async () => {
+    const { rami, id } = await legacyPending();
     const { db } = await testDb();
     const key = await insertApiKey(t, db, id);
     const directory = t.app.get(ApiKeyDirectory);
@@ -549,18 +556,19 @@ describe('PATCH /admin/clients/:id', () => {
     expect((await directory.findByKey(key.key))!.client.status).toBe('active');
     const audit = (await auditRows()).at(-1)!;
     expect(audit).toMatchObject({
-      action: 'approved merchant',
+      action: 'activated merchant',
       entityType: 'merchant',
       entityId: id,
       entityLabel: 'Zain Mobile Hub',
     });
     expect(audit.before).toEqual({ status: 'pending' });
     expect(audit.after).toEqual({ status: 'active' });
+    // Nobody applied: no mail goes out.
+    expect((await outboxRows()).map((row) => row.type)).toEqual(['merchant.invited']);
   });
 
   it('suspends an active merchant: the reason, who and when are stored, its sessions end, its API keys read as suspended, the wallet is untouched', async () => {
-    const { rami, id } = await pending();
-    await rami.patch(`/admin/clients/${id}`, { status: 'active' });
+    const { rami, id } = await fresh();
     const { db } = await testDb();
     const key = await insertApiKey(t, db, id);
     const directory = t.app.get(ApiKeyDirectory);
@@ -595,8 +603,7 @@ describe('PATCH /admin/clients/:id', () => {
   });
 
   it('reactivates a suspended merchant: the suspension is cleared, no session comes back, the cached views are dropped', async () => {
-    const { rami, id } = await pending();
-    await rami.patch(`/admin/clients/${id}`, { status: 'active' });
+    const { rami, id } = await fresh();
     const session = await openSession(t, { type: 'client', id });
     await rami.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'Under review' });
     const { db } = await testDb();
@@ -621,16 +628,13 @@ describe('PATCH /admin/clients/:id', () => {
   });
 
   it('refuses every other status change (409 INVALID_TRANSITION on status) and writes nothing', async () => {
-    const { rami, id } = await pending();
+    const { rami, id } = await fresh();
     const refused = async (body: Record<string, unknown>) => {
       const res = await rami.patch(`/admin/clients/${id}`, body);
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('INVALID_TRANSITION');
       expect(res.body.errors[0].field).toBe('status');
     };
-    // Pending can be approved or declined (suspended), never pending again.
-    await refused({ status: 'pending' });
-    await rami.patch(`/admin/clients/${id}`, { status: 'active' });
     // Active can only be suspended.
     await refused({ status: 'active' });
     await refused({ status: 'pending' });
@@ -639,15 +643,24 @@ describe('PATCH /admin/clients/:id', () => {
     await refused({ status: 'suspended', reason: 'Again please' });
     await refused({ status: 'pending' });
     expect((await clientRow(id)).status).toBe('suspended');
-    // The invitation, the approval and the suspension: the refusals wrote no audit row.
-    expect(await auditRows()).toHaveLength(3);
+    // The invitation and the suspension: the refusals wrote no audit row.
+    expect(await auditRows()).toHaveLength(2);
   });
 
-  it('needs a reason of 3 to 140 characters to suspend (422 on reason), and ignores a reason when approving', async () => {
-    const { rami, id } = await pending();
-    const approved = await rami.patch(`/admin/clients/${id}`, { status: 'active', reason: 'unused' });
-    expect(approved.status).toBe(200);
-    expect(await clientRow(id)).toMatchObject({ suspendedReason: null });
+  it('lets a merchant that is still pending become active or suspended, never pending again', async () => {
+    const { rami, id } = await legacyPending();
+    const refused = await rami.patch(`/admin/clients/${id}`, { status: 'pending' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('INVALID_TRANSITION');
+    expect((await rami.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'Under review' })).status).toBe(
+      200,
+    );
+    expect((await rami.patch(`/admin/clients/${id}`, { status: 'active' })).status).toBe(200);
+    expect((await clientRow(id)).status).toBe('active');
+  });
+
+  it('needs a reason of 3 to 140 characters to suspend (422 on reason), and ignores a reason when reactivating', async () => {
+    const { rami, id } = await fresh();
     for (const reason of [undefined, '', '  ', 'ab', 'x'.repeat(141)]) {
       const res = await rami.patch(`/admin/clients/${id}`, {
         status: 'suspended',
@@ -660,10 +673,13 @@ describe('PATCH /admin/clients/:id', () => {
     expect((await rami.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'x'.repeat(140) })).status).toBe(
       200,
     );
+    const reactivated = await rami.patch(`/admin/clients/${id}`, { status: 'active', reason: 'unused' });
+    expect(reactivated.status).toBe(200);
+    expect(await clientRow(id)).toMatchObject({ suspendedReason: null });
   });
 
   it('moves a merchant to another group: it is audited, and prices only new orders (nothing else changes)', async () => {
-    const { rami, id, standard, vip } = await pending();
+    const { rami, id, standard, vip } = await fresh();
     const { db } = await testDb();
     await db
       .update(s.ledgerAccounts)
@@ -674,7 +690,7 @@ describe('PATCH /admin/clients/:id', () => {
     expect(moved.body).toMatchObject({
       groupId: standard,
       group: { id: standard, name: 'Standard' },
-      status: 'pending',
+      status: 'active',
     });
     const audit = (await auditRows()).at(-1)!;
     expect(audit).toMatchObject({ action: 'changed group of', entityType: 'merchant', entityId: id });
@@ -684,7 +700,7 @@ describe('PATCH /admin/clients/:id', () => {
   });
 
   it('refuses a group move to the same group, an unknown group, the storefront group, or a group without credit while the limit is above zero (422 on groupId)', async () => {
-    const { rami, id, standard, vip, retail } = await pending();
+    const { rami, id, standard, vip, retail } = await fresh();
     for (const groupId of [vip, 999_999, retail, standard]) {
       const res = await rami.patch(`/admin/clients/${id}`, { groupId });
       expect(res.status).toBe(422);
@@ -701,7 +717,7 @@ describe('PATCH /admin/clients/:id', () => {
   });
 
   it('refuses a body that changes the status and the group together, or neither (422), and an unknown merchant (404)', async () => {
-    const { rami, id, standard } = await pending();
+    const { rami, id, standard } = await fresh();
     const both = await rami.patch(`/admin/clients/${id}`, { status: 'active', groupId: standard });
     expect(both.status).toBe(422);
     // The first key of the second kind.
@@ -711,12 +727,11 @@ describe('PATCH /admin/clients/:id', () => {
     const missing = await rami.patch('/admin/clients/999999', { status: 'active' });
     expect(missing.status).toBe(404);
     expect(missing.body.code).toBe('NOT_FOUND');
-    expect((await clientRow(id)).status).toBe('pending');
+    expect((await clientRow(id)).status).toBe('active');
   });
 
   it('lets only one of two parallel status changes win (the row is locked)', async () => {
-    const { rami, id } = await pending();
-    await rami.patch(`/admin/clients/${id}`, { status: 'active' });
+    const { rami, id } = await fresh();
     const answers = await Promise.all([
       rami.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'First request' }),
       rami.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'Second request' }),
@@ -725,14 +740,17 @@ describe('PATCH /admin/clients/:id', () => {
   });
 
   it('needs clients:update and a CSRF token', async () => {
-    const { rami, id } = await pending();
+    const { rami, id } = await fresh();
     const reader = await adminWith(t, ['clients:read', 'clients:create'], { ip: CALLER_IP });
-    const refused = await reader.patch(`/admin/clients/${id}`, { status: 'active' });
+    const refused = await reader.patch(`/admin/clients/${id}`, { status: 'suspended', reason: 'Under review' });
     expect(refused.status).toBe(403);
     expect(refused.body.detail).toContain('clients:update');
-    const noCsrf = await rami.withoutCsrf('PATCH', `/admin/clients/${id}`, { status: 'active' });
+    const noCsrf = await rami.withoutCsrf('PATCH', `/admin/clients/${id}`, {
+      status: 'suspended',
+      reason: 'Under review',
+    });
     expect(noCsrf.body.code).toBe('CSRF_FAILED');
-    expect((await clientRow(id)).status).toBe('pending');
+    expect((await clientRow(id)).status).toBe('active');
   });
 });
 
@@ -975,7 +993,7 @@ describe('PATCH /admin/clients/:id, details (feature 20)', () => {
   });
 
   it('mails the invitation, not a verification, when the merchant has no password yet; a suspended merchant gets no mail', async () => {
-    const invited = await makeMerchant(t, { noPassword: true, status: 'pending' });
+    const invited = await makeMerchant(t, { noPassword: true });
     const api = await editor();
     await api.patch(`/admin/clients/${invited.id}`, { email: 'other@example.com' });
     // The security notice to the address before the change is a `notification.send` event (decision 047), not a merchant mail event.
@@ -1073,12 +1091,17 @@ describe('second permissions (decision 046)', () => {
     expect((await clientRow(placed.body.id)).groupId).toBe(vip);
   });
 
-  it('suspending, declining and reactivating need clients:security and a group move needs groups:update; approving needs only clients:update', async () => {
+  it('suspending and reactivating need clients:security and a group move needs groups:update; activating a pending merchant needs only clients:update', async () => {
     const { vip, standard } = await groups();
     const { db } = await testDb();
     const rami = await owner();
     const pendingOne = (await invite(rami, { groupId: vip })).body.id as number;
-    const toDecline = (await invite(rami, { groupId: vip, email: 'decline@zainmobilehub.example' })).body.id as number;
+    const pendingTwo = (await invite(rami, { groupId: vip, email: 'second@zainmobilehub.example' })).body.id as number;
+    // Rows written before decision 062: invited and never activated.
+    await db
+      .update(s.clients)
+      .set({ status: 'pending' })
+      .where(inArray(s.clients.id, [pendingOne, pendingTwo]));
     const active = await insertMerchant(db, { status: 'active' });
     const suspended = await insertMerchant(db, { status: 'suspended', suspendedReason: 'Fraud check' });
     const auditsBefore = (await auditRows()).length;
@@ -1094,18 +1117,18 @@ describe('second permissions (decision 046)', () => {
       'clients:security',
     );
     await needing(
-      editor.patch(`/admin/clients/${toDecline}`, { status: 'suspended', reason: 'Not a shop' }),
+      editor.patch(`/admin/clients/${pendingTwo}`, { status: 'suspended', reason: 'Not a shop' }),
       'clients:security',
     );
     await needing(editor.patch(`/admin/clients/${suspended}`, { status: 'active' }), 'clients:security');
     await needing(editor.patch(`/admin/clients/${pendingOne}`, { groupId: standard }), 'groups:update');
     expect((await clientRow(active)).status).toBe('active');
-    expect((await clientRow(toDecline)).status).toBe('pending');
+    expect((await clientRow(pendingTwo)).status).toBe('pending');
     expect((await clientRow(suspended)).status).toBe('suspended');
     expect((await clientRow(pendingOne)).groupId).toBe(vip);
     expect(await auditRows()).toHaveLength(auditsBefore);
 
-    // Approving stays under the route's own permission.
+    // Activating stays under the route's own permission.
     expect((await editor.patch(`/admin/clients/${pendingOne}`, { status: 'active' })).status).toBe(200);
 
     const full = await adminWith(t, ['clients:read', 'clients:update', 'clients:security', 'groups:update'], {
@@ -1115,7 +1138,7 @@ describe('second permissions (decision 046)', () => {
       200,
     );
     expect(
-      (await full.patch(`/admin/clients/${toDecline}`, { status: 'suspended', reason: 'Not a shop' })).status,
+      (await full.patch(`/admin/clients/${pendingTwo}`, { status: 'suspended', reason: 'Not a shop' })).status,
     ).toBe(200);
     expect((await full.patch(`/admin/clients/${suspended}`, { status: 'active' })).status).toBe(200);
     expect((await full.patch(`/admin/clients/${pendingOne}`, { groupId: standard })).status).toBe(200);

@@ -45,7 +45,6 @@
     },
     "verificationStatus": null,
     "inputFileId": null,
-    "clientNote": null,
     "adminNote": null,
     "pricingSnapshot": {
       "source": "base",

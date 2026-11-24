@@ -12,7 +12,7 @@ export interface GuardedAccount {
 
 /** The overrides a posting may carry. */
 export interface GuardFlags {
-  /** Only the reversal of a paid commission and a merchant top-up clawback: a merchant wallet may end below its credit limit. */
+  /** Only the merchant top-up chargeback clawback: a merchant wallet may end below its credit limit. */
   readonly allowBelowCreditLimit?: boolean;
   /** Only the customer top-up chargeback clawback: a customer wallet may end below zero (and must then be frozen at commit). */
   readonly allowNegativeCustomerWallet?: boolean;

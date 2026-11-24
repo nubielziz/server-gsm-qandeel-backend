@@ -11,14 +11,13 @@ import {
 } from '@src/modules/risk/domain/risk-rules';
 
 describe('defaultRuleSet', () => {
-  it('has the eight rules of the demo with its numbers', () => {
+  it('has the seven rules of the demo with its numbers', () => {
     const rules = defaultRuleSet();
-    expect(RISK_RULE_IDS).toHaveLength(8);
+    expect(RISK_RULE_IDS).toHaveLength(7);
     expect(rules.reviewThreshold).toEqual({ on: true, value: 50 });
     expect(rules.blockThreshold).toEqual({ on: true, value: 80 });
     expect(rules.maxOrdersPerEmail).toEqual({ on: true, value: 3 });
     expect(rules.reviewFirstOrderAbove).toEqual({ on: true, value: 40 });
-    expect(rules.blockBlacklistedImei).toEqual({ on: true, value: null });
     expect(rules.blockDisposableEmail).toEqual({ on: false, value: null });
     expect(rules.require3ds).toEqual({ on: true, value: null });
   });
@@ -42,17 +41,27 @@ describe('ruleSetFromStored', () => {
         reviewThreshold: { on: 'yes', value: -5 },
         blockThreshold: { on: true, value: 7.5 },
         maxOrdersPerEmail: 'x',
-        blockBlacklistedImei: { on: false, value: 9 },
+        blockDisposableEmail: { on: true, value: 9 },
       },
       'maybe',
     );
     expect(rules.reviewThreshold).toEqual({ on: true, value: 50 });
     expect(rules.blockThreshold).toEqual({ on: true, value: 80 });
     expect(rules.maxOrdersPerEmail).toEqual({ on: true, value: 3 });
-    expect(rules.blockBlacklistedImei).toEqual({ on: false, value: null });
+    expect(rules.blockDisposableEmail).toEqual({ on: true, value: null });
     expect(rules.require3ds.on).toBe(true);
     expect(ruleSetFromStored(null, undefined)).toEqual(defaultRuleSet());
     expect(ruleSetFromStored([], undefined)).toEqual(defaultRuleSet());
+  });
+
+  it('ignores the stored row of a rule that no longer exists, so a setting saved earlier still reads', () => {
+    const rules = ruleSetFromStored(
+      { blockBlacklistedImei: { on: false, value: null }, reviewThreshold: { on: true, value: 55 } },
+      undefined,
+    );
+    expect(Object.keys(rules).sort()).toEqual([...RISK_RULE_IDS].sort());
+    expect(rules).not.toHaveProperty('blockBlacklistedImei');
+    expect(rules.reviewThreshold).toEqual({ on: true, value: 55 });
   });
 });
 
@@ -76,6 +85,7 @@ describe('mergeRules', () => {
   it('refuses an unknown id, a repeated id, a number on a switch and a bad number, each on its own id', () => {
     const merged = mergeRules(current, [
       { id: 'nope', on: true, value: null },
+      { id: 'blockBlacklistedImei', on: true, value: null },
       { id: 'require3ds', on: true, value: 5 },
       { id: 'reviewThreshold', on: true, value: 1.5 },
       { id: 'blockThreshold', on: true, value: -1 },
@@ -85,6 +95,7 @@ describe('mergeRules', () => {
     if (!merged.ok) {
       expect(merged.errors.map((error) => error.field)).toEqual([
         'nope',
+        'blockBlacklistedImei',
         'require3ds',
         'reviewThreshold',
         'blockThreshold',
@@ -133,7 +144,7 @@ describe('ruleChanges and storedRules', () => {
 
   it('stores every rule except require3ds, which is the storefront policy', () => {
     const stored = storedRules(defaultRuleSet());
-    expect(Object.keys(stored)).toHaveLength(7);
+    expect(Object.keys(stored)).toHaveLength(6);
     expect('require3ds' in stored).toBe(false);
   });
 

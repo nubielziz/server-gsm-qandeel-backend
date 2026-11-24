@@ -1,7 +1,7 @@
 // Renders a campaign's message for one person and one channel (feature 23, plan section 6): `{{name}}`, the absolute link, the HTML
 // part of an email, the marketing footer and one-click unsubscribe headers. English only (decision 039). Pure.
 import type { NotificationAudience, NotificationCampaignPurpose } from '../../db/schema';
-import { TELEGRAM_MAX_TEXT, emailHtml, renderText } from '../template-rules';
+import { emailHtml, renderText } from '../template-rules';
 import type { CampaignContent, CampaignLink } from './campaign-rules';
 import type { CampaignChannel } from './notification-audiences';
 
@@ -28,9 +28,9 @@ export interface RenderTarget {
 
 /** A rendered campaign message. */
 export interface RenderedCampaign {
-  /** The email subject, or the title of an in-app or Telegram message. */
+  /** The email subject, or the title of an in-app message. */
   readonly subject: string;
-  /** The text part (the whole Telegram message; the in-app body). */
+  /** The text part (the in-app body). */
   readonly text: string;
   /** The HTML part of an email. */
   readonly html?: string;
@@ -60,7 +60,7 @@ export function linkFor(
  * Renders a campaign for one person and channel.
  *
  * Why: one function makes what the worker sends and what the preview shows. Email: subject = title, a text part and an escaped
- * HTML part; Telegram: title, a blank line, the body, cut at the Bot API limit; in-app: title and body.
+ * HTML part; in-app: title and body.
  * A link is added when the campaign has one for the audience and the site's address is known (a staff email carries none). A
  * marketing email carries a way out: the unsubscribe link and headers for a customer, the preferences page for a merchant.
  *
@@ -81,10 +81,6 @@ export function renderCampaign(campaign: RenderableCampaign, target: RenderTarge
   const parts = [body];
   if (link) parts.push(link);
 
-  if (target.channel === 'telegram') {
-    const text = [title, '', ...parts].join('\n').slice(0, TELEGRAM_MAX_TEXT);
-    return { subject: title, text };
-  }
   if (target.channel === 'in_app') return { subject: title, text: body };
 
   let headers: Record<string, string> | undefined;

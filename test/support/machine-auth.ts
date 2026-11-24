@@ -1,6 +1,6 @@
 // Sample routes, stand-in resolvers and a test webhook adapter for the machine-auth tests (P2.5c): one contract per machine access
-// kind, so the guards are tested through real HTTP. Keys live under /t/mach to stay unique. Handlers answer what the guard made
-// of the request.
+// kind (the API key guard is tested through the real Dhru endpoint), so the guards are tested through real HTTP. Keys live under
+// /t/mach to stay unique. Handlers answer what the guard made of the request.
 import { Body, Controller } from '@nestjs/common';
 import { z } from 'zod';
 import { type ResultOf, Route, defineRoute, zJsonObject } from '@src/common/contract';
@@ -21,38 +21,12 @@ import type { TestApp } from './app';
 const Seen = z.object({
   ok: z.boolean(),
   kind: z.string().nullable(),
-  clientId: z.number().nullable(),
-  keyId: z.number().nullable(),
-  scopes: z.array(z.string()),
   resourceId: z.number().nullable(),
   gateway: z.string().nullable(),
   eventId: z.string().nullable(),
   duplicate: z.boolean().nullable(),
 });
 const Okay = z.object({ ok: z.boolean() });
-
-/** REST v1 routes: a read and a write, each with the scope it needs. */
-export const v1Read = defineRoute({
-  key: 'GET /v1/t/mach/read',
-  summary: 'A REST v1 read (needs orders:read)',
-  tags: ['machine-test'],
-  surface: 'v1',
-  access: 'api-key',
-  permission: 'orders:read',
-  success: { status: 200, schema: Seen },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'IP_NOT_ALLOWED', 'ACCOUNT_SUSPENDED', 'RATE_LIMITED'],
-});
-export const v1Write = defineRoute({
-  key: 'POST /v1/t/mach/write',
-  summary: 'A REST v1 write (needs orders:write)',
-  tags: ['machine-test'],
-  surface: 'v1',
-  access: 'api-key',
-  permission: 'orders:write',
-  body: zJsonObject,
-  success: { status: 201, schema: Seen },
-  errors: ['UNAUTHORIZED', 'FORBIDDEN', 'IP_NOT_ALLOWED', 'ACCOUNT_SUSPENDED', 'RATE_LIMITED'],
-});
 
 /** Storefront routes with a capability token in the path, and one with the token in the body. */
 function tokenRoute<K extends CapabilityAccessKind>(kind: K, segment: string) {
@@ -82,7 +56,7 @@ export const linkRoute = defineRoute({
 });
 
 /** Webhook routes: a secret in the URL, and a signed delivery to a gateway. */
-export const URL_SECRET_ROUTE_KEY = 'POST /webhooks/t/mach/telegram/:secret';
+export const URL_SECRET_ROUTE_KEY = 'POST /webhooks/t/mach/example/:secret';
 export const urlSecretRoute = defineRoute({
   key: URL_SECRET_ROUTE_KEY,
   summary: 'A webhook with a secret in the URL',
@@ -110,17 +84,11 @@ function seen(principal: Principal | undefined): z.infer<typeof Seen> {
   const empty = {
     ok: true,
     kind: principal?.kind ?? null,
-    clientId: null,
-    keyId: null,
-    scopes: [] as string[],
     resourceId: null,
     gateway: null,
     eventId: null,
     duplicate: null,
   };
-  if (principal?.kind === 'api-key') {
-    return { ...empty, clientId: principal.clientId, keyId: principal.keyId, scopes: [...principal.scopes] };
-  }
   if (principal?.kind === 'capability') return { ...empty, resourceId: principal.resourceId };
   if (principal?.kind === 'webhook') {
     return { ...empty, gateway: principal.gateway, eventId: principal.eventId, duplicate: principal.duplicate };
@@ -131,16 +99,6 @@ function seen(principal: Principal | undefined): z.infer<typeof Seen> {
 /** Handlers of the machine-auth sample routes. */
 @Controller()
 export class MachineTestController {
-  @Route(v1Read)
-  v1Read(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof v1Read> {
-    return seen(principal);
-  }
-
-  @Route(v1Write)
-  v1Write(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof v1Write> {
-    return seen(principal);
-  }
-
   @Route(checkoutRoute)
   checkout(@CurrentPrincipal() principal: Principal | undefined): ResultOf<typeof checkoutRoute> {
     return seen(principal);
@@ -250,7 +208,7 @@ export interface InsertedApiKey {
  * @param t the running test app (for the token pepper)
  * @param db the test database
  * @param clientId the merchant
- * @param overrides columns to change (scopes, allowed IPs, limit, expiry, revocation)
+ * @param overrides columns to change (allowed IPs, limit, expiry, revocation)
  * @returns the id, the key and its hash
  */
 export async function insertApiKey(
@@ -269,7 +227,6 @@ export async function insertApiKey(
       name: 'Test key',
       prefix: key.slice(0, 8),
       keyHash,
-      scopes: ['orders:read', 'orders:write', 'dhru'],
       allowedIps: [],
       rateLimitPerMin: 60,
       ...overrides,

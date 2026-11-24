@@ -15,7 +15,7 @@ export type UnsafeUrlReason =
 /**
  * Raised when a URL must not be requested.
  *
- * Why: the caller turns it into a field error (validating a webhook URL) or a failed delivery (sending one). The message
+ * Why: the caller turns it into a field error (validating an address) or a failed call (sending one). The message
  * names the reason and the host only: never the path, the query or credentials, which may hold secrets.
  */
 export class UnsafeUrlError extends Error {
@@ -55,7 +55,7 @@ const systemLookup: HostLookup = async (hostname) => {
  * Checks that a URL may be requested: right scheme, no credentials, and a host that is (or resolves only to) public
  * addresses.
  *
- * Why: decision 023 and the merchant webhook rule: `https` only in production, the host must resolve to public addresses
+ * Why: decision 023: `https` only in production, the host must resolve to public addresses
  * (no private, loopback, link-local, multicast or reserved ranges, IPv4 or IPv6, including IPv4-mapped IPv6), redirects
  * are not followed. A host that resolves to several addresses is refused if any one is not public.
  *

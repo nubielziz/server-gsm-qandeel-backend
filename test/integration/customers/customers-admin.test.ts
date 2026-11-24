@@ -80,7 +80,7 @@ const problem = (res: { json: () => unknown }) =>
   res.json() as { code: string; detail?: string; errors?: Array<{ field: string; message: string }> };
 
 describe('GET /admin/customers', () => {
-  /** Six customers across countries, statuses and risk levels, with orders for two of them. */
+  /** Five customers across countries and statuses, with orders for two of them. */
   async function world() {
     const { db } = await testDb();
     await insertStoreCurrencies(db);
@@ -99,7 +99,6 @@ describe('GET /admin/customers', () => {
       currency: 'EUR',
       guest: true,
       totalSpent: '48.0000',
-      riskLevel: 'medium',
     });
     const jt = await makeCustomer(t, {
       name: 'JT Temp',
@@ -107,7 +106,6 @@ describe('GET /admin/customers', () => {
       country: 'US',
       currency: 'USD',
       status: 'blocked',
-      riskLevel: 'high',
       totalSpent: '0.0000',
     });
     const erik = await makeCustomer(t, {
@@ -146,7 +144,6 @@ describe('GET /admin/customers', () => {
       hasAccount: true,
       createdBy: null,
       marketingOptIn: false,
-      riskLevel: 'low',
       status: 'active',
       suspendedAt: null,
       suspendedReason: null,
@@ -169,16 +166,13 @@ describe('GET /admin/customers', () => {
     });
   });
 
-  it('filters by status and riskLevel (repeat the key for IN), country and hasAccount', async () => {
+  it('filters by status (repeat the key for IN), country and hasAccount', async () => {
     await world();
     const staff = await staffWith('customers:read');
     expect(names(await get(staff, '/admin/customers?status=suspended&status=blocked&_sort=name&_order=asc'))).toEqual([
       'Erik Lindqvist',
       'JT Temp',
     ]);
-    const flagged = await get(staff, '/admin/customers?riskLevel=medium&riskLevel=high&_sort=name');
-    expect(names(flagged)).toEqual(['JT Temp', 'Sofia Alvarez']);
-    expect(flagged.headers['x-total-count']).toBe('2');
     expect(names(await get(staff, '/admin/customers?country=GB'))).toEqual(['Daniel Whitmore']);
     const guests = await get(staff, '/admin/customers?hasAccount=false&_sort=name');
     expect(names(guests)).toEqual(['Mia Schneider', 'Sofia Alvarez']);
@@ -198,7 +192,7 @@ describe('GET /admin/customers', () => {
     expect(page.headers['x-total-count']).toBe('5');
   });
 
-  it('sorts by the order figures and by risk (low, medium, high), and refuses a sort it does not know', async () => {
+  it('sorts by the order figures, and refuses a sort it does not know (the risk level is not one)', async () => {
     await world();
     const staff = await staffWith('customers:read');
     expect(names(await get(staff, '/admin/customers?_sort=ordersCount&_order=desc')).slice(0, 2)).toEqual([
@@ -210,11 +204,7 @@ describe('GET /admin/customers', () => {
       'Sofia Alvarez',
       'Daniel Whitmore',
     ]);
-    expect(names(await get(staff, '/admin/customers?_sort=riskLevel&_order=desc')).slice(0, 2)).toEqual([
-      'JT Temp',
-      'Sofia Alvarez',
-    ]);
-    expect(names(await get(staff, '/admin/customers?_sort=riskLevel&_order=asc')).at(-1)).toBe('JT Temp');
+    expect((await get(staff, '/admin/customers?_sort=riskLevel&_order=desc')).statusCode).toBe(422);
     expect(
       names(await get(staff, '/admin/customers?_sort=hasAccount&_order=desc'))
         .slice(0, 3)
@@ -458,7 +448,6 @@ describe('POST /admin/customers', () => {
       hasAccount: true,
       createdBy: staff.staffId,
       status: 'active',
-      riskLevel: 'low',
       marketingOptIn: false,
       totalSpent: '0.0000',
       ordersCount: 0,
@@ -466,6 +455,7 @@ describe('POST /admin/customers', () => {
       emailVerifiedAt: null,
       createdAt: '2026-11-07T10:00:00.000Z',
     });
+    expect(created).not.toHaveProperty('riskLevel');
     expect(created).not.toHaveProperty('temporaryPassword');
 
     const [credentials] = await db.select().from(s.customerCredentials);

@@ -93,7 +93,7 @@ describe('POST /client/orders: one automatic order', () => {
       ['created', 'client'],
       ['hold', 'system'],
     ]);
-    // The dispatch job of feature 6 will find this row; no status changed, so no webhook row.
+    // The dispatch job of feature 6 will find this row; no status changed, so no `order.status_changed` event.
     const dispatch = await outboxOf(db, 'order.dispatch_requested', row.id);
     expect(dispatch).toHaveLength(1);
     expect(dispatch[0]!.payload).toMatchObject({ orderId: row.id });

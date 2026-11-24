@@ -50,7 +50,7 @@ describe('MaintenanceHook', () => {
     const refusal = (await expectRejection(run('onRequest', req('GET', '/store/v1/services')))) as AppError;
     expect(refusal.code).toBe('MAINTENANCE');
     expect(refusal.detail).toBe('Back at noon.');
-    await expectRejection(run('onRequest', req('POST', '/v1/orders')));
+    await expectRejection(run('onRequest', req('POST', '/store/v1/checkout-sessions')));
   });
 
   it('lets everything else through in onRequest, and leaves the Dhru endpoint to the second phase', async () => {
@@ -72,7 +72,7 @@ describe('MaintenanceHook', () => {
 
   it('does nothing in the second phase for any other path', async () => {
     const { run } = hookWith(ON_ALL);
-    await run('preValidation', req('POST', '/v1/orders', { action: 'placeimeiorder' }));
+    await run('preValidation', req('POST', '/client/orders', { action: 'placeimeiorder' }));
   });
 
   it('lets requests through when the state cannot be read', async () => {

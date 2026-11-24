@@ -4,16 +4,13 @@ import { OutboxRouteRegistry } from '@src/modules/platform/outbox/outbox-routes'
 import { NotificationRoutes } from '@src/modules/platform/notifications/notification-routes';
 
 describe('NotificationRoutes', () => {
-  it("plans a notification for feature 8's invoice.paid next to its merchant webhook, and nothing for deposit.approved", () => {
+  it("plans a notification for feature 8's invoice.paid as its only route, and nothing for the retired deposit.approved", () => {
     const registry = new OutboxRouteRegistry();
-    // What the money module registers for its own event (InvoiceOutbox).
-    registry.register({ type: 'invoice.paid', queue: 'merchant-webhooks' });
     new NotificationRoutes(registry).onModuleInit();
     expect(registry.routesOf('invoice.paid').map((route) => [route.queue, route.jobName])).toEqual([
-      ['merchant-webhooks', undefined],
       ['notifications', 'notification.plan'],
     ]);
-    // Every credited top-up already writes invoice.paid: a second event would tell the merchant twice.
+    // The deposit event is retired: nothing routes it.
     expect(registry.routesOf('deposit.approved')).toEqual([]);
     expect(
       registry
@@ -28,11 +25,18 @@ describe('NotificationRoutes', () => {
       'order.status_changed',
       'service.price_changed',
       'wallet.low_balance',
-      // Decision 053: the notice of a webhook endpoint that was switched off (a route to `notifications` only).
-      'webhook.endpoint_disabled',
     ]);
-    expect(registry.routesOf('webhook.endpoint_disabled').map((route) => [route.queue, route.jobName])).toEqual([
-      ['notifications', 'notification.plan'],
-    ]);
+  });
+
+  it('gives each merchant event one route only, to the notifications queue (the webhooks that were a second route are retired)', () => {
+    const registry = new OutboxRouteRegistry();
+    new NotificationRoutes(registry).onModuleInit();
+    for (const type of ['order.status_changed', 'wallet.low_balance', 'service.price_changed', 'invoice.paid'])
+      expect(
+        registry.routesOf(type).map((route) => route.queue),
+        type,
+      ).toEqual(['notifications']);
+    // The notice of a switched-off webhook endpoint went with the endpoints.
+    expect(registry.routesOf('webhook.endpoint_disabled')).toEqual([]);
   });
 });

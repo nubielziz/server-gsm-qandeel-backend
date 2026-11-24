@@ -1,48 +1,49 @@
-// Drizzle queries of the admin session routes (identity module): the live, fully signed-in sessions of staff and merchants with
-// the account behind each. All of them use the one live-session predicate of `security/session.repository.ts`.
+// Drizzle queries of the admin session routes (identity module): the live, fully signed-in sessions of staff with the account
+// behind each, and the counts of live sessions of staff and merchants. All of them use the one live-session predicate of
+// `security/session.repository.ts`.
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type Session, clients, roles, sessions, staffUsers } from '../db/schema';
+import { type Session, roles, sessions, staffUsers } from '../db/schema';
 import { type IdleLimits, liveSessionCondition } from '../security/session.repository';
 
-/** A live session with the name (and email) of the account that owns it, and the permissions of a staff member's role. */
+/** A live staff session with the name (and email) of the staff member, and the permissions of the member's role. */
 export interface SessionWithSubject {
   readonly session: Session;
   readonly subjectName: string | null;
   readonly subjectEmail: string | null;
-  /** The permissions of the staff member's role; `null` for a merchant's session or an account that no longer exists. */
+  /** The permissions of the staff member's role; `null` for an account that no longer exists. */
   readonly subjectPermissions: string[] | null;
 }
 
-/** Fully signed-in sessions of staff and merchants: the rows `GET /admin/sessions` may show (B9). */
-const listed = sql`(${sessions.stage} = 'active' and ${sessions.subjectType} in ('staff', 'client'))`;
+/** Fully signed-in sessions of staff: the rows `GET /admin/sessions` may show (B9). */
+const listed = sql`(${sessions.stage} = 'active' and ${sessions.subjectType} = 'staff')`;
 
 const COLUMNS: ListColumns = {
   subjectType: sessions.subjectType,
-  subjectId: sessions.subjectId,
   lastSeenAt: sessions.lastSeenAt,
   createdAt: sessions.createdAt,
   id: sessions.id,
 };
 
-const subjectName = sql<string | null>`coalesce(${staffUsers.name}, ${clients.name})`;
-const subjectEmail = sql<string | null>`coalesce(${staffUsers.email}, ${clients.email})`;
-
 function withSubject(db: DbExecutor) {
   return db
-    .select({ session: sessions, subjectName, subjectEmail, subjectPermissions: roles.permissions })
+    .select({
+      session: sessions,
+      subjectName: staffUsers.name,
+      subjectEmail: staffUsers.email,
+      subjectPermissions: roles.permissions,
+    })
     .from(sessions)
-    .leftJoin(staffUsers, and(eq(sessions.subjectType, 'staff'), eq(staffUsers.id, sessions.subjectId)))
-    .leftJoin(roles, eq(roles.id, staffUsers.roleId))
-    .leftJoin(clients, and(eq(sessions.subjectType, 'client'), eq(clients.id, sessions.subjectId)));
+    .leftJoin(staffUsers, eq(staffUsers.id, sessions.subjectId))
+    .leftJoin(roles, eq(roles.id, staffUsers.roleId));
 }
 
 /**
- * Lists the live sessions of staff and merchants.
+ * Lists the live sessions of staff.
  *
  * @param db the database or a transaction
- * @param query the parsed list request (range, sort, `subjectType` filter)
+ * @param query the parsed list request (range, sort, `subjectType` filter, which accepts only `staff`)
  * @param now the current time (the injected clock)
  * @param idle the idle limit of each subject type
  * @returns the page of sessions with their accounts, and the exact total

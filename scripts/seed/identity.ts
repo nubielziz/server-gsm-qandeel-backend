@@ -36,12 +36,12 @@ const ROLE_MATRIX: Record<RoleKey, readonly number[]> = {
 // The permission areas behind each demo area: Orders, Customers, Support, Risk, Money, Catalog, Settings, Admins, System.
 const AREA_PERMISSIONS: ReadonlyArray<readonly string[]> = [
   ['orders', 'inventory', 'files'],
-  ['customers', 'clients', 'wallet', 'groups', 'kyc', 'api_keys', 'growth'],
+  ['customers', 'clients', 'wallet', 'groups', 'api_keys'],
   ['support'],
   ['risk'],
-  ['ledger', 'payments', 'invoices', 'commissions', 'refunds', 'disputes', 'reports'],
+  ['ledger', 'payments', 'invoices', 'refunds', 'disputes', 'reports'],
   ['catalog', 'pricing', 'suppliers', 'storefront', 'legal'],
-  ['settings', 'tax', 'currencies', 'webhooks', 'notifications'],
+  ['settings', 'tax', 'currencies', 'notifications'],
   ['staff', 'access', 'roles', 'sessions', 'audit', 'queues'],
   ['system', 'alerts', 'incidents'],
 ];
@@ -110,9 +110,7 @@ interface DemoMerchant {
   status: 'active' | 'pending' | 'suspended';
   /** days since the merchant joined */
   joined: number;
-  referredBy: string | null;
   email: string;
-  kyc: string;
 }
 
 const DAY_MS = 86_400_000;
@@ -126,12 +124,11 @@ const DAY_MS = 86_400_000;
  * zero; user rule 2 forbids that pair, so the wallet seed (feature 3) must settle it.
  */
 export const CLIENT_GROUPS = [
-  { id: 1, name: 'Standard', discount: 0, threshold: 0, deposit: 5000, isDefault: true, overdraft: false, kind: 'b2b' },
+  { id: 1, name: 'Standard', discount: 0, deposit: 5000, isDefault: true, overdraft: false, kind: 'b2b' },
   {
     id: 2,
     name: 'Wholesale',
     discount: 4,
-    threshold: 5000,
     deposit: 20000,
     isDefault: false,
     overdraft: true,
@@ -141,7 +138,6 @@ export const CLIENT_GROUPS = [
     id: 3,
     name: 'VIP',
     discount: 8,
-    threshold: 25000,
     deposit: 100000,
     isDefault: false,
     overdraft: true,
@@ -151,7 +147,6 @@ export const CLIENT_GROUPS = [
     id: 4,
     name: 'Storefront retail',
     discount: 0,
-    threshold: 0,
     deposit: 1000,
     isDefault: false,
     overdraft: false,
@@ -188,7 +183,6 @@ export async function seedClientGroups(db: DbExecutor, now: number): Promise<See
     kind: group.kind,
     discountPercent: toMoney(group.discount),
     isDefault: group.isDefault,
-    earnThreshold: toMoney(group.threshold),
     depositLimit: toMoney(group.deposit),
     overdraftAllowed: group.overdraft,
     sort: group.id,
@@ -200,7 +194,6 @@ export async function seedClientGroups(db: DbExecutor, now: number): Promise<See
       .update(s.clientGroups)
       .set({
         discountPercent: row.discountPercent,
-        earnThreshold: row.earnThreshold,
         depositLimit: row.depositLimit,
         overdraftAllowed: row.overdraftAllowed,
         sort: row.sort,
@@ -210,7 +203,6 @@ export async function seedClientGroups(db: DbExecutor, now: number): Promise<See
           eq(s.clientGroups.id, row.id),
           eq(s.clientGroups.name, row.name),
           eq(s.clientGroups.discountPercent, '0.0000'),
-          eq(s.clientGroups.earnThreshold, '0.0000'),
           eq(s.clientGroups.depositLimit, '0.0000'),
           eq(s.clientGroups.overdraftAllowed, false),
         ),
@@ -229,10 +221,16 @@ function usernameOf(name: string): string {
 }
 
 /**
+ * The demo merchant staff invited who has not chosen a password yet (`INVITED_ID` of the frontend mock): active at once, since the approval
+ * step is retired (decision 062), with no proven email and no API key.
+ */
+const INVITED_MERCHANT_ID = 18;
+
+/**
  * Seeds the demo merchants.
  *
  * Why: the console's merchant pages and every later feature (orders, wallets, prices) start from the same 20 merchants, with
- * the ids, names, groups, statuses and referrers the frontend mock gives them (`m3` is 3, `GSM0003` its referral code). No
+ * the ids, names, groups and statuses the frontend mock gives them (`m3` is 3). No
  * password is stored: a merchant sets one through the invitation or forgot-password link. The wallet (ledger accounts, credit
  * limit, balance) is feature 3's seed; the credit limits of the demo are not written here.
  *
@@ -247,9 +245,10 @@ export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<See
     demoRows<DemoMerchant>(demo, 'merchants').map((merchant) => {
       const id = demoNumericId(merchant.id);
       const created = demo.now - merchant.joined * DAY_MS;
+      const username = usernameOf(merchant.name);
       return {
         id,
-        username: usernameOf(merchant.name),
+        username,
         email: merchant.email,
         name: merchant.name,
         company: merchant.name,
@@ -257,11 +256,12 @@ export async function seedMerchants(db: DbExecutor, demo: DemoSeed): Promise<See
         country: merchant.cc,
         groupId: GROUP_IDS[merchant.group],
         status: merchant.status,
-        kycStatus: merchant.kyc === 'Verified' ? ('approved' as const) : ('pending' as const),
-        referredById: merchant.referredBy === null ? null : demoNumericId(merchant.referredBy),
-        referralCode: `GSM${String(id).padStart(4, '0')}`,
-        // A merchant who accepted the invitation has proven the email; pending ones have not yet.
-        emailVerifiedAt: merchant.status === 'pending' ? null : new Date(created + 3_600_000),
+        // Retired column (decision 062): NOT NULL and unique until the accounts migration, read by nothing; the username fills it, as
+        // `POST /admin/clients` does. The demo's referral links (`referred_by_id`) are no longer seeded.
+        referralCode: username,
+        // A merchant who accepted the invitation has proven the email; pending ones and the invited one have not yet.
+        emailVerifiedAt:
+          merchant.status === 'pending' || id === INVITED_MERCHANT_ID ? null : new Date(created + 3_600_000),
         createdAt: new Date(created),
       };
     }),
@@ -376,12 +376,13 @@ interface DemoMerchantAccess {
 
 /**
  * Seeds the API keys of the demo merchants as the frontend mock shows them (`keysOf` in src/features/merchants/mocks/seed.ts): a
- * Production key for every merchant that is not pending, plus an unused Staging key and a revoked Legacy key for the first one.
+ * Production key for every merchant that is not pending and not still invited, plus an unused Staging key and a revoked Legacy key for
+ * the first one.
  *
  * Why: the console's API access tab reads them through `GET /admin/clients/:id/api-keys`. The key text is the demo's (`gsm_live_...`) so a
- * developer can call REST v1 with it; the database holds only its keyed hash and its first 8 characters, like a key a merchant creates.
- * The mock's scope `orders:create` is `orders:write` here (the scope REST v1 checks), and each key text ends in `_seed0000` (the demo's
- * keys are shorter than the 16 characters a key needs), e.g. `gsm_live_69xx31_seed0000`: usable in development, never in production.
+ * developer can call the Dhru endpoint with it; the database holds only its keyed hash and its first 8 characters, like a key a merchant
+ * creates. A key carries no scope, and each key text ends in `_seed0000` (the demo's keys are shorter than the 16 characters a key
+ * needs), e.g. `gsm_live_69xx31_seed0000`: usable in development, never in production.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -402,7 +403,6 @@ async function seedApiKeys(db: DbExecutor, demo: DemoSeed, config: AppConfig): P
     name,
     prefix: full(key).slice(0, 8),
     keyHash: hashToken(config.security.tokenPepper, full(key)),
-    scopes: ['orders:write', 'orders:read', 'account:read'],
     allowedIps: m.ips.map((ip) => (ip.includes(':') ? `${ip}/128` : `${ip}/32`)),
     rateLimitPerMin: 120,
     lastUsedAt: toDate(m.lastSeen),
@@ -410,7 +410,9 @@ async function seedApiKeys(db: DbExecutor, demo: DemoSeed, config: AppConfig): P
     createdAt: new Date(demo.now - Math.max(1, m.joined - 1) * DAY_MS),
     ...extra,
   });
-  const rows = merchants.filter((m) => m.status !== 'pending').map((m) => base(m, 'Production', m.key));
+  const rows = merchants
+    .filter((m) => m.status !== 'pending' && demoNumericId(m.id) !== INVITED_MERCHANT_ID)
+    .map((m) => base(m, 'Production', m.key));
   const first = merchants[0];
   if (first) {
     rows.push(

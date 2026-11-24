@@ -49,7 +49,7 @@
       "why": "Group C: a merchant name in Arabic script gives the Latin fallback username, never an empty one."
     },
     {
-      "path": "test/unit/modules/risk/domain/imei-check.spec.ts",
+      "path": "test/unit/modules/orders/domain/placement-rules.spec.ts",
       "why": "Group C: Arabic-Indic digits typed in an IMEI field are refused on purpose."
     },
     {

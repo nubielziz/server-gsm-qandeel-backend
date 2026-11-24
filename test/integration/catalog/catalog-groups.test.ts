@@ -42,7 +42,6 @@ async function demoGroups(): Promise<{ standard: number; wholesale: number; vip:
       {
         name: 'Wholesale',
         discountPercent: '4',
-        earnThreshold: '5000',
         depositLimit: '20000',
         overdraftAllowed: true,
         sort: 2,
@@ -50,7 +49,6 @@ async function demoGroups(): Promise<{ standard: number; wholesale: number; vip:
       {
         name: 'VIP',
         discountPercent: '8',
-        earnThreshold: '25000',
         depositLimit: '100000',
         overdraftAllowed: true,
         sort: 3,
@@ -84,7 +82,6 @@ describe('GET /admin/client-groups', () => {
       kind: 'b2b',
       discountPercent: '0.0000',
       isDefault: true,
-      earnThreshold: '0.0000',
       depositLimit: '5000.0000',
       overdraftAllowed: false,
       sort: 1,
@@ -93,7 +90,6 @@ describe('GET /admin/client-groups', () => {
     expect(typeof standard.createdAt).toBe('string');
     expect(wholesale).toMatchObject({
       discountPercent: '4.0000',
-      earnThreshold: '5000.0000',
       overdraftAllowed: true,
       merchantCount: 2,
     });
@@ -126,7 +122,7 @@ describe('GET /admin/client-groups/:id', () => {
   it('shows one group and answers 404 for an unknown id', async () => {
     const groups = await demoGroups();
     const res = await admin.get(`/admin/client-groups/${groups.vip}`);
-    expect(res.body).toMatchObject({ id: groups.vip, name: 'VIP', earnThreshold: '25000.0000', merchantCount: 0 });
+    expect(res.body).toMatchObject({ id: groups.vip, name: 'VIP', depositLimit: '100000.0000', merchantCount: 0 });
     const missing = await admin.get('/admin/client-groups/999999');
     expect(missing.status).toBe(404);
     expect(missing.body.code).toBe('NOT_FOUND');
@@ -139,7 +135,6 @@ describe('POST /admin/client-groups', () => {
     const res = await admin.post('/admin/client-groups', {
       name: '  Platinum ',
       discountPercent: '2.5',
-      earnThreshold: '50000.0000',
       depositLimit: '250000.0000',
       overdraftAllowed: true,
       isDefault: false,
@@ -150,7 +145,6 @@ describe('POST /admin/client-groups', () => {
       kind: 'b2b',
       discountPercent: '2.5000',
       isDefault: false,
-      earnThreshold: '50000.0000',
       depositLimit: '250000.0000',
       overdraftAllowed: true,
       sort: 5,
@@ -174,12 +168,26 @@ describe('POST /admin/client-groups', () => {
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
       discountPercent: '0.0000',
-      earnThreshold: '0.0000',
       depositLimit: '0.0000',
       overdraftAllowed: false,
       isDefault: false,
       sort: 1,
     });
+  });
+
+  it('ignores the retired upgrade threshold: it is not read, not written and not answered', async () => {
+    const res = await admin.post('/admin/client-groups', { name: 'Elite', earnThreshold: '50000.0000' });
+    expect(res.status).toBe(201);
+    expect(res.body).not.toHaveProperty('earnThreshold');
+    const stored = (await groupRows()).find((g) => g.id === res.body.id);
+    expect(stored?.earnThreshold).toBe('0.0000');
+    const patched = await admin.patch(`/admin/client-groups/${res.body.id}`, {
+      discountPercent: '1',
+      earnThreshold: '9',
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body).not.toHaveProperty('earnThreshold');
+    expect((await groupRows()).find((g) => g.id === res.body.id)?.earnThreshold).toBe('0.0000');
   });
 
   it('moves the default mark when the new group is the default', async () => {
@@ -203,15 +211,10 @@ describe('POST /admin/client-groups', () => {
     const bad = await admin.post('/admin/client-groups', {
       name: 'Odd',
       discountPercent: '101',
-      earnThreshold: '-1.0000',
       depositLimit: '12',
     });
     expect(bad.status).toBe(422);
-    expect(bad.body.errors.map((e: { field: string }) => e.field).sort()).toEqual([
-      'depositLimit',
-      'discountPercent',
-      'earnThreshold',
-    ]);
+    expect(bad.body.errors.map((e: { field: string }) => e.field).sort()).toEqual(['depositLimit', 'discountPercent']);
 
     const threeDecimals = await admin.post('/admin/client-groups', { name: 'Odd', discountPercent: '2.555' });
     expect(threeDecimals.body.errors[0].field).toBe('discountPercent');
@@ -238,9 +241,9 @@ describe('PATCH /admin/client-groups/:id', () => {
       name: 'Wholesale',
       discountPercent: '5.0000',
       depositLimit: '0.0000',
-      earnThreshold: '5000.0000',
       overdraftAllowed: true,
     });
+    expect(res.body).not.toHaveProperty('earnThreshold');
     const [audit] = (await auditRows()).slice(-1);
     expect(audit).toMatchObject({
       action: 'edited client group',

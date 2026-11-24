@@ -11,7 +11,7 @@ import type { UploadedFile } from '../multipart';
 import { type DhruItemAnswer, dhruBulk, dhruError, dhruSuccess, readParameters } from './dhru-envelope';
 import type { AnyDhruAction, DhruActionContract } from './define-dhru-action';
 
-/** The most items one bulk call may hold (the same limit as REST v1's `POST /v1/orders/bulk`). */
+/** The most items one bulk call may hold (the same limit as the portal's bulk order). */
 export const DHRU_MAX_BULK_ITEMS = 100;
 
 /**

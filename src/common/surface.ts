@@ -2,24 +2,23 @@
 // Used for metrics labels, error envelopes (Dhru keeps its own, decision 026) and contract consistency checks.
 
 /**
- * HTTP surfaces served by this process; outgoing `events` and `supplier` calls are not routes of ours.
+ * HTTP surfaces served by this process; outgoing `supplier` calls are not routes of ours.
  *
  * Why: metrics labels, error envelopes and the OpenAPI filter all switch on the surface of a route (decisions 015, 017,
  * 026, 028).
  */
-export type Surface = 'admin' | 'client' | 'v1' | 'store' | 'dhru' | 'hooks' | 'system';
+export type Surface = 'admin' | 'client' | 'store' | 'dhru' | 'hooks' | 'system';
 
 const PREFIXES: ReadonlyArray<readonly [RegExp, Surface]> = [
   [/^\/admin(?:\/|$)/, 'admin'],
   [/^\/client(?:\/|$)/, 'client'],
   [/^\/store\/v1(?:\/|$)/, 'store'],
-  [/^\/v1(?:\/|$)/, 'v1'],
   [/^\/api\/index\.php$/, 'dhru'],
   [/^\/webhooks(?:\/|$)/, 'hooks'],
 ];
 
 /**
- * Finds the surface a path belongs to, from the bases in the map (`/admin`, `/client`, `/v1`, `/store/v1`,
+ * Finds the surface a path belongs to, from the bases in the map (`/admin`, `/client`, `/store/v1`,
  * `/api/index.php`, `/webhooks`); everything else (`/health`, `/metrics`, docs) is `system`.
  *
  * Why: metrics, error envelopes and contract checks are per surface (docs/route-manifest.json).

@@ -21,14 +21,14 @@ const NOTHING: FileReferences = {
 describe('permissionsForFile', () => {
   it('names the read permission of each kind, in order, each once', () => {
     expect(permissionsForFile(['data_export', 'identity_document', 'identity_document'])).toEqual([
-      'kyc:read',
+      'clients:read',
       'customers:privacy',
     ]);
     expect(permissionsForFile([...FILE_KINDS].reverse())).toEqual(
       FILE_KINDS.map((kind) => FILE_KIND_PERMISSIONS[kind]),
     );
     expect(FILE_KIND_PERMISSIONS).toEqual({
-      identity_document: 'kyc:read',
+      identity_document: 'clients:read',
       payment_proof: 'payments:read',
       dispute_evidence: 'disputes:read',
       order_file: 'orders:read',
@@ -68,7 +68,7 @@ describe('fileKindsOf', () => {
     expect(
       fileKindsOf({
         ...NOTHING,
-        kyc: { submissionId: 4, clientId: 2, clientName: 'Zain' },
+        identityDocument: { submissionId: 4, clientId: 2, clientName: 'Zain' },
         paymentId: 9,
         orderFile: true,
         dataExport: true,

@@ -15,7 +15,6 @@
     "hasAccount": true,
     "createdBy": null,
     "marketingOptIn": false,
-    "riskLevel": "low",
     "status": "active",
     "suspendedAt": null,
     "suspendedReason": null,

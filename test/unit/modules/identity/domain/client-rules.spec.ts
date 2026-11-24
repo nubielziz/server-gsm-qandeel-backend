@@ -1,9 +1,8 @@
-// Unit tests of the merchant rules: the status machine, the suspension reason, usernames and referral codes.
+// Unit tests of the merchant rules: the status machine, the suspension reason and usernames.
 import { describe, expect, it } from 'bun:test';
 import { CLIENT_STATUSES } from '@src/modules/identity/db/schema';
 import {
   canMoveClient,
-  referralCode,
   statusChangePermission,
   suspendReasonProblem,
   usernameBase,
@@ -55,14 +54,6 @@ describe('usernameBase and usernameCandidate', () => {
   it('numbers collisions from 2', () => {
     expect(usernameCandidate('acme', 1)).toBe('acme');
     expect(usernameCandidate('acme', 2)).toBe('acme-2');
-  });
-});
-
-describe('referralCode', () => {
-  it('is GSM plus six characters from the alphabet without look-alikes', () => {
-    let n = 0;
-    const code = referralCode((max) => n++ % max);
-    expect(code).toMatch(/^GSM[A-HJ-NP-Z2-9]{6}$/);
   });
 });
 

@@ -46,7 +46,7 @@ export class ClientOrdersService {
   /**
    * Places one order, or one order per IMEI of a bulk, once per `Idempotency-Key` when one is sent.
    *
-   * Why: a double click on "Place order" must not place or hold twice (feature 24B, REST v1's semantics under the store scope `portal`).
+   * Why: a double click on "Place order" must not place or hold twice (feature 24B, the store scope `portal`).
    * The orders are read back inside the placement's transaction so the answer can be stored with them; the placement itself is the
    * same call as without a key (the key is not written to `orders.idempotency_key`: a bulk makes several orders, and the
    * `idempotency_keys` row alone guards the portal).

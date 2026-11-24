@@ -24,16 +24,3 @@ const DAY_MS = 86_400_000;
 export function ticketLinkOpen(resolvedAt: Date | null, nowMs: number): boolean {
   return resolvedAt === null || nowMs < resolvedAt.getTime() + TICKET_LINK_DAYS_AFTER_RESOLUTION * DAY_MS;
 }
-
-/**
- * Tells whether a ticket has a link at all, in either stored form.
- *
- * Why: decision 054: a ticket keeps its link token as issued (opened before) or as a keyed hash with an encrypted copy; a merchant's ticket
- * and an anonymized customer's have neither.
- *
- * @param ticket the stored forms of the ticket's token
- * @returns true when the ticket can be opened by a link
- */
-export function hasTicketLink(ticket: { readonly token: string | null; readonly tokenHash: string | null }): boolean {
-  return ticket.token !== null || ticket.tokenHash !== null;
-}

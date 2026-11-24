@@ -60,7 +60,7 @@ describe('consume', () => {
         remaining: limit - used,
         limit,
         retryAfterSeconds: 0,
-        // Seconds until the window ends: the `RateLimit-Reset` header of REST v1.
+        // Seconds until the window ends.
         resetSeconds: expect.any(Number),
       });
     }

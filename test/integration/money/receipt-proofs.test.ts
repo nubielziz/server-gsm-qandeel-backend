@@ -19,7 +19,7 @@ import { insertUsd } from '../../support/fixtures';
 import { PORTAL_ORIGIN } from '../../support/merchant-portal';
 import { insertWalletMerchant } from '../../support/money';
 import { STORE_ORIGIN, StoreClient, clearStoreRateLimits, makeCustomer } from '../../support/store';
-import { portalFor } from '../../support/webhooks';
+import { portalFor } from '../../support/portal-orders';
 
 const clock = new TestClock('2026-11-10T09:00:00.000Z');
 let t: TestApp;

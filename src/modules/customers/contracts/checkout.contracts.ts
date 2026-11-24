@@ -20,7 +20,7 @@ const UtmSchema = z
     term: z.string().trim().max(100).optional(),
     content: z.string().trim().max(100).optional(),
   })
-  .describe('Where the buyer came from (the abandoned-checkouts report reads `source`).');
+  .describe('Where the buyer came from.');
 
 const OpenBody = z.object({
   serviceId: zId.describe('The service page the buyer is on (`id` of `GET /store/v1/services`).'),

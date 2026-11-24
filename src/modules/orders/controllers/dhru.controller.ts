@@ -13,7 +13,7 @@ import { dhruEndpoint } from '../contracts/dhru.contracts';
  * The Dhru endpoint.
  *
  * Why: decision 026: merchants connect their Dhru Fusion software to one URL with eight actions. The guard has already checked the
- * `username` and `apiaccesskey` (scope `dhru`, allowed addresses, the key's limit); this reads the `action` and the base64 `parameters`
+ * `username` and `apiaccesskey` (allowed addresses, the key's limit); this reads the `action` and the base64 `parameters`
  * (and the files of a multipart call) and lets the gateway answer. Every answer is HTTP 200 with the Dhru headers: a success here, an
  * error through the Dhru error formatter.
  *

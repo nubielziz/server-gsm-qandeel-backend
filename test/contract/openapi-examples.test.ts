@@ -42,8 +42,8 @@ function fromContent(where: string, base: (string | number)[], content: unknown)
   return found;
 }
 
-/** Every example of a `paths` or `webhooks` map: parameters, request bodies and responses. */
-function fromOperations(root: 'paths' | 'webhooks', items: unknown): Example[] {
+/** Every example of a `paths` map: parameters, request bodies and responses. */
+function fromOperations(root: 'paths', items: unknown): Example[] {
   const found: Example[] = [];
   if (!isObject(items)) return found;
   for (const [name, item] of Object.entries(items)) {
@@ -77,10 +77,10 @@ function fromOperations(root: 'paths' | 'webhooks', items: unknown): Example[] {
 for (const file of ['openapi.json', 'openapi.public.json']) {
   describe(`docs/contract/${file}`, () => {
     const document = JSON.parse(readFileSync(join(ROOT, 'docs', 'contract', file), 'utf8')) as Json;
-    const examples = [...fromOperations('paths', document.paths), ...fromOperations('webhooks', document.webhooks)];
+    const examples = fromOperations('paths', document.paths);
 
     it('has examples to check', () => {
-      // The public document describes REST v1 and the events only; before those features exist it has no example.
+      // The public document describes the Dhru endpoint only; it may have no example.
       if (file === 'openapi.json') expect(examples.length).toBeGreaterThan(0);
     });
 

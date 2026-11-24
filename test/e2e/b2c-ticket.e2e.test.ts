@@ -224,14 +224,23 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
     expect(view.status).toBe('open');
   });
 
-  it('step 7: after the order is done the agent resolves it: resolved_at, the internal note, an audit entry, the survey', async () => {
+  it('step 7: after the order is done the agent resolves it: resolved_at, the internal note, an audit entry, and no mail to the customer', async () => {
     clock.advance(HOUR);
     staff = await supportStaff(t, ['support:*'], 'Lina S.');
+    const mailsBefore = mailbox(t).sent.length;
     const res = await staff.patch(`/admin/support-tickets/${ticketId}`, { status: 'resolved' });
     expect(res.body).toMatchObject({ status: 'resolved', slaDueAt: null, late: false });
     const row = await ticket();
     expect(row.resolvedAt?.toISOString()).toBe('2026-11-08T10:55:00.000Z');
-    expect((await messages()).at(-1)).toMatchObject({ authorType: 'system', isInternal: true });
+    expect((await messages()).at(-1)).toMatchObject({
+      authorType: 'system',
+      isInternal: true,
+      body: 'Marked resolved by Lina S..',
+    });
+    // The resolve writes no mail event: nothing more goes out when the jobs run again.
+    await sendTicketMails(t);
+    expect(mailbox(t).sent).toHaveLength(mailsBefore);
+    expect(json(await call('GET', `/store/v1/tickets/${token}`))).toMatchObject({ status: 'resolved' });
     const { db } = await testDb();
     const audits = (await db.select().from(s.auditLogs).orderBy(s.auditLogs.id)).filter(
       (row) => row.entityType === 'ticket',
@@ -245,29 +254,12 @@ describe('scenario b2c-ticket: a support ticket about a delay', () => {
     expect(audits.at(-1)).toMatchObject({ entityId: ticketId, entityLabel: expect.stringContaining(ticketNumber) });
   });
 
-  it('step 8 (POST /store/v1/tickets/:token/csat): the customer gets the survey link and rates; the ticket stays resolved', async () => {
-    await sendTicketMails(t);
-    const survey = mailbox(t).sent.at(-1)!;
-    expect(survey.subject).toBe(`How did we do? (${ticketNumber})`);
-    expect(survey.text).toContain(`/support/tickets/${token}`);
-    expect(json(await call('GET', `/store/v1/tickets/${token}`))).toMatchObject({ status: 'resolved', canRate: true });
-    const res = await call('POST', `/store/v1/tickets/${token}/csat`, { score: 5 });
-    expect(res.statusCode).toBe(200);
-    expect(await ticket()).toMatchObject({ status: 'resolved', csatScore: 5 });
-    expect((await staff.get(`/admin/support-tickets/${ticketId}`)).body).toMatchObject({
-      status: 'resolved',
-      csatScore: 5,
-    });
-    const rated = await call('POST', `/store/v1/tickets/${token}/csat`, { score: 3 });
-    expect(rated.statusCode).toBe(422);
-  });
-
-  it('after step 8 (B220): the resolved ticket takes no customer message (409 TICKET_RESOLVED) until staff reopen it', async () => {
+  it('after step 7 (B220): the resolved ticket takes no customer message (409 TICKET_RESOLVED) until staff reopen it', async () => {
     const before = await messages();
     const refused = await call('POST', `/store/v1/tickets/${token}/messages`, { body: 'Still not working.' });
     expect(refused.statusCode).toBe(409);
     expect(json(refused)).toMatchObject({ code: 'TICKET_RESOLVED' });
-    expect(await ticket()).toMatchObject({ status: 'resolved', csatScore: 5 });
+    expect(await ticket()).toMatchObject({ status: 'resolved' });
     expect(await messages()).toHaveLength(before.length);
     expect((await staff.patch(`/admin/support-tickets/${ticketId}`, { status: 'open' })).status).toBe(200);
     const again = await call('POST', `/store/v1/tickets/${token}/messages`, { body: 'Still not working.' });

@@ -63,7 +63,7 @@ export function signInStillHolds(checked: MerchantSignInAccount, current: Mercha
 /**
  * Tells whether a merchant takes precedence over a customer account with the same email on the one sign-in form.
  *
- * Why: decision 052. A registration makes a merchant with a password before anyone proved the mailbox, so it must not shadow the
+ * Why: decision 052. A merchant can hold a password before anyone proved the mailbox (staff set a temporary one), so it must not shadow the
  * password of a customer who owns that address. The merchant wins only once its email is verified (a link sent to the mailbox was used).
  *
  * @param merchant the merchant's email verification time

@@ -1,5 +1,5 @@
 // The pattern of a service field keyed `imei` judges the IMEI the buyer typed (the value that is stored and sent to the supplier), on every
-// order surface: the portal, REST v1 and Dhru. A value the buyer also puts under `inputs.imei` never stands in for it. Real application,
+// order surface: the portal and Dhru. A value the buyer also puts under `inputs.imei` never stands in for it. Real application,
 // Postgres and Redis.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { schema as s } from '@src/infra/db';
@@ -7,14 +7,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import {
-  type MachineCredentials,
-  body,
-  clearApiKeyCaches,
-  credentialsFor,
-  dhruClient,
-  v1Client,
-} from '../../support/machine-orders';
+import { type MachineCredentials, clearApiKeyCaches, credentialsFor, dhruClient } from '../../support/machine-orders';
 import { IMEIS, json, orderRow, ordersWorld, portalFor, walletOf, type OrdersWorld } from '../../support/orders';
 
 const clock = new TestClock();
@@ -113,22 +106,6 @@ describe('the pattern of a field keyed imei on an IMEI service', () => {
     });
     expect(unchecked.statusCode).toBe(201);
     expect((await orderRow(world.db, json(unchecked).orders[0].id)).inputs).toEqual({ imei: ACCEPTED_TOO });
-  });
-
-  it('REST v1: judges the typed IMEI, not a value sent under inputs.imei', async () => {
-    const v1 = v1Client(t, creds.key);
-    const alone = await v1.post('/v1/orders', { serviceId: world.auto.serviceId, imei: REFUSED });
-    expect(alone.statusCode).toBe(422);
-    expect(body(alone).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'invalid_format' })]);
-
-    const withOther = await v1.post('/v1/orders', {
-      serviceId: world.auto.serviceId,
-      imei: REFUSED,
-      inputs: { imei: ACCEPTED },
-    });
-    expect(withOther.statusCode).toBe(422);
-    expect(body(withOther).errors).toEqual([expect.objectContaining({ field: 'inputs.imei', code: 'invalid_format' })]);
-    await expectNothingPlaced();
   });
 
   it('Dhru: judges the IMEI parameter, not a value sent in CUSTOMFIELD', async () => {

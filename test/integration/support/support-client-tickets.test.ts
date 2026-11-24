@@ -1,5 +1,5 @@
 // Integration tests of the merchant portal's support routes (feature 28, slice B2, plan § 3.2 routes 8 to 14 and § 7): list, open, the
-// conversation, reply, read mark, typing and the attachment download under /client/tickets. Every route's success and refusals, a foreign
+// conversation, reply, read mark and the attachment download under /client/tickets. Every route's success and refusals, a foreign
 // ticket is 404, a merchant waiting for approval is allowed and a suspended one is refused, the list's filter, sort, range and total,
 // `hasUnread`, the ticket-open limit and an order of another buyer. Real Postgres and Redis, with a test clock.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
@@ -248,6 +248,7 @@ describe('POST /client/tickets', () => {
     });
     expect(Object.keys(res.body)).not.toContain('token');
     expect(Object.keys(res.body)).not.toContain('canRate');
+    expect(Object.keys(res.body)).not.toContain('csatScore');
     const [row] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, res.body.id));
     expect(row).toMatchObject({
       number: res.body.number,
@@ -645,49 +646,6 @@ describe('POST /client/tickets/:id/read', () => {
     const [row] = await db.select().from(s.supportTickets).where(eq(s.supportTickets.id, theirs.ticket.id));
     expect(row!.requesterSeenMessageId).toBeNull();
     expect(clientId).toBeGreaterThan(0);
-  });
-});
-
-describe('POST /client/tickets/:id/typing', () => {
-  it('rings one doorbell per 2.5 seconds however many pings, stores nothing and always answers 204', async () => {
-    const { db, clientId, portal } = await merchant();
-    const { ticket } = await merchantTicket(clientId);
-    const typing = spyOn(TicketEvents.prototype, 'typing');
-    const messages = (await db.select().from(s.ticketMessages)).length;
-    for (let n = 0; n < 4; n += 1) {
-      const res = await portal.call('POST', `/client/tickets/${ticket.id}/typing`);
-      expect(res.status).toBe(204);
-    }
-    expect(typing).toHaveBeenCalledTimes(1);
-    expect(typing).toHaveBeenCalledWith(ticket.id, { by: 'requester' });
-    typing.mockRestore();
-    expect((await db.select().from(s.ticketMessages)).length).toBe(messages);
-  });
-
-  it('answers 204 on a resolved ticket but rings nothing, and rings again after a staff reopen (B220)', async () => {
-    const { clientId, portal } = await merchant();
-    const { ticket } = await merchantTicket(clientId, { status: 'resolved', resolvedAt: new Date(clock.nowMs()) });
-    const typing = spyOn(TicketEvents.prototype, 'typing');
-    for (let n = 0; n < 3; n += 1) {
-      expect((await portal.call('POST', `/client/tickets/${ticket.id}/typing`)).status).toBe(204);
-    }
-    expect(typing).not.toHaveBeenCalled();
-    expect((await staff.patch(`/admin/support-tickets/${ticket.id}`, { status: 'open' })).status).toBe(200);
-    expect((await portal.call('POST', `/client/tickets/${ticket.id}/typing`)).status).toBe(204);
-    expect(typing).toHaveBeenCalledTimes(1);
-    expect(typing).toHaveBeenCalledWith(ticket.id, { by: 'requester' });
-    typing.mockRestore();
-  });
-
-  it('answers 404 for another merchant’s ticket and an unknown id, and rings nothing', async () => {
-    const { portal } = await merchant();
-    const rival = await merchant({ name: 'Other Shop' });
-    const theirs = await merchantTicket(rival.clientId);
-    const typing = spyOn(TicketEvents.prototype, 'typing');
-    expect((await portal.call('POST', `/client/tickets/${theirs.ticket.id}/typing`)).status).toBe(404);
-    expect((await portal.call('POST', '/client/tickets/999999/typing')).status).toBe(404);
-    expect(typing).not.toHaveBeenCalled();
-    typing.mockRestore();
   });
 });
 

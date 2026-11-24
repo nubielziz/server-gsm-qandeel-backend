@@ -7,7 +7,6 @@
     "kind": "b2b",
     "discountPercent": "1.0000",
     "isDefault": false,
-    "earnThreshold": "10.0000",
     "depositLimit": "10.0000",
     "overdraftAllowed": false,
     "sort": 5,

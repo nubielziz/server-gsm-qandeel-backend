@@ -5,12 +5,10 @@ import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import type { CustomerContact } from '../../../common/customer-contact';
 import { AppError, type FieldError } from '../../../common/errors';
-import { DbService, type DbExecutor, type TransactionContext } from '../../../infra/db';
+import { DbService, type DbExecutor } from '../../../infra/db';
 import { AuditService } from '../../platform';
 import type { SupportTicket, TicketPriority, TicketStatus } from '../db/schema';
 import { replyChannelsOf } from '../domain/reply-channels';
-import { isRequesterProven } from '../domain/requester-proof';
-import { hasTicketLink } from '../domain/ticket-link';
 import { slaDueAt } from '../domain/ticket-sla';
 import { type WireTicketStatus, fromWireStatus, judgeStatusMove, toWireStatus } from '../domain/ticket-status';
 import { findAssignableStaff, findRequester, findStaffName } from '../infra/support-foreign-reads';
@@ -23,12 +21,10 @@ import {
   listMessageRows,
   listTicketRows,
   lockTicket,
-  markSurveySent,
   updateTicket,
 } from '../infra/ticket.repository';
 import { TicketAttachmentService } from './ticket-attachment.service';
 import { TicketEvents } from './ticket-events';
-import { TicketMailOutbox } from './ticket-mail-outbox';
 import { type TicketDetailView, type TicketRowView, toDetailView, toTicketView } from './ticket-views';
 
 /** The fields `PATCH /admin/support-tickets/:id` may change. */
@@ -50,9 +46,6 @@ function unchangedFields(ticket: SupportTicket, input: UpdateTicketInput): Recor
 
 const notFound = () => new AppError('NOT_FOUND', { detail: 'No ticket has this id.' });
 
-/** The closing sentence of the system message written with a survey (RULES support 5). It is only text: `survey_sent_at` is the record. */
-const SURVEY_SENTENCE = 'A satisfaction survey is emailed to the customer.';
-
 /** The label the audit log shows: the ticket number and its subject (the demo's `<id>, <subject>`). */
 const labelOf = (ticket: Pick<SupportTicket, 'number' | 'subject'>) => `${ticket.number}, ${ticket.subject}`;
 
@@ -61,19 +54,18 @@ const labelOf = (ticket: Pick<SupportTicket, 'number' | 'subject'>) => `${ticket
  *
  * Why: RULES support and RESOLUTIONS b2c-2: the inbox with its timers decided on the server, the thread embedded in the detail, and the
  * changes the console makes: priority (moves the reply target), assignee (an active staff member or none) and status (resolve writes
- * `resolved_at`, the internal system message and the survey; reopen clears `resolved_at`). Values equal to the current ones are ignored.
+ * `resolved_at` and the internal system message; reopen clears `resolved_at`). Values equal to the current ones are ignored.
  * Every change is one audit entry in the demo's words. The ticket row is locked while it changes, so a reply and a resolve never both pass
  * the same check.
  *
- * Side effects: writes `support_tickets`, `ticket_messages` (the system message), `outbox_events` (the survey's `support.ticket_mail`) and
- * `audit_logs`; rings `ticket updated` after a change (and `ticket message` for the system message of a resolve, which only staff see).
+ * Side effects: writes `support_tickets`, `ticket_messages` (the system message) and `audit_logs`; rings `ticket updated` after a change
+ * (and `ticket message` for the system message of a resolve, which only staff see).
  */
 @Injectable()
 export class TicketAdminService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
-    private readonly mail: TicketMailOutbox,
     private readonly attachments: TicketAttachmentService,
     private readonly events: TicketEvents,
     @Inject(CLOCK) private readonly clock: Clock,
@@ -119,11 +111,7 @@ export class TicketAdminService {
       this.db.db,
       messages.map((message) => message.message),
     );
-    const channels = replyChannelsOf({
-      requesterType: row.ticket.requesterType,
-      reachable: requester?.reachable ?? false,
-      telegramChatId: requester?.telegramChatId ?? null,
-    });
+    const channels = replyChannelsOf({ reachable: requester?.reachable ?? false });
     return toDetailView(row, times.get(id), messages, files, channels, this.clock.now(), contact);
   }
 
@@ -144,8 +132,7 @@ export class TicketAdminService {
     staffId: number,
     contact: CustomerContact,
   ): Promise<TicketRowView> {
-    return this.db.runInTransaction(async (work) => {
-      const { tx } = work;
+    return this.db.runInTransaction(async ({ tx }) => {
       const before = await lockTicket(tx, id);
       if (!before) throw notFound();
       const now = this.clock.now();
@@ -233,7 +220,7 @@ export class TicketAdminService {
           before: { status: toWireStatus(before.status) },
           after: { status: toWireStatus(after.status) },
         });
-        if (newStatus === 'resolved') await this.afterResolve(work, after, staffId, now);
+        if (newStatus === 'resolved') await this.afterResolve(tx, id, staffId, now);
       }
       this.events.updated(id);
       return this.row(tx, id, now, contact);
@@ -241,45 +228,22 @@ export class TicketAdminService {
   }
 
   /**
-   * What a resolve adds to the ticket: the internal system message and the satisfaction survey.
+   * What a resolve adds to the ticket: the internal system message.
    *
-   * Why: RULES support 5: `Marked resolved by <staff>. A satisfaction survey is emailed to the customer.` is written in the thread
-   * (internal), and the survey goes to the customer through the notification service. A merchant's ticket has no ticket page, so it gets
-   * no survey and the message says so. The survey is sent once per ticket: one resolved again after a reopen is not asked a second time,
-   * rated or not (`support_tickets.survey_sent_at` is the record, set here under a guard, so the second message is only
-   * `Marked resolved by <staff>.`). Decision 053: a ticket whose requester address is not proven yet gets no survey either, because the
-   * mail would repeat the typed subject to an address nobody confirmed.
+   * Why: RULES support 5: `Marked resolved by <staff>.` is written in the thread (internal), and staff see it live; the requester's streams
+   * never render it (they get the `updated` of the resolve).
    */
-  private async afterResolve(
-    work: Pick<TransactionContext, 'tx'>,
-    ticket: SupportTicket,
-    staffId: number,
-    now: Date,
-  ): Promise<void> {
-    const { tx } = work;
-    const customer = ticket.requesterType === 'customer';
-    const requester = customer ? await findRequester(tx, 'customer', ticket.requesterId) : undefined;
-    const askable =
-      customer &&
-      ticket.csatScore === null &&
-      ticket.surveySentAt === null &&
-      hasTicketLink(ticket) &&
-      isRequesterProven(ticket) &&
-      requester?.reachable === true;
-    // The guarded update is the record that the survey was queued; it runs in this transaction, with the event and the message below.
-    const survey = askable && (await markSurveySent(tx, ticket.id, now));
+  private async afterResolve(tx: DbExecutor, ticketId: number, staffId: number, now: Date): Promise<void> {
     const name = (await findStaffName(tx, staffId)) ?? 'staff';
     const message = await insertMessage(tx, {
-      ticketId: ticket.id,
+      ticketId,
       authorType: 'system',
       authorId: null,
-      body: survey ? `Marked resolved by ${name}. ${SURVEY_SENTENCE}` : `Marked resolved by ${name}.`,
+      body: `Marked resolved by ${name}.`,
       isInternal: true,
       createdAt: now,
     });
-    // Staff see the system message live; the source never renders it for the requester (who gets the `updated` of the resolve).
-    this.events.message(ticket.id, message.id);
-    if (survey) await this.mail.survey(work, ticket);
+    this.events.message(ticketId, message.id);
   }
 
   /** Reads the inbox row of a ticket after a write (inside the transaction, so the new state is what it sees). */

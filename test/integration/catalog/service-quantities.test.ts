@@ -1,5 +1,5 @@
 // Integration tests of the quantity rule across the surfaces (feature 25): what staff save with PATCH /admin/services/:id is what the
-// merchant portal, REST v1, Dhru, the store page, placement and the store checkout read and enforce on the very next request.
+// merchant portal, Dhru, the store page, placement and the store checkout read and enforce on the very next request.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -9,13 +9,7 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import {
-  body as machineBody,
-  clearApiKeyCaches,
-  credentialsFor,
-  dhruClient,
-  v1Client,
-} from '../../support/machine-orders';
+import { clearApiKeyCaches, credentialsFor, dhruClient } from '../../support/machine-orders';
 import { IMEIS, type OrdersWorld, json, ordersWorld, orderRow, portalFor, walletOf } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { APPLE_IMEI, TURNSTILE_HEADERS, storefrontWorld } from '../../support/storefront';
@@ -47,7 +41,7 @@ describe('a quantity rule saved by staff reaches the merchant surfaces and place
     world = await ordersWorld((await testDb()).db);
   });
 
-  it('shows 1..5 on the portal, REST v1 and Dhru on the next request, and the store page', async () => {
+  it('shows 1..5 on the portal and Dhru on the next request, and the store page', async () => {
     const { db, merchant, auto } = world;
     const patched = await admin.patch(`/admin/services/${auto.serviceId}`, { minQty: 1, maxQty: 5 });
     expect(patched.status).toBe(200);
@@ -61,13 +55,6 @@ describe('a quantity rule saved by staff reaches the merchant surfaces and place
     expect(listed).toMatchObject({ minQty: 1, maxQty: 5, qtyOptions: [] });
 
     const creds = await credentialsFor(t, db, merchant.id);
-    const v1 = v1Client(t, creds.key);
-    expect(machineBody(await v1.get(`/v1/services/${auto.serviceId}`))).toMatchObject({
-      minQty: 1,
-      maxQty: 5,
-      qtyOptions: [],
-    });
-
     const dhru = dhruClient(t, creds);
     const entry = (await dhru.call('imeiservicelist')).SUCCESS[0].LIST['Carrier unlock'].SERVICES[
       String(auto.serviceId)

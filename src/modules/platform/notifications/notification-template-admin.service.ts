@@ -5,7 +5,6 @@ import type { z } from 'zod';
 import { CLOCK, type Clock } from '../../../common/clock';
 import type { ParsedListQuery } from '../../../common/contract';
 import { AppError, type FieldError } from '../../../common/errors';
-import { APP_CONFIG, type AppConfig } from '../../../config';
 import { type DbExecutor, DbService, isUniqueViolation } from '../../../infra/db';
 import { AuditService } from '../audit/audit.service';
 import type {
@@ -132,7 +131,6 @@ export class NotificationTemplateAdminService {
     private readonly audit: AuditService,
     private readonly registry: NotificationEventRegistry,
     private readonly mail: MailTransport,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -337,12 +335,7 @@ export class NotificationTemplateAdminService {
       subject: message.subject,
       body: message.html ?? message.text,
       format: message.format,
-      from:
-        row.channel === 'email'
-          ? this.mail.from
-          : this.config.telegram.botUsername
-            ? `@${this.config.telegram.botUsername}`
-            : 'Telegram bot',
+      from: row.channel === 'email' ? this.mail.from : 'Telegram bot',
       note: 'A sample with made-up details.',
     };
   }

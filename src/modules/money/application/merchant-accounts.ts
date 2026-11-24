@@ -1,5 +1,5 @@
 // Opens a merchant's ledger accounts (decision 024; resolution identity-platform-1, user decision): written by the lead
-// before Phase 3 wave 1 because features 2a (POST /admin/clients) and 2b (POST /client/auth/register) call it while
+// before Phase 3 wave 1 because feature 2a (POST /admin/clients) calls it while
 // feature 3, which owns the money module, is built in parallel.
 import { Injectable } from '@nestjs/common';
 import { Money } from '../../../common/money';
@@ -41,7 +41,7 @@ export interface OpenMerchantAccountsInput {
   readonly creditLimit: string;
   /** `client_groups.overdraft_allowed` of the merchant's group. */
   readonly overdraftAllowed: boolean;
-  /** The staff member who gives the credit limit at an invitation; absent for a merchant that registers itself or a safety open. */
+  /** The staff member who gives the credit limit at an invitation; absent for a safety open. */
   readonly grant?: CreditLimitGrant | undefined;
 }
 

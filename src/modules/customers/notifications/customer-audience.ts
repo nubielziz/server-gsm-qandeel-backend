@@ -16,12 +16,11 @@ import {
   memberQuery,
 } from '../../platform';
 import { customers } from '../db/schema';
-import { consentSql, provenAddressSql } from '../infra/recovery.repository';
+import { consentSql, provenAddressSql } from '../infra/consent.repository';
 
 const FLAGS: AudienceFlagsSql = {
   inApp: sql`${customers.hasAccount}`,
   email: sql`true`,
-  telegram: sql`false`,
 };
 
 /**
@@ -29,7 +28,7 @@ const FLAGS: AudienceFlagsSql = {
  *
  * Why: plan 5.1 and O3: only `active` customers (suspended, blocked and anonymized ones never); the segment's account and country
  * filters; listed people added, excluded people removed; a marketing campaign keeps only customers whose
- * `marketing_opt_in` is on and whose latest marketing consent record grants it (the predicate of the recovery mail). Decision 053: every
+ * `marketing_opt_in` is on and whose latest marketing consent record grants it (`consentSql`). Decision 053: every
  * purpose (a service campaign too) keeps only customers whose address was proven (a sign-in or verification link was used, an invitation was
  * accepted, or a checkout of theirs was paid), so a guest row made from a typed address that nobody confirmed is never written to.
  *
@@ -108,12 +107,7 @@ export class CustomerAudience implements AudienceProvider {
       .where(and(customerAudienceSql(query), gt(customers.id, afterId)))
       .orderBy(asc(customers.id))
       .limit(limit);
-    return rows.map((row) => ({
-      id: row.id,
-      inApp: row.hasAccount,
-      email: true,
-      telegram: false,
-    }));
+    return rows.map((row) => ({ id: row.id, inApp: row.hasAccount, email: true }));
   }
 
   /**

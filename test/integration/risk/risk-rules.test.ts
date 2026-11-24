@@ -35,13 +35,12 @@ const withChange = (rules: Rule[], id: string, change: Partial<Pick<Rule, 'on' |
 });
 
 describe('GET /admin/risk/rules', () => {
-  it('answers the eight rules in display order with the demo defaults, words and units', async () => {
+  it('answers the seven rules in display order with the demo defaults, words and units', async () => {
     const res = await owner.get('/admin/risk/rules');
     expect(res.status).toBe(200);
     expect(res.res.headers['cache-control']).toBe('no-store');
     const rules: Rule[] = res.body.rules;
     expect(rules.map((rule) => rule.id)).toEqual([
-      'blockBlacklistedImei',
       'reviewThreshold',
       'blockThreshold',
       'maxOrdersPerEmail',
@@ -59,7 +58,6 @@ describe('GET /admin/risk/rules', () => {
     expect(ruleOf(rules, 'blockThreshold')).toMatchObject({ on: true, value: 80 });
     expect(ruleOf(rules, 'maxOrdersPerEmail')).toMatchObject({ on: true, value: 3, unit: 'orders' });
     expect(ruleOf(rules, 'reviewFirstOrderAbove')).toMatchObject({ on: true, value: 40, unit: 'USD' });
-    expect(ruleOf(rules, 'blockBlacklistedImei')).toMatchObject({ on: true, value: null });
     expect(ruleOf(rules, 'blockDisposableEmail')).toMatchObject({ on: false, value: null });
   });
 
@@ -124,11 +122,16 @@ describe('PUT /admin/risk/rules', () => {
     expect(await auditRows(db, 'setting')).toEqual([]);
   });
 
-  it('answers 422 on the id of an unknown rule, a fractional or negative value, and a number on a switch', async () => {
+  it('answers 422 on the id of an unknown rule (also the retired blacklisted-IMEI rule), a fractional or negative value, and a number on a switch', async () => {
     const before: Rule[] = (await owner.get('/admin/risk/rules')).body.rules;
     const unknown = await owner.put('/admin/risk/rules', { rules: [{ id: 'nope', on: true, value: null }] });
     expect(unknown.status).toBe(422);
     expect(unknown.body.errors[0].field).toBe('nope');
+    const retired = await owner.put('/admin/risk/rules', {
+      rules: [{ id: 'blockBlacklistedImei', on: false, value: null }],
+    });
+    expect(retired.status).toBe(422);
+    expect(retired.body.errors[0].field).toBe('blockBlacklistedImei');
     for (const value of [1.5, -1]) {
       const res = await owner.put('/admin/risk/rules', withChange(before, 'maxOrdersPerEmail', { value }));
       expect(res.status).toBe(422);
@@ -150,9 +153,25 @@ describe('PUT /admin/risk/rules', () => {
     // A change of the policy shows in the rule.
     await db.update(s.settings).set({ value: true }).where(eq(s.settings.key, 'require3ds'));
     expect(ruleOf((await owner.get('/admin/risk/rules')).body.rules, 'require3ds').on).toBe(true);
-    // The other seven rules live under one key.
+    // The other six rules live under one key.
     const [stored] = await db.select().from(s.settings).where(eq(s.settings.key, 'riskRules'));
-    expect(Object.keys(stored!.value as object)).toHaveLength(7);
+    expect(Object.keys(stored!.value as object)).toHaveLength(6);
+  });
+
+  it('reads a setting saved before the blacklisted-IMEI rule was retired: its row is ignored, the others stand', async () => {
+    const { db } = await testDb();
+    await db.insert(s.settings).values({
+      key: 'riskRules',
+      value: { blockBlacklistedImei: { on: false, value: null }, reviewThreshold: { on: true, value: 45 } },
+    });
+    const rules: Rule[] = (await owner.get('/admin/risk/rules')).body.rules;
+    expect(rules.map((rule) => rule.id)).not.toContain('blockBlacklistedImei');
+    expect(ruleOf(rules, 'reviewThreshold')).toMatchObject({ on: true, value: 45 });
+    expect(ruleOf(rules, 'blockThreshold')).toMatchObject({ on: true, value: 80 });
+    const saved = await owner.put('/admin/risk/rules', withChange(rules, 'maxOrdersPerEmail', { value: 4 }));
+    expect(saved.status).toBe(200);
+    const [stored] = await db.select().from(s.settings).where(eq(s.settings.key, 'riskRules'));
+    expect(Object.keys(stored!.value as object)).not.toContain('blockBlacklistedImei');
   });
 
   it('is one value for both routes: PATCH /admin/storefront/settings moves the risk rule, PUT /admin/risk/rules moves the policy', async () => {

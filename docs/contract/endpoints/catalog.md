@@ -68,11 +68,13 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 ## GET /v1/services
 
 - **Map**: Catalog at the merchant's prices; filter by type, category and search. (الكتالوج بأسعار التاجر؛ فلترة بالنوع والتصنيف والبحث) · api-key `services:read` · stage 7 · tables services, service_categories
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /v1/services/:id
 
 - **Map**: Service details with the field schema and quantities. (تفاصيل خدمة مع schema الحقول والكميات) · api-key `services:read` · stage 7 · tables services, service_fields, service_options
+- **Retired** (decision 062): The REST API v1 for merchants was retired: merchants connect through the Dhru endpoint and the portal. No backend route serves it and no console function calls it.
 - **Frontend**: none.
 
 ## GET /client/services
@@ -92,7 +94,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 ## GET /admin/client-groups
 
-- **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
+- **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `listClientGroups` (src/features/merchants/api/groups.ts:24) · params `query?: ListQuery` · returns `ListResult<ClientGroup>` · success 200 · assumed contract
 - **Query**: Whole list: _start=0&_end=200&_sort=sort&_order=asc (also used by settings gateways and services lookups); tab count _start=0&_end=1. No filters.
 - **Response**: JSON array + x-total-count: id, name, kind ("b2b" for merchant groups, "b2c_retail" for the single storefront group, which must be included), discountPercent (percent decimal string, "4.0000" = 4%), isDefault, earnThreshold (USD money), depositLimit (USD money, the most a merchant of the group may add in one deposit; 0 = no per-deposit limit, the gateway min/max still apply; a deposit above a non-zero limit is refused at deposit creation with 422 on amount, feature 8), overdraftAllowed, sort, createdAt, merchantCount (clients in the group; recommended: Delete is disabled when > 0, retail count not shown).
@@ -101,7 +103,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 ## GET /admin/client-groups/:id
 
-- **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
+- **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `getClientGroup` (src/features/merchants/api/groups.ts:33) · params `id: number` · returns `ClientGroup` · success 200 · assumed contract
 - **Response**: Same row as the list, incl. merchantCount.
 - **Errors**: 404 NOT_FOUND (no group with that id)
@@ -109,7 +111,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 ## POST /admin/client-groups
 
-- **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
+- **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `createClientGroup` (src/features/merchants/api/groups.ts:42) · params `body: CreateClientGroupBody` · returns `ClientGroup` · success 201 · assumed contract
 - **Request**: Body {name, discountPercent, earnThreshold, depositLimit, overdraftAllowed, isDefault}; earnThreshold, depositLimit >= 0 (CHECK client_groups_amounts_check also bounds discount_percent to 0-100). A group with earnThreshold 0 is never a promotion target (user rule 1). discountPercent arrives as plain decimal text ("4", "2.5"; 0-100, max 2 dp); money fields as 4-dp strings. Server sets kind = "b2b" (a b2c_retail group cannot be created) and sort = last + 1; isDefault = true clears it on every other group.
 - **Response**: 201 with the group (decimals normalised to 4 dp, merchantCount 0).
@@ -118,7 +120,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 ## PATCH /admin/client-groups/:id
 
-- **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
+- **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `updateClientGroup` (src/features/merchants/api/groups.ts:52) · params `id: number`, `body: Partial<CreateClientGroupBody>` · returns `ClientGroup` · success 200 · assumed contract
 - **Request**: Partial body: only the changed fields of the create body (the dialog sends a diff). A new discount applies to the next order of the group merchants; open orders keep their pricing_snapshot. isDefault = true moves the default mark to this group.
 - **Response**: 200 with the updated group incl. merchantCount.
@@ -127,7 +129,7 @@ Frontend features covering this module: `merchants`, `services`, `storefront` (r
 
 ## DELETE /admin/client-groups/:id
 
-- **Map**: Merchant groups: discount, upgrade threshold and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
+- **Map**: Merchant groups: discount and deposit limit. (الفئات: الخصم وحد الترقية وحد الإيداع) · staff-permission `groups:*` · stage 4 · tables client_groups
 - **Frontend**: `deleteClientGroup` (src/features/merchants/api/groups.ts:61) · params `id: number` · returns `void` · success 204 · assumed contract
 - **Response**: 204 empty.
 - **Errors**: 409 GROUP_IN_USE (merchants are still in the group (detail names how many); also for the b2c_retail group and the default group); 404 NOT_FOUND (no group with that id); 403 FORBIDDEN (caller lacks groups:delete)

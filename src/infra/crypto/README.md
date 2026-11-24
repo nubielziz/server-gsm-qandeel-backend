@@ -37,7 +37,7 @@ token. Tokens are `randomToken(bytes)` (at least 16 bytes, base64url). Compare s
 - `TokenService.hash` (`TOKEN_PEPPER`): credentials (sessions, one-time links, API keys) and short-lived limiter keys. Changing the pepper
   signs everybody out and voids every API key and open link (`docs/OPERATIONS.md` section 5).
 - `TokenService.lookupHash` (`LOOKUP_HASH_KEY`; `TOKEN_PEPPER` outside production when unset): hashes stored for later matching (blocklist,
-  IMEI history, inventory and open-order duplicates, unsubscribe links, Idempotency-Key requests, webhook event ids, the shop's link tokens).
+  inventory and open-order duplicates, unsubscribe links, Idempotency-Key requests, the shop's link tokens).
   Changing it makes every stored lookup stop matching; it is never changed (`docs/OPERATIONS.md` section 5), and both processes refuse to
   start in production when it differs from the key the stored lookups were made with.
 
@@ -55,6 +55,6 @@ host that runs the API:** `bun run bench:argon2` prints the time per hash for ca
 
 ## Webhook signatures
 
-`X-GSM-Signature: t=<unix>,v1=<hex>` where `v1 = HMAC-SHA256(secret, "<t>.<body>")`. `verifyWebhookSignature` checks the
+The header value is `t=<unix>,v1=<hex>` where `v1 = HMAC-SHA256(secret, "<t>.<body>")` (payment gateways send it in their own header, for example `stripe-signature`). `verifyWebhookSignature` checks the
 signature in constant time and then the timestamp (5 minutes either way); several `v1` values are accepted so a secret can
 be rotated. Verify the exact bytes of the body, not a re-serialised object.

@@ -135,7 +135,7 @@ real worker) run the real application on Fastify `inject`.
 `test/integration/identity/machine-auth.test.ts` runs the guards of `src/modules/identity/security/machine/` through real HTTP; their unit tests
 are in `test/unit/modules/identity/security/machine/` (`*.spec.ts`, fakes for the directory, the limiter and the replay filter) and `test/unit/common/raw-body.spec.ts`.
 
-- `test/support/machine-auth.ts` has one sample route per machine access kind (keys under `/t/mach`), `MachineTestController` (it also
+- `test/support/machine-auth.ts` has one sample route per machine access kind that is not a key (keys under `/t/mach`; the API key guard is tested through the real Dhru endpoint, `POST /api/index.php` with `accountinfo`), `MachineTestController` (it also
   serves the Dhru sample route `dhruLike` of `routes.ts`: do not add `TestController` to the same app), `staticResolver` for the
   capability tokens, `testWebhookVerifier` (gateway `testpay`, our own `t=...,v1=...` scheme over the raw body, the event id read from
   the signed JSON) with `signedDelivery`, and `insertApiKey`, which stores a key the way decision 019 says (hash and prefix only).

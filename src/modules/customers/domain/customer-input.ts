@@ -35,6 +35,19 @@ export function normaliseEmail(email: string): string {
 }
 
 /**
+ * The name a mail greets.
+ *
+ * Why: a guest customer has no name (`customers.name` is empty), and "Hi ," reads badly.
+ *
+ * @param name the customer's name, possibly empty
+ * @returns the name, or `there`
+ */
+export function greetingName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed === '' ? 'there' : trimmed;
+}
+
+/**
  * Tidies a phone number: trimmed.
  *
  * Why: the console sends `phone` left out when empty; the column stores `''` for none (customers.md).

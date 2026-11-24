@@ -1,17 +1,16 @@
 // The checkout token at rest (decision 054): a new session keeps it only as a keyed hash and an encrypted copy, a session stored as issued
-// before still opens, the one-off seal pass converts the old rows once, and the recovery mail of a sealed session carries its link.
+// before still opens, and the one-off seal pass converts the old rows once.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { type Database, schema as s } from '@src/infra/db';
 import { CheckoutTokenSeal, CheckoutTokenSealModule } from '@src/modules/customers';
 import { SettingsReader } from '@src/modules/platform';
-import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { revealedToken, tokenHashOf } from '../../support/capability-tokens';
-import { MINUTE, TestClock } from '../../support/clock';
+import { TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { insertAbandoned, insertRecoveryTemplate, recoveryJobs, runRecoveryMail } from '../../support/growth';
+import { insertCheckout } from '../../support/growth';
 import { mailbox } from '../../support/notifications';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { APPLE_IMEI, TURNSTILE_HEADERS, type StorefrontWorld, storefrontWorld } from '../../support/storefront';
@@ -20,7 +19,6 @@ const clock = new TestClock('2026-11-07T12:00:00.000Z');
 let t: TestApp;
 let db: Database;
 let world: StorefrontWorld;
-let admin: AdminApi;
 
 beforeAll(async () => {
   ({ db } = await testDb());
@@ -33,7 +31,6 @@ beforeEach(async () => {
   await t.app.get(SettingsReader).invalidate();
   mailbox(t).reset();
   world = await storefrontWorld(db);
-  admin = await adminWith(t, ['growth:*']);
 });
 afterAll(async () => {
   await resetDb();
@@ -69,15 +66,15 @@ describe('the checkout token at rest', () => {
   });
 
   it('still opens a session stored as issued', async () => {
-    const old = await insertAbandoned(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
+    const old = await insertCheckout(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
     const res = await show(old.token);
     expect(res.statusCode).toBe(200);
     expect(res.json<{ token: string }>().token).toBe(old.token);
   });
 
   it('the seal pass converts the old rows once', async () => {
-    const first = await insertAbandoned(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
-    const second = await insertAbandoned(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
+    const first = await insertCheckout(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
+    const second = await insertCheckout(t, db, { serviceId: world.icloud.serviceId, createdAt: clock.now() });
     const before = await sessionRow(first.sessionId);
     const sealed = await t.app.inject({
       method: 'POST',
@@ -97,21 +94,5 @@ describe('the checkout token at rest', () => {
     }
     expect((await sessionRow(first.sessionId)).updatedAt).toEqual(before.updatedAt);
     expect(await t.app.get(CheckoutTokenSeal).run()).toEqual({ sealed: 0, unchanged: 0 });
-  });
-
-  it('the recovery mail carries the link of a sealed session', async () => {
-    await insertRecoveryTemplate(db);
-    const checkout = await insertAbandoned(t, db, {
-      serviceId: world.icloud.serviceId,
-      createdAt: new Date(clock.nowMs() - 120 * MINUTE),
-      email: 'sam@mail.example',
-    });
-    await t.app.get(CheckoutTokenSeal).run();
-    expect((await sessionRow(checkout.sessionId)).token).toBeNull();
-    const res = await admin.post('/admin/checkouts/recover', { ids: [checkout.sessionId] });
-    expect(res.body.sent).toBe(1);
-    const job = (await recoveryJobs(db)).find((row) => row.aggregateId === checkout.sessionId)!;
-    expect(await runRecoveryMail(t, job)).toEqual({ sent: true });
-    expect(mailbox(t).sent[0]!.text).toContain(`/checkout/resume?token=${checkout.token}`);
   });
 });

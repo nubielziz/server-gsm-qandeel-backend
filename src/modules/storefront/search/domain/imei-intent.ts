@@ -1,4 +1,4 @@
-// IMEI intent of the storefront search (feature 29, plan section 5.2): a visitor who pastes an IMEI wants the IMEI check, not a search.
+// IMEI intent of the storefront search (feature 29, plan section 5.2): a visitor who pastes an IMEI is not searching, and the IMEI is never recorded.
 // Pure.
 
 /** The separators a pasted IMEI may carry: spaces, dashes, dots and slashes. */
@@ -30,7 +30,7 @@ export function luhnValid(digits: string): boolean {
  *
  * Why: plan section 5.2: after removing spaces, dashes, dots and slashes, 15 digits with a valid Luhn check, or 16 digits (an IMEISV:
  * the 14 digits of the IMEI and 2 of software version, which carry no check digit). Such an answer runs no search and is never recorded
- * (an IMEI is a personal identifier of a phone, and the results page shows the same "Check this IMEI" link).
+ * (an IMEI is a personal identifier of a phone).
  *
  * @param text what the visitor typed
  * @returns `'imei'` for an IMEI or an IMEISV, otherwise `null`

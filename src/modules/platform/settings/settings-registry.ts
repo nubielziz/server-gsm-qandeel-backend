@@ -1,5 +1,5 @@
 // The registry of settings that `PATCH /admin/settings` may write (RESOLUTIONS identity-platform-13): an allow-list, each key
-// with its validator. Pure, so it is unit-tested; the route and `PATCH /admin/storefront/settings` share the validators.
+// with its validator. Pure, so it is unit-tested.
 
 /** One setting the generic settings route may change. */
 export interface EditableSetting {
@@ -9,24 +9,6 @@ export interface EditableSetting {
   validate(value: unknown): string | undefined;
   /** Only an Owner may change it (decisions 051 and 049): `PATCH /admin/settings` answers 403 to any other caller. */
   readonly ownerOnly?: boolean;
-}
-
-/** The longest retention the console offers: ten years. */
-export const IMEI_RETENTION_MAX_DAYS = 3650;
-
-/**
- * Checks the value of `imeiRetentionDays`: a JSON integer from 0 to 3650.
- *
- * Why: the privacy panel of the console edits how long IMEI numbers are kept (RULES settings); `0` means "do not keep". The
- * storefront settings route (feature 16) uses the same check.
- *
- * @param value the value as sent
- * @returns the problem, or `undefined` when the value is acceptable
- */
-export function imeiRetentionDaysProblem(value: unknown): string | undefined {
-  if (typeof value !== 'number' || !Number.isInteger(value)) return 'Use a whole number of days.';
-  if (value < 0 || value > IMEI_RETENTION_MAX_DAYS) return `Use a number from 0 to ${IMEI_RETENTION_MAX_DAYS}.`;
-  return undefined;
 }
 
 /** The key of the price-change tolerance (user rule 9, MISMATCHES B117); the catalog module reads it under the same name. */
@@ -102,16 +84,13 @@ export function allowPlainHttpProblem(value: unknown): string | undefined {
 
 /** The key of the system-wide budget of campaign emails per second (feature 23). */
 export const BROADCAST_EMAIL_PER_SECOND_KEY = 'notifications.broadcast_email_per_second';
-/** The key of the system-wide budget of campaign Telegram messages per second (feature 23). */
-export const BROADCAST_TELEGRAM_PER_SECOND_KEY = 'notifications.broadcast_telegram_per_second';
-/** The default and the bounds of the two broadcast rates. */
+/** The default and the bounds of the broadcast rate. */
 export const BROADCAST_RATE_BOUNDS = { min: 1, max: 30 } as const;
 
 /**
- * Checks the value of a broadcast rate (`notifications.broadcast_email_per_second`, `notifications.broadcast_telegram_per_second`): a
- * JSON integer from 1 to 30.
+ * Checks the value of a broadcast rate (`notifications.broadcast_email_per_second`): a JSON integer from 1 to 30.
  *
- * Why: O8 (feature 23): campaign mail and Telegram leave at the rate the owner's providers allow (defaults 5 and 20 a second); the
+ * Why: O8 (feature 23): campaign mail leaves at the rate the owner's mail provider allows (default 5 a second); the
  * ceiling is the bulk queue's limiter of 30 jobs a second, so a higher number would have no effect.
  *
  * @param value the value as sent
@@ -278,14 +257,12 @@ const walletRange = (key: string, unit: string): EditableSetting => {
  * policies) are deliberately not here, so `settings:update` cannot bypass them (MISMATCHES B67).
  */
 export const EDITABLE_SETTINGS: readonly EditableSetting[] = [
-  { key: 'imeiRetentionDays', validate: imeiRetentionDaysProblem },
   { key: PRICE_CHANGE_TOLERANCE_KEY, validate: priceChangeTolerancePercentProblem },
   { key: IMPORT_DEFAULT_SLA_KEY, validate: importDefaultSlaMinutesProblem },
   { key: POLL_SLOW_AFTER_HOURS_KEY, validate: pollSlowAfterHoursProblem },
   // Decision 051: it lowers the protection of supplier calls, so only an Owner changes it.
   { key: SUPPLIERS_ALLOW_PLAIN_HTTP_KEY, validate: allowPlainHttpProblem, ownerOnly: true },
   { key: BROADCAST_EMAIL_PER_SECOND_KEY, validate: broadcastRateProblem },
-  { key: BROADCAST_TELEGRAM_PER_SECOND_KEY, validate: broadcastRateProblem },
   { key: INBOX_READ_RETENTION_DAYS_KEY, validate: inboxReadRetentionDaysProblem },
   { key: INBOX_RETENTION_DAYS_KEY, validate: inboxRetentionDaysProblem },
   { key: LOG_RETENTION_DAYS_KEY, validate: logRetentionDaysProblem },

@@ -16,8 +16,8 @@ import {
 } from '../../platform';
 import { staffUsers } from '../db/schema';
 
-/** Staff read in the console and have no Telegram chat. */
-const FLAGS: AudienceFlagsSql = { inApp: sql`true`, email: sql`true`, telegram: sql`false` };
+/** Staff read in the console and by email. */
+const FLAGS: AudienceFlagsSql = { inApp: sql`true`, email: sql`true` };
 
 /**
  * The condition of the staff audience.
@@ -81,7 +81,7 @@ export class StaffAudience implements AudienceProvider {
       .where(and(staffAudienceSql(query), gt(staffUsers.id, afterId)))
       .orderBy(asc(staffUsers.id))
       .limit(limit);
-    return rows.map((row) => ({ id: row.id, inApp: true, email: true, telegram: false }));
+    return rows.map((row) => ({ id: row.id, inApp: true, email: true }));
   }
 
   /**

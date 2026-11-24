@@ -2,13 +2,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
   BROADCAST_EMAIL_PER_SECOND_KEY,
-  BROADCAST_TELEGRAM_PER_SECOND_KEY,
   broadcastRateProblem,
   CUSTOMER_WALLET_SETTING_RANGES,
   CUSTOMER_WALLET_SETTINGS,
   EDITABLE_SETTINGS,
   FX_GUARD_SETTINGS,
-  imeiRetentionDaysProblem,
   INBOX_READ_RETENTION_DAYS_KEY,
   INBOX_RETENTION_DAYS_KEY,
   inboxReadRetentionDaysProblem,
@@ -21,18 +19,6 @@ import {
   priceChangeTolerancePercentProblem,
   settingsPatchProblems,
 } from '@src/modules/platform/settings/settings-registry';
-
-describe('imeiRetentionDaysProblem', () => {
-  it('accepts whole numbers from 0 to 3650', () => {
-    for (const value of [0, 1, 90, 3650]) expect(imeiRetentionDaysProblem(value)).toBeUndefined();
-  });
-
-  it('refuses anything else', () => {
-    for (const value of [-1, 3651, 1.5, '90', null, true, undefined, Number.NaN]) {
-      expect(imeiRetentionDaysProblem(value)).toBeString();
-    }
-  });
-});
 
 describe('priceChangeTolerancePercentProblem', () => {
   it('accepts whole numbers from 0 to 100', () => {
@@ -57,11 +43,12 @@ describe('broadcastRateProblem', () => {
     }
   });
 
-  it('is the validator of both broadcast rate keys', () => {
-    expect(
-      settingsPatchProblems({ [BROADCAST_EMAIL_PER_SECOND_KEY]: 10, [BROADCAST_TELEGRAM_PER_SECOND_KEY]: 25 }),
-    ).toEqual([]);
+  it('is the validator of the broadcast rate key, and the rate of the retired campaign channel is no longer a setting', () => {
+    expect(settingsPatchProblems({ [BROADCAST_EMAIL_PER_SECOND_KEY]: 10 })).toEqual([]);
     expect(settingsPatchProblems({ [BROADCAST_EMAIL_PER_SECOND_KEY]: 0 })).toHaveLength(1);
+    expect(settingsPatchProblems({ 'notifications.broadcast_telegram_per_second': 25 })).toEqual([
+      { key: 'notifications.broadcast_telegram_per_second', message: 'This setting cannot be changed here.' },
+    ]);
   });
 });
 
@@ -97,8 +84,14 @@ describe('the notification retention settings', () => {
 
 describe('settingsPatchProblems', () => {
   it('accepts a patch of allowed keys', () => {
-    expect(settingsPatchProblems({ imeiRetentionDays: 30 })).toEqual([]);
     expect(settingsPatchProblems({ [PRICE_CHANGE_TOLERANCE_KEY]: 15 })).toEqual([]);
+  });
+
+  it('refuses the retention setting of the retired IMEI check like any key the registry does not know', () => {
+    expect(settingsPatchProblems({ imeiRetentionDays: 30 }).map((problem) => problem.key)).toEqual([
+      'imeiRetentionDays',
+    ]);
+    expect(EDITABLE_SETTINGS.map((setting) => setting.key)).not.toContain('imeiRetentionDays');
   });
 
   it('judges the price change tolerance like any registry key', () => {
@@ -112,13 +105,13 @@ describe('settingsPatchProblems', () => {
       adminAllowlistOnly: true,
       maintenance: { enabled: true },
       madeUpKey: 1,
-      imeiRetentionDays: 9999,
+      [PRICE_CHANGE_TOLERANCE_KEY]: 9999,
     });
     expect(problems.map((problem) => problem.key)).toEqual([
       'adminAllowlistOnly',
       'maintenance',
       'madeUpKey',
-      'imeiRetentionDays',
+      PRICE_CHANGE_TOLERANCE_KEY,
     ]);
   });
 });
@@ -169,13 +162,13 @@ describe('owner-only settings (decisions 051 and 049)', () => {
   });
 
   it('names a reserved key whether it comes alone or beside ordinary keys, and none of the others', () => {
-    expect(ownerOnlySettingKeys({ 'suppliers.allowPlainHttp': true, imeiRetentionDays: 30 })).toEqual([
+    expect(ownerOnlySettingKeys({ 'suppliers.allowPlainHttp': true, [PRICE_CHANGE_TOLERANCE_KEY]: 30 })).toEqual([
       'suppliers.allowPlainHttp',
     ]);
-    expect(ownerOnlySettingKeys({ imeiRetentionDays: 30, 'fx.max_rate_age_hours': 72 })).toEqual([
+    expect(ownerOnlySettingKeys({ [PRICE_CHANGE_TOLERANCE_KEY]: 30, 'fx.max_rate_age_hours': 72 })).toEqual([
       'fx.max_rate_age_hours',
     ]);
-    expect(ownerOnlySettingKeys({ imeiRetentionDays: 30 })).toEqual([]);
+    expect(ownerOnlySettingKeys({ [PRICE_CHANGE_TOLERANCE_KEY]: 30 })).toEqual([]);
     expect(ownerOnlySettingKeys({ 'wallet.customer.max_topup': 500, 'fx.unknown': 1 })).toEqual([]);
     expect(ownerOnlySettingKeys({ 'not.a.setting': 1 })).toEqual([]);
     // The validator still judges the value first: the keys stay ordinary registry entries.

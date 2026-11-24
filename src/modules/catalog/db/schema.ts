@@ -219,6 +219,7 @@ export const clientGroups = pgTable(
     kind: text().notNull().default('b2b'),
     discountPercent: percent().notNull().default('0'),
     isDefault: boolean().notNull().default(false),
+    /** Retired (decision 062): ranks are set by hand, nothing reads or writes the upgrade threshold; the accounts migration drops it. */
     earnThreshold: money().notNull().default('0'),
     depositLimit: money().notNull().default('0'),
     overdraftAllowed: boolean().notNull().default(false),
@@ -730,7 +731,7 @@ export type NewRetailPriceChange = typeof retailPriceChanges.$inferInsert;
  * The last price listed to a merchant for a service (the price-protection memory of user rule 9).
  *
  * Why: MISMATCHES B117 (4), a backend addition to the map's tables: every list a merchant reads (the portal catalog and price
- * export, Dhru and REST v1 lists) records the price it showed; an order more than `pricing.price_change_tolerance_percent`
+ * export, Dhru list) records the price it showed; an order more than `pricing.price_change_tolerance_percent`
  * above it is refused with `409 PRICE_CHANGED`. A row is written only when the price changes, so `listed_at` is the time the
  * merchant was first shown the current price.
  */
@@ -818,11 +819,9 @@ export type InventoryCode = typeof inventoryCodes.$inferSelect;
 export type NewInventoryCode = typeof inventoryCodes.$inferInsert;
 
 /**
- * The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition, IMEI checks and SEO
- * pages.
+ * The first 8 digits of an IMEI (TAC) with brand and model; used for automatic recognition and SEO pages.
  *
- * Why: Brand and model by TAC (the first 8 IMEI digits): IMEI checks, recognition and SEO pages (routes
- * /admin/tac-catalog).
+ * Why: Brand and model by TAC (the first 8 IMEI digits): recognition and SEO pages (routes /admin/tac-catalog).
  */
 export const tacCatalog = pgTable(
   'tac_catalog',

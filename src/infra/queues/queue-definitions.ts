@@ -1,4 +1,4 @@
-// The BullMQ queue registry (decision 020): the twelve queues, each with its concurrency, retry policy and stall rule.
+// The BullMQ queue registry (decision 020): the eleven queues, each with its concurrency, retry policy and stall rule.
 // Add a queue here and in docs/queues.md; test/unit/infra/queues/queue-definitions.spec.ts fails when the two disagree.
 import type { JobsOptions } from 'bullmq';
 
@@ -6,7 +6,7 @@ import type { JobsOptions } from 'bullmq';
  * How one queue runs and retries its jobs.
  *
  * Why: decision 020 gives every queue its own concurrency and retry policy, so a slow supplier cannot starve
- * notifications and a webhook that keeps failing is retried for about a day.
+ * notifications.
  */
 export interface QueueDefinition {
   /** What the queue is for, in one line (docs/queues.md repeats it). */
@@ -27,7 +27,7 @@ export interface QueueDefinition {
   readonly maxStalledCount: number;
   /**
    * The queue-wide rate limit: at most `max` jobs start per `durationMs`, across every worker of the queue (BullMQ's `limiter`).
-   * Omit for no limit. Feature 23 gives the bulk queue one, so a broadcast cannot flood the mail and Telegram providers.
+   * Omit for no limit. Feature 23 gives the bulk queue one, so a broadcast cannot flood the mail provider.
    */
   readonly limiter?: { readonly max: number; readonly durationMs: number };
 }
@@ -76,15 +76,8 @@ export const QUEUES = {
     backoff: { delayMs: 10_000, jitter: 0.5 },
     maxStalledCount: 1,
   },
-  'merchant-webhooks': {
-    purpose: 'Delivers signed events to the webhook endpoints of merchants.',
-    concurrency: 20,
-    attempts: 8,
-    backoff: { delayMs: 10 * 60_000, jitter: 0.2 },
-    maxStalledCount: 1,
-  },
   notifications: {
-    purpose: 'Sends emails and Telegram messages.',
+    purpose: 'Sends emails, and the Telegram messages of the operations alerts.',
     concurrency: 10,
     attempts: 5,
     backoff: { delayMs: 30_000, jitter: 0.5 },
@@ -111,7 +104,7 @@ export const QUEUES = {
     maxStalledCount: 1,
   },
   maintenance: {
-    purpose: 'Scheduled housekeeping: group promotion, data retention, integrity checks, FX refresh.',
+    purpose: 'Scheduled housekeeping: data retention, integrity checks, FX refresh.',
     concurrency: 2,
     attempts: 3,
     backoff: { delayMs: 60_000, jitter: 0.5 },
@@ -124,10 +117,10 @@ export const QUEUES = {
     backoff: { delayMs: 10_000, jitter: 0.5 },
     maxStalledCount: 1,
   },
-  // Feature 23: bulk mail and Telegram of campaigns, apart from the transactional `notifications` queue (BullMQ's limiter is per
+  // Feature 23: bulk mail of campaigns, apart from the transactional `notifications` queue (BullMQ's limiter is per
   // queue, so a broadcast never slows a password reset).
   'notification-broadcasts': {
-    purpose: 'Sends the emails and Telegram messages of notification campaigns.',
+    purpose: 'Sends the emails of notification campaigns.',
     concurrency: 10,
     attempts: 6,
     backoff: { delayMs: 60_000, jitter: 0.5 },

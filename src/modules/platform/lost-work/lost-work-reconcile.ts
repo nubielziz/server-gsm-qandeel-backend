@@ -88,11 +88,11 @@ export async function applyLostWorkItems(
  * Asks again for work whose queue job was lost.
  *
  * Why: decision 055: a queue Redis that lost its data (or a job removed by hand) leaves rows waiting for a job that will never come.
- * The owning modules register a pass each (storefront refunds, merchant webhook deliveries, bulk publish runs, Quick add runs); this runs
+ * The owning modules register a pass each (storefront refunds, bulk publish runs, Quick add runs); this runs
  * them: every pass plans read-only, then applies its items, each in its own transaction under the row's lock. A pass that throws does not
  * stop the others: once every other pass ran, one error names the failed kinds, so the run is recorded as failed.
  *
- * Side effects: what the passes write (new outbox events with `reconcile: true`, failed refunds, re-added webhook jobs); one warning
+ * Side effects: what the passes write (new outbox events with `reconcile: true`, failed refunds); one warning
  * line with the counts when anything was asked for again or given up.
  *
  * @see docs/queues.md (lost_work_reconcile) and docs/decisions/055-infra.md

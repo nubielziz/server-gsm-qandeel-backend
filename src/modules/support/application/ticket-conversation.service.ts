@@ -22,8 +22,8 @@ const labelOf = (ticket: Pick<SupportTicket, 'number' | 'subject'>) => `${ticket
 /**
  * Writes replies and notes on a ticket.
  *
- * Why: RULES support 3 to 6 and scenario b2c-ticket steps 4 and 5. A reply adds a public staff message, sends it on a channel the
- * requester can be reached on (email always, Telegram only to a merchant's linked chat), stamps `first_response_at` the first time,
+ * Why: RULES support 3 to 6 and scenario b2c-ticket steps 4 and 5. A reply adds a public staff message, sends it by email
+ * (the one channel a requester can be reached on), stamps `first_response_at` the first time,
  * moves a new or open ticket to `pending_customer` (sent as `pending`), clears the reply target and gives an unassigned ticket to the
  * sender. A reply on a resolved ticket is `409 TICKET_RESOLVED`. A note is internal, changes no status, and also takes an unassigned
  * ticket (the demo's `ticketReply`); it is allowed on a resolved ticket. The ticket is locked while the message is written. The text is
@@ -31,12 +31,12 @@ const labelOf = (ticket: Pick<SupportTicket, 'number' | 'subject'>) => `${ticket
  *
  * Feature 28: both carry the sender's own attachments (`fileIds`, a body may then be empty) and ring the doorbell after the commit (the
  * requester sees a reply at once; a note reaches staff only). A reply records `last_staff_message_id` (the requester's `hasUnread`) and its
- * channel on the message (`notify_channel`). A Telegram reply is sent at once as before; an email reply is not: the ticket waits
+ * channel on the message (`notify_channel`). An email reply is not sent at once: the ticket waits
  * `support.replyEmailDelayMinutes` (default 5) from its first unseen reply (`reply_mail_due_at`), and the reply-mail
  * sweep mails what the requester has not seen by then in one email. A delay of `0` writes the mail event at once, as before.
  *
- * Side effects: inserts a `ticket_messages` row, updates `support_tickets`, inserts a `support.ticket_mail` `outbox_events` row (a
- * Telegram reply, or an email reply with no delay: the job sends it) and an `audit_logs` row, in one transaction; rings `ticket message`.
+ * Side effects: inserts a `ticket_messages` row, updates `support_tickets`, inserts a `support.ticket_mail` `outbox_events` row (an
+ * email reply with no delay: the job sends it) and an `audit_logs` row, in one transaction; rings `ticket message`.
  */
 @Injectable()
 export class TicketConversationService {
@@ -76,12 +76,8 @@ export class TicketConversationService {
       const ticket = await lockTicket(tx, ticketId);
       if (!ticket) throw notFound();
       const requester = await findRequester(tx, ticket.requesterType, ticket.requesterId);
-      const allowed = replyChannelsOf({
-        requesterType: ticket.requesterType,
-        reachable: requester?.reachable ?? false,
-        telegramChatId: requester?.telegramChatId ?? null,
-      });
-      const channel = pickReplyChannel(input.channel, ticket.channel, allowed);
+      const allowed = replyChannelsOf({ reachable: requester?.reachable ?? false });
+      const channel = pickReplyChannel(input.channel, allowed);
       // The inbox of the mock answers a bad input before the resolved ticket (mocks/ticketHandlers.ts), so the channel is judged first.
       if (channel === undefined || requester === undefined) {
         throw new AppError('VALIDATION_FAILED', {
@@ -107,8 +103,8 @@ export class TicketConversationService {
         notifyChannel: channel,
         createdAt: now,
       });
-      // Telegram goes at once and is never repeated by email; email at once only with no delay (rule 9).
-      const mailNow = channel === 'telegram' || delayMinutes === 0;
+      // Email goes at once only with no delay (rule 9).
+      const mailNow = delayMinutes === 0;
       const waiting = ticket.status === 'new' || ticket.status === 'open';
       await updateTicket(tx, ticketId, {
         ...(waiting ? { status: 'pending_customer' as const } : {}),
@@ -116,12 +112,10 @@ export class TicketConversationService {
         assigneeId: ticket.assigneeId ?? staffId,
         slaDueAt: null,
         lastStaffMessageId: message.id,
-        ...(channel === 'email'
-          ? mailNow
-            ? // Mailed now: a later sweep must not mail it again.
-              { replyMailedMessageId: message.id }
-            : { replyMailDueAt: replyMailDueAt(ticket.replyMailDueAt, now, delayMinutes) }
-          : {}),
+        ...(mailNow
+          ? // Mailed now: a later sweep must not mail it again.
+            { replyMailedMessageId: message.id }
+          : { replyMailDueAt: replyMailDueAt(ticket.replyMailDueAt, now, delayMinutes) }),
         updatedAt: now,
       });
       if (mailNow) await this.mail.reply(work, ticket, message, channel);

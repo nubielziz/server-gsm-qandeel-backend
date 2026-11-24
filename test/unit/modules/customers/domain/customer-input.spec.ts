@@ -1,6 +1,6 @@
 // Unit tests of the input rules of the admin customer routes: how a name, email and phone are cleaned.
 import { describe, expect, it } from 'bun:test';
-import { cleanName, cleanPhone, normaliseEmail } from '@src/modules/customers/domain/customer-input';
+import { cleanName, cleanPhone, greetingName, normaliseEmail } from '@src/modules/customers/domain/customer-input';
 
 describe('cleanName', () => {
   it('trims and collapses every run of white space to one space', () => {
@@ -19,5 +19,13 @@ describe('normaliseEmail', () => {
 describe('cleanPhone', () => {
   it('trims a phone', () => {
     expect(cleanPhone(' +447700900123 ')).toBe('+447700900123');
+  });
+});
+
+describe('greetingName', () => {
+  it('greets a guest who gave no name as "there", and a person by the name tidied of its edges', () => {
+    expect(greetingName('')).toBe('there');
+    expect(greetingName('  ')).toBe('there');
+    expect(greetingName(' Sam ')).toBe('Sam');
   });
 });

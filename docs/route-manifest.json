@@ -10,22 +10,22 @@
     "rowFlags": "the same files may add Turnstile to a public client or store map row (rowFlags, feature 24A); the endpoint then has turnstile true and rowFlag { file, spec }"
   },
   "counts": {
-    "rows": 395,
+    "rows": 392,
     "tables": 66,
     "scenarios": 13,
     "surfaces": 9,
     "moneyEvents": 13,
     "accounts": 14,
-    "endpoints": 503,
+    "endpoints": 500,
     "map": {
       "rows": 274,
       "endpoints": 382
     },
     "additions": {
-      "rows": 121,
-      "endpoints": 121
+      "rows": 118,
+      "endpoints": 118
     },
-    "frontendRoutes": 343,
+    "frontendRoutes": 319,
     "bySurface": {
       "dhru": {
         "rows": 8,
@@ -36,12 +36,12 @@
         "endpoints": 12
       },
       "client": {
-        "rows": 66,
-        "endpoints": 66
+        "rows": 65,
+        "endpoints": 65
       },
       "admin": {
-        "rows": 236,
-        "endpoints": 344
+        "rows": 235,
+        "endpoints": 343
       },
       "hooks": {
         "rows": 3,
@@ -56,8 +56,8 @@
         "endpoints": 4
       },
       "store": {
-        "rows": 59,
-        "endpoints": 59
+        "rows": 58,
+        "endpoints": 58
       },
       "system": {
         "rows": 4,
@@ -110,8 +110,8 @@
         "endpoints": 31
       },
       "support": {
-        "rows": 26,
-        "endpoints": 32
+        "rows": 23,
+        "endpoints": 29
       }
     }
   },
@@ -184,7 +184,7 @@
     "store": [
       {
         "id": "catalog",
-        "name": "Services and IMEI check",
+        "name": "Services and search",
         "nameAr": "الخدمات وفحص IMEI"
       },
       {
@@ -231,12 +231,12 @@
       },
       {
         "id": "api",
-        "name": "API keys and webhooks",
+        "name": "API keys",
         "nameAr": "مفاتيح API و Webhooks"
       },
       {
         "id": "growth",
-        "name": "Commissions and notifications",
+        "name": "Notifications and support tickets",
         "nameAr": "العمولات والإشعارات"
       }
     ],
@@ -273,7 +273,7 @@
       },
       {
         "id": "growth",
-        "name": "Commissions and reports",
+        "name": "Reports",
         "nameAr": "العمولات والتقارير"
       },
       {
@@ -308,7 +308,7 @@
       },
       {
         "id": "promo",
-        "name": "Abandoned carts and sales funnel",
+        "name": "Sales funnel",
         "nameAr": "السلات المتروكة وقمع المبيعات"
       },
       {
@@ -1105,7 +1105,7 @@
       "descriptionAr": "تسجيل تاجر جديد وإرسال إيميل التفعيل",
       "access": "public",
       "permission": null,
-      "turnstile": true,
+      "turnstile": false,
       "idempotencyKey": false,
       "authRaw": "عام",
       "stage": 2,
@@ -1121,11 +1121,7 @@
       },
       "module": "identity",
       "description": "Register a new merchant and send the verification email.",
-      "frontend": null,
-      "rowFlag": {
-        "file": "scripts/map-additions/24a.mjs",
-        "spec": "B-TBD merchant-auth-turnstile"
-      }
+      "frontend": null
     },
     {
       "key": "POST /client/auth/verify-email",
@@ -3552,7 +3548,7 @@
       "description": "Active sessions of staff members and merchants.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 18,
+        "line": 23,
         "fn": "listSessions"
       }
     },
@@ -3585,7 +3581,7 @@
       "description": "End a session.",
       "frontend": {
         "file": "src/features/access/api/sessions.ts",
-        "line": 27,
+        "line": 33,
         "fn": "revokeSession"
       }
     },
@@ -4285,7 +4281,7 @@
       "description": "API keys of a merchant.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 11,
+        "line": 17,
         "fn": "listClientApiKeys"
       }
     },
@@ -4319,7 +4315,7 @@
       "description": "Revoke a merchant API key.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 21,
+        "line": 27,
         "fn": "revokeApiKey"
       }
     },
@@ -4349,7 +4345,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 22,
@@ -4382,7 +4378,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 31,
@@ -4415,7 +4411,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 40,
@@ -4448,7 +4444,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 50,
@@ -4481,7 +4477,7 @@
         "path": "/admin/client-groups"
       },
       "module": "catalog",
-      "description": "Merchant groups: discount, upgrade threshold and deposit limit.",
+      "description": "Merchant groups: discount and deposit limit.",
       "frontend": {
         "file": "src/features/merchants/api/groups.ts",
         "line": 59,
@@ -6847,11 +6843,7 @@
       },
       "module": "identity",
       "description": "Verification (KYC) requests.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 20,
-        "fn": "listKycSubmissions"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/kyc-submissions/:id",
@@ -6880,11 +6872,7 @@
       },
       "module": "identity",
       "description": "Verification (KYC) requests.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 32,
-        "fn": "getKycSubmission"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/kyc-submissions/:id/decide",
@@ -6914,11 +6902,7 @@
       },
       "module": "identity",
       "description": "Approve or reject the verification.",
-      "frontend": {
-        "file": "src/features/merchants/api/kyc.ts",
-        "line": 42,
-        "fn": "decideKycSubmission"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-plans",
@@ -6947,11 +6931,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 21,
-        "fn": "listPlans"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-plans/:id",
@@ -6980,11 +6960,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 30,
-        "fn": "getPlan"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-plans",
@@ -7013,11 +6989,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 39,
-        "fn": "createPlan"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/commission-plans/:id",
@@ -7046,11 +7018,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 48,
-        "fn": "updatePlan"
-      }
+      "frontend": null
     },
     {
       "key": "DELETE /admin/commission-plans/:id",
@@ -7079,11 +7047,7 @@
       },
       "module": "commissions",
       "description": "Referral and rebate plans.",
-      "frontend": {
-        "file": "src/features/commissions/api/plans.ts",
-        "line": 57,
-        "fn": "deletePlan"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-assignments",
@@ -7112,11 +7076,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 22,
-        "fn": "listAssignments"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-assignments/:id",
@@ -7145,11 +7105,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 34,
-        "fn": "getAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-assignments",
@@ -7178,11 +7134,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 44,
-        "fn": "createAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "PATCH /admin/commission-assignments/:id",
@@ -7211,11 +7163,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 53,
-        "fn": "updateAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "DELETE /admin/commission-assignments/:id",
@@ -7244,11 +7192,7 @@
       },
       "module": "commissions",
       "description": "Assign plans to merchants.",
-      "frontend": {
-        "file": "src/features/commissions/api/assignments.ts",
-        "line": 66,
-        "fn": "deleteAssignment"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-accruals",
@@ -7277,11 +7221,7 @@
       },
       "module": "commissions",
       "description": "Accrued commissions and their status.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 21,
-        "fn": "listAccruals"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/commission-accruals/:id",
@@ -7310,11 +7250,7 @@
       },
       "module": "commissions",
       "description": "Accrued commissions and their status.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 30,
-        "fn": "getAccrual"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/commission-accruals/approve",
@@ -7344,11 +7280,7 @@
       },
       "module": "commissions",
       "description": "Approve and pay out in bulk, with a ledger entry on the wallet.",
-      "frontend": {
-        "file": "src/features/commissions/api/accruals.ts",
-        "line": 40,
-        "fn": "approveAccruals"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/reports/profit",
@@ -7380,7 +7312,7 @@
       "description": "Profit by day, service, supplier or merchant.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 11,
+        "line": 19,
         "fn": "getProfitReport"
       }
     },
@@ -7413,7 +7345,7 @@
       "description": "Balances, overdraft and reserved amounts.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 25,
+        "line": 33,
         "fn": "getWalletExposure"
       }
     },
@@ -7481,7 +7413,7 @@
       "description": "Top merchants by volume and by profit.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 22,
+        "line": 42,
         "fn": "getTopClients"
       }
     },
@@ -7550,7 +7482,7 @@
       "description": "KPIs for today: sales, profit, queues and supplier balances; scope=all|b2b|b2c separates merchants from the storefront.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 12,
+        "line": 24,
         "fn": "getDashboard"
       }
     },
@@ -7581,7 +7513,7 @@
       "description": "Bull Board UI for monitoring the queues.",
       "frontend": {
         "file": "src/features/dashboard/api/dashboard.ts",
-        "line": 35,
+        "line": 55,
         "fn": "queuesBoardUrl"
       }
     },
@@ -7612,11 +7544,7 @@
       },
       "module": "platform",
       "description": "Log of merchant webhooks.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 19,
-        "fn": "listWebhookDeliveries"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/webhook-deliveries/:id",
@@ -7645,11 +7573,7 @@
       },
       "module": "platform",
       "description": "Log of merchant webhooks.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 31,
-        "fn": "getWebhookDelivery"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/webhook-deliveries/:id/retry",
@@ -7678,11 +7602,7 @@
       },
       "module": "platform",
       "description": "Resend the delivery.",
-      "frontend": {
-        "file": "src/features/settings/api/webhooks.ts",
-        "line": 41,
-        "fn": "retryWebhookDelivery"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/notification-templates",
@@ -10880,7 +10800,7 @@
       "description": "VAT due by country and period, computed from ledger entries rather than invoices.",
       "frontend": {
         "file": "src/features/finance/api/reports.ts",
-        "line": 35,
+        "line": 43,
         "fn": "getVatReport"
       }
     },
@@ -10985,7 +10905,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 34,
+        "line": 33,
         "fn": "listSupportTickets"
       }
     },
@@ -11019,7 +10939,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 47,
+        "line": 46,
         "fn": "getSupportTicket"
       }
     },
@@ -11053,7 +10973,7 @@
       "description": "Support inbox: priority, assignment, status and SLA timers.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 57,
+        "line": 56,
         "fn": "updateSupportTicket"
       }
     },
@@ -11088,7 +11008,7 @@
       "description": "Reply to the customer by email or Telegram.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 68,
+        "line": 67,
         "fn": "replyToTicket"
       }
     },
@@ -11121,7 +11041,7 @@
       "description": "Internal note that the customer does not see.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 78,
+        "line": 77,
         "fn": "addTicketNote"
       }
     },
@@ -11422,11 +11342,7 @@
       },
       "module": "risk",
       "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
-      "frontend": {
-        "file": "src/features/risk/api/imeiChecks.ts",
-        "line": 11,
-        "fn": "listImeiChecks"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/imei-checks/:id",
@@ -11455,11 +11371,7 @@
       },
       "module": "risk",
       "description": "Log of IMEI checks and their results (erased or hashed after the retention period).",
-      "frontend": {
-        "file": "src/features/risk/api/imeiChecks.ts",
-        "line": 20,
-        "fn": "getImeiCheck"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/blocklist",
@@ -11688,11 +11600,7 @@
       },
       "module": "customers",
       "description": "Abandoned carts, including who has marketing consent.",
-      "frontend": {
-        "file": "src/features/checkouts/api/checkouts.ts",
-        "line": 12,
-        "fn": "listAbandonedCheckouts"
-      }
+      "frontend": null
     },
     {
       "key": "POST /admin/checkouts/recover",
@@ -11722,11 +11630,7 @@
       },
       "module": "customers",
       "description": "Send a recovery email once, only to customers with marketing consent.",
-      "frontend": {
-        "file": "src/features/checkouts/api/checkouts.ts",
-        "line": 26,
-        "fn": "recoverCheckouts"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/reports/funnel",
@@ -11758,8 +11662,8 @@
       "module": "customers",
       "description": "Sales funnel: check, then payment started, then paid, then delivered.",
       "frontend": {
-        "file": "src/features/checkouts/api/funnel.ts",
-        "line": 10,
+        "file": "src/features/finance/api/reports.ts",
+        "line": 54,
         "fn": "getFunnel"
       }
     },
@@ -12253,10 +12157,10 @@
         "path": "/admin/system/webhooks"
       },
       "module": "health",
-      "description": "Delivery health of outgoing webhooks to merchants and incoming ones from gateways: success rate, failures, attempts and the oldest undelivered message.",
+      "description": "Health of the incoming webhooks from gateways: success rate, failures, attempts and the oldest undelivered message.",
       "frontend": {
         "file": "src/features/system-health/api/jobs.ts",
-        "line": 31,
+        "line": 32,
         "fn": "getWebhooksHealth"
       }
     },
@@ -12889,7 +12793,7 @@
         "path": "/openapi.json"
       },
       "module": "platform",
-      "description": "REST v1 specification (OpenAPI).",
+      "description": "Dhru API specification (OpenAPI).",
       "frontend": null
     },
     {
@@ -12916,7 +12820,7 @@
         "path": "/docs"
       },
       "module": "platform",
-      "description": "REST v1 documentation page.",
+      "description": "Dhru API documentation page.",
       "frontend": null
     },
     {
@@ -13111,7 +13015,7 @@
       "description": "Create an API key for a merchant; the key is shown once.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 32,
+        "line": 39,
         "fn": "createClientApiKey"
       },
       "addition": {
@@ -13150,7 +13054,7 @@
       "description": "Change a merchant key's per-minute limit and allowed addresses.",
       "frontend": {
         "file": "src/features/merchants/api/apiKeys.ts",
-        "line": 45,
+        "line": 56,
         "fn": "updateApiKey"
       },
       "addition": {
@@ -14043,7 +13947,7 @@
       "description": "List notification campaigns.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 40,
+        "line": 52,
         "fn": "listCampaigns"
       },
       "addition": {
@@ -14082,7 +13986,7 @@
       "description": "Create a campaign as a draft.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 57,
+        "line": 71,
         "fn": "createCampaign"
       },
       "addition": {
@@ -14122,7 +14026,7 @@
       "description": "One campaign with its delivery numbers.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 48,
+        "line": 63,
         "fn": "getCampaign"
       },
       "addition": {
@@ -14161,7 +14065,7 @@
       "description": "Edit a draft or scheduled campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 65,
+        "line": 79,
         "fn": "updateCampaign"
       },
       "addition": {
@@ -14200,7 +14104,7 @@
       "description": "Delete a draft campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 73,
+        "line": 87,
         "fn": "deleteCampaign"
       },
       "addition": {
@@ -14241,7 +14145,7 @@
       "description": "Count the people an audience reaches.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 82,
+        "line": 96,
         "fn": "previewAudience"
       },
       "addition": {
@@ -14279,7 +14183,7 @@
       "description": "Render a campaign for one language and channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 90,
+        "line": 104,
         "fn": "previewCampaign"
       },
       "addition": {
@@ -14321,7 +14225,7 @@
       "description": "Send a test to yourself.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 99,
+        "line": 113,
         "fn": "sendCampaignTest"
       },
       "addition": {
@@ -14361,7 +14265,7 @@
       "description": "Send a campaign now.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 113,
+        "line": 127,
         "fn": "sendCampaign"
       },
       "addition": {
@@ -14400,7 +14304,7 @@
       "description": "Schedule or reschedule a campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 122,
+        "line": 136,
         "fn": "scheduleCampaign"
       },
       "addition": {
@@ -14439,7 +14343,7 @@
       "description": "Cancel a scheduled or running campaign.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 135,
+        "line": 149,
         "fn": "cancelCampaign"
       },
       "addition": {
@@ -14478,7 +14382,7 @@
       "description": "The recipients of a campaign on one channel.",
       "frontend": {
         "file": "src/features/notifications/api/campaigns.ts",
-        "line": 144,
+        "line": 158,
         "fn": "listCampaignRecipients"
       },
       "addition": {
@@ -15238,41 +15142,6 @@
       "successStatus": 200
     },
     {
-      "key": "POST /store/v1/tickets/:token/typing",
-      "method": "POST",
-      "path": "/store/v1/tickets/:token/typing",
-      "op": "action",
-      "surface": "store",
-      "kind": "http",
-      "group": "support",
-      "descriptionAr": "الزبون يكتب الآن",
-      "access": "ticket-token",
-      "permission": null,
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "رمز التذكرة",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "store POST /store/v1/tickets/:token/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/store/v1/tickets/:token/typing"
-      },
-      "module": "support",
-      "description": "The requester is typing.",
-      "frontend": null,
-      "addition": {
-        "file": "scripts/map-additions/28.mjs",
-        "spec": "B218"
-      },
-      "successStatus": 204
-    },
-    {
       "key": "POST /store/v1/tickets/:token/read",
       "method": "POST",
       "path": "/store/v1/tickets/:token/read",
@@ -15409,47 +15278,8 @@
       "description": "Mark the requester's messages as seen.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 89,
+        "line": 88,
         "fn": "markTicketRead"
-      },
-      "addition": {
-        "file": "scripts/map-additions/28.mjs",
-        "spec": "B218"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "POST /admin/support-tickets/:id/typing",
-      "method": "POST",
-      "path": "/admin/support-tickets/:id/typing",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "support",
-      "descriptionAr": "الموظف يكتب ردًا أو ملاحظة",
-      "access": "staff-permission",
-      "permission": "support:reply",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "support:reply",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin POST /admin/support-tickets/:id/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/admin/support-tickets/:id/typing"
-      },
-      "module": "support",
-      "description": "A staff member is typing a reply or a note.",
-      "frontend": {
-        "file": "src/features/support/api/tickets.ts",
-        "line": 99,
-        "fn": "sendTicketTyping"
       },
       "addition": {
         "file": "scripts/map-additions/28.mjs",
@@ -15489,7 +15319,7 @@
       "description": "Upload an attachment for a reply or a note.",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 110,
+        "line": 99,
         "fn": "uploadTicketFile"
       },
       "addition": {
@@ -15529,7 +15359,7 @@
       "description": "Download an attachment of the ticket (presigned link).",
       "frontend": {
         "file": "src/features/support/api/tickets.ts",
-        "line": 123,
+        "line": 112,
         "fn": "ticketFileUrl"
       },
       "addition": {
@@ -15778,41 +15608,6 @@
       },
       "module": "support",
       "description": "Mark support's messages of one of the merchant’s tickets as seen.",
-      "frontend": null,
-      "addition": {
-        "file": "scripts/map-additions/28b.mjs",
-        "spec": "B217"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "POST /client/tickets/:id/typing",
-      "method": "POST",
-      "path": "/client/tickets/:id/typing",
-      "op": "action",
-      "surface": "client",
-      "kind": "http",
-      "group": "growth",
-      "descriptionAr": "التاجر يكتب الآن",
-      "access": "merchant-session",
-      "permission": null,
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "جلسة",
-      "stage": 28,
-      "tables": [
-        "support_tickets",
-        "ticket_messages"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "client POST /client/tickets/:id/typing",
-        "method": "POST",
-        "ops": null,
-        "path": "/client/tickets/:id/typing"
-      },
-      "module": "support",
-      "description": "The merchant is typing on one of its tickets.",
       "frontend": null,
       "addition": {
         "file": "scripts/map-additions/28b.mjs",

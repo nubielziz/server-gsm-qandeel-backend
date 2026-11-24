@@ -1,14 +1,14 @@
-// Drizzle queries of the merchant portal's account routes on `clients` (identity module): sign-in, registration, password,
+// Drizzle queries of the merchant portal's account routes on `clients` (identity module): sign-in, password,
 // 2FA and profile. Every function takes a DbExecutor so a use case can run several in one transaction; times come from the caller.
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../infra/db';
 import { lower } from '../../../infra/db/columns';
-import { type Client, type NewClient, clients } from '../db/schema';
+import { type Client, clients } from '../db/schema';
 
 /**
  * Finds a merchant by email, ignoring case.
  *
- * Why: sign-in, registration and "forgot password" match the email case-insensitively (unique index on `lower(email)`).
+ * Why: sign-in and "forgot password" match the email case-insensitively (unique index on `lower(email)`).
  *
  * @param db the database or a transaction
  * @param email the email as typed
@@ -72,43 +72,12 @@ export async function lockClientForSignIn(db: DbExecutor, id: number): Promise<C
 }
 
 /**
- * Finds the merchant that owns a referral code.
- *
- * Why: B122 stores `referred_by_id` from the code a new merchant typed; an unknown code is a validation error.
- *
- * @param db the database or a transaction
- * @param code the referral code as typed (compared upper-case)
- * @returns the referring merchant's id, or `undefined`
- */
-export async function findClientIdByReferralCode(db: DbExecutor, code: string): Promise<number | undefined> {
-  const [row] = await db
-    .select({ id: clients.id })
-    .from(clients)
-    .where(eq(clients.referralCode, code.trim().toUpperCase()))
-    .limit(1);
-  return row?.id;
-}
-
-/**
- * Inserts a merchant.
- *
- * @param db the database or a transaction
- * @param row the new merchant (password already hashed)
- * @returns the stored row
- * @throws the database's unique violation (`clients_email_uq`, `clients_username_uq`, `clients_referral_code_uq`)
- */
-export async function insertClient(db: DbExecutor, row: NewClient): Promise<Client> {
-  const [created] = await db.insert(clients).values(row).returning();
-  return created!;
-}
-
-/**
  * Replaces a stored password hash with one made at the current cost, while the stored hash is still the one that was verified.
  *
  * Why: decision 007 re-hashes a correct password when the configured cost went up; `password_changed_at` stays, since the
  * merchant did not change their password. The write is guarded by the verified hash in the same statement, so a password chosen
  * meanwhile is never replaced by a hash of the one it replaced, and a password ended meanwhile (a verification that ended the
- * registration password) is never written back.
+ * password chosen before) is never written back.
  *
  * @param db the database or a transaction
  * @param id the merchant id
@@ -404,22 +373,4 @@ export async function disableClientTwoFactor(db: DbExecutor, input: ClientTotpSt
     .where(and(freshStepOf(input), eq(clients.twofaEnabled, true)))
     .returning({ id: clients.id });
   return rows.length > 0;
-}
-
-/**
- * Names the constraint a unique violation broke.
- *
- * Why: registration treats a taken email as "already registered" (same answer, B122) but retries when only the generated
- * username or referral code clashed.
- *
- * @param error whatever the query threw (Drizzle wraps the driver's error as `cause`)
- * @returns the constraint name (`clients_email_uq`), or `undefined` when the error is not a unique violation
- */
-export function uniqueViolationOf(error: unknown): string | undefined {
-  for (let current: unknown = error, depth = 0; current && depth < 4; depth++) {
-    const candidate = current as { code?: unknown; constraint?: unknown; cause?: unknown };
-    if (candidate.code === '23505') return typeof candidate.constraint === 'string' ? candidate.constraint : '';
-    current = candidate.cause;
-  }
-  return undefined;
 }

@@ -64,7 +64,6 @@ let admin: AdminApi;
 const NOTICE_ENV = {
   BULL_PREFIX: prefix,
   TELEGRAM_BOT_TOKEN: '1234567890:AAtest-token',
-  TELEGRAM_BOT_USERNAME: 'gsm_test_bot',
 };
 
 beforeAll(async () => {

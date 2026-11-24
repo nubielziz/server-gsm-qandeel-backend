@@ -7,7 +7,6 @@ import { loadDemoState, demoStatePath } from '../../../scripts/seed/demo-state';
 import { runSeed } from '../../../scripts/seed/run';
 import { seedOrders } from '../../../scripts/seed/orders';
 import { schema as s } from '@src/infra/db';
-import { MerchantSpend } from '@src/modules/money';
 import { DispatchSweep } from '@src/modules/suppliers';
 import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
@@ -15,7 +14,7 @@ import { clearIdentityCaches } from '../../support/auth';
 import { DAY, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
 import { ledgerTotals } from '../../support/money';
-import { insertOrderRow, ledgerOf, orderRow, walletOf } from '../../support/orders';
+import { insertOrderRow, ledgerOf, orderRow, settledOf, walletOf } from '../../support/orders';
 
 setDefaultTimeout(180_000);
 
@@ -162,10 +161,10 @@ describe.skipIf(!frontendPresent)('the orders seed', () => {
     expect((await ledgerTotals(db)).sum).toBe('0.0000');
   });
 
-  it('lets staff reopen and refund a seeded order: the reversal finds the demo settlement and the merchant spend follows', async () => {
+  it('lets staff reopen and refund a seeded order: the reversal finds the demo settlement and what the merchant has settled follows', async () => {
     const { db } = await testDb();
     const before = await walletOf(db, 3);
-    const spend = async () => (await t.app.get(MerchantSpend).completedSpend(db, [3])).get(3)!.toWire();
+    const spend = () => settledOf(db, 3);
     const spendBefore = Number(await spend());
     expect((await staff.post('/admin/orders/48100/reopen', { reason: 'Check again' })).status).toBe(204);
     const [settle] = await db

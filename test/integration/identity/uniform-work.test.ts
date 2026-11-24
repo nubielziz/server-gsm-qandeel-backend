@@ -1,15 +1,12 @@
-// Integration tests of decision 052, rule seven: the public forgot-password routes and the merchant registration run the same
-// database statements for every email (a run that may keep nothing is rolled back at its end), and the hash count does not depend on
-// the email. The statements are recorded at the Postgres driver; only their texts are compared, never their values.
+// Integration tests of decision 052, rule seven: the public forgot-password routes run the same
+// database statements for every email (a run that may keep nothing is rolled back at its end). The statements are recorded at the Postgres driver; only their texts are compared, never their values.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { PasswordHasher } from '@src/infra/crypto';
 import { schema as s } from '@src/infra/db';
 import type { RequestMeta } from '@src/modules/identity';
 import { CustomerPasswordService } from '@src/modules/customers/application/customer-password.service';
 import { MerchantPasswordService } from '@src/modules/identity/application/merchant-password.service';
-import { MerchantRegistrationService } from '@src/modules/identity/application/merchant-registration.service';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { TestClock } from '../../support/clock';
@@ -123,29 +120,5 @@ describe('POST /store/v1/auth/password/forgot', () => {
       expect(await counts()).toEqual(before);
     }
     expectSameWork(runs);
-  });
-});
-
-describe('POST /client/auth/register', () => {
-  it('runs the same statements and one hash for a new and for a known email, and keeps nothing for the known one', async () => {
-    const registration = t.app.get(MerchantRegistrationService);
-    const known = await makeMerchant(t);
-    const hash = spyOn(t.app.get(PasswordHasher), 'hash');
-    const form = (email: string) => ({
-      name: 'Ali Hassan',
-      email,
-      password: 'a-long-enough-password-1',
-      country: 'JO',
-    });
-
-    const kept = await statementsOf(() => registration.register(form(`new-${randomUUID()}@example.com`), newCaller()));
-    expect(hash).toHaveBeenCalledTimes(1);
-    hash.mockClear();
-    const before = await counts();
-    const discarded = await statementsOf(() => registration.register(form(known.email), newCaller()));
-    expect(hash).toHaveBeenCalledTimes(1);
-    expect(await counts()).toEqual(before);
-    expect(kept.some((text) => text.includes('"ledger_accounts"'))).toBe(true);
-    expectSameWork([kept, discarded]);
   });
 });

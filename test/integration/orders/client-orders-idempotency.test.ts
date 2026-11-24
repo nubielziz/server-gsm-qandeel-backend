@@ -9,7 +9,6 @@ import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches, insertMerchant, openSession } from '../../support/auth';
 import { DAY, HOUR, TestClock } from '../../support/clock';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { body, clearApiKeyCaches, credentialsFor, v1Client } from '../../support/machine-orders';
 import { IMEIS, type OrdersWorld, json, ledgerOf, ordersWorld, outboxOf, walletOf } from '../../support/orders';
 
 const clock = new TestClock();
@@ -30,7 +29,6 @@ beforeEach(async () => {
   clock.reset();
   await resetDb();
   await clearIdentityCaches(t);
-  await clearApiKeyCaches(t);
   await t.app.get(MaintenanceService).invalidate();
   world = await ordersWorld((await testDb()).db);
   headers = (await openSession(t, { type: 'client', id: world.merchant.id })).mutationHeaders;
@@ -140,29 +138,22 @@ describe('POST /client/orders with an Idempotency-Key', () => {
     expect((await place('busy')).statusCode).toBe(201);
   });
 
-  it('keeps a key to one request kind: a key used on REST v1 is 409 on the portal, and the reverse', async () => {
+  it('keeps a key to one request kind: a key that the retired REST API v1 stored (scope order) is 409 on the portal', async () => {
     const { db } = world;
-    const creds = await credentialsFor(t, db, world.merchant.id);
-    const v1 = v1Client(t, creds.key);
-    const viaV1 = await v1.post(
-      '/v1/orders',
-      { serviceId: world.auto.serviceId, imei: IMEIS[0] },
-      { 'idempotency-key': 'from-v1' },
-    );
-    expect(viaV1.statusCode).toBe(201);
+    await db.insert(s.idempotencyKeys).values({
+      clientId: world.merchant.id,
+      key: 'from-v1',
+      scope: 'order',
+      requestHash: 'd'.repeat(64),
+      status: 201,
+      response: {},
+      createdAt: clock.now(),
+    });
     const onPortal = await place('from-v1');
     expect(onPortal.statusCode).toBe(409);
     expect(json(onPortal).code).toBe('IDEMPOTENCY_KEY_REUSED');
-
+    expect(await db.select().from(s.orders)).toHaveLength(0);
     expect((await place('from-portal', { imei: IMEIS[1] })).statusCode).toBe(201);
-    const onV1 = await v1.post(
-      '/v1/orders',
-      { serviceId: world.auto.serviceId, imei: IMEIS[1] },
-      { 'idempotency-key': 'from-portal' },
-    );
-    expect(onV1.statusCode).toBe(409);
-    expect(body(onV1).code).toBe('IDEMPOTENCY_KEY_REUSED');
-    expect(await db.select().from(s.orders)).toHaveLength(2);
   });
 
   it('stores nothing for a refusal: a 402 leaves no key, and the same key places once the wallet is topped up', async () => {

@@ -1,8 +1,8 @@
-// Route contracts of the merchant portal's account area (map domain A, stage 2): profile, password, two-factor sign-in and the
-// merchant's own sessions. Shapes follow docs/contract/MISMATCHES.md B130 to B136; every route is open to a merchant waiting for
-// approval (B153) because it manages the merchant's own account.
+// Route contracts of the merchant portal's account area (map domain A, stage 2): profile, password and two-factor sign-in.
+// Shapes follow docs/contract/MISMATCHES.md B130 to B134; every route is open to a merchant waiting for approval (B153) because it
+// manages the merchant's own account.
 import { z } from 'zod';
-import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
+import { defineRoute } from '../../../common/contract';
 import { MERCHANT_ME_EXAMPLE, MerchantCode, MerchantCountry, MerchantMeShape } from './merchant-auth.contracts';
 
 /** The fields of the profile; a missing key stays as it is. */
@@ -22,17 +22,6 @@ const ChangePasswordBody = z.object({
 
 /** What the setup screen shows: the key to type, the link behind the QR code, and the QR code itself. */
 const TwoFactorSetup = z.object({ secret: z.string(), otpauthUrl: z.string(), qrSvg: z.string() });
-
-/** One live session of the merchant (never the token). */
-const SessionRow = z.object({
-  id: zId,
-  ip: z.string(),
-  userAgent: z.string(),
-  lastSeenAt: zIsoDateTime,
-  createdAt: zIsoDateTime,
-  expiresAt: zIsoDateTime,
-  current: z.boolean(),
-});
 
 /** `PATCH /client/profile`: name, company, phone, country, address and tax id. */
 export const merchantUpdateProfile = defineRoute({
@@ -154,52 +143,4 @@ export const merchantDisableTwoFactor = defineRoute({
     'RATE_LIMITED',
   ],
   examples: { request: { code: '123456' } },
-});
-
-/** `GET /client/sessions`: the merchant's live devices. */
-export const merchantListSessions = defineRoute({
-  key: 'GET /client/sessions',
-  summary: 'Active devices and sessions',
-  description:
-    'Live, fully signed-in sessions of the caller, newest first: not revoked, not past their end, and used within the idle limit ' +
-    '(`sessions.client_idle_minutes`). `current` marks the calling session. Never the token.',
-  tags: ['auth'],
-  surface: 'client',
-  access: 'merchant-session',
-  pendingMerchant: 'allow',
-  query: listQuery({
-    sorts: ['createdAt', 'lastSeenAt'],
-    defaultSort: { field: 'createdAt', order: 'desc' },
-  }),
-  success: { status: 200, schema: SessionRow },
-  errors: ['VALIDATION_FAILED', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED'],
-  examples: {
-    response: [
-      {
-        id: 41,
-        ip: '203.0.113.7',
-        userAgent: 'Mozilla/5.0',
-        lastSeenAt: '2026-11-01T09:45:00.000Z',
-        createdAt: '2026-11-01T09:30:00.000Z',
-        expiresAt: '2026-12-01T09:30:00.000Z',
-        current: true,
-      },
-    ],
-  },
-});
-
-/** `DELETE /client/sessions/:id`: ends one of the merchant's sessions. */
-export const merchantEndSession = defineRoute({
-  key: 'DELETE /client/sessions/:id',
-  summary: 'End a session',
-  description:
-    "Revokes the session when it is the caller's and live. Ending the calling session signs the caller out (the cookies are " +
-    "cleared). Another merchant's, an unknown and an ended session are all `404`.",
-  tags: ['auth'],
-  surface: 'client',
-  access: 'merchant-session',
-  pendingMerchant: 'allow',
-  params: z.object({ id: zIdParam }),
-  success: { status: 204 },
-  errors: ['NOT_FOUND', 'UNAUTHORIZED', 'ACCOUNT_SUSPENDED', 'IP_NOT_ALLOWED', 'CSRF_FAILED'],
 });

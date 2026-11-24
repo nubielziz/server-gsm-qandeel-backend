@@ -1,6 +1,6 @@
 # Risk & compliance module (`risk`)
 
-Map domain K. Risk and compliance: IMEI checks, risk assessments, the blocklist and data requests (export and anonymize).
+Map domain K. Risk and compliance: risk assessments, the blocklist and data requests (export and anonymize).
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
@@ -8,22 +8,7 @@ Decisions common to all modules: 008 route contracts, 016 layout and boundaries,
 
 ## Status
 
-Built: feature 14a (`POST /store/v1/imei/check`) and feature 18 (the other 19 routes of the module and the customer privacy routes).
-
-### The IMEI check (feature 14a)
-
-- **The check** (`application/imei-check.service.ts`, `domain/imei-check.ts`): the typed IMEI loses spaces and dashes
-  (`normalizeImei` of the orders module) and must be 15 digits with a valid Luhn digit (`isValidImei`), else `422 INVALID_IMEI`
-  with `errors[{field: 'imei'}]` and nothing is stored. The first 8 digits are looked up in `tac_catalog` through the catalog's
-  `TacDirectory`; an unknown TAC is a valid check with `device: null`. The status is `unknown`, the type `basic` and `result`
-  `{ stage: 'basic', checksum: 'valid', tac: 'known' | 'unknown' }`. No supplier blacklist or lock lookup exists (the manifest has no
-  supplier call for it), so `cached_until` stays null; a stored check that says `blacklisted` (the seed has some) still counts.
-- **Privacy** (decision 019): the IMEI is stored only as `imei_enc` (AES-GCM, context `imei_checks.imei_enc`) with `imei_hash` =
-  `TokenService.lookupHash('imei:' + imei)` for the lookup (keyed with `LOOKUP_HASH_KEY`, decision 054, as are the blocklist hashes); it is never in a log line, an error or a metric (a test checks the log).
-- **No reuse**: every check writes its own row (`cached_until` null, `cached: false`).
-- **Source**: with `serviceId` the check is `pre_order` for that service; without it, `storefront_free`. `ip` is the trusted-proxy
-  address; `country` is the country header of a trusted proxy when `GEOIP_COUNTRY_HEADER` is configured, else null.
-- **Anti-bot**: the route is `turnstile: true` (decision 034).
+Built: feature 18 (the review queue, the rules, the blocklist and the data requests, with the customer privacy routes).
 
 ### Risk screening (feature 18, `RiskScreening`)
 
@@ -49,13 +34,12 @@ the reasons first in the signals (a `block` keeps its hard signals first) and th
 `RiskDecisionsService.refundBlocked` takes an optional `reason` (else the sentence from the signals): the capture uses it to refund a
 late payment at once when the gateway can refund.
 
-- **Signals** (points, `domain/risk-scoring.ts`, the demo's table): disposable email 22, first order above the rule's USD 18, VPN or
-  proxy 15, IP country differs from card country 25, prepaid card 12, a 4th order in an hour from one address or customer 20,
-  an IMEI an earlier check found blacklisted 30, more orders from one email in 24 hours than the rule allows 50. The score is the sum
+- **Signals** (points, `domain/risk-scoring.ts`, the demo's table): disposable email 22, first order above the rule's USD 18,
+  IP country differs from card country 25, prepaid card 12, a 4th order in an hour from one address or customer 20,
+  more orders from one email in 24 hours than the rule allows 50. The score is the sum
   capped at 100.
 - **Hard blocks** (score 100, decision `block`): a live blocklist entry matching the email, its domain, the IMEI, the card
-  fingerprint or a country; a blacklisted IMEI while `blockBlacklistedImei` is on; a disposable email while `blockDisposableEmail` is
-  on. A chargeback entry reads "Email on a previous chargeback".
+  fingerprint or a country; a disposable email while `blockDisposableEmail` is on. A chargeback entry reads "Email on a previous chargeback".
 - **Thresholds**: at or above `blockThreshold` (80) the decision is `block`, at or above `reviewThreshold` (50) it is `review`
   (held); a threshold whose switch is off does not apply.
 - **Top-ups**: `RiskScreening.reviewTopUp(db, { email, cardFingerprint })` answers `{ flagged, reason }` from the blocklist, for the
@@ -67,8 +51,6 @@ late payment at once when the gateway can refund.
 |---|---|---|---|
 | Hold when the IP country differs from the card country (`reviewIpCountryMismatch`, +25, card payments) | the visitor's and the card's country | card: the card driver; visitor: `checkout_sessions.ip_country` from `GEOIP_COUNTRY_HEADER` | never applies; named at boot while on |
 | Prepaid card BIN (+12) | the card's funding | the card driver | never applies (no card details) |
-| VPN or proxy IP (+15) | a VPN or proxy lookup | none | never applies; named at boot |
-| Block blacklisted IMEIs (`blockBlacklistedImei`) and "IMEI was checked blacklisted before" (+30) | an IMEI check stored as `blacklisted` | none writes one (the storefront check stores `unknown`) | applies only to a check stored so; named at boot while on |
 | Country blocklist | the declared tax country, the visitor's and the card's country | as above | matches the countries known |
 | Tax country evidence (no switch) | the card's country, else the visitor's | as above | the declared country stands |
 
@@ -114,7 +96,7 @@ The held order's `customer.email` is masked (`ja•••@example.com`) unless t
 
 ### The rules (feature 18)
 
-`GET`/`PUT /admin/risk/rules`: eight rules (`domain/risk-rules.ts`), stored in `settings`: seven under the key `riskRules`, and
+`GET`/`PUT /admin/risk/rules`: seven rules (`domain/risk-rules.ts`), stored in `settings`: six under the key `riskRules`, and
 `require3ds` as the storefront policy of the same name (one stored value). `PUT` takes the whole set, validates it (unknown id,
 whole number from 0, number on a plain switch, review threshold below block threshold even when the switches are off) and audits each
 change with the demo's phrases.
@@ -122,7 +104,7 @@ change with the demo's phrases.
 ### The blocklist (feature 18)
 
 `Blocklist` (public) is the one writer and matcher of `blocklist_entries`. Values are stored only as keyed hashes plus a masked
-display: an email as its normalised text (the recipe of feature 14b), an IMEI as the IMEI-check hash, the other kinds behind a kind
+display: an email as its normalised text (the recipe of feature 14b), an IMEI behind the prefix `imei:`, the other kinds behind a kind
 prefix. An insert is `ON CONFLICT (kind, value_hash) DO NOTHING`; `match` ignores an entry past its `expires_at` (the clock's time is a
 parameter). `POST /admin/blocklist` adds manual entries (`409 ALREADY_BLOCKED` for a duplicate), `DELETE` removes an entry of any source.
 `removeAddedByBlockOf` deletes only the manual entries a customer's block added (RESOLUTIONS b2c-5). `isEmailBlocked` answers whether an
@@ -139,15 +121,6 @@ of an order that is not a limited guest order widens it the same way when it blo
 `emailScopeBefore` says `guest checkouts`), so a full block is never refused because a narrower entry of that email exists. The customer
 block keeps `ON CONFLICT DO NOTHING`: it leaves a limited entry as it is, and the customer's `blocked` status refuses the account anyway.
 
-### The IMEI log and its erasure (feature 18)
-
-`GET /admin/imei-checks` decrypts `imei_enc` for the answer, and shows `tac` plus bullets once it was erased (15 bullets when the TAC is
-unknown). Decision 047: only a caller who holds `risk:decide` (`IMEI_DIGITS_PERMISSION`, the people who decide held orders) gets the digits; for a caller with `risk:read`
-only, on the list and on the single read, nothing is decrypted and `imei` is the stored mask (the TAC and bullets). The other columns, the filters and the search by IMEI stay. `q` is a 15-digit IMEI (matched through the hash), a TAC (8 to 14 digits) or a prefix of it, or text for the brand and model.
-Erasure sets `imei_enc`, `imei_hash` and `cached_until` to NULL together (the table's check keeps the first two together): the nightly
-`data_retention` job does it by age (`imeiRetentionDays`, default 180, `0` means do not keep), and `ImeiErasure.forCustomer` does it for a
-customer being anonymized (it also clears the stored address).
-
 ### Data requests (feature 18)
 
 `POST /store/v1/me/data-export` and `/data-delete` record an `open` request due 30 days later (asking again while one is open returns it,
@@ -158,27 +131,25 @@ export download and an anonymization call to close the customer's waiting reques
 
 ## Public API (`index.ts`)
 
-`IMEI_CHECK_AAD`, `imeiHashInput`, `countryFromHeader`, `maskedImei`, `erasedMainInput`, `RISK_RULE_IDS`, `holdReason`, `blockDisplay`, `blockHashInput`,
-`normalizeBlockValue`, the services `RiskScreening`, `RiskDecisionsService`, `Blocklist`, `RiskRules`, `ImeiErasure`, `DataRequestService`, and the modules
-`ImeiCheckModule`, `RiskServicesModule` (the services without controllers), `RiskAdminModule` (the routes), `DataRetentionModule` (the
-worker's nightly job), `RiskModule`. Other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).
+`countryFromHeader`, `maskedImei`, `erasedMainInput`, `RISK_RULE_IDS`, `holdReason`, `blockDisplay`, `blockHashInput`,
+`normalizeBlockValue`, the services `RiskScreening`, `RiskDecisionsService`, `Blocklist`, `RiskRules`, `DataRequestService`, and the modules
+`RiskServicesModule` (the services without controllers), `RiskAdminModule` (the routes), `RiskModule`. Other modules import only `src/modules/risk/index.ts` (lint rule `gsm/module-boundaries`).
 
 ## Owned tables
 
-Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts` once the data layer exists.
+Only this module reads and writes these 3 tables (`scripts/module-map.mjs`); other modules call its public service. Schema: `db/schema.ts`. A fourth table, `imei_checks`, stays in the database and in the schema, unread and unwritten, until the migration of the accounts model drops it.
 
 | Table | What it holds |
 |---|---|
-| `imei_checks` | IMEI checks: blacklist, lock and iCloud, free or before an order, with a cache. |
 | `risk_assessments` | Risk assessment of a session or an order: a score, signals and a decision (allow, review or block). |
 | `blocklist_entries` | The blocklist: email, domain, IMEI, card fingerprint, device and country. IP addresses live in ip_rules. |
 | `data_requests` | Data-subject requests: export or deletion, with a legal deadline. |
 
 ## Routes
 
-17 endpoints (admin 14, store 3). Source: `docs/slices/risk.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
+14 endpoints (admin 12, store 2). Source: `docs/slices/risk.json` (generated from the map; `bun run routes:build`). Each route becomes a contract under `contracts/` when its feature is built.
 
-### Admin console (14)
+### Admin console (12)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
@@ -187,8 +158,6 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `GET /admin/blocklist/:id` | staff-permission · `risk:*` | Blocklist: email, domain, IMEI or card. | 18 |
 | `GET /admin/data-requests` | staff-permission · `customers:privacy` | Data export and deletion requests and the deadline to fulfil them. | 18 |
 | `GET /admin/data-requests/:id` | staff-permission · `customers:privacy` | Data export and deletion requests and the deadline to fulfil them. | 18 |
-| `GET /admin/imei-checks` | staff-permission · `risk:read` | Log of IMEI checks and their results (erased or hashed after the retention period). | 18 |
-| `GET /admin/imei-checks/:id` | staff-permission · `risk:read` | Log of IMEI checks and their results (erased or hashed after the retention period). | 18 |
 | `GET /admin/risk/queue` | staff-permission · `risk:read` | Paid orders held by the rules, waiting for a staff decision. | 18 |
 | `GET /admin/risk/rules` | staff-permission · `risk:read` | Risk rules and their thresholds: when to hold for review and when to block. | 18 |
 | `PATCH /admin/data-requests/:id` | staff-permission · `customers:privacy` | Data export and deletion requests and the deadline to fulfil them. | 18 |
@@ -197,11 +166,10 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `POST /admin/risk/orders/:id/refund` | staff-permission · `risk:decide` | Refund the held order, optionally adding the customer or device to the blocklist. | 18 |
 | `PUT /admin/risk/rules` | staff-permission · `risk:*` | Update the rules; the review threshold must be lower than the block threshold. | 18 |
 
-### Storefront (B2C) (3)
+### Storefront (B2C) (2)
 
 | Route | Access | What it does | Stage |
 |---|---|---|---|
-| `POST /store/v1/imei/check` | public | IMEI check before payment: checksum and TAC (stage 14), then blacklist and lock status through the supplier (stage 18). | 14 |
 | `POST /store/v1/me/data-delete` | customer-session | Request anonymization; payment records stay for accounting. | 18 |
 | `POST /store/v1/me/data-export` | customer-session | Request an export of all my data. | 18 |
 
@@ -209,8 +177,8 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 Scenarios of the map (`reference/gsm-map/data/system.mjs`) with a step that touches this module's tables; each is an end-to-end test (`test/e2e/`).
 
-- `b2c-paid`: Paid storefront order (tables: `imei_checks`, `risk_assessments`)
-- `b2c-chargeback`: Chargeback dispute that we lose (tables: `blocklist_entries`, `imei_checks`, `risk_assessments`)
+- `b2c-paid`: Paid storefront order (tables: `risk_assessments`)
+- `b2c-chargeback`: Chargeback dispute that we lose (tables: `blocklist_entries`, `risk_assessments`)
 - `b2c-account`: Managing a storefront customer account (tables: `blocklist_entries`)
 - `ip-rules`: IP block list and allowlist (tables: `risk_assessments`)
 - `system-alert`: Alert and incident: a supplier slows down (tables: `risk_assessments`)
@@ -228,9 +196,7 @@ Outbox events produced: none of its own (a held order's approval writes the orde
 
 ## Jobs and schedules
 
-- `data_retention` (queue `maintenance`, scheduler `data-retention`, daily 03:00 UTC, `src/modules/risk/jobs/`): erases the IMEI of
-  `imei_checks` older than `imeiRetentionDays` in batches of 1000 (at most 50 batches a run). Idempotent (a row that is erased cannot be
-  erased again), recorded in `job_runs`; retry policy of the `maintenance` queue. Listed in `docs/queues.md`.
+None.
 
 ## Cache keys
 
@@ -241,8 +207,7 @@ dropped after a rules save so `GET /admin/settings` shows the change.
 
 The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, machine-readable `docs/contract/resolutions.json`) settled the points below for this module's routes. Where they differ from older text in this README or the endpoint docs, the resolution wins; the endpoint docs, `RULES.md`, `ANSWERS.md` and `MISMATCHES.md` were updated to match.
 
-- `b2c-3` · GET /admin/imei-checks, GET /admin/imei-checks/:id
-- `b2c-4` · GET /admin/imei-checks, POST /admin/customers/:id/anonymize
+- `b2c-4` · POST /admin/customers/:id/anonymize
 - `b2c-6` · GET /admin/risk/queue
 - `b2c-11` · GET /admin/customers/:id, GET /admin/risk/queue
 - `b2c-13` · PATCH /admin/data-requests/:id

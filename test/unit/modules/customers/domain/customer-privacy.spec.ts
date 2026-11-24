@@ -98,23 +98,12 @@ describe('buildCustomerExport', () => {
     ],
     consents: [],
     tickets: [],
-    imeiChecks: [
-      {
-        id: 3,
-        imeiEnc: null,
-        source: 'storefront_free',
-        checkType: 'basic',
-        status: 'unknown',
-        ip: null,
-        createdAt: new Date('2026-10-01T00:00:00.000Z'),
-      },
-    ],
     requests: [],
   };
 
   it('has the sections of the access right and decrypts the stored IMEI, leaving an erased one null', () => {
-    const file = buildCustomerExport(customer, rows, new Date('2026-11-08T00:00:00.000Z'), (kind, text) =>
-      text === null ? null : `${kind}:353890113898412`,
+    const file = buildCustomerExport(customer, rows, new Date('2026-11-08T00:00:00.000Z'), (text) =>
+      text === null ? null : 'decrypted:353890113898412',
     );
     expect(Object.keys(file)).toEqual([
       'format',
@@ -125,18 +114,17 @@ describe('buildCustomerExport', () => {
       'consents',
       'checkoutSessions',
       'supportTickets',
-      'imeiChecks',
       'dataRequests',
     ]);
-    expect((file.checkoutSessions as Array<{ imei: string }>)[0]!.imei).toBe('checkout:353890113898412');
+    expect((file.checkoutSessions as Array<{ imei: string }>)[0]!.imei).toBe('decrypted:353890113898412');
     expect((file.checkoutSessions as Array<{ ipCountry: string | null }>)[0]!.ipCountry).toBe('GB');
-    expect((file.imeiChecks as Array<{ imei: string | null }>)[0]!.imei).toBeNull();
     // What staff keep to protect the shop is not in the file; what the customer gave is.
     const profile = file.profile as Record<string, unknown>;
     for (const key of ['internalNotes', 'riskLevel', 'suspendedReason']) expect(profile, key).not.toHaveProperty(key);
+    expect(file).not.toHaveProperty('imeiChecks');
     expect(profile).toMatchObject({ id: expect.any(Number), email: expect.any(String), name: expect.any(String) });
-    // Format 2 (decision 039): a customer has no saved language, so the profile carries none.
-    expect(file.format).toBe(2);
+    // Format 3: the list of IMEI checks is gone with the free IMEI check; format 2 (decision 039) dropped the saved language.
+    expect(file.format).toBe(3);
     expect(profile).not.toHaveProperty('locale');
     expect(JSON.stringify(file)).not.toContain('VIP');
   });

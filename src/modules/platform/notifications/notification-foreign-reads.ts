@@ -3,13 +3,12 @@
 //
 // DEVIATION to resolve when identity and customers export a reader: decision 016 wants these reads through the owning module's public
 // service. The platform module is the base layer every module imports and imports no other module (decision 032: an import from
-// here back into identity would form a cycle that breaks at class-definition time), so this file reads `clients`, `staff_users` and
-// `customers` with plain selects, like the webhook foreign reads. Writes to these tables (a merchant's preferences and chat) are
+// here back into identity would form a cycle that breaks at class-definition time), so this file reads `clients`, `staff_users`,
+// `customers`, `orders`, `invoices` and `services` with plain selects. Writes to these tables (a merchant's preferences) are
 // identity's and go through its use cases. Replace the bodies with calls to those services; nothing outside this file knows.
 import { eq, inArray } from 'drizzle-orm';
 import { type DbExecutor, schema as s } from '../../../infra/db';
 import type { NotificationAudience, NotificationRecipientType } from '../db/schema';
-import { orderForEvent } from '../webhooks/webhook-foreign-reads';
 
 /** Who a notification is for, as the delivery needs to know them. */
 export interface Recipient {
@@ -19,8 +18,6 @@ export interface Recipient {
   readonly audience: NotificationAudience;
   readonly name: string;
   readonly email: string;
-  /** A merchant's linked Telegram chat; always `null` for staff and customers. */
-  readonly telegramChatId: string | null;
   /** A merchant's `notification_prefs`; empty for the others. */
   readonly prefs: Readonly<Record<string, unknown>>;
   /** True for a suspended merchant or staff member, or a suspended or blocked customer: only transactional messages reach them. */
@@ -64,7 +61,6 @@ export async function recipientOf(
           name: s.clients.name,
           email: s.clients.email,
           status: s.clients.status,
-          telegramChatId: s.clients.telegramChatId,
           prefs: s.clients.notificationPrefs,
         })
         .from(s.clients)
@@ -77,7 +73,6 @@ export async function recipientOf(
           audience: 'merchant',
           name: row.name,
           email: row.email,
-          telegramChatId: row.telegramChatId,
           prefs: row.prefs,
           suspended: row.status === 'suspended',
           inboxEligible: row.status !== 'suspended',
@@ -97,7 +92,6 @@ export async function recipientOf(
           audience: 'staff',
           name: row.name,
           email: row.email,
-          telegramChatId: null,
           prefs: {},
           suspended: row.status === 'suspended',
           inboxEligible: row.status === 'active',
@@ -123,7 +117,6 @@ export async function recipientOf(
         audience: 'customer',
         name: row.name,
         email: row.email,
-        telegramChatId: null,
         prefs: {},
         // Suspended and blocked customers get transactional messages only; the customer events that report on their own purchase
         // or ticket are registered transactional (S6).
@@ -170,13 +163,69 @@ export interface OrderFacts {
  * @returns the facts, or `undefined` when the order is gone or belongs to a storefront customer
  */
 export async function orderFacts(db: DbExecutor, orderId: number): Promise<OrderFacts | undefined> {
-  const order = await orderForEvent(db, orderId);
-  if (!order) return undefined;
+  const [row] = await db
+    .select({
+      orderId: s.orders.id,
+      clientId: s.orders.clientId,
+      serviceName: s.services.name,
+      resultCode: s.orders.resultCode,
+      resultComment: s.orders.resultComment,
+    })
+    .from(s.orders)
+    .innerJoin(s.services, eq(s.services.id, s.orders.serviceId))
+    .where(eq(s.orders.id, orderId))
+    .limit(1);
+  if (!row || row.clientId === null) return undefined;
   return {
-    orderId: order.orderId,
-    clientId: order.clientId,
-    serviceName: order.serviceName,
-    resultCode: order.resultCode ?? '',
-    resultComment: order.resultComment ?? '',
+    orderId: row.orderId,
+    clientId: row.clientId,
+    serviceName: row.serviceName,
+    resultCode: row.resultCode ?? '',
+    resultComment: row.resultComment ?? '',
   };
+}
+
+/** What an invoice notification talks about. */
+export interface InvoiceFacts {
+  readonly clientId: number;
+  readonly number: string;
+  readonly amount: string;
+  readonly currency: string;
+}
+
+/**
+ * Reads the public facts of a merchant's invoice.
+ *
+ * @param db the database or a transaction
+ * @param invoiceId the invoice
+ * @returns the facts, or `undefined` when the invoice is gone or is a storefront receipt (no merchant)
+ */
+export async function invoiceFacts(db: DbExecutor, invoiceId: number): Promise<InvoiceFacts | undefined> {
+  const [row] = await db
+    .select({
+      clientId: s.invoices.clientId,
+      number: s.invoices.number,
+      amount: s.invoices.amount,
+      currency: s.invoices.currency,
+    })
+    .from(s.invoices)
+    .where(eq(s.invoices.id, invoiceId))
+    .limit(1);
+  return row && row.clientId !== null ? { ...row, clientId: row.clientId } : undefined;
+}
+
+/**
+ * Reads the name of a service.
+ *
+ * @param db the database or a transaction
+ * @param serviceId the service id
+ * @returns the name, or `undefined` when there is no such service
+ */
+export async function serviceNameOf(db: DbExecutor, serviceId: number): Promise<string | undefined> {
+  const [row] = await db
+    .select({ name: s.services.name })
+    .from(s.services)
+    .where(eq(s.services.id, serviceId))
+    .limit(1);
+  return row?.name;
 }

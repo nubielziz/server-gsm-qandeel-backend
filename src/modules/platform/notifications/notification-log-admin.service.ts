@@ -94,7 +94,7 @@ const maskAddresses = (addresses: string): string =>
     .map((address) => maskEmail(address.trim()))
     .join(', ');
 
-/** The masked recipient of a row: the address of an email, the chat of a Telegram message. */
+/** The masked recipient of a row: the address of an email, the chat of a Telegram message (an operations chat; older rows may name none). */
 function recipientOf(row: LogRow): string {
   if (row.notification.channel === 'email') {
     // An alert's message has no recipient row: its addresses are in the payload. Decision 047: so does a row that names the address it
@@ -103,13 +103,13 @@ function recipientOf(row: LogRow): string {
     return asString(payloadTo) ? maskAddresses(payloadTo) : maskEmail(row.email ?? '');
   }
   const payloadChat = (row.notification.payload as { chatId?: unknown }).chatId;
-  return maskTelegram(row.telegramChatId ?? (asString(payloadChat) ? payloadChat : null));
+  return maskTelegram(asString(payloadChat) ? payloadChat : null);
 }
 
 /**
  * The payload as staff may see it: every Telegram chat id and every operations address list is masked, at any depth.
  *
- * Why: the recipient is masked (RULES settings 11), so a chat id in the payload (the bot's answers carry the chat they were sent to, and
+ * Why: the recipient is masked (RULES settings 11), so a chat id in the payload (the alerts' messages carry the chat they were sent to, and
  * a template variable or a nested object may carry one too) or the `to` addresses of an alert's email must not give back what the mask hides.
  */
 function publicPayload(payload: JsonObject): JsonObject {

@@ -205,8 +205,8 @@ export const addOrderNote = defineRoute({
   key: 'POST /admin/orders/:id/notes',
   summary: 'Add an internal note',
   description:
-    "Appends a `note` event and sets the order's latest internal note (`adminNote`). Any status. Never shown to the buyer, in the " +
-    'merchant portal or in a webhook. Audited.',
+    "Appends a `note` event and sets the order's latest internal note (`adminNote`). Any status. Never shown to the buyer or in the " +
+    'merchant portal. Audited.',
   tags: ['orders'],
   surface: 'admin',
   access: 'staff-permission',

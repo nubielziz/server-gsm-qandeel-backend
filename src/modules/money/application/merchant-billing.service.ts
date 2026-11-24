@@ -71,7 +71,7 @@ import { GatewayCredentialsVault } from './gateway-credentials';
 import { InvoiceDocuments } from './invoice-documents';
 import { assertReceiptUnused, receiptTaken } from './receipt-proofs';
 
-/** The kinds a merchant sees: storefront receipts belong to customers and never show (B163). */
+/** The kinds a merchant sees: storefront receipts belong to customers and never show (B163). `statement` is retired and never created; it stays so an old row is still read. */
 const MERCHANT_KINDS: readonly InvoiceKind[] = ['topup', 'manual', 'statement'];
 const MAX_REFERENCE = 64;
 

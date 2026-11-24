@@ -19,7 +19,7 @@ certificates itself, and needs port 80 for that. Nothing else is published.
 | --- | --- | --- |
 | `SHOP_HOST` (`shop.example.com`) | the storefront and the merchant portal (container `site`) | `/client/*`, `/store/v1/*` |
 | `ADMIN_HOST` (`admin.example.com`) | the admin console (container `console`, nginx) | `/admin/*`, `/health`, `/reference*`, `/store/v1/media/*` (the pictures the console shows) |
-| `API_HOST` (`api.example.com`) | machine clients only | `/api/index.php` (Dhru), `/v1/*` (REST v1), `/webhooks/*`, `/docs*`; everything else is 404 |
+| `API_HOST` (`api.example.com`) | machine clients only | `/api/index.php` (Dhru), `/webhooks/*`, `/docs*`; everything else is 404 |
 | `FILES_HOST` (`files.example.com`) | signed file downloads only (decision 055) | nothing: reads of one object of the files bucket that carry a signature go to MinIO; the bucket itself, a listing and every other path or method are 404 |
 
 Why this shape: the sessions' cookies belong to one host, so the browser must reach the API on the page's own host. `/metrics` is routed
@@ -67,7 +67,7 @@ Caddy cuts a client that is slow to send its headers (10 s) or that stalls an up
 ### Visitor country (`GEOIP_COUNTRY_HEADER`)
 
 The visitor's country is read when a checkout is opened and kept on it (`checkout_sessions.ip_country`). The risk rules (the IP country
-against the card country), the check of the declared tax country, the country blocklist and `imei_checks.country` use it (decision 050).
+against the card country), the check of the declared tax country, the country blocklist use it (decision 050).
 A visitor can send any header, so only a CDN in front of Caddy that writes this header on every request may supply it. **The bundled
 stack has none: leave the setting unset.** The API's boot log then names the IP-country rule as a rule without an input source, and the
 rule never applies. The setting lives in `deploy/.env`: compose passes it to the API (a value in `.env.production` is not used) and to
@@ -240,7 +240,7 @@ on each, open, and check again.
      is wrong and every per-IP limit and IP rule is working on the proxy's address. `gsmc logs api | grep -i 'Configuration warning'` shows
      no `TRUST_PROXY` line.
    - **The application's database role:** `gsmc exec postgres psql -U gsm -d gsm -c '\du gsm_app'` shows the role without `Superuser`.
-   - **Files:** open a KYC document or an invoice PDF from the console: the browser goes to `https://<FILES_HOST>/gsm-files/…` and downloads
+   - **Files:** open an invoice PDF or a payment receipt from the console: the browser goes to `https://<FILES_HOST>/gsm-files/…` and downloads
      it. `curl -s -o /dev/null -w '%{http_code}' https://<FILES_HOST>/gsm-files/x` answers 404 (no signature).
    - `https://<API_HOST>/metrics` and `https://<SHOP_HOST>/metrics` are not served by the API (404 or the site's own 404).
    - `gsmc ps` shows `api`, `worker`, `postgres`, both Redis roles and `prometheus` healthy; `gsmc logs worker` shows the queue workers.
@@ -352,8 +352,7 @@ Additive (two nullable or defaulted columns); the usual order applies. What to d
   `gsmc exec postgres psql -U gsm -d gsm -c "select country, region, rate_percent, tax_type from tax_rates where valid_from <= now() and (valid_to is null or valid_to > now()) order by country, region;"`
 - If `.env.production` sets `GEOIP_COUNTRY_HEADER`, delete it there and follow "Visitor country" (section 1): the compose file passes it from `deploy/.env`.
 - After step 4: `gsmc up -d caddy` (its environment changed), then read the API's boot log for `Risk rule without an input source` lines: they
-  name the rules that have no input here (the VPN or proxy signal and the blacklisted-IMEI rule always; the IP-country rule until a CDN
-  supplies the header).
+  name the rules that have no input here (the IP-country rule until a CDN supplies the header).
 - A guest checkout is judged as a first order; an email blocked from a guest order may be limited to guest checkouts (the blocklist page
   shows the scope in the reason of the entry).
 
@@ -436,17 +435,13 @@ Additive; the usual order applies. What staff and the owner notice:
 ### Release with decision 054 (logs and secrets)
 
 1. Before `gsmc run --rm migrate`: add `LOOKUP_HASH_KEY` to `.env.production`. On an installation that has data, give it **exactly the value
-   of the current `TOKEN_PEPPER`** (the blocklist, IMEI history, duplicate checks, unsubscribe links and pending webhook ids were made
+   of the current `TOKEN_PEPPER`** (the blocklist, duplicate checks and unsubscribe links were made
    with it). A new installation uses `openssl rand -hex 32`. Without it, production refuses to start (`migrate` too). The first start of
    the API or the worker stores a marker of the key; from then on a start with another key is refused (this key is never changed). A
    start that cannot read the marker because Postgres does not answer stops too; compose starts it again once Postgres is healthy.
 2. Upgrade as usual (backup, build, migrate, `gsmc up -d api worker`). The worker then converts the stored link tokens once.
 3. Reload Caddy for the new access log: `gsmc exec caddy caddy reload --config /etc/caddy/Caddyfile`.
-4. If the Telegram bot is used: before the `gsmc up -d api worker` of step 2, set a new `TELEGRAM_WEBHOOK_SECRET` in `.env.production`
-   (`openssl rand -hex 32`): until this release the secret was part of the webhook address, so the access logs written before it hold the
-   old value. After step 2, register the webhook: `gsmc run --rm api bun scripts/telegram-webhook.ts --url https://<API_HOST>` (section 6).
-   Until then Telegram's calls are refused and chats cannot be linked or unlinked; messages to linked chats keep working.
-5. Check: `gsmc exec postgres psql -U gsm -d gsm -c "select job, status, processed from job_runs where job like '%_tokens_seal'"` shows
+4. Check: `gsmc exec postgres psql -U gsm -d gsm -c "select job, status, processed from job_runs where job like '%_tokens_seal'"` shows
    three succeeded runs, and `select count(*) from checkout_sessions where token is not null` (likewise `orders.public_token`,
    `support_tickets.token`) answers 0.
 
@@ -477,6 +472,36 @@ short list is not used, and neither is the template of a security email (a notic
 roles that held `files:read` without the permission of a file's kind, or `orders:read` without `reports:read`, lose those downloads; roles that held `customers:create`
 without `customers:password` can no longer create an account with a temporary password; and staff without `customers:read` see masked
 customer addresses outside the Customers pages. Give the roles the second permissions they need (section 7, "Staff roles").
+
+### Release with decision 062 (retired features of the merchant side)
+
+The migration (`0065`) is data only and safe to run twice, so the order of this section works. The merchant sign-up, the REST API v1, the
+outgoing webhooks to merchants, the commissions and the merchant Telegram link stop at the release (decision 062). Steps 1 and 2 come before
+the deploy, so put the automatic deploy on hold first (`gsm-auto-deploy hold`) and let it go after step 2.
+
+1. **Before the backup, read-only** (`gsmc exec postgres psql -U gsm -d gsm`, then paste it): commissions that were approved and paid into a
+   wallet. After the release a refund or a reopen of their orders no longer takes the commission back.
+
+   ```sql
+   SELECT count(*) FROM commission_accruals WHERE status = 'approved' AND reversed_at IS NULL;
+   ```
+
+   Expect 0. If it is more, decide before the release whether those commissions stay with the merchants (nothing changes) or are taken
+   back by hand through a wallet adjustment of each merchant.
+2. **Before step 3 (the migration), if the Telegram bot was registered with a webhook:** remove the registration, so Telegram stops posting
+   merchants' messages to a route that no longer exists. It prints the status and Telegram's answer, never the token or the address:
+
+   ```bash
+   gsmc run --rm api bun -e "const r = await fetch('https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/deleteWebhook?drop_pending_updates=true'); console.log(r.status, (await r.json()).description)"
+   ```
+
+   It ends with `200 Webhook was deleted` (or `Webhook is already deleted`). The bot keeps sending the alerts; skip the step when `TELEGRAM_BOT_TOKEN` is not set.
+3. Upgrade as usual (backup, build, migrate, `gsmc up -d api worker`). Then reload Caddy for its new access log, which no longer has the rule
+   for the Telegram path: `gsmc exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+4. Delete `TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET` from `.env.production`: nothing reads them any more. The queue Redis may keep
+   jobs of the removed `merchant-webhooks` queue; they can stay or be deleted by hand.
+5. Nothing to do for the cached views of API keys: their cache key has a new version, so the new code never reads a view cached before the
+   release, and the migration's revoked keys are refused at once.
 
 ## 4. Backups and the restore drill
 
@@ -703,11 +728,10 @@ The private key only has to be on the machine for the minute the drill runs.
 | `ENCRYPTION_KEYS` | values sealed by a key that is gone cannot be read: TOTP secrets (staff and merchants enrol 2FA again), supplier and gateway credentials and webhook secrets (they stop until typed in again), stored IMEIs and inventory codes, and the copies of the shop's links (mails and account pages can no longer show those links; the links themselves keep working) | two offline copies, two people, with the backup key; never lose it, never change an existing key; add keys as below |
 | `age` private key | no backup can be read | two offline copies, two people; never on the server except during a drill |
 | the configuration copy (`config/` of the offsite bucket, decision 059) | it holds every secret of the server (`ENCRYPTION_KEYS`, `TOKEN_PEPPER`, `LOOKUP_HASH_KEY`, the passwords, the bucket key, the mail account), sealed for the backups' age key: whoever holds that private key and the bucket holds them all, and without the key the copy cannot be read | the age private key is kept like `ENCRYPTION_KEYS`; the offline copy of `ENCRYPTION_KEYS` stays too, so losing one key does not take the other with it. After a leak, the copies of the past 35 days still hold the old secrets: change the secrets themselves |
-| `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset, invitation and Telegram link stops working; the cache is emptied too (every entry becomes a miss, decision 055) | change only as a planned operation; every API and worker process must have the same value |
-| `LOOKUP_HASH_KEY` | every stored lookup stops matching: blocked e-mails, cards and IMEIs pass the blocklist again, the IMEI history and the duplicate checks of inventory codes and open orders forget what they knew, unsubscribe links in sent mails stop working, Idempotency-Key replays of the last 7 days and the event ids of pending merchant webhook deliveries change, and every checkout, tracking and ticket link stops working | never change it (production refuses to start with a different key); on an installation that has data it equals the `TOKEN_PEPPER` the data was made with (section 3) |
+| `TOKEN_PEPPER` | everybody is signed out; every API key and every open sign-in, reset and invitation link stops working; the cache is emptied too (every entry becomes a miss, decision 055) | change only as a planned operation; every API and worker process must have the same value |
+| `LOOKUP_HASH_KEY` | every stored lookup stops matching: blocked e-mails, cards and IMEIs pass the blocklist again, the duplicate checks of inventory codes and open orders forget what they knew, unsubscribe links in sent mails stop working, Idempotency-Key replays of the last 7 days change, and every checkout, tracking and ticket link stops working | never change it (production refuses to start with a different key); on an installation that has data it equals the `TOKEN_PEPPER` the data was made with (section 3) |
 | `CSRF_SECRET` | forms that are open fail once and are sent again | any time |
-| `TELEGRAM_WEBHOOK_SECRET` | Telegram's calls are refused until the webhook is registered again | change it, restart api, run `scripts/telegram-webhook.ts` (section 6); the release of decision 054 gives it a new value (section 3) |
-| `TELEGRAM_BOT_TOKEN` | Telegram messages fail until the new token is set; the webhook must be registered again | change it at BotFather and in `.env.production` together, then run the script |
+| `TELEGRAM_BOT_TOKEN` | the Telegram message of an alert fails until the new token is set (the email of the alert still goes) | change it at BotFather and in `.env.production` together, then restart api and worker |
 | `TURNSTILE_SECRET_KEY` | the shop's protected forms refuse visitors until the site key and the secret belong to one widget | change both together |
 | `MAIL_SMTP_URL` credentials | mails fail and are retried until the right ones are set | change at the provider and in `.env.production` together |
 | `FX_API_KEY` | the hourly rate refresh fails; stored rates stay | any time |
@@ -733,7 +757,7 @@ enrolment): entering them again seals them with the active key. The twelve encry
 - **Logs** are JSON lines on stdout (decision 012): `gsmc logs -f api worker caddy`. Every line of a request has its request id, which is
   also the `X-Request-Id` the client got; give it to whoever reads the log. Secrets are redacted and e-mail, phone and IMEI masked at any
   depth of a log line; a database failure is logged as its SQLSTATE, table, constraint and a fixed sentence, never the statement or its
-  values (decision 054). Caddy's access log replaces link tokens, the Telegram webhook path, searches and IMEIs, and the signature and
+  values (decision 054). Caddy's access log replaces link tokens, searches and IMEIs, and the signature and
   file-name parameters of a signed file link, in the address and the Referer, and leaves out credential headers and the answer's
   Content-Disposition, which names a downloaded file. Docker keeps at most 5 × 20 MB of logs per container (the compose file sets the
   `local` log driver for every service, decision 055); a rotation in `/etc/docker/daemon.json` (`{"log-driver":"local","log-opts":{"max-size":"20m","max-file":"5"}}`)
@@ -750,11 +774,9 @@ enrolment): entering them again seals them with the active key. The twelve encry
   request id and the queue and job name. It does not receive request bodies, headers, cookies, users, breadcrumbs, the host name, or
   e-mail addresses and long digit runs inside messages; database failures arrive as their SQLSTATE and table, never the statement. To turn
   it off, remove the line and restart: with no DSN the SDK is never started.
-- **Telegram bot:** set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` and `TELEGRAM_WEBHOOK_SECRET` in `.env.production` and restart api, then
-  register the webhook: `gsmc run --rm api bun scripts/telegram-webhook.ts --url https://<API_HOST>`. It sends Telegram the address and the
-  header value derived from the secret, never prints them, and ends with `Telegram webhook registered…`. Run it again after changing the
-  secret, the bot token or `API_HOST`. `--dry-run` shows what it would do. An installation that used the bot before the release of
-  decision 054 sets a new secret first (section 3, that release's step 4).
+- **Telegram bot (optional, for alerts only):** set `TELEGRAM_BOT_TOKEN` and `ALERTS_TELEGRAM_CHAT_ID` in `.env.production` and restart api and
+  worker. The bot only sends: the Telegram message of an alert and of the hourly shop-price message go to that chat. Merchants cannot link a chat
+  and the bot has no webhook (retired with decision 062: there is nothing to register).
 
 **If the queue Redis loses its data** (a lost volume, a `FLUSHALL`, a crash that loses the last second of the append-only file; decision 044):
 restart the worker (`gsmc restart worker`): it writes its schedules only when it starts. Then these come back by themselves: outbox events
@@ -763,11 +785,9 @@ lost, and moves orders whose send was in flight to Needs attention after the sup
 order that waited more than 24 hours, or was asked for 3 times, goes to Needs attention); status polls of sent orders (the poll tick); queued
 notifications (`notification_reconcile` adds their send again once they waited 30 minutes); scheduled campaigns; the search index (its
 reconcile, within 15 minutes); storefront receipts (made at their first download); every scheduled job; and (decision 055) within about 15
-minutes, through `lost_work_reconcile`: storefront refunds waiting for their gateway call, merchant webhook deliveries that were already
-created, bulk publish runs (preparation, apply, switch) and Quick add runs. These do not come back by themselves: mails sent by a job of
-their own that had not run yet (sign-in and password links, invitations, ticket mails, abandoned-checkout reminders: the person asks
-again), merchant webhook events whose fan-out job had not run yet (no delivery was created, so nothing re-arms it: order status, invoice
-paid, low balance and price change webhooks), event notifications whose planning job had not run yet (no notification row exists), a
+minutes, through `lost_work_reconcile`: storefront refunds waiting for their gateway call, bulk publish runs (preparation, apply, switch) and Quick add runs. These do not come back by themselves: mails sent by a job of
+their own that had not run yet (sign-in and password links, invitations, ticket mails: the person asks
+again), event notifications whose planning job had not run yet (no notification row exists), a
 waiting price change scan (the next price change asks for one), the one-time category name clean-up of migration 0046, the Quick add
 hand-over to the bulk publish (the Quick add progress offers to prepare the preview by hand), and the failed jobs kept for staff (the
 failed list is empty afterwards).
@@ -824,7 +844,6 @@ credit limit above the merchant limit, and approving the payment of an invoice o
 member credits by approving transfer receipts on top-ups within 24 hours is capped by `wallet.receipt_approval_limit` (default $10,000);
 above it an Owner approves.
 A merchant holds at most five unpaid top-up invoices younger than 24 hours or with a receipt in review, and five receipts in review.
-Commissions never pay more than an order's margin.
 
 **One receipt, one payment** (decision 049). A receipt file, or a copy with the same content, backs one pending or approved top-up. If the
 migration of decision 049 stops on this rule it names the files (the statement of the release note lists the same ones before you migrate):
@@ -988,7 +1007,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
   sessions) can still sign in, with five attempts per 15 minutes shared by every address of that network while the lock runs (the
   sixth gets the same `429`). Otherwise the person waits for the lock to end, or gets a new password, which lifts the lock at once:
   customers can use the emailed sign-in link or a reset link; merchants a reset link (changing the password while signed in does not lift
-  the shop lock: a merchant registration proves no mailbox); staff ask an Owner (or a member allowed to act on them) for a password link
+  the shop lock: a password chosen without the emailed link proves no mailbox); staff ask an Owner (or a member allowed to act on them) for a password link
   or a temporary password. The API log has one `Sign-in refused (staff|shop): the email is locked` line per refusal, with the address and without the email.
 - **Temporary passwords expire after 72 hours** (staff, merchants and customers): after that the sign-in refuses them like a wrong
   password; set a new one from the console.
@@ -1010,8 +1029,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
   download: they end with the request, and the response only writes. There is no setting for the silence of a connection, because Bun resets that timer
   only on bytes that come in, so it would cut every live stream at its bound. To allow slower uploads raise `HTTP_REQUEST_TIMEOUT_MS` and run
   `gsmc up -d api`; Caddy's own timeouts are separate. A request cut by a bound is closed or answered `408` without a handler running.
-- **Kept for a limited time.** Merchant webhook deliveries and supplier call logs are deleted after 90 days (daily jobs `webhook_delivery_retention` at
-  04:40 UTC and `supplier_log_retention` at 04:50 UTC; a delivery that is still waiting for an attempt is never deleted). Stored files that no record references are
+- **Kept for a limited time.** Supplier call logs are deleted after 90 days (the daily job `supplier_log_retention` at 04:50 UTC). Stored files that no record references are
   deleted 7 days after they were stored (daily job `upload_janitor` at 04:30 UTC), so an upload that nobody used is gone within a week. Every run is in the jobs
   list of the console (`GET /admin/system/jobs`) with its counts.
 - **Upload quotas.** A merchant that waits for approval keeps at most 10 uploaded files (50 MiB); an approved merchant uploads at most 500 files (5 GiB) in 24 hours; a
@@ -1021,10 +1039,8 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - **Incoming webhooks and failed sessions.** Every request under `/webhooks` is counted per client address (600 a minute, limiter `webhook-intake`) before the
   route reads anything; a refused sender retries. A session cookie that names no live session, and an API key that does not exist, cost one point of a budget of the
   client address (300 a minute, per audience); once it is used up the address is answered `429` until the minute ends, and a multipart body of an upload route is read only
-  with a live session. A bulk placement (REST v1 `POST /v1/orders/bulk`, Dhru `placeimeiorderbulk`) costs one point of the key's per-minute limit per item, at most the
+  with a live session. A bulk placement (Dhru `placeimeiorderbulk`) costs one point of the key's per-minute limit per item, at most the
   whole limit.
-- **Switched-off webhook endpoints.** An endpoint that did not accept 20 deliveries in a row is switched off and the merchant gets the email "A webhook endpoint was switched
-  off"; the merchant turns it on again in the portal, which starts a new count. A merchant can send 10 test deliveries an hour.
 - Nothing new has to be set before go-live: the defaults of this section are safe.
 
 ## 7. Owner checklists
@@ -1049,7 +1065,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
       production, decision 052; `false` switches the merchant forms' check off).
 - [ ] Exchange rates: an API key in `FX_API_KEY` (`FX_PROVIDER=openexchangerates`, required in production), or `FX_PROVIDER=manual` and the
   rates entered by hand at least every 48 hours (decision 049).
-- [ ] Telegram bot (optional): token, username and webhook secret in `.env.production`, then run `scripts/telegram-webhook.ts` (section 6).
+- [ ] Telegram bot for alerts (optional): `TELEGRAM_BOT_TOKEN` and `ALERTS_TELEGRAM_CHAT_ID` in `.env.production` (section 6).
 - [ ] Object storage for backups on another provider, with versioning, an object lock and the lifecycle rules of section 4; two keys: the nightly one (list, read and
       write, never delete; in `deploy/.env`) and a purge key (may delete; kept offline); and the two key holders named. On Cloudflare R2: the rules of
       `r2-bucket-rules.sh` instead of versioning and a key that cannot delete (section 4, "With Cloudflare R2").
@@ -1082,8 +1098,7 @@ raises `nofile` to 65536 for `caddy` and `api`; the Caddyfile leaves the stream 
 - [ ] Only people trusted like an Owner hold `*`; other admins hold what they need (they can give, and act on, only what they hold).
 - [ ] The permissions in `src/modules/identity/README.md` ("Permissions that reach owner-level power") are given on purpose; an area
       wildcard such as `wallet:*` includes them.
-- [ ] Second permissions of decision 047: `clients:security` or `customers:password` for email changes, `reports:read` for the order export, `risk:decide` for IMEI
-      digits, the read permission of each file kind (`kyc:read`, `payments:read`, `disputes:read`, `orders:read`, `invoices:read`, `support:read`, `customers:privacy`);
+- [ ] Second permissions of decision 047: `clients:security` or `customers:password` for email changes, `reports:read` for the order export, the read permission of each file kind (`clients:read`, `payments:read`, `disputes:read`, `orders:read`, `invoices:read`, `support:read`, `customers:privacy`);
       `customers:read` shows customers' full addresses.
 - [ ] A second active Owner account on another role exists: it is what lets the last-Owner rule allow a change to the Owner role or to
       the other Owner's account, and it is the way back when one Owner is lost.

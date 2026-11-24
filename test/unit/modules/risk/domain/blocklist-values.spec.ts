@@ -44,7 +44,7 @@ describe('normalizeBlockValue', () => {
 });
 
 describe('blockHashInput', () => {
-  it('hashes an email as its text (the recipe feature 14b already uses), an IMEI like the IMEI check, the rest behind the kind', () => {
+  it('hashes an email as its text (the recipe feature 14b already uses), an IMEI behind the prefix `imei:` (so it never meets a credential hash), the rest behind the kind', () => {
     expect(blockHashInput('email', 'a@b.co')).toBe('a@b.co');
     expect(blockHashInput('imei', '353890118842019')).toBe('imei:353890118842019');
     expect(blockHashInput('card', 'fp_1')).toBe('card:fp_1');

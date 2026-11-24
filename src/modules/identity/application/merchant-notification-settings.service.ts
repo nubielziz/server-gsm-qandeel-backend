@@ -1,5 +1,5 @@
 // MerchantNotificationSettings: the use cases behind `GET|PUT /client/notification-preferences` (feature 12a, MISMATCHES B165): what a
-// merchant is told about, by which channel, and the wallet level that raises a low-balance alert.
+// merchant is told about by email, and the wallet level that raises a low-balance alert.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../common/clock';
 import { AppError, type FieldError } from '../../../common/errors';
@@ -12,15 +12,13 @@ import type { Client } from '../db/schema';
 /** What the portal's preferences screen shows. */
 export interface PreferencesView {
   readonly email: { readonly address: string };
-  readonly telegram: { readonly linked: boolean };
   /** The wallet level that raises `wallet.low_balance`, a money string, or `null` for no alert. */
   readonly lowBalanceThreshold: string | null;
-  /** Every event a merchant may switch, with its two switches. */
+  /** Every event a merchant may switch, with its email switch. */
   readonly events: Array<{
     readonly event: string;
     readonly label: string;
     readonly email: boolean;
-    readonly telegram: boolean;
   }>;
 }
 
@@ -29,7 +27,7 @@ export interface PreferencesInput {
   /** A money amount of zero or more; `null` removes the alert; left out keeps it. */
   readonly lowBalanceThreshold?: string | null | undefined;
   /** The events to replace; the ones left out keep their value. */
-  readonly events: ReadonlyArray<{ readonly event: string; readonly email: boolean; readonly telegram: boolean }>;
+  readonly events: ReadonlyArray<{ readonly event: string; readonly email: boolean }>;
 }
 
 const MAX_EVENTS = 50;
@@ -39,9 +37,8 @@ const MAX_EVENTS = 50;
  *
  * Why: B165. The choices live in `clients.notification_prefs` (the key `lowBalanceThreshold` is the one `WalletLowBalanceWatch` reads);
  * the events a merchant may switch are the non-transactional merchant events of the platform's registry, so the screen and the delivery
- * agree. An event never saved reads as email on and Telegram off (the order results stay off until chosen; the announcements of
- * feature 23 start with both on); Telegram can be switched on only while a chat is linked, and sending back the value the screen
- * showed is always accepted. The merchant portal writes no audit rows (B121).
+ * agree. An event never saved reads as email on (the order results stay off until chosen). A `telegram` switch that an older save
+ * stored is ignored, and one an older portal still sends is dropped. The merchant portal writes no audit rows (B121).
  *
  * Side effects: `update` rewrites `clients.notification_prefs` under a row lock.
  *
@@ -74,8 +71,7 @@ export class MerchantNotificationSettings {
    * @param clientId the signed-in merchant
    * @param input the threshold and the events to replace
    * @returns the preferences after the save
-   * @throws {AppError} `VALIDATION_FAILED` on `events.<n>.event` for an unknown, transactional or repeated event, on `events.<n>.telegram`
-   *   for Telegram switched on with no chat linked ("Link Telegram first."; the value the GET showed is accepted), and on
+   * @throws {AppError} `VALIDATION_FAILED` on `events.<n>.event` for an unknown, transactional or repeated event, and on
    *   `lowBalanceThreshold` for a negative or malformed amount
    */
   async update(clientId: number, input: PreferencesInput): Promise<PreferencesView> {
@@ -120,16 +116,6 @@ export class MerchantNotificationSettings {
           });
         }
         seen.add(entry.event);
-        // Telegram cannot be switched on without a chat. Sending back the value the screen showed is no switch: announcements
-        // start with Telegram on, and a form that echoes that row while no chat is linked must still save.
-        const shown = definition !== undefined && choiceFor(definition, client.notificationPrefs).telegram;
-        if (entry.telegram && client.telegramChatId === null && !shown) {
-          errors.push({
-            field: `events.${index}.telegram`,
-            code: 'telegram_not_linked',
-            message: 'Link Telegram first.',
-          });
-        }
       });
       if (errors.length > 0) throw new AppError('VALIDATION_FAILED', { errors });
 
@@ -146,7 +132,6 @@ export class MerchantNotificationSettings {
   private view(client: Client, prefs: Record<string, unknown>): PreferencesView {
     return {
       email: { address: client.email },
-      telegram: { linked: client.telegramChatId !== null },
       lowBalanceThreshold: thresholdOf(prefs),
       events: this.registry.merchantPreferenceEvents().map((definition) => ({
         event: definition.key,

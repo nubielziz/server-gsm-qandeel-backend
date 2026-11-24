@@ -1,12 +1,11 @@
-// Seeder of the growth pages (feature 19): the demo's 238 left checkouts (`S.checkouts`) as `checkout_sessions`, each with the guest
-// customer of its email and the marketing answer the console mock makes up for it. The ids are the demo's (`CK-3001` is 3001). Runs after the
+// Seeder of the funnel's checkouts (feature 19): the demo's 238 checkouts that were left (`S.checkouts`) as `checkout_sessions`, each with the
+// guest customer of its email and the marketing answer the console mock makes up for it. The ids are the demo's (`CK-3001` is 3001). Runs after the
 // money seed (currencies) and the catalog seed (services).
 //
 // Mapping, as the frontend mock maps it (src/features/checkouts/mocks/store.ts): the basket is in the buyer's currency, so the USD gross is
-// `gross / rate` and the session keeps that currency's current rate (the console shows `grossAmount x fxRate`, the demo's amount again);
-// `recovery` sent/converted becomes `recovery_emailed_at` one hour after the checkout (the demo's reminder delay); `converted` becomes status
-// `paid` with no order, because the storefront orders arrive with feature 16's seed; the answer to marketing is agreed for about seven in ten
-// (the mock's `agreedToMarketing`), and a few of the others have a withdrawn record. The funnel's IMEI checks are the risk module's seed.
+// `gross / rate` and the session keeps that currency's current rate; `converted` becomes status `paid` with no order, because the storefront
+// orders arrive with feature 16's seed; the answer to marketing is agreed for about seven in ten (the mock's `agreedToMarketing`), and a few of
+// the others have a withdrawn record.
 //
 // Ids of rows this seeder invents (the guest customers and the consent records) start at 900 000, so a seeder of the customers module that
 // writes the demo's own customer ids never meets them whichever runs first.
@@ -41,7 +40,7 @@ export const agreedToMarketing = (id: number): boolean => (id * 7) % 10 < 7;
 const withdrew = (id: number): boolean => !agreedToMarketing(id) && id % 5 === 0;
 
 /**
- * Seeds the abandoned checkouts.
+ * Seeds the demo's checkouts that were left.
  *
  * @param db the transaction to write with
  * @param demo the loaded frontend demo state
@@ -102,7 +101,6 @@ export async function seedGrowth(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
     const id = demoNumericId(row.id);
     const rate = rates.get(row.cur) ?? 1;
     const created = toDate(row.created)!;
-    const emailed = row.recovery === 'sent' || row.recovery === 'converted';
     return {
       id,
       token: randomBytes(16).toString('base64url'),
@@ -117,7 +115,6 @@ export async function seedGrowth(db: DbExecutor, demo: DemoSeed): Promise<SeedRe
       utm: { source: row.src },
       status: row.recovery === 'converted' ? ('paid' as const) : row.status,
       expiresAt: new Date(created.getTime() + CHECKOUT_SESSION_TTL_MINUTES * MINUTE_MS),
-      recoveryEmailedAt: emailed ? new Date(created.getTime() + 60 * MINUTE_MS) : null,
       createdAt: created,
       updatedAt: created,
     };

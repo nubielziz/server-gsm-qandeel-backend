@@ -284,8 +284,6 @@ describe('POST /store/v1/me/tickets', () => {
       status: 'new',
       orderId: null,
       resolvedAt: null,
-      csatScore: null,
-      canRate: false,
       messages: [{ from: 'you', body: VALID.message, attachments: [] }],
       seenByYou: null,
       seenBySupport: null,

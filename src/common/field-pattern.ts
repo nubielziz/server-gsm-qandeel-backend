@@ -130,7 +130,7 @@ const CLASS_WEIGHT = 4;
 /**
  * Tells whether a pattern is in the supported form, and why not when it is not.
  *
- * Why: decision 051: a pattern typed by staff runs on every order input on the request path (the portal, the REST API, the Dhru API and the
+ * Why: decision 051: a pattern typed by staff runs on every order input on the request path (the portal, the Dhru API and the
  * anonymous checkout), and the engine's backtracking can take seconds on a pattern with nested repeats. The supported form cannot do that:
  * literals, `.`; character classes; the escapes `\d \D \w \W \s \S \t \n \r \f \v \xHH \uHHHH` and escaped syntax characters; groups `( )`
  * and `(?: )` with alternatives, never nested and never repeated; the quantifiers `? * + {n} {n,} {n,m}` with counts up to 500, lazy or not;

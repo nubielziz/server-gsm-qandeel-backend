@@ -32,13 +32,12 @@ beforeEach(async () => {
 
 const ids = (body: Array<{ id: number }>) => body.map((row) => row.id);
 
-/** A small log: a merchant's mail and Telegram messages, a customer's mail and a staff member's mail, in every status, over four hours. */
+/** A small log: a merchant's mail and an older Telegram message (its chat in the payload), a customer's mail and a staff member's mail, in every status, over four hours. */
 async function history() {
   const { db } = await testDb();
   const merchant = await insertMerchant(db, {
     name: 'Zain Mobile Hub',
     email: 'ops@zainmobilehub.example',
-    telegramChatId: '7001234',
   });
   const [customer] = await db
     .insert(s.customers)
@@ -68,6 +67,7 @@ async function history() {
         status: 'sent',
         sentAt: at(3),
         attempts: 1,
+        payload: { chatId: '7001234' },
         createdAt: at(3),
       },
       {
@@ -300,7 +300,7 @@ describe('GET /admin/notifications/:id', () => {
     expect((await nobody.get(`/admin/notifications/${lowEmail}`)).body.code).toBe('FORBIDDEN');
   });
 
-  it('never gives back the Telegram chat id, not in the recipient and not in the payload the bot’s answers carry', async () => {
+  it('never gives back the Telegram chat id, not in the recipient and not in the payload of a Telegram message', async () => {
     const { merchant } = await history();
     const { db } = await testDb();
     const [answer] = await db
@@ -317,10 +317,10 @@ describe('GET /admin/notifications/:id', () => {
       .returning({ id: s.notifications.id });
     const res = await owner.get(`/admin/notifications/${answer!.id}`);
     expect(res.status).toBe(200);
-    expect(res.body.recipient).toBe('@7***');
+    // The recipient of a Telegram row is the chat its payload names: the merchant's own column is no longer read.
+    expect(res.body.recipient).toBe('@9***');
     expect(res.body.payload).toEqual({ variables: { merchantName: 'Zain Mobile Hub' }, chatId: '@9***' });
     expect(JSON.stringify(res.body)).not.toContain('987654321');
-    expect(JSON.stringify(res.body)).not.toContain('7001234');
     // The list leaves the payload out, so it cannot leak it either.
     expect(JSON.stringify((await owner.get('/admin/notifications')).body)).not.toContain('987654321');
   });

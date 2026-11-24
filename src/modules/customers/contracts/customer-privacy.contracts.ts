@@ -10,11 +10,11 @@ export const blockCustomer = defineRoute({
   summary: 'Block or unblock a customer',
   description:
     '`{ blocked: true, reason }` blocks a customer for fraud (use suspend for a temporary stop); `{ blocked: false }` lifts the ' +
-    'block (a reason is optional). Blocking sets the status `blocked` and the risk level `high`, ends every session, appends the ' +
+    'block (a reason is optional). Blocking sets the status `blocked`, ends every session, appends the ' +
     'reason to the internal notes, and adds to the blocklist, with source manual, the reason, the caller and the customer: the email, ' +
     'each distinct card fingerprint of their payments and each distinct IMEI still stored on their orders and checkouts (an entry ' +
-    'that already exists is kept as it is and not linked to this customer). Unblocking sets `active`, moves `high` risk to ' +
-    '`medium` and deletes only the manual entries this customer’s block added. `reason` must be one of: ' +
+    'that already exists is kept as it is and not linked to this customer). Unblocking sets `active` and deletes only the ' +
+    'manual entries this customer’s block added. `reason` must be one of: ' +
     `${BLOCK_REASONS.join('; ')} (422 on \`reason\` otherwise). Audited as \`blocked customer\` or \`unblocked customer\`.`,
   tags: ['customers'],
   surface: 'admin',
@@ -52,7 +52,7 @@ export const exportCustomerData = defineRoute({
     'A JSON file (`Content-Disposition: attachment; filename="customer-<id>.json"`, never cached) with everything the shop holds ' +
     'about the customer: the profile, the orders with their IMEI, the payments without card data, the consents, the checkout ' +
     "sessions, the support tickets with their public messages (only tickets whose requester's address is confirmed: a ticket opened " +
-    'on the contact form with a typed address is left out until its link is used), the IMEI checks, the data requests and the store balance with its ' +
+    'on the contact form with a typed address is left out until its link is used), the data requests and the store balance with its ' +
     'statement (`wallet`, staff reasons hidden). It works for an anonymized ' +
     'customer too. The export closes the customer’s open or in-progress export request (`completed`, handled by the caller) and is ' +
     'audited as `exported data of`; no copy of the file is kept. Because a GET has this side effect and carries no CSRF token, the ' +
@@ -75,8 +75,8 @@ export const anonymizeCustomer = defineRoute({
   description:
     'Irreversible. The customer becomes `anonymized`: the name is "Deleted customer", the email `deleted-<id>@redacted.invalid` (the ' +
     'old address is free again), the phone and internal notes are cleared, marketing is off and the account is closed (credentials ' +
-    'deleted, every session ended, outstanding links voided). The IMEI on their orders, checkout sessions and IMEI checks is cut to ' +
-    'the TAC and a mask (an IMEI check loses `imei_enc`, `imei_hash` and `cached_until` together). Payments, ledger entries and ' +
+    'deleted, every session ended, outstanding links voided). The IMEI on their orders and checkout sessions is cut to ' +
+    'the TAC and a mask. Payments, ledger entries and ' +
     'amounts stay for accounting. The customer’s open or in-progress erasure request is completed. Audited as `anonymised customer`, ' +
     'naming the customer by number. Refused with `409 CONFLICT` while the customer’s store balance is not zero, a top-up waits for ' +
     'review or a top-up dispute is open; unpaid top-ups are voided.',

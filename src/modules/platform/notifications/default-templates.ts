@@ -1,9 +1,8 @@
 // The default templates of the merchant events, the customer account mails, the alert messages, the storefront order, payment and
-// refund mails, the hourly message about following retail prices and the notice of a switched-off webhook endpoint (platform module, features
-// 12a, 14b, 12b, 16, 31 and 43): English email and Telegram texts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018
-// (storefront mails), 0044 (retail prices), 0054 (the customer's security notice, decision 047) and the one ending `_public_abuse_limits`
-// (the webhook notice, decision 053) insert the same rows into a fresh database (a spec finds every row of this file in them); the console
-// edits them afterwards.
+// refund mails and the hourly message about following retail prices (platform module, features 12a, 14b, 12b, 16, 31 and 43): English
+// email texts, and the Telegram texts of the operations alerts. Migrations 0011 (merchant), 0012 (customer mails), 0015 (alerts), 0018
+// (storefront mails), 0044 (retail prices) and 0054 (the customer's security notice, decision 047) insert the same rows into a fresh
+// database (a spec finds every row of this file in them); the console edits them afterwards.
 import type { NotificationAudience, NotificationChannel } from '../db/schema';
 
 /** One default template: one per event, channel and audience (decision 039: templates have no language). */
@@ -55,39 +54,11 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     body: 'Hi {{merchantName}},\n\nYour available balance is {{available}} {{currency}}, below your alert level of {{threshold}} {{currency}}. Top up your wallet to keep your orders going.',
   },
   {
-    event: 'wallet.low_balance',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Low balance: {{available}} {{currency}} available (your alert level is {{threshold}} {{currency}}).',
-  },
-  {
     event: 'service.price_changed',
     channel: 'email',
     audience: 'merchant',
     subject: 'Price changes on services you ordered',
     body: 'Hi {{merchantName}},\n\nThe price of {{count}} service(s) you ordered in the last 30 days changed:\n\n{{changes}}\n\nYour catalog and price list already show the new prices.',
-  },
-  {
-    event: 'service.price_changed',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Price changes on services you ordered ({{count}}):\n{{changes}}',
-  },
-  {
-    event: 'deposit.approved',
-    channel: 'email',
-    audience: 'merchant',
-    subject: 'Your deposit of {{amount}} {{currency}} was approved',
-    body: 'Hi {{merchantName}},\n\nYour deposit of {{amount}} {{currency}} was approved and your wallet is topped up.',
-  },
-  {
-    event: 'deposit.approved',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Deposit approved: {{amount}} {{currency}} was added to your wallet.',
   },
   {
     event: 'invoice.paid',
@@ -97,13 +68,6 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     body: 'Hi {{merchantName}},\n\nInvoice {{invoiceNumber}} ({{amount}} {{currency}}) was paid and the amount is in your wallet.',
   },
   {
-    event: 'invoice.paid',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Invoice {{invoiceNumber}} is paid: {{amount}} {{currency}} was added to your wallet.',
-  },
-  {
     event: 'order.completed',
     channel: 'email',
     audience: 'merchant',
@@ -111,46 +75,11 @@ export const DEFAULT_TEMPLATES: readonly DefaultTemplate[] = [
     body: 'Hi {{merchantName}},\n\nOrder {{orderId}} ({{service}}) is complete. {{resultComment}}\n\nThe result is in your panel.',
   },
   {
-    event: 'order.completed',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Order {{orderId}} is complete. The result is in your panel.',
-  },
-  {
     event: 'order.failed',
     channel: 'email',
     audience: 'merchant',
     subject: 'Order {{orderId}} was rejected',
     body: 'Hi {{merchantName}},\n\nOrder {{orderId}} ({{service}}) was rejected. {{resultComment}}\n\nThe amount went back to your wallet.',
-  },
-  {
-    event: 'order.failed',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Order {{orderId}} was rejected. {{resultComment}}',
-  },
-  {
-    event: 'webhook.endpoint_disabled',
-    channel: 'email',
-    audience: 'merchant',
-    subject: 'A webhook endpoint was switched off',
-    body: 'Hi {{merchantName}},\n\nYour webhook endpoint {{url}} did not accept the last {{count}} deliveries, so it was switched off and no more events are sent to it.\n\nCheck the endpoint, then turn it on again in the merchant portal; its count of failed deliveries starts again from zero.',
-  },
-  {
-    event: 'telegram.linked',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Linked to {{merchantName}}.',
-  },
-  {
-    event: 'telegram.unlinked',
-    channel: 'telegram',
-    audience: 'merchant',
-    subject: '',
-    body: 'Telegram notifications for {{merchantName}} are off. Create a new link in the portal to connect this chat again.',
   },
   {
     event: 'alert.fired',

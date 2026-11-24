@@ -121,7 +121,7 @@ export function supportStaff(t: TestApp, permissions: string[] = ['support:*'], 
 }
 
 /**
- * The outbox events of the ticket messages (receipt, reply, survey) written so far, oldest first.
+ * The outbox events of the ticket messages (receipt, reply) written so far, oldest first.
  *
  * @param db the test database
  * @returns the `support.ticket_mail` rows
@@ -189,7 +189,7 @@ export async function setSupportSetting(t: TestApp, name: keyof typeof SUPPORT_S
 }
 
 /**
- * Deletes the counters of the `ticket-message`, `ticket-chat`, `token` and `upload` limiters and the typing throttle keys (feature 28).
+ * Deletes the counters of the `ticket-message`, `ticket-chat`, `token` and `upload` limiters (feature 28).
  *
  * Why: ticket ids start again after every `resetDb`, the counters outlive a test in the cache Redis, and the streams and the console's
  * uploads of a test all come from 127.0.0.1.
@@ -204,7 +204,6 @@ export async function clearTicketChatLimits(t: TestApp): Promise<void> {
     `${keys.rateLimit('ticket-chat')}:*`,
     `${keys.rateLimit('token')}:*`,
     `${keys.rateLimit('upload')}:*`,
-    `${keys.keyspace}support:typing:*`,
   ]) {
     const found = await redis.keys(pattern);
     if (found.length > 0) await redis.del(...found);

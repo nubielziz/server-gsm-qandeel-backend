@@ -20,8 +20,8 @@ const NOTHING: SweepResult = { queued: 0, rekicked: 0, failed: 0 };
 /**
  * Runs the campaign sweep.
  *
- * Why: a tick with nothing to do writes no `job_runs` row (a run every minute would bury the jobs list, the rule of the checkout
- * recovery sweep); a tick that does something, and every manual run, is recorded through the {@link JOB_RUN_RECORDER} port (S8).
+ * Why: a tick with nothing to do writes no `job_runs` row (a run every minute would bury the jobs list); a tick that does something, and
+ * every manual run, is recorded through the {@link JOB_RUN_RECORDER} port (S8).
  */
 @Injectable()
 @QueueProcessor('maintenance', CAMPAIGN_SWEEP_JOB)

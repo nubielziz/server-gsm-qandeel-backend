@@ -1,4 +1,4 @@
-// Identity & access module (map domain A): staff, roles, merchants, sessions, auth tokens, API keys, KYC, IP rules.
+// Identity & access module (map domain A): staff, roles, merchants, sessions, auth tokens, API keys, IP rules.
 // It owns the authentication and authorization building blocks (src/modules/identity/security) and the IP rules stage
 // of the request pipeline (security/ip-rules), the staff sign-in routes (/admin/auth/*, staff-auth.module), the staff access
 // routes (staff, roles, sessions, IP rules: access-admin.module), the merchant management routes (merchant-admin.module) and
@@ -7,11 +7,9 @@
 import { Module } from '@nestjs/common';
 import { AccessAdminModule } from './access-admin.module';
 import { ApiKeysModule } from './api-keys.module';
-import { KycModule } from './kyc.module';
 import { MerchantAdminModule } from './merchant-admin.module';
 import { MerchantAuthModule } from './merchant-auth.module';
 import { MerchantNotificationsModule } from './merchant-notifications.module';
-import { MerchantWebhookRoutesModule } from './merchant-webhook-routes.module';
 import { IdentityAudienceModule } from './notifications/identity-audience.module';
 import { StreamRoutesModule } from './realtime/stream.module';
 import { IpRulesModule } from './security/ip-rules/ip-rules.module';
@@ -27,9 +25,8 @@ import { StaffAuthModule } from './staff-auth.module';
  * stage of the request pipeline (`IpRulesModule`, scenario ip-rules), the upload session check that follows the per-IP limit
  * (`UploadSessionModule`, decision 053), the staff sign-in routes (`StaffAuthModule`), the staff
  * access routes (`AccessAdminModule`), the merchant management routes (`MerchantAdminModule`), the merchant portal's
- * sign-in (`MerchantAuthModule`), the API key routes (`ApiKeysModule`) and the controller of the merchant portal's webhook routes
- * (`MerchantWebhookRoutesModule`; the use cases are the platform's), the verification routes (`KycModule`, stage 8) and the
- * merchant's notification settings with the Telegram link and webhook (`MerchantNotificationsModule`, feature 12a), and the live
+ * sign-in (`MerchantAuthModule`), the API key routes (`ApiKeysModule`), the
+ * merchant's notification settings (`MerchantNotificationsModule`, feature 12a), and the live
  * event streams of the staff member, the merchant and the customer (`StreamRoutesModule`, decision 037).
  */
 @Module({
@@ -42,8 +39,6 @@ import { StaffAuthModule } from './staff-auth.module';
     MerchantAdminModule,
     MerchantAuthModule,
     ApiKeysModule,
-    MerchantWebhookRoutesModule,
-    KycModule,
     MerchantNotificationsModule,
     IdentityAudienceModule,
     StreamRoutesModule,

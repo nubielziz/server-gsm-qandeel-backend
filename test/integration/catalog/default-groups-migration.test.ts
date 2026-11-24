@@ -38,18 +38,10 @@ describe('migration 0005, default client groups', () => {
     await migrate();
     const rows = await groups();
     expect(
-      rows.map((g) => [
-        g.name,
-        g.kind,
-        g.isDefault,
-        g.earnThreshold,
-        g.depositLimit,
-        g.overdraftAllowed,
-        g.discountPercent,
-      ]),
+      rows.map((g) => [g.name, g.kind, g.isDefault, g.depositLimit, g.overdraftAllowed, g.discountPercent]),
     ).toEqual([
-      ['Standard', 'b2b', true, '0.0000', '0.0000', false, '0.0000'],
-      ['Storefront retail', 'b2c_retail', false, '0.0000', '0.0000', false, '0.0000'],
+      ['Standard', 'b2b', true, '0.0000', false, '0.0000'],
+      ['Storefront retail', 'b2c_retail', false, '0.0000', false, '0.0000'],
     ]);
   });
 

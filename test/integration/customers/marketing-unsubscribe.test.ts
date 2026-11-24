@@ -77,10 +77,7 @@ beforeEach(async () => {
   await clearIdentityCaches(t);
   await t.app.get(QueuesService).queue(BROADCAST_QUEUE).obliterate({ force: true });
   await t.app.get(RedisService).cache.flushdb();
-  await db.insert(s.settings).values([
-    { key: 'notifications.broadcast_email_per_second', value: 30 },
-    { key: 'notifications.broadcast_telegram_per_second', value: 30 },
-  ]);
+  await db.insert(s.settings).values([{ key: 'notifications.broadcast_email_per_second', value: 30 }]);
   await t.app.get(SettingsReader).invalidate();
   mailbox(t).reset();
   fanOutWith(t, { chunkSize: 500, timeBudgetMs: 60_000, highWater: 20_000 });

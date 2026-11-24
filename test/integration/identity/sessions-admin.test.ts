@@ -1,5 +1,5 @@
 // Integration tests of the admin session routes and the ended-session purge job (feature 2a, scenarios admin-team and ip-rules):
-// the one live-session rule (resolution identity-platform-6), the list of staff and merchant sessions, ending a session, and the
+// the one live-session rule (resolution identity-platform-6), the list of staff sessions, ending a session, and the
 // daily purge of sessions that ended more than 30 days ago.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
@@ -51,31 +51,29 @@ const sessionRow = async (id: number) => {
 const auditRows = async () => (await testDb()).db.select().from(s.auditLogs).orderBy(s.auditLogs.id);
 const ids = (body: Array<{ id: number }>) => body.map((row) => row.id);
 
-async function viewer(
-  permissions = ['sessions:read', 'sessions:revoke', 'staff:read', 'clients:read', 'clients:security'],
-  name = 'Rami K.',
-) {
+async function viewer(permissions = ['sessions:read', 'sessions:revoke', 'staff:read'], name = 'Rami K.') {
   return adminWith(t, permissions, { name });
 }
 
 describe('GET /admin/sessions', () => {
-  it("lists fully signed-in staff and merchant sessions with their account, marks the caller's own, and nothing else", async () => {
+  it("lists fully signed-in staff sessions with their account, marks the caller's own, and nothing else", async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support, { name: 'Lina S.', email: 'lina@example.com' });
     const linaSession = await openSession(t, { type: 'staff', id: lina });
+    // Never listed: a merchant (its per-device list is retired), a storefront customer, and the sign-in steps before the second
+    // factor or the password change.
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
-    const merchantSession = await openSession(t, { type: 'client', id: merchant });
-    // Never listed: a storefront customer, and the sign-in steps before the second factor or the password change.
+    await openSession(t, { type: 'client', id: merchant });
     await openSession(t, { type: 'customer', id: 99 });
     await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_totp' });
     await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_password' });
 
     const res = await rami.get('/admin/sessions?_sort=id&_order=asc');
     expect(res.status).toBe(200);
-    expect(res.total).toBe(3);
-    expect(ids(res.body)).toEqual([rami.session.sessionId, linaSession.sessionId, merchantSession.sessionId]);
+    expect(res.total).toBe(2);
+    expect(ids(res.body)).toEqual([rami.session.sessionId, linaSession.sessionId]);
     const created = clock.now().toISOString();
     expect(res.body[1]).toEqual({
       id: linaSession.sessionId,
@@ -88,12 +86,6 @@ describe('GET /admin/sessions', () => {
       subject: { id: lina, name: 'Lina S.', email: 'lina@example.com' },
       current: false,
     });
-    expect(res.body[2]).toMatchObject({
-      subjectType: 'client',
-      subject: { id: merchant, name: 'Zain Mobile Hub', email: 'ops@zain.example' },
-      current: false,
-    });
-    expect(res.body[2].expiresAt).toBe(new Date(clock.nowMs() + 30 * DAY).toISOString());
     expect(res.body[0]).toMatchObject({
       subjectType: 'staff',
       subject: { id: rami.staffId, name: 'Rami K.' },
@@ -102,22 +94,20 @@ describe('GET /admin/sessions', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/tokenHash|token_hash|"token"/);
   });
 
-  it('applies one live rule: revoked, expired and idle-dead sessions disappear, with the idle limit of each subject type', async () => {
+  it('applies one live rule: revoked, expired and idle-dead sessions disappear, with the idle limit of staff', async () => {
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support, { name: 'Lina S.' });
-    const merchant = await insertMerchant(db);
     const revoked = await openSession(t, { type: 'staff', id: lina });
     const shortLived = await openSession(t, { type: 'staff', id: lina }, { ttlSeconds: 2 * 60 });
     const staffLive = await openSession(t, { type: 'staff', id: lina });
-    const merchantLive = await openSession(t, { type: 'client', id: merchant });
     await db.update(s.sessions).set({ revokedAt: clock.now() }).where(eq(s.sessions.id, revoked.sessionId));
     /** The ids a fresh viewer sees at this moment (a viewer is signed in at the current time, so it is never idle-dead). */
     const seen = async (name: string) =>
       ids((await (await viewer(['sessions:read'], name)).get('/admin/sessions?_end=100')).body);
 
     const start = await seen('At start');
-    expect(start).toEqual(expect.arrayContaining([shortLived.sessionId, staffLive.sessionId, merchantLive.sessionId]));
+    expect(start).toEqual(expect.arrayContaining([shortLived.sessionId, staffLive.sessionId]));
     expect(start).not.toContain(revoked.sessionId);
 
     // The short session ends at its absolute end: one millisecond before it is still listed, at the end it is not.
@@ -127,51 +117,39 @@ describe('GET /admin/sessions', () => {
     expect(await seen('At the end')).not.toContain(shortLived.sessionId);
 
     // Staff may sit idle for 30 minutes (the unused session was last seen at the start): alive one millisecond before, dead at
-    // the limit. A merchant session may sit idle for seven days.
+    // the limit.
     clock.advance(28 * MINUTE - 1);
-    const beforeIdle = await seen('Before idle');
-    expect(beforeIdle).toContain(staffLive.sessionId);
+    expect(await seen('Before idle')).toContain(staffLive.sessionId);
     clock.advance(1);
-    const afterIdle = await seen('After idle');
-    expect(afterIdle).not.toContain(staffLive.sessionId);
-    expect(afterIdle).toContain(merchantLive.sessionId);
-
-    clock.advance(7 * DAY - 30 * MINUTE - 1);
-    expect(await seen('Before merchant idle')).toContain(merchantLive.sessionId);
-    clock.advance(1);
-    expect(await seen('After merchant idle')).not.toContain(merchantLive.sessionId);
+    expect(await seen('After idle')).not.toContain(staffLive.sessionId);
   });
 
-  it('filters by subject type, sorts by last use, creation and id, and pages with the exact total', async () => {
+  it('accepts the staff filter, sorts by last use, creation and id, and pages with the exact total', async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support, { name: 'Lina S.' });
     const first = await openSession(t, { type: 'staff', id: lina });
     clock.advance(MINUTE);
-    const merchant = await insertMerchant(db);
-    const second = await openSession(t, { type: 'client', id: merchant });
+    const second = await openSession(t, { type: 'staff', id: lina });
     clock.advance(MINUTE);
-    const third = await openSession(t, { type: 'client', id: merchant });
+    const third = await openSession(t, { type: 'staff', id: lina });
 
-    expect(ids((await rami.get('/admin/sessions?subjectType=client&_sort=id&_order=asc')).body)).toEqual([
-      second.sessionId,
-      third.sessionId,
-    ]);
-    expect((await rami.get('/admin/sessions?subjectType=staff')).total).toBe(2);
+    expect((await rami.get('/admin/sessions?subjectType=staff')).total).toBe(4);
+    // The caller's own session is touched by every request, so the order of the others is what is compared.
+    const others = (body: Array<{ id: number }>) => ids(body).filter((id) => id !== rami.session.sessionId);
     // Default order: last use, newest first.
-    expect(ids((await rami.get('/admin/sessions?subjectType=client')).body)).toEqual([
+    expect(others((await rami.get('/admin/sessions?subjectType=staff&_end=100')).body)).toEqual([
       third.sessionId,
       second.sessionId,
+      first.sessionId,
     ]);
-    expect(ids((await rami.get('/admin/sessions?subjectType=client&_sort=lastSeenAt&_order=asc')).body)).toEqual([
+    expect(others((await rami.get('/admin/sessions?_sort=lastSeenAt&_order=asc&_end=100')).body)).toEqual([
+      first.sessionId,
       second.sessionId,
       third.sessionId,
     ]);
-    expect(ids((await rami.get('/admin/sessions?subjectType=client&_sort=createdAt&_order=desc')).body)).toEqual([
-      third.sessionId,
-      second.sessionId,
-    ]);
+    expect(ids((await rami.get('/admin/sessions?_sort=createdAt&_order=desc&_end=1')).body)).toEqual([third.sessionId]);
 
     const everyone = [rami.session.sessionId, first.sessionId, second.sessionId, third.sessionId].sort((a, b) => b - a);
     const page = await rami.get('/admin/sessions?_sort=id&_order=desc&_start=1&_end=2');
@@ -181,35 +159,19 @@ describe('GET /admin/sessions', () => {
     expect((await rami.get('/admin/sessions?_sort=ip')).status).toBe(422);
   });
 
-  it('lists the sessions of one account with subjectType and subjectId, with the exact total (feature 20)', async () => {
+  it('no longer lists a merchant: the merchant filter values and subjectId are refused', async () => {
     const rami = await viewer();
     const { db } = await testDb();
-    const first = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const second = await insertMerchant(db, { name: 'Other Shop' });
-    const a1 = await openSession(t, { type: 'client', id: first });
-    const a2 = await openSession(t, { type: 'client', id: first });
-    await openSession(t, { type: 'client', id: second });
-    // A staff member whose id equals the merchant's: the id alone would mix them up.
-    const support = await insertRole(db, ['staff:read']);
-    const staffSameId = await insertStaff(db, support, { name: 'Lina S.' });
-    await openSession(t, { type: 'staff', id: staffSameId });
-
-    const res = await rami.get(`/admin/sessions?subjectType=client&subjectId=${first}&_sort=id&_order=asc`);
-    expect(res.status).toBe(200);
-    expect(res.total).toBe(2);
-    expect(ids(res.body)).toEqual([a1.sessionId, a2.sessionId]);
-    expect(res.body.every((row: { subject: { id: number } }) => row.subject.id === first)).toBe(true);
-    const none = await rami.get('/admin/sessions?subjectType=client&subjectId=999999');
-    expect(none.total).toBe(0);
-    expect(none.body).toEqual([]);
-  });
-
-  it('answers 422 on subjectId when subjectType is missing (ids of staff and merchants overlap)', async () => {
-    const rami = await viewer();
-    const res = await rami.get('/admin/sessions?subjectId=7');
-    expect(res.status).toBe(422);
-    expect(res.body.code).toBe('VALIDATION_FAILED');
-    expect(res.body.errors).toMatchObject([{ field: 'subjectId' }]);
+    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
+    await openSession(t, { type: 'client', id: merchant });
+    for (const query of ['subjectType=client', `subjectType=client&subjectId=${merchant}`, 'subjectId=7']) {
+      const res = await rami.get(`/admin/sessions?${query}`);
+      expect(res.status, query).toBe(422);
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+    }
+    const all = await rami.get('/admin/sessions?_end=100');
+    expect(all.total).toBe(1);
+    expect(ids(all.body)).toEqual([rami.session.sessionId]);
   });
 
   it("shows the account's current name (a rename is visible at once) and needs sessions:read", async () => {
@@ -231,25 +193,22 @@ describe('GET /admin/sessions', () => {
 });
 
 describe('DELETE /admin/sessions/:id', () => {
-  it('ends a staff session and a merchant session, audits each, and the account is signed out on its next request', async () => {
+  it('ends a staff session, audits it, and the account is signed out on its next request', async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
     const lina = await insertStaff(db, support, { name: 'Lina S.' });
     const linaApi = await adminFor(t, lina, support);
     expect((await linaApi.get('/admin/sessions')).status).toBe(403);
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const merchantSession = await openSession(t, { type: 'client', id: merchant });
 
     const res = await rami.delete(`/admin/sessions/${linaApi.session.sessionId}`);
     expect(res.status).toBe(204);
     expect(res.body).toBeUndefined();
     expect((await sessionRow(linaApi.session.sessionId)).revokedAt).toEqual(clock.now());
     expect((await linaApi.get('/admin/staff')).status).toBe(401);
-    expect((await rami.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(204);
-    expect((await sessionRow(merchantSession.sessionId)).revokedAt).not.toBeNull();
 
-    const [first, second] = await auditRows();
+    const [first, ...others] = await auditRows();
+    expect(others).toHaveLength(0);
     expect(first).toMatchObject({
       action: 'ended session of',
       entityType: 'session',
@@ -260,16 +219,6 @@ describe('DELETE /admin/sessions/:id', () => {
     });
     expect(first!.before).toEqual({ subjectType: 'staff', subjectId: lina, ip: '203.0.113.7' });
     expect(first!.after).toEqual({ ended: true, own: false });
-    // A merchant's session is filed under the merchant (feature 20, O-12), so the merchant page's history shows it.
-    expect(second).toMatchObject({
-      action: 'ended a session of',
-      entityType: 'merchant',
-      entityId: merchant,
-      entityLabel: 'Zain Mobile Hub',
-      actorId: rami.staffId,
-    });
-    expect(second!.before).toEqual({ sessionId: merchantSession.sessionId, ip: '203.0.113.7' });
-    expect(second!.after).toEqual({ ended: true });
     expect((await rami.get('/admin/sessions')).body.map((row: { id: number }) => row.id)).toEqual([
       rami.session.sessionId,
     ]);
@@ -284,8 +233,6 @@ describe('DELETE /admin/sessions/:id', () => {
     const finance = await insertRole(db, ['staff:read', 'wallet:adjust'], 'Finance');
     const nadia = await insertStaff(db, finance, { name: 'Nadia H.' });
     const nadiaSession = await openSession(t, { type: 'staff', id: nadia });
-    const merchant = await insertMerchant(db);
-    const merchantSession = await openSession(t, { type: 'client', id: merchant });
 
     const owner = await rami.delete(`/admin/sessions/${ownerSession.sessionId}`);
     expect(owner.status).toBe(403);
@@ -296,8 +243,6 @@ describe('DELETE /admin/sessions/:id', () => {
     expect((await sessionRow(ownerSession.sessionId)).revokedAt).toBeNull();
     expect((await sessionRow(nadiaSession.sessionId)).revokedAt).toBeNull();
     expect(await auditRows()).toHaveLength(0);
-    // A merchant's session and the caller's own session are not about another member's permissions.
-    expect((await rami.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(204);
 
     // An Owner ends the same sessions.
     const chief = await adminWith(t, ['*'], { name: 'Chief' });
@@ -313,7 +258,7 @@ describe('DELETE /admin/sessions/:id', () => {
     expect((await rami.get('/admin/sessions')).status).toBe(401);
   });
 
-  it("answers 404 for a session that is not live by the list's rule: unknown, revoked, expired, idle, a customer or a sign-in step", async () => {
+  it("answers 404 for a session that is not live by the list's rule: unknown, revoked, expired, idle, a merchant, a customer or a sign-in step", async () => {
     const rami = await viewer();
     const { db } = await testDb();
     const support = await insertRole(db, ['staff:read']);
@@ -327,23 +272,20 @@ describe('DELETE /admin/sessions/:id', () => {
     const step = await openSession(t, { type: 'staff', id: lina }, { stage: 'pending_totp' });
     const merchantLive = await openSession(t, { type: 'client', id: merchant });
 
-    for (const dead of [revoked, customer, step]) {
+    for (const dead of [revoked, customer, step, merchantLive]) {
       const res = await rami.delete(`/admin/sessions/${dead.sessionId}`);
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
     }
+    expect((await sessionRow(merchantLive.sessionId)).revokedAt).toBeNull();
     expect((await rami.delete('/admin/sessions/999999')).status).toBe(404);
     expect((await rami.delete('/admin/sessions/abc')).status).toBe(422);
 
     clock.advance(31 * MINUTE);
-    const later = await viewer(['sessions:revoke', 'clients:security'], 'Later');
+    const later = await viewer(['sessions:revoke'], 'Later');
     for (const dead of [expired, idle])
       expect((await later.delete(`/admin/sessions/${dead.sessionId}`)).status).toBe(404);
-    // The merchant session (7 days idle limit) is still live and can be ended.
-    expect((await later.delete(`/admin/sessions/${merchantLive.sessionId}`)).status).toBe(204);
-    // Ended twice: the second answer is 404, and only one audit row was written for it.
-    expect((await later.delete(`/admin/sessions/${merchantLive.sessionId}`)).status).toBe(404);
-    expect(await auditRows()).toHaveLength(1);
+    expect(await auditRows()).toHaveLength(0);
   });
 
   it('needs sessions:revoke and a CSRF token', async () => {
@@ -374,8 +316,6 @@ describe('what the session list and ending a session show, by permission', () =>
     const support = await insertRole(db, ['staff:read'], 'Support');
     const lina = await insertStaff(db, support, { name: 'Lina S.' });
     const linaSession = await openSession(t, { type: 'staff', id: lina });
-    const merchant = await insertMerchant(db);
-    const merchantSession = await openSession(t, { type: 'client', id: merchant });
 
     const reader = await adminWith(t, ['sessions:read', 'staff:read'], { name: 'Reader' });
     const seen = (await reader.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
@@ -390,8 +330,8 @@ describe('what the session list and ending a session show, by permission', () =>
     });
     expect(member).toMatchObject({ ip: MASK, userAgent: MASK, subject: { id: nadia, name: 'Nadia H.' } });
     expect(Object.keys(owner)).toEqual(Object.keys(sessionIn(seen, linaSession.sessionId)));
-    // A member whose role the caller covers, the caller's own session and a merchant's session are shown as they are.
-    for (const own of [linaSession.sessionId, reader.session.sessionId, merchantSession.sessionId]) {
+    // A member whose role the caller covers and the caller's own session are shown as they are.
+    for (const own of [linaSession.sessionId, reader.session.sessionId]) {
       expect(sessionIn(seen, own)).toMatchObject({ ip: '203.0.113.7', userAgent: 'bun-test' });
     }
 
@@ -402,58 +342,23 @@ describe('what the session list and ending a session show, by permission', () =>
     expect(sessionIn(widest, ownerSession.sessionId)).toMatchObject({ ip: MASK, userAgent: MASK });
     const chief = await adminWith(t, ['*'], { name: 'Chief' });
     const everything = (await chief.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
-    for (const row of [ownerSession, nadiaSession, linaSession, merchantSession]) {
+    for (const row of [ownerSession, nadiaSession, linaSession]) {
       expect(sessionIn(everything, row.sessionId)).toMatchObject({ ip: '203.0.113.7', userAgent: 'bun-test' });
     }
   });
 
-  it("shows a merchant's email in full only to a caller who holds clients:read", async () => {
+  it("neither lists nor ends a merchant's session, whatever the caller holds", async () => {
     const { db } = await testDb();
     const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub', email: 'ops@zain.example' });
     const merchantSession = await openSession(t, { type: 'client', id: merchant });
-    const emailFor = async (permissions: string[]) => {
-      const caller = await adminWith(t, permissions);
-      const res = await caller.get(`/admin/sessions?subjectType=client&subjectId=${merchant}`);
-      expect(res.status).toBe(200);
-      const row = sessionIn(res.body, merchantSession.sessionId) as unknown as {
-        subject: { name: string; email?: string };
-      };
-      expect(row.subject.name).toBe('Zain Mobile Hub');
-      return row.subject.email;
-    };
-
-    expect(await emailFor(['sessions:read'])).toBe('op•••@zain.example');
-    expect(await emailFor(['sessions:read', 'clients:update'])).toBe('op•••@zain.example');
-    expect(await emailFor(['sessions:read', 'clients:read'])).toBe('ops@zain.example');
-    expect(await emailFor(['sessions:read', 'clients:*'])).toBe('ops@zain.example');
-    expect(await emailFor(['*'])).toBe('ops@zain.example');
-  });
-
-  it("ends a merchant's session only for a caller who also holds clients:security, and leaves it live otherwise", async () => {
-    const { db } = await testDb();
-    const merchant = await insertMerchant(db, { name: 'Zain Mobile Hub' });
-    const first = await openSession(t, { type: 'client', id: merchant });
-    const second = await openSession(t, { type: 'client', id: merchant });
-    const third = await openSession(t, { type: 'client', id: merchant });
-
-    const revoker = await adminWith(t, ['sessions:revoke', 'clients:read', 'clients:update']);
-    const refused = await revoker.delete(`/admin/sessions/${first.sessionId}`);
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe('FORBIDDEN');
-    expect(refused.body.detail).toBe('You need the clients:security permission to do this.');
-    expect((await sessionRow(first.sessionId)).revokedAt).toBeNull();
-    expect(await auditRows()).toHaveLength(0);
-
-    const security = await adminWith(t, ['sessions:revoke', 'clients:security']);
-    expect((await security.delete(`/admin/sessions/${first.sessionId}`)).status).toBe(204);
-    expect((await sessionRow(first.sessionId)).revokedAt).not.toBeNull();
-    const area = await adminWith(t, ['sessions:revoke', 'clients:*']);
-    expect((await area.delete(`/admin/sessions/${second.sessionId}`)).status).toBe(204);
     const owner = await adminWith(t, ['*']);
-    expect((await owner.delete(`/admin/sessions/${third.sessionId}`)).status).toBe(204);
-    expect(await auditRows()).toHaveLength(3);
-    // An unknown or ended session still answers 404 before any permission is weighed.
-    expect((await revoker.delete(`/admin/sessions/${first.sessionId}`)).status).toBe(404);
+
+    const listed = (await owner.get('/admin/sessions?_end=100')).body as Array<{ id: number }>;
+    expect(ids(listed)).not.toContain(merchantSession.sessionId);
+    expect(JSON.stringify(listed)).not.toContain('ops@zain.example');
+    expect((await owner.delete(`/admin/sessions/${merchantSession.sessionId}`)).status).toBe(404);
+    expect((await sessionRow(merchantSession.sessionId)).revokedAt).toBeNull();
+    expect(await auditRows()).toHaveLength(0);
   });
 });
 
@@ -576,6 +481,16 @@ describe('the purge on a worker', () => {
         (candidate) => candidate.key === SESSION_PURGE_SCHEDULER,
       );
       expect(scheduler).toMatchObject({ name: SESSION_PURGE_JOB, pattern: '15 3 * * *' });
+      // The retired nightly promotion is listed, and the worker removed its scheduler from this Redis at boot (a leftover from an older worker).
+      expect(harness.get(JobSchedulerRegistry).retired()).toContainEqual({
+        queue: 'maintenance',
+        id: 'client-group-promotion',
+      });
+      expect(
+        (await queues.queue('maintenance').getJobSchedulers()).some(
+          (candidate) => candidate.key === 'client-group-promotion',
+        ),
+      ).toBe(false);
 
       // The processor, called as the worker would: the old ended session goes, the live one stays, the run is recorded.
       const { db } = await testDb();

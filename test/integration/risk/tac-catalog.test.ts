@@ -1,6 +1,6 @@
 // Integration tests of the TAC catalog routes (feature 14b, GET and POST /admin/tac-catalog, GET and PATCH /admin/tac-catalog/:id;
-// RESOLUTIONS catalog-7 and catalog-8): search, filter and sort, the wire form of an unknown year, TAC_TAKEN, the year bounds from the
-// clock, the TAC that IMEI checks already used, permissions and the audit trail.
+// RESOLUTIONS catalog-8): search, filter and sort, the wire form of an unknown year, TAC_TAKEN, the year bounds from the
+// clock, permissions and the audit trail.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
@@ -291,26 +291,13 @@ describe('PATCH /admin/tac-catalog/:id', () => {
     expect(problem(empty).errors?.map((e) => e.field)).toEqual(['brand']);
   });
 
-  it('changes the TAC while no IMEI check used the old one, and refuses it with 422 on tac once one did (catalog-7)', async () => {
+  it('changes the TAC of an entry, and keeps the other fields when the same TAC is sent again', async () => {
     const id = await entry();
     const staff = await signInStaff(t, ['catalog:update']);
     const moved = await send(staff, 'PATCH', `/admin/tac-catalog/${id}`, { tac: '35389099' });
     expect(moved.statusCode).toBe(200);
     expect(moved.json()).toMatchObject({ tac: '35389099' });
-
     const { db } = await testDb();
-    const check = (tac: string) =>
-      db.insert(s.imeiChecks).values({ tac, checkType: 'basic', source: 'storefront_free', status: 'clean' });
-    await check('35389099');
-    await check('35389099');
-    const refused = await send(staff, 'PATCH', `/admin/tac-catalog/${id}`, { tac: '35389100' });
-    expect(refused.statusCode).toBe(422);
-    expect(problem(refused)).toMatchObject({
-      code: 'VALIDATION_FAILED',
-      errors: [
-        { field: 'tac', message: '2 IMEI checks already use TAC 35389099; add a new entry for the new TAC instead.' },
-      ],
-    });
     const [row] = await db.select().from(s.tacCatalog).where(eq(s.tacCatalog.id, id));
     expect(row!.tac).toBe('35389099');
     // The same TAC again, or a change of the other fields, is fine.

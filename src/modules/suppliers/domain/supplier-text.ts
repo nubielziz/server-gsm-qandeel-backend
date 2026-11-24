@@ -74,7 +74,7 @@ function cleanValue(value: unknown, depth: number): unknown {
 /**
  * Cleans a parsed JSON answer.
  *
- * Why: decision 051: one cleaning step where the driver parses an answer means no sink (call log, events, results, webhooks, mails) has to
+ * Why: decision 051: one cleaning step where the driver parses an answer means no sink (call log, events, results, mails) has to
  * remember it.
  *
  * @param value a parsed JSON value

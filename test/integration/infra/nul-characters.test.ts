@@ -17,7 +17,13 @@ import {
   dhruClient,
   dhruParameters,
 } from '../../support/machine-orders';
-import { MerchantPortal, PORTAL_ORIGIN, clearPortalRateLimits, seedPortalBasics } from '../../support/merchant-portal';
+import {
+  MerchantPortal,
+  PORTAL_ORIGIN,
+  clearPortalRateLimits,
+  makeMerchant,
+  seedPortalBasics,
+} from '../../support/merchant-portal';
 import { type OrdersWorld, ordersWorld } from '../../support/orders';
 import { freshClientIp } from '../../support/pipeline-routes';
 import { APPLE_IMEI, TURNSTILE_HEADERS, storefrontWorld } from '../../support/storefront';
@@ -55,31 +61,17 @@ beforeEach(async () => {
 const portal = () => new MerchantPortal(t, freshClientIp());
 const problem = (res: { json: () => unknown }) =>
   res.json() as { code: string; status: number; errors?: Array<{ field: string; code: string; message: string }> };
-const form = (over: Record<string, unknown> = {}) => ({
-  name: 'Ali Hassan',
-  email: 'Ali.Hassan@Example.com',
-  password: 'a-long-password',
-  company: 'Hassan Mobile',
-  phone: '+962791234567',
-  country: 'jo',
-  ...over,
-});
-const clientCount = async () =>
-  (await (await testDb()).db.select({ n: sql<number>`count(*)::int` }).from(s.clients))[0]!.n;
 
 describe('a NUL character in a request body', () => {
-  it('answers 422 for a NUL character in a registration field, whether or not the email is registered', async () => {
-    // A known email: the registration used to answer 204 before it wrote anything, a new one used to fail on the insert with a 500.
-    expect((await portal().register(form())).statusCode).toBe(204);
-    const before = await clientCount();
-    for (const email of ['Ali.Hassan@Example.com', 'someone.new@example.com']) {
-      const res = await portal().register(form({ name: `Ali${NUL}Hassan`, email }));
+  it('answers 422 for a NUL character in a sign-in field, whether or not the email is registered', async () => {
+    const merchant = await makeMerchant(t);
+    for (const email of [merchant.email, 'someone.new@example.com']) {
+      const res = await portal().login(email, `pass${NUL}word`);
       expect(res.statusCode, email).toBe(422);
       const answer = problem(res);
       expect(answer.code).toBe('VALIDATION_FAILED');
-      expect(answer.errors).toEqual([{ field: 'name', code: 'invalid_format', message: MESSAGE }]);
+      expect(answer.errors).toEqual([{ field: 'password', code: 'invalid_format', message: MESSAGE }]);
     }
-    expect(await clientCount()).toBe(before);
   });
 
   it('answers 422 on a staff route', async () => {

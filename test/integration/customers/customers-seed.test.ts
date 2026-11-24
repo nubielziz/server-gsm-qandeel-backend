@@ -69,13 +69,11 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
       currency: 'GBP',
       hasAccount: true,
       status: 'active',
-      riskLevel: 'low',
       createdBy: null,
       totalSpent: '0.0000',
     });
     expect(rows.filter((row) => row.status === 'blocked')).toHaveLength(1);
     expect(rows.filter((row) => row.status === 'suspended')).toHaveLength(1);
-    expect(rows.filter((row) => row.riskLevel === 'medium').length).toBeGreaterThan(0);
     // Every account has a credentials row without a password; guests have none.
     const credentials = await db.select().from(s.customerCredentials);
     expect(credentials).toHaveLength(rows.filter((row) => row.hasAccount).length);
@@ -95,7 +93,8 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
     expect(named.at(-1)).toMatchObject({ name: 'Ana Costa', currencyCode: 'EUR', ordersCount: 2 });
     const blocked = await staff.get('/admin/customers?status=blocked');
     expect(blocked.total).toBe(1);
-    expect(blocked.body[0]).toMatchObject({ riskLevel: 'high', status: 'blocked' });
+    expect(blocked.body[0]).toMatchObject({ status: 'blocked' });
+    expect(blocked.body[0]).not.toHaveProperty('riskLevel');
     const detail = await staff.get('/admin/customers/1');
     expect(detail.status).toBe(200);
     expect(detail.body).toMatchObject({ id: 1, name: 'Daniel Whitmore', account: { mustChangePassword: false } });

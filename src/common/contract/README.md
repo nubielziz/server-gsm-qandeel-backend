@@ -68,18 +68,14 @@ export class StaffController {
 
 Rules the layer enforces at boot (`defineRoute` throws): the key is `METHOD /path` with `:name` parameters; `params`
 declares exactly the path parameters; header names are lower case; a GET has no body; `permission` exists for
-`staff-permission` routes (the permission the role needs) and `api-key` routes (the scope the key must list, one action, no `area:*`) and for
+`staff-permission` routes (the permission the role needs) and for
 no other; `surface` matches the path prefix; the success shape is a `schema` or a
 `contentType` (never both, neither for 204 and 302: a 302 is a bodiless GET whose handler sets `Location`, as the file downloads do); every `errors` entry is a catalog code (`docs/contract/error-codes.md`);
 `examples` satisfy their schemas.
 
 **Body media type and uploads (feature 7a).** `bodyType` says how a body is sent, for the parser check and the documentation: `'json'`
-(default), `'form'` (the Dhru endpoint: form-encoded, multipart or JSON) or `'multipart'` (`POST /v1/files`, `POST /client/files`); it needs a
+(default), `'form'` (the Dhru endpoint: form-encoded, multipart or JSON) or `'multipart'` (`POST /client/files`); it needs a
 `body` schema. A file part is `zUploadedFile` (an `UploadedFile` from `src/common/multipart.ts`; a binary string in OpenAPI).
-
-**Cursor lists of REST v1 (`cursor.ts`, ALIGNMENT § 7).** `zCursorLimit` (1 to 100, default 50) and `zCursor` are the two query fields,
-`zCursorPage(row)` the answer `{ data, nextCursor }`; a repository reads `limit + 1` rows and `cutPage` cuts the page and writes the cursor
-(`encodeCursor` / `decodeCursor`: an opaque base64url JSON array of the last row's sort key, `422` on `cursor` when it is not the list's).
 
 ## Access, sessions, audit and CSRF (decision 018)
 
@@ -89,7 +85,7 @@ it from the contract (`getContract(handler)`) and runs the guard of that kind. F
 | Field | Default | Meaning |
 |---|---|---|
 | `sessionStages` | `['active']` | The `sessions.stage` values a **session** route accepts (`staff-session`, `staff-permission`, `merchant-session`, `customer-session`). A pending session is refused with `401` everywhere else, so the sign-in routes name theirs: `2fa` accepts `['pending_totp', 'pending_totp_setup']`, `2fa/setup` `['pending_totp_setup']`, the forced password change `['pending_password']`, `logout` all four. A `staff-permission` route can only be `['active']`. |
-| `pendingMerchant` | `'deny'` | Only for `merchant-session` routes. A merchant whose status is `pending` (waiting for staff approval) may sign in, but every merchant route refuses it with `403 ACCOUNT_PENDING_APPROVAL` (which never signs out) unless the contract says `pendingMerchant: 'allow'`. The routes that manage the merchant's own account (profile, password, 2FA, sessions, logout, `GET /client/auth/me`) and the KYC routes allow it (user decision B153). API-key and Dhru calls of a pending merchant are always refused. |
+| `pendingMerchant` | `'deny'` | Only for `merchant-session` routes. A merchant whose status is `pending` (waiting for staff approval) may sign in, but every merchant route refuses it with `403 ACCOUNT_PENDING_APPROVAL` (which never signs out) unless the contract says `pendingMerchant: 'allow'`. The routes that manage the merchant's own account (profile, password, 2FA, sessions, logout, `GET /client/auth/me`) allow it (user decision B153). Dhru calls of a pending merchant are always refused. |
 | `audit` | `true` | Every staff mutation (an admin route that is not a GET) must write an `audit_logs` row with `AuditService.record(tx, ...)`; otherwise the request fails with a `500` in development and tests (and logs an error in production). `audit: false` opts out for routes that write none (the sign-in steps); the description must say why. |
 | `csrf` | `true` | A mutation that authenticates with a session cookie always needs a matching `X-CSRF-Token` (`403 CSRF_FAILED`, never signs out). `csrf: false` is for routes that have no session to bind a token to (sign-in, password set by emailed token): they are refused unless the `Origin` header is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client`; on `/store/v1` only the routes that declare `originCheck`). It is refused on session routes. The field is declarative: the CSRF guard picks the token check or the Origin check by whether a session authenticated the request, so a session-less mutation gets the Origin check with or without it; set it anyway so the contract says what the route expects. |
 | `originCheck` | `false` | `true` makes the CSRF guard check where the request was started (decision 045). On a `GET` with a session access (a route with a side effect or a download of personal data, which carries no CSRF token): `Sec-Fetch-Site: same-origin`, or an `Origin` that is one of the origins of the route's audience (`CONSOLE_ORIGINS` on `/admin`, `SHOP_ORIGINS` on `/client` and `/store/v1`). On a `/store/v1` mutation without a session (`csrf: false`; the routes that sign a visitor in): an `Origin` of the shop. Anything else is `403 CSRF_FAILED`. Refused elsewhere: a session mutation has its CSRF token, and every session-less mutation on `/admin` and `/client` is checked without the flag. Used by the three streams, the customer export, the order export, the merchant statement, the merchant price export, and `POST /store/v1/auth/verify` and `/login`. `originCheck: 'fetch-metadata'` (a `GET` with a session access only) is the lighter rule for a read that the portal's own server calls as well as its pages, and a server call sends neither `Sec-Fetch-Site` nor `Origin`: only a request that the browser marks `cross-site` or `same-site` (or sends a repeated or unknown value), without an `Origin` of the route's audience, is `403 CSRF_FAILED`; a request without the header, or `same-origin` or `none`, is answered. Used by `GET /client/services` and `GET /client/services/:id` (they record the listed prices). |
@@ -159,16 +155,13 @@ never with numbers.
 - `@Route` adds the `@nestjs/swagger` metadata: operation id (`getAdminStaffById`), tags, parameters (list dialect
   included), request body with example, the success response, one `application/problem+json` response per error status
   listing its codes with an example each (none for the Dhru surface, which answers every refusal in a `200` envelope), `x-total-count`,
-  `x-request-id`, the `RateLimit-Limit|Remaining|Reset` headers of REST v1 answers, security by `access`
+  `x-request-id`, security by `access`
   (`SECURITY_SCHEME`), and `x-gsm-key`, `x-gsm-access`, `x-gsm-surface`, `x-gsm-permission`, `x-gsm-session-stages` (session
   routes), `x-gsm-pending-merchant` (merchant routes) and `x-gsm-audit` (staff mutations).
 - The platform module turns that metadata into two documents (`src/modules/platform/docs`, decision 017):
-  `docs/contract/openapi.json` (every route) and `openapi.public.json` (surfaces `v1` and `dhru`, plus the outgoing
-  events as `webhooks`). It passes `autoTagControllers: false`, so a route's `tags` are the ones in its contract (use
+  `docs/contract/openapi.json` (every route) and `openapi.public.json` (surface `dhru`). It passes `autoTagControllers: false`, so a route's `tags` are the ones in its contract (use
   the map group; tags are grouped by surface and prefixed with it when two surfaces share one), and it defines every
   security scheme named in `SECURITY_SCHEME`. Regenerate with `bun run docs:openapi`; CI runs the `--check`.
-- `defineEvent({ key: 'EVENT order.status_changed', summary, payload, example })` registers an outgoing webhook event in
-  `eventRegistry` (same rules as `defineRoute`); the public document lists it under `webhooks`.
 - `defineSupplierCall({ key: 'SUPPLIER placeimeiorder+placeimeiorderbulk', summary, description, params, success, examples })`
   (`define-supplier-call.ts`, feature 6b) registers a call this backend **makes** to a supplier's Dhru Fusion API in
   `supplierCallRegistry`: the manifest key is `SUPPLIER <action>` or `SUPPLIER <action>+<action>bulk` (anything else throws at

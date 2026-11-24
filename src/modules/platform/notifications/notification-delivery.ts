@@ -62,11 +62,12 @@ export type DeliveryOutcome =
  * the shipped text goes out. A row of an event that names its address (the notice of an email change) goes to that address.
  *
  * Failures: a permanent refusal (no template, no address, a recipient who is suspended or turned the message off since the row was
- * made, a mailbox that does not exist, a chat that blocked the bot) marks the row `failed` at once; a transient one records the attempt and throws, so the queue retries with its backoff (5 attempts, 30 s,
+ * made, a mailbox that does not exist, a chat that blocked the bot, a Telegram row of anyone but the operations chat: an older row that
+ * nothing sends any more) marks the row `failed` at once; a transient one records the attempt and throws, so the queue retries with its backoff (5 attempts, 30 s,
  * decision 020), and the last attempt marks the row `failed` before it throws. Reasons are cleaned of addresses.
  *
  * Side effects: reads and updates `notifications`; reads the recipient's table and `notification_templates`; sends one email or
- * Telegram message; counts `notification_deliveries_total{channel,outcome}`.
+ * Telegram message (an operations message only); counts `notification_deliveries_total{channel,outcome}`.
  *
  * @see docs/queues.md (notifications) and docs/decisions/033-mail-delivery.md
  */
@@ -164,6 +165,10 @@ export class NotificationDelivery {
     if (row.campaignId !== null) return this.sendCampaign(row, row.campaignId);
     const payload = row.payload as NotificationPayload;
     const operations = row.recipientType === 'staff' && row.recipientId === OPERATIONS_RECIPIENT_ID;
+    // Telegram reaches the operations chat only (alerts). A row of any other recipient was queued before merchants lost the channel: it is
+    // recorded as not sent, never retried.
+    if (row.channel === 'telegram' && !operations)
+      throw new DeliveryError('Telegram is no longer used for this message.', { permanent: true });
     // An alert's message has no person's row: it goes to the address or chat the configuration named when the row was made.
     const recipient = operations
       ? operationsRecipientOf(payload)
@@ -178,7 +183,7 @@ export class NotificationDelivery {
     // choice and a suspension are read again here, so "opted out" and "suspended" hold at the moment of sending (B165).
     if (!definition.transactional) {
       if (recipient.suspended) throw new DeliveryError('The recipient is suspended.', { permanent: true });
-      if (recipient.audience === 'merchant' && !choiceFor(definition, recipient.prefs)[row.channel])
+      if (recipient.audience === 'merchant' && !choiceFor(definition, recipient.prefs).email)
         throw new DeliveryError('The merchant turned this message off.', { permanent: true });
     }
     // Feature 23: an event without a template (a campaign's test) carries its text in the payload.
@@ -211,9 +216,9 @@ export class NotificationDelivery {
       });
       return;
     }
-    const chatId = asString(payload.chatId) ? payload.chatId : recipient.telegramChatId;
-    if (!chatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
-    await this.telegram.sendMessage(chatId, message.text);
+    // Only an operations message gets here (checked above): its chat is the one the configuration named when the row was made.
+    if (!asString(payload.chatId)) throw new DeliveryError('The message names no chat.', { permanent: true });
+    await this.telegram.sendMessage(payload.chatId, message.text);
   }
 
   /**
@@ -264,7 +269,7 @@ export class NotificationDelivery {
   }
 
   /**
-   * Sends one email or Telegram row of a campaign (feature 23, plan 9.1).
+   * Sends one email row of a campaign (feature 23, plan 9.1).
    *
    * Why: the row was made by the fan-out minutes or hours ago; the campaign may have been cancelled and the person may have been
    * suspended, withdrawn marketing consent or switched announcements off since. Each is read again here, so consent and opt-out hold
@@ -274,11 +279,14 @@ export class NotificationDelivery {
     const campaign = await findCampaign(this.db.db, campaignId);
     if (!campaign) throw new DeliveryError('The campaign no longer exists.', { permanent: true });
     if (campaign.status === 'cancelled') throw new DeliveryError('The campaign was cancelled.', { permanent: true });
+    // A campaign sends email (its in-app items are not rows of this log): a row of another channel was queued before that channel was retired.
+    if (row.channel !== 'email')
+      throw new DeliveryError('Campaigns no longer send on this channel.', { permanent: true });
     const recipient = await recipientOf(this.db.db, row.recipientType, row.recipientId);
     if (!recipient) throw new DeliveryError('The recipient no longer exists.', { permanent: true });
     const member = await this.audiences.get(row.recipientType).member(this.db.db, campaign.purpose, row.recipientId);
     if (!member) throw new DeliveryError('The recipient is no longer eligible.', { permanent: true });
-    if (!member[row.channel]) throw new DeliveryError('The recipient turned this message off.', { permanent: true });
+    if (!member.email) throw new DeliveryError('The recipient turned this message off.', { permanent: true });
 
     const { storeBaseUrl } = this.config.http;
     const unsubscribeToken =
@@ -309,21 +317,16 @@ export class NotificationDelivery {
             }),
       },
     );
-    if (row.channel === 'email') {
-      if (!/^[^\s@,]+@[^\s@,]+$/.test(recipient.email))
-        throw new DeliveryError('The recipient has no email address.', { permanent: true });
-      await this.mail.send({
-        to: recipient.email,
-        subject: message.subject,
-        text: message.text,
-        ...(message.html === undefined ? {} : { html: message.html }),
-        ...(message.headers === undefined ? {} : { headers: message.headers }),
-        messageId: this.messageId(row.id),
-      });
-      return;
-    }
-    if (!recipient.telegramChatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
-    await this.telegram.sendMessage(recipient.telegramChatId, message.text);
+    if (!/^[^\s@,]+@[^\s@,]+$/.test(recipient.email))
+      throw new DeliveryError('The recipient has no email address.', { permanent: true });
+    await this.mail.send({
+      to: recipient.email,
+      subject: message.subject,
+      text: message.text,
+      ...(message.html === undefined ? {} : { html: message.html }),
+      ...(message.headers === undefined ? {} : { headers: message.headers }),
+      messageId: this.messageId(row.id),
+    });
   }
 
   /** Sends a row whose text is in its payload (an event with `templated: false`, the test of a campaign). */
@@ -331,11 +334,8 @@ export class NotificationDelivery {
     const variables = variablesOf(payload);
     const title = variables['title'] ?? '';
     const body = variables['body'] ?? '';
-    if (row.channel === 'telegram') {
-      if (!recipient.telegramChatId) throw new DeliveryError('Telegram is not linked.', { permanent: true });
-      await this.telegram.sendMessage(recipient.telegramChatId, `${title}\n\n${body}`);
-      return;
-    }
+    // The text of an inline event goes by email only (a campaign's test).
+    if (row.channel !== 'email') throw new DeliveryError('This message goes by email only.', { permanent: true });
     if (!/^[^\s@,]+@[^\s@,]+$/.test(recipient.email))
       throw new DeliveryError('The recipient has no email address.', { permanent: true });
     await this.mail.send({

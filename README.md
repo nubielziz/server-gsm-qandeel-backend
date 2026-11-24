@@ -1,7 +1,7 @@
 # GSM backend
 
-The supplier server behind the GSM admin console, the merchant portal, the storefront and the Dhru Fusion / REST v1
-APIs: IMEI, Server, Remote and File services sold to B2B merchants (prepaid wallet) and B2C storefront customers
+The supplier server behind the GSM admin console, the merchant portal, the storefront and the Dhru Fusion
+API: IMEI, Server, Remote and File services sold to B2B merchants (prepaid wallet) and B2C storefront customers
 (pay first, then dispatch), on one order engine, one supplier layer and one double-entry ledger.
 
 Stack: NestJS 12 on Fastify, run by Bun 1.4 · Drizzle ORM + PostgreSQL 18 · BullMQ on Redis 8 (a queue instance and
@@ -197,7 +197,7 @@ is not on this machine. It also checks that Postgres, both Redis servers and the
 | `bun run lint` / `lint:fix` | ESLint (type-aware typescript-eslint, TSDoc on exports, module boundaries, `process.env` only in `src/config`, no `console` in `src`); `lint:fix` applies the safe fixes |
 | `bun run format` / `format:check` | Prettier over the code (Markdown, YAML and generated JSON are left alone) |
 | `bun run english:check` | English only (decision 039): fail when Arabic script, the `ar` locale or right-to-left layout code is back in the code, outside the allowlist of `scripts/english-only.config.json` (Arabic text that people and suppliers type is data and stays: PDF shaping, CSV, plain-text mails) |
-| `bun run docs:openapi` | Regenerate `docs/contract/openapi.json` (every route) and `openapi.public.json` (REST v1, Dhru reference, webhook events) from the route contracts, without any infrastructure |
+| `bun run docs:openapi` | Regenerate `docs/contract/openapi.json` (every route) and `openapi.public.json` (the Dhru reference) from the route contracts, without any infrastructure |
 | `bun run docs:openapi:check` | Fail when those two files differ from what the contracts generate (CI) |
 | `bun run test` | Every test under `test/` with `bun test`, in batches: unit (`test/unit`, the same paths as `src/`), integration (`test/integration/<module>`), end to end (`test/e2e`), contract, Dhru and tooling (`test/tooling`); see `test/README.md` |
 | `bun run test:unit` / `test:integration` | Only `test/unit` (no Docker) or only `test/integration` |
@@ -234,7 +234,7 @@ Generated from the route contracts (decisions 008, 009, 017) and committed under
 
 | URL | What |
 |---|---|
-| `GET /openapi.json`, `GET /docs` | Public: REST API v1, the Dhru Fusion reference and the webhook events we send (Scalar page) |
+| `GET /openapi.json`, `GET /docs` | Public: the Dhru Fusion reference (Scalar page) |
 | `GET /reference/openapi.json`, `GET /reference` | Internal: every route. `REFERENCE_DOCS` = `open` (default outside production), `staff` (default in production; needs a staff session with `system:read`) or `off` (404) |
 
 ## Where things are

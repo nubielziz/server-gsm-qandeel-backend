@@ -1,5 +1,5 @@
-// Unit tests of the order outbox events: the two types are registered with the queues the lead assigned, the payloads are ids and status
-// words only, and the worker process loads the module that registers them (its relay needs the routes).
+// Unit tests of the order outbox events: the dispatch type is registered with its queue (the status change is routed by the notifications
+// module), the payloads are ids and status words only, and the worker process loads the module that registers them (its relay needs the routes).
 import { describe, expect, it } from 'bun:test';
 import { WorkerModule } from '@src/worker.module';
 import { OutboxRouteRegistry } from '@src/modules/platform';
@@ -15,13 +15,10 @@ function recording() {
 }
 
 describe('OrderOutbox', () => {
-  it('registers order.status_changed with merchant-webhooks and order.dispatch_requested with supplier-dispatch', () => {
+  it('registers order.dispatch_requested with supplier-dispatch and leaves order.status_changed to the notifications routes', () => {
     const routes = new OutboxRouteRegistry();
     new OrderOutbox(recording().outbox, routes).onModuleInit();
-    expect(routes.list()).toEqual([
-      { type: 'order.status_changed', queue: 'merchant-webhooks' },
-      { type: 'order.dispatch_requested', queue: 'supplier-dispatch' },
-    ]);
+    expect(routes.list()).toEqual([{ type: 'order.dispatch_requested', queue: 'supplier-dispatch' }]);
   });
 
   it('writes ids and status words only', async () => {

@@ -29,7 +29,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * The quota of a merchant that waits for approval: 10 files and 50 MiB in all.
  *
- * Why: decision 053. 10 is two KYC submissions of the maximum 5 documents; an account nobody approved yet has no reason to hold more.
+ * Why: decision 053. A merchant that waits for approval uploads only ticket attachments (the ticket routes allow a pending merchant, B153; the order
+ * and billing routes answer it 403 ACCOUNT_PENDING_APPROVAL), and an account nobody approved yet has no reason to hold more.
  */
 export const PENDING_MERCHANT_QUOTA: UploadQuotaRule = {
   maxFiles: 10,

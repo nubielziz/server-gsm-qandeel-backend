@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { RETIRED } from '../test/contract/retired.ts';
 import { ROOT, docsDir } from './lib/paths.mjs';
 
 // Hand-written inputs (frontend-endpoints.json, lead-decisions.json, extraction/) always come from <ROOT>/docs/contract;
@@ -33,7 +34,19 @@ const STATUS_WORD = {
 // Error codes the backend never emits (client-side inventions or test placeholders), and spelling merges.
 const CLIENT_ONLY = new Set(['NETWORK_ERROR', 'INVALID_RESPONSE', 'HTTP_<status>']);
 const MERGE = { INTERNAL: 'INTERNAL_ERROR', FX_PROVIDER_UNAVAILABLE: 'FX_PROVIDER_DOWN' };
-const DROP = new Set(['ROLE_PROTECTED']); // replaced by LAST_OWNER (ANSWERS access Q2)
+// ROLE_PROTECTED: replaced by LAST_OWNER (ANSWERS access Q2). ALREADY_DECIDED: only the retired decide route (decision 061, test/contract/retired.ts)
+// still lists it in its errors; the catalog no longer has it. ALREADY_ASSIGNED, HAS_PENDING, PLAN_IN_USE and PLAN_LOCKED (commission plans and
+// assignments) and DELIVERY_SUCCEEDED (the retry of a webhook delivery): their routes are retired too (decision 062, test/contract/retired.ts), the
+// catalog no longer has them, and the console extraction still names them.
+const DROP = new Set([
+  'ROLE_PROTECTED',
+  'ALREADY_DECIDED',
+  'ALREADY_ASSIGNED',
+  'HAS_PENDING',
+  'PLAN_IN_USE',
+  'PLAN_LOCKED',
+  'DELIVERY_SUCCEEDED',
+]);
 // Codes the backend adds that no frontend screen references.
 const BACKEND_CODES = [
   ['PAYLOAD_TOO_LARGE', 413, 'The request body is over the route limit.'],
@@ -253,6 +266,9 @@ function moduleDoc(mod) {
     const label = e.addition ? `**Map addition** (${e.addition.spec}, \`${e.addition.file}\`)` : '**Map**';
     // The map's sentence in brackets only when it says something else: a row beyond the map without Arabic reads its English twice.
     out.push(`- ${label}: ${e.description}${e.descriptionAr === e.description ? '' : ` (${e.descriptionAr})`} · ${e.access}${e.permission ? ` \`${e.permission}\`` : ''} · stage ${e.stage} · tables ${e.tables.join(', ') || '-'}${e.dhruResponse ? ` · Dhru response \`${e.dhruResponse}\`` : ''}${e.successStatus ? ` · success ${e.successStatus}` : ''}`);
+    // A retired row of the map (decision 061) keeps its map line and its old record, but nothing builds it: say so before the record.
+    if (Object.hasOwn(RETIRED, e.key))
+      out.push(`- **Retired** (decision ${RETIRED[e.key].decision}): ${RETIRED[e.key].reason} No backend route serves it and no console function calls it.${x ? ' The record below is how it was specified before.' : ''}`);
     if (fe) {
       const params = fe.params.filter((p) => p.name !== 'init' && p.name !== 'signal').map((p) => `\`${p.name}${p.optional ? '?' : ''}: ${p.typeText}\``).join(', ');
       out.push(`- **Frontend**: \`${fe.fn}\` (${fe.file}:${fe.line}) · params ${params || 'none'} · returns \`${fe.returnsText}\`${x ? ` · success ${x.record.successStatus}${x.record.assumed ? ' · assumed contract' : ''}` : ''}`);

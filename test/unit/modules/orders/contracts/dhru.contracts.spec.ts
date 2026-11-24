@@ -17,7 +17,7 @@ describe('the Dhru transport route', () => {
     const parts = buildOperation(dhruEndpoint);
     expect(Object.keys(parts.responses)).toEqual(['200']);
     expect(parts.requestBody?.mediaType).toBe('application/x-www-form-urlencoded');
-    // The per-key RateLimit headers belong to REST v1.
+    // The Dhru surface sends no per-key RateLimit headers.
     expect(parts.responses['200']!.headers).not.toHaveProperty('ratelimit-limit');
     expect(parts.security).toBeDefined();
   });

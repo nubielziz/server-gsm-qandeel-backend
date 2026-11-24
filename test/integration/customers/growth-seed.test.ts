@@ -1,8 +1,8 @@
-// The growth seed (feature 19, `bun run db:seed`): the demo's 238 left checkouts appear with their ids, services, baskets, recovery state and
-// marketing answers through the real routes (list, filter, funnel), and a second run changes nothing. Needs the frontend checkout.
+// The growth seed (feature 19, `bun run db:seed`): the demo's 238 checkouts that were left appear with their ids, services, baskets and marketing
+// answers, the funnel route counts them, and a second run changes nothing. Needs the frontend checkout.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { schema as s } from '@src/infra/db';
 import { seedCatalog } from '../../../scripts/seed/catalog';
 import { demoStatePath, loadDemoState } from '../../../scripts/seed/demo-state';
@@ -13,7 +13,6 @@ import { type AdminApi, adminWith } from '../../support/admin-api';
 import { type TestApp, createTestApp } from '../../support/app';
 import { clearIdentityCaches } from '../../support/auth';
 import { closeTestDb, resetDb, testDb } from '../../support/db';
-import { insertRecoveryTemplate } from '../../support/growth';
 
 setDefaultTimeout(180_000);
 
@@ -44,12 +43,11 @@ afterAll(async () => {
   await closeTestDb();
 });
 
-describe.skipIf(!frontendPresent)('the growth seed through the console routes', () => {
+describe.skipIf(!frontendPresent)('the growth seed', () => {
   beforeEach(async () => {
     await resetDb();
     await clearIdentityCaches(t);
-    // Decision 047: the console's search by address works for roles that also read customers.
-    admin = await adminWith(t, ['growth:*', 'reports:growth', 'customers:read']);
+    admin = await adminWith(t, ['reports:growth']);
   });
 
   it('writes the 238 checkouts of the demo with its ids and one guest customer per address, and a second run adds nothing', async () => {
@@ -67,42 +65,30 @@ describe.skipIf(!frontendPresent)('the growth seed through the console routes', 
       email: 'jo10@post.example',
       serviceId: 7,
       currency: 'USD',
+      grossAmount: '11.9900',
       status: 'expired',
       utm: { source: 'Blog' },
+      orderId: null,
     });
-    expect(ck3001?.recoveryEmailedAt?.getTime()).toBe(ck3001!.createdAt.getTime() + 60 * 60_000);
+    // Nothing is written to the column of the retired reminder.
+    expect((await db.select().from(s.checkoutSessions)).every((row) => row.recoveryEmailedAt === null)).toBe(true);
+    const [guest] = await db.select().from(s.customers).where(eq(s.customers.id, ck3001!.customerId!));
+    expect(guest).toMatchObject({ email: 'jo10@post.example', hasAccount: false });
+    // The mock's marketing answer of the checkout: a grant for the buyers who agreed, a withdrawal after a grant, or no record.
+    const answers = await db
+      .select()
+      .from(s.consentRecords)
+      .where(eq(s.consentRecords.checkoutSessionId, 3001))
+      .orderBy(asc(s.consentRecords.id));
+    if (agreedToMarketing(3001)) expect(answers.map((record) => record.granted)).toEqual([true]);
+    else expect(answers.at(-1)?.granted ?? false).toBe(false);
   });
 
-  it("lists them through the console route with the demo baskets, the recovery state and the mock's marketing answers", async () => {
+  it('is counted by the funnel route: every seeded checkout is a started payment, the converted ones are paid', async () => {
     await seed();
-    const { db } = await testDb();
-    await insertRecoveryTemplate(db);
-    const list = await admin.get('/admin/checkouts/abandoned?_start=0&_end=500&_sort=createdAt&_order=desc');
-    expect(list.status).toBe(200);
-    // The last 30 days of the demo's checkouts, the paid ones only when they were emailed.
-    expect(list.total).toBeGreaterThan(100);
-    const row3001 = (await admin.get('/admin/checkouts/abandoned?q=jo10@post&_start=0&_end=5')).body[0];
-    expect(row3001).toMatchObject({
-      id: 3001,
-      email: 'jo•••@post.example',
-      grossAmount: '11.9900',
-      fxRate: '1.00000000',
-      currencyCode: 'USD',
-      utm: { source: 'Blog' },
-      orderId: null,
-      marketingConsent: agreedToMarketing(3001),
-    });
-    expect(row3001.serviceName).toEqual(expect.any(String));
-    // The filter and the flag agree on the seeded data too.
-    const flagged = list.body.filter((row: { canRecover: boolean }) => row.canRecover).length;
-    expect((await admin.get('/admin/checkouts/abandoned?canRecover=true&_start=0&_end=1')).total).toBe(flagged);
-    for (const row of list.body) {
-      if (row.canRecover) {
-        expect(row.marketingConsent).toBe(true);
-        expect(row.recoveryEmailedAt).toBeNull();
-      }
-    }
     const funnel = await admin.get('/admin/reports/funnel?days=90');
+    expect(funnel.status).toBe(200);
     expect(funnel.body.paymentStarted).toBeGreaterThan(0);
+    expect(funnel.body.paid).toBeLessThanOrEqual(funnel.body.paymentStarted);
   });
 });

@@ -5,7 +5,7 @@ import { defineRoute, zIsoDateTime } from '../../../common/contract';
 import { zMeasure, zRange, zSeriesPoint } from './system-common';
 
 /** The surfaces of the API a traffic query can be scoped to. */
-export const TRAFFIC_SURFACES = ['v1', 'dhru', 'client', 'store', 'admin', 'hooks'] as const;
+export const TRAFFIC_SURFACES = ['dhru', 'client', 'store', 'admin', 'hooks'] as const;
 
 const trafficQuery = z.object({
   range: zRange.default('24h'),

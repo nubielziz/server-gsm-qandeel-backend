@@ -50,9 +50,9 @@ describe('zAudienceSpec', () => {
 
 describe('audienceProblems', () => {
   it('needs someone to target', () => {
-    expect(audienceProblems({}, ['in_app'])).toEqual([expect.objectContaining({ field: 'audience', code: 'empty' })]);
-    expect(audienceProblems({ include: [] }, ['in_app'])[0]?.field).toBe('audience');
-    expect(audienceProblems({ include: [{ type: 'staff', id: 1 }] }, ['in_app'])).toEqual([]);
+    expect(audienceProblems({})).toEqual([expect.objectContaining({ field: 'audience', code: 'empty' })]);
+    expect(audienceProblems({ include: [] })[0]?.field).toBe('audience');
+    expect(audienceProblems({ include: [{ type: 'staff', id: 1 }] })).toEqual([]);
   });
 
   it('refuses a person listed twice', () => {
@@ -60,29 +60,22 @@ describe('audienceProblems', () => {
       { type: 'client' as const, id: 1 },
       { type: 'client' as const, id: 1 },
     ];
-    expect(audienceProblems({ include: twice }, ['email'])[0]).toMatchObject({ field: 'audience.include' });
-    expect(audienceProblems({ staff: {}, exclude: twice }, ['email'])[0]).toMatchObject({ field: 'audience.exclude' });
+    expect(audienceProblems({ include: twice })[0]).toMatchObject({ field: 'audience.include' });
+    expect(audienceProblems({ staff: {}, exclude: twice })[0]).toMatchObject({ field: 'audience.exclude' });
     // The same id of two types is two people.
     expect(
-      audienceProblems(
-        {
-          include: [
-            { type: 'client', id: 1 },
-            { type: 'customer', id: 1 },
-          ],
-        },
-        ['email'],
-      ),
+      audienceProblems({
+        include: [
+          { type: 'client', id: 1 },
+          { type: 'customer', id: 1 },
+        ],
+      }),
     ).toEqual([]);
   });
 
-  it('allows Telegram only when merchants are targeted', () => {
-    expect(audienceProblems({ customers: {} }, ['email', 'telegram'])[0]).toMatchObject({
-      field: 'channels',
-      code: 'telegram_needs_merchants',
-    });
-    expect(audienceProblems({ merchants: {} }, ['telegram'])).toEqual([]);
-    expect(audienceProblems({ include: [{ type: 'client', id: 2 }] }, ['telegram'])).toEqual([]);
+  it('asks nothing about channels: any audience can be reached by email or in the app', () => {
+    expect(audienceProblems({ customers: {} })).toEqual([]);
+    expect(audienceProblems({ merchants: {} })).toEqual([]);
   });
 });
 

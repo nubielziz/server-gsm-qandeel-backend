@@ -5,7 +5,7 @@ import { OutboundHttp } from './http.service';
 /**
  * Provides {@link OutboundHttp} to every module.
  *
- * Why: supplier calls, gateway calls, merchant webhook deliveries and the FX refresh all go through one helper with one
+ * Why: supplier calls, gateway calls and the FX refresh all go through one helper with one
  * set of timeout, redirect and SSRF rules (decision 023). It needs the global config and metrics modules.
  */
 @Global()

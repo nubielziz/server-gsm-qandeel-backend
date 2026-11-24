@@ -200,10 +200,10 @@ describe('ids and foreign keys', () => {
     const { db } = await testDb();
     await db.insert(s.settings).values([
       { key: 'adminAllowlistOnly', value: false },
-      { key: 'imeiRetentionDays', value: 180 },
       { key: 'maintenance', value: { scope: 'store' } },
+      { key: 'pricing.price_change_tolerance_percent', value: 10 },
     ]);
     const rows = await db.select().from(s.settings).orderBy(s.settings.key);
-    expect(rows.map((row) => row.value)).toEqual([false, 180, { scope: 'store' }]);
+    expect(rows.map((row) => row.value)).toEqual([false, { scope: 'store' }, 10]);
   });
 });

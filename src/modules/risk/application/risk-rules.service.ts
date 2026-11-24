@@ -1,5 +1,5 @@
 // RiskRules: the stored risk rules (GET and PUT /admin/risk/rules, map domain K, stage 18). The rules live in the `settings` table
-// (B80): seven under the key `riskRules`, and `require3ds` as the storefront policy of the same name.
+// (B80): six under the key `riskRules`, and `require3ds` as the storefront policy of the same name.
 import { Injectable, Logger } from '@nestjs/common';
 import { AppError } from '../../../common/errors';
 import { DbService, type DbExecutor } from '../../../infra/db';
@@ -74,7 +74,7 @@ export class RiskRules {
   /**
    * Reads the rules in the console's shape.
    *
-   * @returns the eight rules in display order
+   * @returns the seven rules in display order
    */
   async view(): Promise<RulesView> {
     return viewOf(await this.load());

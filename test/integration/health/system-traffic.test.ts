@@ -19,7 +19,7 @@ const prometheus = Bun.serve({
     const query = url.searchParams.get('query') ?? '';
     queries.push(query);
     if (failing) return new Response('down', { status: 500 });
-    const surfaces = query.includes('surface=') ? [/surface="(\w+)"/.exec(query)![1]!] : ['v1', 'admin'];
+    const surfaces = query.includes('surface=') ? [/surface="(\w+)"/.exec(query)![1]!] : ['dhru', 'admin'];
     const grouped = query.includes('surface)') || query.includes(', surface') || query.includes('surface,');
     const number =
       (query.includes('rate5xx') ? 0 : 0) +
@@ -28,7 +28,13 @@ const prometheus = Bun.serve({
       const start = Number(url.searchParams.get('start'));
       const step = Number(url.searchParams.get('step'));
       if (query.includes('api_errors_total')) {
-        const metric = { code: 'RATE_LIMITED', method: 'POST', route: '/v1/orders', status: '429', surface: 'v1' };
+        const metric = {
+          code: 'RATE_LIMITED',
+          method: 'POST',
+          route: '/api/index.php',
+          status: '429',
+          surface: 'dhru',
+        };
         return Response.json({
           status: 'success',
           data: {
@@ -61,8 +67,8 @@ const prometheus = Bun.serve({
           resultType: 'vector',
           result: [
             { metric: { method: 'GET', route: '/admin/orders', surface: 'admin' }, value: [0, '412.4'] },
-            { metric: { method: 'POST', route: '/v1/orders', surface: 'v1' }, value: [0, '990'] },
-            { metric: { method: 'GET', route: '/v1/x', surface: 'v1' }, value: [0, 'NaN'] },
+            { metric: { method: 'POST', route: '/api/index.php', surface: 'dhru' }, value: [0, '990'] },
+            { metric: { method: 'GET', route: '/api/x', surface: 'dhru' }, value: [0, 'NaN'] },
           ],
         },
       });
@@ -72,7 +78,7 @@ const prometheus = Bun.serve({
         status: 'success',
         data: {
           resultType: 'vector',
-          result: [{ metric: { method: 'POST', route: '/v1/orders', surface: 'v1' }, value: [0, '12.345'] }],
+          result: [{ metric: { method: 'POST', route: '/api/index.php', surface: 'dhru' }, value: [0, '12.345'] }],
         },
       });
     }
@@ -83,7 +89,7 @@ const prometheus = Bun.serve({
           resultType: 'vector',
           result: [
             {
-              metric: { code: 'RATE_LIMITED', method: 'POST', route: '/v1/orders', status: '429', surface: 'v1' },
+              metric: { code: 'RATE_LIMITED', method: 'POST', route: '/api/index.php', status: '429', surface: 'dhru' },
               value: [0, '7.2'],
             },
             {
@@ -158,7 +164,6 @@ describe('GET /admin/system/metrics', () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({ range: '1h', bucketSeconds: 60 });
     expect(body.surfaces.map((row: { surface: string }) => row.surface)).toEqual([
-      'v1',
       'dhru',
       'client',
       'store',
@@ -175,15 +180,15 @@ describe('GET /admin/system/metrics', () => {
       direction: 'above',
     });
     expect(body.total.requestsPerMin).toMatchObject({ value: 40, unit: 'per_min', state: 'ok' });
-    const v1 = body.surfaces[0];
-    expect(v1.label).toBe('REST v1');
-    expect(v1.p95.value).toBe(850);
+    const dhru = body.surfaces[0];
+    expect(dhru.label).toBe('Dhru');
+    expect(dhru.p95.value).toBe(850);
     expect(body.surfaces[1].p95).toMatchObject({ value: null, state: 'unknown' });
-    expect(v1.series.p95).toHaveLength(60);
-    expect(v1.series.p95[0].value).toBe(850);
-    expect(v1.series.p95[1].value).toBeNull();
-    expect(body.slowest.map((row: { path: string }) => row.path)).toEqual(['/v1/orders', '/admin/orders']);
-    expect(body.slowest[0]).toMatchObject({ method: 'POST', surface: 'v1', requestsPerMin: 12.35 });
+    expect(dhru.series.p95).toHaveLength(60);
+    expect(dhru.series.p95[0].value).toBe(850);
+    expect(dhru.series.p95[1].value).toBeNull();
+    expect(body.slowest.map((row: { path: string }) => row.path)).toEqual(['/api/index.php', '/admin/orders']);
+    expect(body.slowest[0]).toMatchObject({ method: 'POST', surface: 'dhru', requestsPerMin: 12.35 });
     expect(body.slowest[0].p95).toMatchObject({ value: 990, state: 'warn' });
     // Planned 503 MAINTENANCE answers are taken out of the 5xx rate.
     expect(queries.some((q) => q.includes('api_errors_total{code="MAINTENANCE"}'))).toBe(true);
@@ -225,8 +230,8 @@ describe('GET /admin/system/errors', () => {
     expect(body.groups[1]).toMatchObject({
       status: 429,
       method: 'POST',
-      endpoint: '/v1/orders',
-      surface: 'v1',
+      endpoint: '/api/index.php',
+      surface: 'dhru',
       count: 7,
       lastRequestId: null,
       sentryUrl: null,

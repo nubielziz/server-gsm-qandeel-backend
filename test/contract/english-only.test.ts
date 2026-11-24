@@ -152,7 +152,7 @@ describe('English only on the wire (decision 039)', () => {
     }
   });
 
-  it('the public document (Dhru and REST v1) carries no language either', () => {
+  it('the public document (Dhru) carries no language either', () => {
     expect(offences(operationsOf(read('openapi.public.json')), new Set())).toEqual([]);
   });
 

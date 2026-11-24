@@ -8,9 +8,8 @@ export const REQUESTER_LOCKED_DETAIL = 'This ticket is closed. Open a new ticket
 /**
  * Whether a ticket is closed for its requester.
  *
- * Why: B220 (owner decision 2026-11-15, replacing ANSWERS support Q8): a resolved ticket takes no message, no upload and no typing
- * doorbell from the customer or the merchant; staff reopen it (`PATCH` resolved to open) to continue. Read marks and the rating are not
- * writes on the conversation and stay allowed.
+ * Why: B220 (owner decision 2026-11-15, replacing ANSWERS support Q8): a resolved ticket takes no message and no upload from the customer
+ * or the merchant; staff reopen it (`PATCH` resolved to open) to continue. Read marks are not writes on the conversation and stay allowed.
  *
  * @param ticket the ticket row, or anything with its status
  * @returns true when the status is `resolved`

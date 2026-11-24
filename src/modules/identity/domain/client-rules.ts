@@ -1,4 +1,4 @@
-// Pure rules of merchant management: the status machine, the Dhru username and referral code, and the suspension reason.
+// Pure rules of merchant management: the status machine, the Dhru username, and the suspension reason.
 // No I/O, so the rules are unit-tested.
 import type { ClientStatus } from '../db/schema';
 
@@ -95,18 +95,4 @@ export function usernameBase(name: string): string {
  */
 export function usernameCandidate(base: string, attempt: number): string {
   return attempt <= 1 ? base : `${base}-${attempt}`;
-}
-
-const REFERRAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-/**
- * Makes a referral code: `GSM` and six characters without look-alikes.
- *
- * @param pick returns a uniformly random whole number from 0 up to but not including `max`
- * @returns the code, for example `GSM7K3QXA`
- */
-export function referralCode(pick: (max: number) => number): string {
-  let code = 'GSM';
-  for (let i = 0; i < 6; i++) code += REFERRAL_ALPHABET[pick(REFERRAL_ALPHABET.length)]!;
-  return code;
 }

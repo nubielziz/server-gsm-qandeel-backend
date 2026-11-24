@@ -3,7 +3,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { Money } from '@src/common/money';
 import { type Database, schema as s } from '@src/infra/db';
-import { MerchantAccounts, deposit, postTransaction } from '@src/modules/money';
+import { MerchantAccounts, deposit, order as orderEvent, postTransaction } from '@src/modules/money';
 import { insertMerchant } from './auth';
 import { insertUsd } from './fixtures';
 
@@ -103,4 +103,30 @@ export async function ledgerTotals(db: Database): Promise<{ sum: string; entries
     )
     .then((result) => result.rows);
   return row!;
+}
+
+/**
+ * Moves an order's price from a merchant's wallet to its hold (the `order` money event), as an open order does, so the exposure
+ * report has a reserved amount to show.
+ *
+ * @param db the test database
+ * @param clientId the merchant
+ * @param amount the price held, e.g. `'17.28'`
+ * @returns the ledger transaction id
+ */
+export async function placeOrderHold(db: Database, clientId: number, amount: string): Promise<number> {
+  const posted = await db.transaction((tx) =>
+    postTransaction(
+      tx,
+      {
+        ...orderEvent({ clientId, amount: Money.of(amount) }),
+        refId: clientId,
+        idempotencyKey: `test:hold:${crypto.randomUUID()}`,
+        currency: 'USD',
+        createdBy: { type: 'system', id: null },
+      },
+      new Date('2026-11-07T12:00:00.000Z'),
+    ),
+  );
+  return posted.id;
 }

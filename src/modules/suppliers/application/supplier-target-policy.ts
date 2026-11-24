@@ -1,4 +1,4 @@
-// The seam that decides how a supplier address is resolved and called (decision 023), like the webhook target policy: production leaves
+// The seam that decides how a supplier address is resolved and called (decision 023): production leaves
 // it unset; tests provide it to reach a local fake supplier over plain http.
 import type { HostLookup } from '../../../infra/http';
 

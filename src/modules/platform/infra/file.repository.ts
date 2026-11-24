@@ -125,33 +125,11 @@ export async function ownsOrderFile(db: DbExecutor, clientId: number, fileId: nu
 }
 
 /**
- * Tells whether a file is an upload of a merchant that no record uses yet.
- *
- * Why: REST v1 downloads a merchant's files for an order-reading key. An upload that nothing refers to yet is the merchant's own bytes
- * (the key may have stored it); once a KYC submission, a payment, a ticket or a dispute refers to it, it is a document of that record
- * and not an order file. "Nothing refers to it" is the one list of references, {@link unreferenced}.
- *
- * @param db the database or a transaction
- * @param clientId the merchant who must own the file
- * @param fileId the file id
- * @returns true when the file is owned by the merchant and no record refers to it
- */
-export async function isUnreferencedClientUpload(db: DbExecutor, clientId: number, fileId: number): Promise<boolean> {
-  const result = await db.execute(sql`
-    select 1 as found from files
-    where id = ${fileId} and owner_type = 'client' and owner_id = ${clientId}
-      and ${unreferenced('files')}
-    limit 1
-  `);
-  return result.rows.length > 0;
-}
-
-/**
  * Deletes a merchant's file row when nothing points at it, and says where the object was.
  *
  * Why: P4a (B166). A Dhru file order stores the upload before it places the order; when the placement is refused the file must not stay.
  * "Nothing points at it" is the one list of references, {@link unreferenced}: the tables that keep file ids in an array, which the database
- * cannot enforce (KYC submissions, ticket messages, dispute evidence), and every foreign key (an order's input or result file, an invoice
+ * cannot enforce (verification requests of the retired document check, ticket messages, dispute evidence), and every foreign key (an order's input or result file, an invoice
  * PDF, a payment receipt, a data request, a storefront image, a gateway logo). A reference written at the same moment still makes the
  * delete fail on its foreign key. DEVIATION like {@link ownsOrderFile}: decision 016 wants those reads through the owning modules; that
  * list is the single place that names their tables.
@@ -188,12 +166,17 @@ export async function deleteUnreferencedClientFile(
  * schema and fails, naming the table and column, when a foreign key to `files` or an array column of file ids is missing from this list
  * (`test/tooling/file-references.test.ts`).
  *
+ * Decision 061 (the document check was retired): `kyc_submissions.file_ids` stays in this list on purpose. Nothing reads or writes that
+ * table any more, but its rows and the documents they name stay until the owner decides how long to keep them; without the line the
+ * janitor would delete those documents 7 days after the migration. Drop the line with the table, when that decision is made.
+ *
  * @param alias the alias of the `files` table in the statement (a plain identifier written by the caller, never user input)
  * @returns the SQL condition
  */
 export function unreferenced(alias: string): SQL {
   if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`Not a table alias: ${alias}`);
   const id = sql.raw(`${alias}.id`);
+  // The kyc_submissions line is the one reference to the retired table that stays (see the Why above).
   return sql`
         not exists (select 1 from ticket_messages where file_ids @> array[${id}])
     and not exists (select 1 from kyc_submissions where file_ids @> array[${id}])
@@ -237,7 +220,7 @@ export async function staleUnreferencedFileIds(
  * Deletes the file rows of the given ids that nothing points at, and says where their objects were.
  *
  * Why: feature 28 (rules 10): the attachments of an anonymized customer's tickets, and of a ticket resolved longer ago than the retention,
- * are deleted. A file can be in use elsewhere too (a merchant's portal upload may also be its KYC document or an order's input; a staff
+ * are deleted. A file can be in use elsewhere too (a merchant's portal upload may also be an order's input; a staff
  * upload may sit on a second ticket), so only the rows that no reference holds are deleted: the three tables that keep file ids in an
  * array (checked here, the database cannot), and every foreign key (checked here as well, so the statement never fails on one and the
  * caller's transaction, an anonymization, is not broken). The caller empties its own references first, in the same transaction.
@@ -272,12 +255,14 @@ export async function deleteUnreferencedFiles(
 }
 
 /**
- * Finds out which records use a file: the newest KYC submission and payment that name it, and whether a dispute, an order, an invoice, a
- * ticket message or a data request does.
+ * Finds out which records use a file: the newest verification request of the retired document check and the newest payment that name it,
+ * and whether a dispute, an order, an invoice, a ticket message or a data request does.
  *
- * Why: decision 047: a staff download needs the read permission of every kind of record that uses the file, and the newest KYC submission
- * and payment name the audit rows. One statement, the same documented deviation of decision 016 as {@link deleteUnreferencedFiles}, which
- * names these tables too (their owners have no public read of "which record uses this file").
+ * Why: decision 047: a staff download needs the read permission of every kind of record that uses the file, and the newest verification
+ * request and payment name the audit rows. One statement, the same documented deviation of decision 016 as {@link deleteUnreferencedFiles},
+ * which names these tables too (their owners have no public read of "which record uses this file"). Decision 061: the identity documents
+ * stored before the document check was retired stay readable and audited, so this statement still reads `kyc_submissions` (only to find
+ * the merchant of a stored document; nothing writes the table); it goes with the table.
  *
  * @param db the database or a transaction
  * @param fileId the file id
@@ -286,7 +271,7 @@ export async function deleteUnreferencedFiles(
 export async function fileReferencesOf(db: DbExecutor, fileId: number): Promise<FileReferences> {
   const result = await db.execute(sql`
     select
-      k.id as kyc_submission_id, k.client_id as kyc_client_id, c.name as kyc_client_name,
+      k.id as identity_request_id, k.client_id as identity_client_id, c.name as identity_client_name,
       (select p.id from payments p where p.receipt_file_id = ${fileId} order by p.id desc limit 1) as payment_id,
       exists (select 1 from disputes where evidence_file_ids @> array[${fileId}]::bigint[]) as dispute_evidence,
       exists (select 1 from orders where input_file_id = ${fileId} or result_file_id = ${fileId}) as order_file,
@@ -300,9 +285,9 @@ export async function fileReferencesOf(db: DbExecutor, fileId: number): Promise<
     left join clients c on c.id = k.client_id
   `);
   const row = result.rows[0] as {
-    kyc_submission_id: string | number | null;
-    kyc_client_id: string | number | null;
-    kyc_client_name: string | null;
+    identity_request_id: string | number | null;
+    identity_client_id: string | number | null;
+    identity_client_name: string | null;
     payment_id: string | number | null;
     dispute_evidence: boolean;
     order_file: boolean;
@@ -311,13 +296,13 @@ export async function fileReferencesOf(db: DbExecutor, fileId: number): Promise<
     data_export: boolean;
   };
   return {
-    ...(row.kyc_submission_id === null || row.kyc_client_id === null
+    ...(row.identity_request_id === null || row.identity_client_id === null
       ? {}
       : {
-          kyc: {
-            submissionId: Number(row.kyc_submission_id),
-            clientId: Number(row.kyc_client_id),
-            clientName: row.kyc_client_name ?? '',
+          identityDocument: {
+            submissionId: Number(row.identity_request_id),
+            clientId: Number(row.identity_client_id),
+            clientName: row.identity_client_name ?? '',
           },
         }),
     ...(row.payment_id === null ? {} : { paymentId: Number(row.payment_id) }),

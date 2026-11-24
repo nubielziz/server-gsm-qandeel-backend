@@ -1,7 +1,6 @@
 // Integration tests of the storefront support routes (feature 17): POST /store/v1/tickets, GET /store/v1/tickets/:token,
-// POST /store/v1/tickets/:token/messages and POST /store/v1/tickets/:token/csat against the real API: the anti-bot check, the guest
-// customer, the order link, the ticket token, the lock on a resolved ticket (a customer message is 409 until staff reopen it), and the
-// rating once.
+// and POST /store/v1/tickets/:token/messages against the real API: the anti-bot check, the guest customer, the order link, the ticket
+// token and the lock on a resolved ticket (a customer message is 409 until staff reopen it).
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { CacheKeys } from '@src/infra/cache';
@@ -70,7 +69,6 @@ const open = (payload: unknown, headers: Record<string, string> = TURNSTILE_HEAD
   send('POST', '/store/v1/tickets', payload, headers);
 const show = (token: string) => send('GET', `/store/v1/tickets/${token}`);
 const write = (token: string, payload: unknown) => send('POST', `/store/v1/tickets/${token}/messages`, payload);
-const rate = (token: string, payload: unknown) => send('POST', `/store/v1/tickets/${token}/csat`, payload);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test bodies are untyped JSON
 const body = (res: { json: () => any }): any => res.json();
 // Decision 054: a ticket opened through the API keeps its token only as a keyed hash and an encrypted copy.
@@ -124,8 +122,6 @@ describe('POST /store/v1/tickets', () => {
       createdAt: NOW,
       updatedAt: NOW,
       resolvedAt: null,
-      csatScore: null,
-      canRate: false,
     });
     expect(ticket.number).toMatch(/^T-\d+$/);
     expect(ticket.messages).toEqual([
@@ -222,10 +218,8 @@ describe('POST /store/v1/tickets', () => {
       expect(body(res)).not.toHaveProperty('token');
       expect(Object.keys(body(res)).sort()).toEqual(
         [
-          'canRate',
           'category',
           'createdAt',
-          'csatScore',
           'messages',
           'number',
           'orderId',
@@ -513,10 +507,8 @@ describe('GET /store/v1/tickets/:token', () => {
       ['support', 'Checking.'],
     ]);
     expect(Object.keys(ticket).sort()).toEqual([
-      'canRate',
       'category',
       'createdAt',
-      'csatScore',
       'messages',
       'number',
       'orderId',
@@ -543,7 +535,7 @@ describe('GET /store/v1/tickets/:token', () => {
     expect((await show(opened.token)).statusCode).toBe(200);
   });
 
-  it('shows pending as the status of a ticket that waits on the customer, and the rating form once resolved', async () => {
+  it('shows pending as the status of a ticket that waits on the customer, and resolved once it is', async () => {
     const opened = await openByEmail(VALID);
     const { db } = await testDb();
     await db.update(s.supportTickets).set({ status: 'pending_customer', slaDueAt: null }).where(byToken(opened.token));
@@ -552,7 +544,26 @@ describe('GET /store/v1/tickets/:token', () => {
       .update(s.supportTickets)
       .set({ status: 'resolved', resolvedAt: new Date(clock.nowMs()) })
       .where(byToken(opened.token));
-    expect(body(await show(opened.token))).toMatchObject({ status: 'resolved', canRate: true, resolvedAt: NOW });
+    expect(body(await show(opened.token))).toMatchObject({ status: 'resolved', resolvedAt: NOW });
+  });
+
+  it('reads a ticket whose retired rating columns hold an old value, and shows no rating', async () => {
+    const opened = await openByEmail(VALID);
+    const { db } = await testDb();
+    await db
+      .update(s.supportTickets)
+      .set({
+        status: 'resolved',
+        resolvedAt: new Date(clock.nowMs()),
+        csatScore: 4,
+        surveySentAt: new Date(clock.nowMs()),
+      })
+      .where(byToken(opened.token));
+    const res = await show(opened.token);
+    expect(res.statusCode).toBe(200);
+    expect(body(res)).toMatchObject({ status: 'resolved', resolvedAt: NOW });
+    expect(body(res)).not.toHaveProperty('csatScore');
+    expect(body(res)).not.toHaveProperty('canRate');
   });
 });
 
@@ -633,9 +644,8 @@ describe('POST /store/v1/tickets/:token/messages', () => {
     expect(rung).not.toHaveBeenCalled();
     await sendTicketMails(t);
     expect(mailbox(t).sent).toEqual([]);
-    // Reading and the rating are not writes on the conversation: they still work.
-    expect(body(await show(opened.token))).toMatchObject({ status: 'resolved', canRate: true });
-    expect((await rate(opened.token, { score: 5 })).statusCode).toBe(200);
+    // Reading is not a write on the conversation: it still works.
+    expect(body(await show(opened.token))).toMatchObject({ status: 'resolved' });
     expect((await ticketRow(opened.token)).status).toBe('resolved');
 
     // Staff reopen it (resolved to open): the customer can write again.
@@ -661,64 +671,6 @@ describe('POST /store/v1/tickets/:token/messages', () => {
     await write(mine.token, { body: 'Mine' });
     expect(body(await show(other.token)).messages).toHaveLength(1);
     expect(body(await show(mine.token)).messages).toHaveLength(2);
-  });
-});
-
-describe('POST /store/v1/tickets/:token/csat', () => {
-  /** A resolved ticket, as the staff console resolves it. */
-  async function resolvedTicket() {
-    const opened = await openByEmail(VALID);
-    const staff = await supportStaff(t);
-    const row = await ticketRow(opened.token);
-    expect((await staff.patch(`/admin/support-tickets/${row.id}`, { status: 'resolved' })).status).toBe(200);
-    return opened.token as string;
-  }
-
-  it('records the rating once after the ticket is resolved, and the ticket stays resolved', async () => {
-    const token = await resolvedTicket();
-    expect(body(await show(token))).toMatchObject({ status: 'resolved', canRate: true, csatScore: null });
-    clock.advance(HOUR);
-    const res = await rate(token, { score: 5 });
-    expect(res.statusCode).toBe(200);
-    expect(body(res)).toMatchObject({ status: 'resolved', csatScore: 5, canRate: false });
-    const row = await ticketRow(token);
-    expect(row.csatScore).toBe(5);
-    expect(row.status).toBe('resolved');
-    // The rating is not activity: the inbox order does not change.
-    expect(row.updatedAt.toISOString()).toBe(NOW);
-  });
-
-  it('refuses a rating before the resolve and a second rating, on score', async () => {
-    const opened = await openByEmail(VALID);
-    const early = await rate(opened.token, { score: 4 });
-    expect(early.statusCode).toBe(422);
-    expect(body(early).errors).toEqual([expect.objectContaining({ field: 'score', code: 'not_resolved' })]);
-    const token = await resolvedTicket();
-    expect((await rate(token, { score: 4 })).statusCode).toBe(200);
-    const again = await rate(token, { score: 1 });
-    expect(again.statusCode).toBe(422);
-    expect(body(again).errors).toEqual([expect.objectContaining({ field: 'score', code: 'already_rated' })]);
-    expect((await ticketRow(token)).csatScore).toBe(4);
-  });
-
-  it('takes only a whole number from 1 to 5 and answers 404 for a wrong token', async () => {
-    const token = await resolvedTicket();
-    for (const score of [0, 6, 2.5, '5', null]) {
-      const res = await rate(token, { score });
-      expect(res.statusCode).toBe(422);
-      expect(body(res).errors).toEqual([expect.objectContaining({ field: 'score' })]);
-    }
-    expect((await rate(token, {})).statusCode).toBe(422);
-    expect((await rate('Zk3b0jY8mQe1xVn7hT2cLw', { score: 5 })).statusCode).toBe(404);
-    expect((await ticketRow(token)).csatScore).toBeNull();
-  });
-
-  it('records exactly one of two ratings sent at once', async () => {
-    const token = await resolvedTicket();
-    const results = await Promise.all([rate(token, { score: 5 }), rate(token, { score: 1 })]);
-    expect(results.map((res) => res.statusCode).sort()).toEqual([200, 422]);
-    const score = (await ticketRow(token)).csatScore;
-    expect([1, 5]).toContain(score as number);
   });
 });
 

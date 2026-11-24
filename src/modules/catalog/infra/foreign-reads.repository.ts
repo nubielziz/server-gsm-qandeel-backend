@@ -6,9 +6,9 @@
 // supplier, their shop page and their last publish attempt.
 //
 // DEVIATION to resolve when those features land: decision 016 wants these reads through the owning module's public service.
-// Orders (5), suppliers (6), storefront (14a/15), customers, risk (18) and support export nothing yet, so this file reads
+// Orders (5), suppliers (6), storefront (14a/15), customers and support export nothing yet, so this file reads
 // `service_supplier_links`, `supplier_services`, `suppliers`, `orders`, `service_listings`, `listing_publish_items`,
-// `checkout_sessions`, `help_articles` and `imei_checks`, and identity's `clients`, with plain selects, like money's
+// `checkout_sessions` and `help_articles`, and identity's `clients`, with plain selects, like money's
 // foreign-directory repository. Storefront imports the catalog, so the catalog cannot call it (decision 032): the SQL fragments of
 // decision 060 over `service_supplier_links`, `service_listings` and `listing_publish_items` are built here and composed in
 // service-attention.sql.ts.
@@ -79,7 +79,7 @@ export async function supplierChainsOf(
  * Tells whether any record outside the catalog's disposable parts refers to a service.
  *
  * Why: RESOLUTIONS catalog-3: such a service is archived, never deleted. The list is every table that points at `services`
- * with `RESTRICT` (orders, listings, checkout sessions, help articles, IMEI checks), the supplier links (they cascade, but
+ * with `RESTRICT` (orders, listings, checkout sessions, help articles), the supplier links (they cascade, but
  * a service routed to a supplier has history worth keeping) and the catalog's own inventory codes.
  *
  * @param db the transaction that holds the service row locked
@@ -95,7 +95,6 @@ export async function isServiceReferenced(db: DbExecutor, serviceId: number): Pr
       or exists (select 1 from ${s.inventoryCodes} where service_id = ${serviceId})
       or exists (select 1 from ${s.checkoutSessions} where service_id = ${serviceId})
       or exists (select 1 from ${s.helpArticles} where service_id = ${serviceId})
-      or exists (select 1 from ${s.imeiChecks} where service_id = ${serviceId})
     ) as referenced`);
   return result.rows[0]?.referenced === true;
 }

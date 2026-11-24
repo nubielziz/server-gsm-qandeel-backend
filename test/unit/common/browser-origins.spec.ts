@@ -31,7 +31,6 @@ describe('audienceOfPath', () => {
       expect(audienceOfPath(path), path).toBe('shop');
     }
     for (const path of [
-      '/v1/orders',
       '/api/index.php',
       '/webhooks/stripe',
       '/health',
@@ -53,8 +52,7 @@ describe('audienceOfPath', () => {
     expect(audienceOfSurface('admin')).toBe('console');
     expect(audienceOfSurface('client')).toBe('shop');
     expect(audienceOfSurface('store')).toBe('shop');
-    for (const surface of ['v1', 'dhru', 'hooks', 'system'] as const)
-      expect(audienceOfSurface(surface)).toBeUndefined();
+    for (const surface of ['dhru', 'hooks', 'system'] as const) expect(audienceOfSurface(surface)).toBeUndefined();
   });
 });
 
@@ -96,7 +94,7 @@ describe('corsDecision', () => {
     expect(corsDecision(lists, '/reference', SHOP)).toEqual(refused);
     expect(corsDecision(lists, '/client/auth/me', CONSOLE)).toEqual(refused);
     expect(corsDecision(lists, '/store/v1/me', CONSOLE)).toEqual(refused);
-    for (const path of ['/health', '/v1/orders', '/webhooks/x', '/api/index.php', '/docs']) {
+    for (const path of ['/health', '/webhooks/x', '/api/index.php', '/docs']) {
       expect(corsDecision(lists, path, CONSOLE), path).toEqual(refused);
       expect(corsDecision(lists, path, SHOP), path).toEqual(refused);
     }

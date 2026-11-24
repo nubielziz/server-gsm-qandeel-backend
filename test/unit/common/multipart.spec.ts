@@ -123,7 +123,6 @@ describe('the multipart limits', () => {
       '/client/files',
       '/store/v1/files',
       '/store/v1/tickets/:token/files',
-      '/v1/files',
     ]);
   });
 

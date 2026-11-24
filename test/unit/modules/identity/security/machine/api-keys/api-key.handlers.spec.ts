@@ -1,4 +1,4 @@
-// Unit tests of the credential readers of the API key handlers: the Bearer header (REST v1) and username + apiaccesskey (Dhru).
+// Unit tests of the credential reader of the API key handler: username + apiaccesskey (Dhru).
 import { describe, expect, it } from 'bun:test';
 import type { FastifyRequest } from 'fastify';
 import type { AnyRouteContract } from '@src/common/contract';
@@ -8,26 +8,10 @@ import type {
   ApiKeyCredentials,
 } from '@src/modules/identity/security/machine/api-keys/api-key.authenticator';
 import {
-  ApiKeyAccessHandler,
   DhruCredentialsAccessHandler,
-  bearerKeyOf,
   dhruCredentialsOf,
 } from '@src/modules/identity/security/machine/api-keys/api-key.handlers';
 import { rejectionOf } from '../../../../../../support/rejection';
-
-describe('bearerKeyOf', () => {
-  it('reads the key of a Bearer header, whatever the case of the scheme', () => {
-    expect(bearerKeyOf('Bearer gsm_abc123')).toBe('gsm_abc123');
-    expect(bearerKeyOf('bearer gsm_abc123')).toBe('gsm_abc123');
-    expect(bearerKeyOf('BEARER   gsm_abc123  ')).toBe('gsm_abc123');
-  });
-
-  it('reads nothing from another scheme, an empty key or extra words', () => {
-    for (const header of [undefined, '', 'Bearer', 'Bearer ', 'Basic abc', 'Token abc', 'Bearer a b', 'gsm_abc123']) {
-      expect(bearerKeyOf(header), String(header)).toBeUndefined();
-    }
-  });
-});
 
 describe('dhruCredentialsOf', () => {
   it('reads username and apiaccesskey, trimmed', () => {
@@ -62,60 +46,20 @@ function recorder() {
   const authenticator = {
     authenticate(_request: FastifyRequest, credentials: ApiKeyCredentials) {
       calls.push(credentials);
-      return Promise.resolve({ kind: 'api-key', clientId: 1, clientName: 'Acme', keyId: 2, scopes: [], ip: '1.2.3.4' });
+      return Promise.resolve({ kind: 'api-key', clientId: 1, clientName: 'Acme', keyId: 2, ip: '1.2.3.4' });
     },
   } as unknown as ApiKeyAuthenticator;
   return { authenticator, calls };
 }
 
-describe('ApiKeyAccessHandler', () => {
-  it('asks for the Bearer key with the contract permission as the scope', async () => {
-    const { authenticator, calls } = recorder();
-    const request = { headers: { authorization: 'Bearer gsm_key' } } as unknown as FastifyRequest;
-    const contract = {
-      key: 'POST /v1/orders',
-      permission: 'orders:write',
-      surface: 'v1',
-    } as unknown as AnyRouteContract;
-    const state = await new ApiKeyAccessHandler(authenticator).authenticate(request, contract);
-    expect(state.principal).toMatchObject({ kind: 'api-key', keyId: 2 });
-    expect(calls).toEqual([{ key: 'gsm_key', scope: 'orders:write', points: 1, surface: 'v1' }]);
-  });
-
-  it('asks for one point per order of a bulk placement (decision 053)', async () => {
-    const { authenticator, calls } = recorder();
-    const request = {
-      headers: { authorization: 'Bearer gsm_key' },
-      body: { orders: Array.from({ length: 8 }, () => ({})) },
-    } as unknown as FastifyRequest;
-    const contract = {
-      key: 'POST /v1/orders/bulk',
-      permission: 'orders:write',
-      surface: 'v1',
-    } as unknown as AnyRouteContract;
-    await new ApiKeyAccessHandler(authenticator).authenticate(request, contract);
-    expect(calls[0]?.points).toBe(8);
-  });
-
-  it('asks for a scope no key has when the contract names none (a route without one cannot exist)', async () => {
-    const { authenticator, calls } = recorder();
-    const request = { headers: {} } as unknown as FastifyRequest;
-    await new ApiKeyAccessHandler(authenticator).authenticate(request, {
-      permission: null,
-      surface: 'v1',
-    } as AnyRouteContract);
-    expect(calls[0]).toEqual({ key: undefined, scope: '', points: 1, surface: 'v1' });
-  });
-});
-
 describe('DhruCredentialsAccessHandler', () => {
-  it('asks for the dhru scope with the username and key of the body', async () => {
+  it('asks for the username and key of the body', async () => {
     const { authenticator, calls } = recorder();
     const request = { body: { username: 'acme', apiaccesskey: 'KEY' } } as unknown as FastifyRequest;
     await new DhruCredentialsAccessHandler(authenticator).authenticate(request, {
       surface: 'dhru',
     } as AnyRouteContract);
-    expect(calls).toEqual([{ key: 'KEY', username: 'acme', scope: 'dhru', points: 1, surface: 'dhru' }]);
+    expect(calls).toEqual([{ key: 'KEY', username: 'acme', points: 1 }]);
   });
 
   it('asks for one point per item of a placement bulk, and one for a read bulk (decision 053)', async () => {
@@ -139,7 +83,7 @@ describe('DhruCredentialsAccessHandler', () => {
     await new DhruCredentialsAccessHandler(authenticator).authenticate(request, {
       surface: 'dhru',
     } as AnyRouteContract);
-    expect(calls[0]).toEqual({ key: undefined, username: undefined, scope: 'dhru', points: 1, surface: 'dhru' });
+    expect(calls[0]).toEqual({ key: undefined, username: undefined, points: 1 });
   });
 
   it("lets the authenticator's refusal through", async () => {

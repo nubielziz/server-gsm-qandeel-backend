@@ -7,8 +7,9 @@ describe('ipAudienceOf', () => {
     expect(ipAudienceOf('/admin/staff/:id')).toBe('admin');
     expect(ipAudienceOf('/admin')).toBe('admin');
     expect(ipAudienceOf('/store/v1/checkout-sessions/:token/pay')).toBe('store');
-    expect(ipAudienceOf('/v1/orders')).toBe('api');
     expect(ipAudienceOf('/api/index.php')).toBe('api');
+    // The retired REST API v1 left no audience of its own.
+    expect(ipAudienceOf('/v1/orders')).toBe('other');
   });
 
   it('leaves the merchant portal and the documentation to the "all" rules', () => {

@@ -31,7 +31,7 @@ export class LostWorkModule implements OnModuleInit {
       every: 300_000,
       jobOptions: { removeOnComplete: { age: 3600, count: 50 }, removeOnFail: { age: 86_400, count: 200 } },
       description:
-        'Asks again for work whose queue job was lost: storefront refunds, webhook deliveries, bulk publish and Quick add runs (decision 055).',
+        'Asks again for work whose queue job was lost: storefront refunds, bulk publish and Quick add runs (decision 055).',
     });
   }
 }

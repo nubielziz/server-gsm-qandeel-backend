@@ -1,7 +1,6 @@
-// Unit tests of the campaign renderer (feature 23, plan section 6): `{{name}}`, the link per audience, the HTML part, the Telegram cut,
+// Unit tests of the campaign renderer (feature 23, plan section 6): `{{name}}`, the link per audience, the HTML part,
 // the marketing footer and one-click headers, and the escaping of stored text. English only (decision 039).
 import { describe, expect, it } from 'bun:test';
-import { TELEGRAM_MAX_TEXT } from '@src/modules/platform/notifications/template-rules';
 import {
   type RenderableCampaign,
   linkFor,
@@ -52,17 +51,6 @@ describe('renderCampaign', () => {
   it('gives an in-app message the title and body only', () => {
     const message = renderCampaign(campaign(), { ...base, channel: 'in_app' });
     expect(message).toEqual({ subject: 'Hello Daniel', text: 'Maintenance on Friday.' });
-  });
-
-  it('joins title and body for Telegram and cuts at the Bot API limit', () => {
-    const short = renderCampaign(campaign(), { ...base, audience: 'merchant', channel: 'telegram' });
-    expect(short.text).toBe('Hello Daniel\n\nMaintenance on Friday.\nhttps://shop.example/merchant/wallet');
-    expect(short.html).toBeUndefined();
-    const long = renderCampaign(campaign({ content: { title: 'T', body: 'x'.repeat(5000) } }), {
-      ...base,
-      channel: 'telegram',
-    });
-    expect(long.text).toHaveLength(TELEGRAM_MAX_TEXT);
   });
 
   it('adds the unsubscribe footer and both one-click headers to a marketing email for a customer', () => {

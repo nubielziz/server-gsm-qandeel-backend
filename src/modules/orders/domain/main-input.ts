@@ -1,5 +1,5 @@
 // The main input of an order (RESOLUTIONS orders-suppliers-2): the one value stored in `orders.imei` for every service type,
-// written by one helper that every placement path (portal, Dhru, REST v1, store, admin) calls, and the carry of a shop IMEI onto the
+// written by one helper that every placement path (portal, Dhru, store, admin) calls, and the carry of a shop IMEI onto the
 // supplier's main box field after the service's type changed (decision 042). Pure; no database.
 import { isMainInputKey, resolvedSupplierKey } from '../../../common/dhru';
 
