@@ -2308,15 +2308,6 @@
       "ui": "shown with the server title/detail in the dialog error slot or an error toast; the page refetches"
     },
     {
-      "code": "TAC_TAKEN",
-      "status": 409,
-      "where": [
-        "src/features/storefront/mocks/tacRoutes.ts:14"
-      ],
-      "meaning": "TAC catalogue entry already exists (with errors[{field:\"tac\"}]).",
-      "ui": "Message under the TAC field."
-    },
-    {
       "code": "TEMPLATE_BROKEN",
       "status": 409,
       "where": [

@@ -120,11 +120,11 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
     });
   });
 
-  it("writes the demo's eight TACs with the model code and the marketing name the console shows", async () => {
-    const list = await staff.get('/admin/tac-catalog?_sort=tac&_order=asc');
-    expect(list.total).toBe(8);
-    expect(list.body.find((row: { tac: string }) => row.tac === '35389011')).toEqual({
-      id: expect.any(Number),
+  it("writes the demo's eight TACs with the model code and the marketing name, and no route serves them (decision 068)", async () => {
+    const { db } = await testDb();
+    const rows = await db.select().from(s.tacCatalog).orderBy(s.tacCatalog.tac);
+    expect(rows).toHaveLength(8);
+    expect(rows.find((row) => row.tac === '35389011')).toMatchObject({
       tac: '35389011',
       brand: 'Apple',
       model: 'A2633',
@@ -132,6 +132,13 @@ describe.skipIf(!frontendPresent)('the customers seed', () => {
       releaseYear: 2021,
       source: 'import',
     });
+    // The catalogue keeps its rows and the risk queue reads them, but the four admin routes were retired.
+    expect((await staff.get('/admin/tac-catalog?_sort=tac&_order=asc')).status).toBe(404);
+    expect((await staff.get('/admin/tac-catalog/1')).status).toBe(404);
+    expect((await staff.post('/admin/tac-catalog', { tac: '35123456', brand: 'Harvest', model: 'H1' })).status).toBe(
+      404,
+    );
+    expect((await staff.patch('/admin/tac-catalog/1', { brand: 'Other' })).status).toBe(404);
   });
 
   it('is idempotent: a second run inserts nothing', async () => {

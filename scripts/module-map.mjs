@@ -159,7 +159,8 @@ export const modules = [
     name: 'Storefront & content',
     domain: 'H',
     tables: ['service_listings', 'content_pages', 'help_articles', 'legal_documents'],
-    // Feature 29 (search on Typesense, decision 038): synonyms, pins, hidden terms, the daily term counts and the index state.
+    // Feature 29 (search on Typesense, decision 038): synonyms, pins, hidden terms, the daily term counts and the index state (pins and
+    // hidden terms retired by decision 068: unread until a later migration drops them).
     // Feature 30 (English only, decision 039): the old addresses in other languages (legacy_slugs).
     // Feature 31 (bulk publish, decision 040): the publish runs and their rows.
     additionalTables: [

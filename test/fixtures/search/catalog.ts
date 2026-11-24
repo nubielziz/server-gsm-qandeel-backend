@@ -1,6 +1,6 @@
 // The fixture catalog of the search golden set (feature 29, slice B2, plan section 8): about 60 English services named after the
-// golden table, each with the facts a search document is built from, the owner's five synonyms and the two pin rules the table's
-// cases 34 and 56 use. The slug of a service is the name the golden table expects; its numeric id is its position here (1-based).
+// golden table, each with the facts a search document is built from, and the owner's five synonyms (the two pin rules of cases 34 and
+// 56 left with decision 068). The slug of a service is the name the golden table expects; its numeric id is its position here (1-based).
 import type { DocumentSource } from '@src/modules/storefront/search/domain/documents';
 
 /** One fixture service: the slug the golden table names it by and the facts its document is built from. */
@@ -573,27 +573,3 @@ export const FIXTURE_SYNONYMS: ReadonlyArray<{
   ['imei check', 'blacklist check', 'gsma check', 'clean check'],
   ['kg lock', 'knox guard', 'knox guard lock'],
 ].map((terms, index) => ({ id: index + 1, kind: 'multi' as const, root: null, terms, isEnabled: true as const }));
-
-/** The pin rules of the golden set: case 34 (an exact rule with a hidden service) and case 56 (a contains rule). */
-export const FIXTURE_PINS = [
-  {
-    id: 1,
-    query: 'unlock',
-    match: 'exact' as const,
-    pinned: [{ serviceId: fixtureId('iphone-15-pro-max-unlock'), position: 1 }],
-    hidden: [fixtureId('motorola-unlock-code')],
-    startsAt: null,
-    endsAt: null,
-    isEnabled: true as const,
-  },
-  {
-    id: 2,
-    query: 'iphone unlock',
-    match: 'contains' as const,
-    pinned: [{ serviceId: fixtureId('att-usa-iphone-unlock'), position: 1 }],
-    hidden: [] as number[],
-    startsAt: null,
-    endsAt: null,
-    isEnabled: true as const,
-  },
-];

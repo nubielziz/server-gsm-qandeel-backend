@@ -278,21 +278,16 @@ export const POPULAR_MIN_DAYS = 3;
  * Tells whether a searched term becomes a popular query.
  *
  * Why: plan section 4.4 and owner question 4: at least 5 different visitors on each of at least 3 days in 30 days, fewer than half of
- * its searches without results, not hidden by staff, 1-4 words, and every word a word the catalog holds (the index vocabulary), so an
- * injected phrase (`cheap unlock scam site`) never reaches the completions.
+ * its searches without results, 1-4 words, and every word a word the catalog holds (the index vocabulary), so an injected phrase
+ * (`cheap unlock scam site`) never reaches the completions. Staff no longer hide terms (decision 068).
  *
  * @param candidate the term and its 30-day figures
  * @param vocabulary the index vocabulary (see `vocabulary.ts`)
- * @param hidden the terms staff hid
  * @returns true when the term is a popular query
  */
-export function isPopularQuery(
-  candidate: PopularCandidate,
-  vocabulary: ReadonlySet<string>,
-  hidden: ReadonlySet<string>,
-): boolean {
+export function isPopularQuery(candidate: PopularCandidate, vocabulary: ReadonlySet<string>): boolean {
   const term = normaliseText(candidate.term);
-  if (!isPhrase(term) || hidden.has(term)) return false;
+  if (!isPhrase(term)) return false;
   if (candidate.busyDays < POPULAR_MIN_DAYS) return false;
   if (candidate.searches <= 0 || candidate.zeroResults * 2 >= candidate.searches) return false;
   const words = term.split(' ');

@@ -65,10 +65,6 @@
       "why": "Group C: a question in Arabic script gives an id-based slug."
     },
     {
-      "path": "test/unit/modules/storefront/domain/page-generator.spec.ts",
-      "why": "Group C: a model or network name in Arabic script from the TAC catalogue is reported as unusable, not turned into a web address."
-    },
-    {
       "path": "test/integration/money/invoices-admin.test.ts",
       "why": "Group C: an Arabic merchant name and line description print on the invoice PDF."
     },
@@ -91,10 +87,6 @@
     {
       "path": "test/integration/infra/http.test.ts",
       "why": "Group C: a UTF-8 JSON body in Arabic script goes through the outgoing HTTP client unchanged."
-    },
-    {
-      "path": "test/integration/storefront/storefront-page-generator.test.ts",
-      "why": "Group C: a TAC model or carrier name in Arabic script is skipped or refused, not turned into a web address."
     },
     {
       "path": "test/integration/storefront/storefront-content-pages.test.ts",

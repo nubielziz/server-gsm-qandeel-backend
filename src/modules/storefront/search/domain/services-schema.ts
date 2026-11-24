@@ -7,15 +7,16 @@ import { TERMS_SCHEMA_VERSION } from './terms';
  * The version of the services schema: any change of a field, a type or a collection option bumps it.
  *
  * Why: plan section 3.3: aliases carry the version, so a deploy with a new schema finds no alias, searches fall back, and the worker
- * rebuilds into a collection of the new version before it swaps the alias in.
+ * rebuilds into a collection of the new version before it swaps the alias in. Version 2 (decision 068): the collection no longer links a
+ * curation set (pins are retired).
  */
-export const SERVICES_SCHEMA_VERSION = 1;
+export const SERVICES_SCHEMA_VERSION = 2;
 
 /**
  * One document of the services collection: public, English, price-free facts of one sellable service.
  *
  * Why: decision 038: the index holds only what a public visitor may see and never a price, a cost, a supplier, a stock count or a
- * person; `id` is the service id (stable across rebuilds, so pins keep working).
+ * person; `id` is the service id (stable across rebuilds: a sync of one service writes the same document).
  */
 export interface ServiceDocument {
   readonly id: string;
@@ -76,23 +77,22 @@ export const SERVICE_FIELDS: readonly CollectionField[] = [
 ];
 
 /**
- * The schema of a new services collection, linked to the environment's synonym and curation sets.
+ * The schema of a new services collection, linked to the environment's synonym set.
  *
- * Why: plan section 3.3: the links are part of the collection, so `SearchCollections.create` (the only creator) always passes both
- * sets; no `token_separators` and no `symbols_to_index`, so Typesense drops special characters (`AT&T` gives `att`, `SM-A525F`
- * gives `sma525f`), which is what the owner's examples need.
+ * Why: plan section 3.3: the link is part of the collection, so `SearchCollections.create` (the only creator) always passes the set;
+ * no curation set since decision 068 (pins are retired); no `token_separators` and no `symbols_to_index`, so Typesense drops special
+ * characters (`AT&T` gives `att`, `SM-A525F` gives `sma525f`), which is what the owner's examples need.
  *
  * @param name the collection name (`<prefix>services_v<N>_<stamp>`)
- * @param sets the environment's synonym and curation set names
+ * @param synonymSet the environment's synonym set name
  * @returns the schema for `POST /collections`
  */
-export function servicesSchema(name: string, sets: { synonyms: string; curations: string }): CollectionSchema {
+export function servicesSchema(name: string, synonymSet: string): CollectionSchema {
   return {
     name,
     fields: SERVICE_FIELDS,
     default_sorting_field: 'popularity',
-    synonym_sets: [sets.synonyms],
-    curation_sets: [sets.curations],
+    synonym_sets: [synonymSet],
   };
 }
 
@@ -121,8 +121,9 @@ export function collectionStamp(at: Date): string {
  * Every Typesense name of one environment.
  *
  * Why: plan section 3.3: collections `<prefix><kind>_v<N>_<yyyymmddhhmmss>`, aliases `<prefix><kind>_v<N>` (every read and every
- * incremental write goes through the alias), the synonym set `<prefix>synonyms` and the curation set `<prefix>curations`. The parser
- * matches the whole name, so a longer prefix of another test run (`gsm_29_test_ab12_`) is never taken for this one's.
+ * incremental write goes through the alias) and the synonym set `<prefix>synonyms`; `<prefix>curations` is the curation set of schema
+ * version 1, which the rebuild deletes (decision 068). The parser matches the whole name, so a longer prefix of another test run
+ * (`gsm_29_test_ab12_`) is never taken for this one's.
  */
 export class SearchNames {
   constructor(readonly prefix: string) {}
@@ -164,8 +165,8 @@ export class SearchNames {
     return `${this.prefix}synonyms`;
   }
 
-  /** The curation set of the environment. */
-  get curationSet(): string {
+  /** The curation set that services collections of schema version 1 linked (pins, retired by decision 068); only ever deleted. */
+  get retiredCurationSet(): string {
     return `${this.prefix}curations`;
   }
 

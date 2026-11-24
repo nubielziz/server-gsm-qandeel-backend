@@ -104,8 +104,7 @@ describe('didYouMean', () => {
     expect(didYouMean({ ...base, query: 'samsung samsng', hits, found: 3 })).toBe('samsung samsung');
   });
 
-  it('is null without hits and ignores pinned hits', () => {
+  it('is null without hits', () => {
     expect(didYouMean({ ...base, query: 'samsng', hits: [], found: 0 })).toBeNull();
-    expect(didYouMean({ ...base, query: 'samsng', hits: [{ ...hit('samsung'), curated: true }], found: 1 })).toBeNull();
   });
 });

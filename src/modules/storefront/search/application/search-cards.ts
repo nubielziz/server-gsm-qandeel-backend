@@ -5,7 +5,7 @@ import { CacheKeys, CacheService } from '../../../../infra/cache';
 import type { DbExecutor } from '../../../../infra/db';
 import { PublicImages } from '../../../platform';
 import { englishListingRows } from '../infra/search-read.repository';
-import { SEARCH_CACHE_VERSION } from './search-settings-push';
+import { SEARCH_CACHE_VERSION } from './search-synonym-push';
 
 const TTL_SECONDS = 30;
 

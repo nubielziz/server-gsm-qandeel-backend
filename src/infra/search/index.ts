@@ -34,7 +34,6 @@ export type {
   CollectionField,
   CollectionInfo,
   CollectionSchema,
-  CurationItem,
   EngineHealth,
   EngineMetrics,
   FacetCounts,

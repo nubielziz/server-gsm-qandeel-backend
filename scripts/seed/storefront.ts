@@ -1,5 +1,5 @@
 // Seeder of the storefront module (features 14a and 15): the demo's retail prices (the `b2c_retail` group prices), its 14 service
-// listings, its 8 TAC catalogue entries, the landing and content pages, the help articles and the legal documents, and two old
+// listings, its 8 TAC catalogue entries, the content pages, the help articles and the legal documents, and two old
 // addresses for the website's e2e (feature 30). Mirrors the frontend mocks (src/features/storefront/mocks/seed.ts of the frontend):
 // the same ids, slugs, titles, statuses and versions; the texts the demo does not have are short made-up ones, as in the mock. Runs
 // after the catalog seeder.
@@ -33,6 +33,20 @@ interface DemoTac {
   code: string;
   year: number;
 }
+/**
+ * The eight TAC entries of the demo. They lived in the console's demo state until its TAC catalogue tab was retired (decision 068,
+ * console decision 025); the backend keeps the table for the risk queue's device names, so the seed carries the rows itself.
+ */
+const DEMO_TACS: readonly DemoTac[] = [
+  { tac: '35389011', brand: 'Apple', model: 'iPhone 13', code: 'A2633', year: 2021 },
+  { tac: '35925410', brand: 'Apple', model: 'iPhone 14 Pro', code: 'A2889', year: 2022 },
+  { tac: '01388300', brand: 'Apple', model: 'iPhone 12', code: 'A2403', year: 2020 },
+  { tac: '35290511', brand: 'Samsung', model: 'Galaxy S23', code: 'SM-S911B', year: 2023 },
+  { tac: '35848011', brand: 'Samsung', model: 'Galaxy A54', code: 'SM-A546E', year: 2023 },
+  { tac: '86741205', brand: 'Xiaomi', model: 'Redmi Note 12', code: '23021RAAEG', year: 2023 },
+  { tac: '35460711', brand: 'Google', model: 'Pixel 7', code: 'GVU6C', year: 2022 },
+  { tac: '35691211', brand: 'Apple', model: 'iPhone 11', code: 'A2221', year: 2019 },
+];
 interface DemoPage {
   title: string;
   slug: string;
@@ -102,10 +116,10 @@ export const LEGACY_DEMO_GONE_SLUG = 'legacy-demo-gone';
  * Seeds the retail prices, listings, TAC catalogue, pages, help articles, legal documents and old addresses of the demo.
  *
  * Why: the storefront (feature 14a) sells only what staff priced for the retail group and listed, recognises devices by TAC and
- * records consent against the current legal documents; the console's Storefront page (Services on sale, Landing pages, Content
+ * records consent against the current legal documents; the console's Storefront page (Services on sale, Content
  * and legal, Help centre) and the public content routes (feature 15) show the same rows. Listings keep the ids 1 to 14 (one
  * English listing per IMEI service, as the mock); a listing the demo marks locked is stored switched off (the lock itself is
- * derived, B53). Pages take the landing pages first and then the content pages. The legal documents are the demo's six versions
+ * derived, B53). Pages are the demo's static pages and blog posts only (ids 1 to 6): the landing pages were retired by decision 068. The legal documents are the demo's six versions
  * plus one draft refund policy (1.5) so that Publish has something to publish (the demo has none; the mock adds it too).
  * Retail prices are the `b2c_retail` group rows of the demo's `retail` map. The two old addresses (`legacy_slugs`, feature 30)
  * let the website's e2e follow an address in another language: one to the service of {@link LEGACY_DEMO_TARGET_SLUG}, one with
@@ -174,7 +188,7 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
   const tac = await insertRows(
     db,
     s.tacCatalog,
-    demoRows<DemoTac>(demo, 'tac').map((entry, index) => ({
+    DEMO_TACS.map((entry, index) => ({
       id: index + 1,
       tac: entry.tac,
       brand: entry.brand,
@@ -187,8 +201,8 @@ export async function seedStorefront(db: DbExecutor, demo: DemoSeed): Promise<Se
   );
   await syncIdentity(db, s.tacCatalog);
 
-  // Landing pages first (ids 1 to 14), then the static pages and blog posts: one table, as the mock has it.
-  const pageRows = [...demoRows<DemoPage>(demo, 'landing'), ...demoRows<DemoPage>(demo, 'pages')].map((page, index) => {
+  // The static pages and the blog posts (ids 1 to 6). The demo's landing pages are left out: decision 068 retired that kind.
+  const pageRows = demoRows<DemoPage>(demo, 'pages').map((page, index) => {
     const live = page.status !== 'draft';
     return {
       id: index + 1,

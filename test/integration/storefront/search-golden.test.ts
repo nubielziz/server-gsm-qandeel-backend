@@ -1,7 +1,8 @@
-// The relevance golden set of the storefront search (feature 29, slice B2, plan section 8): 60 queries over the fixture catalog plus
+// The relevance golden set of the storefront search (feature 29, slice B2, plan section 8): 58 queries over the fixture catalog plus
 // 5 000 generated distractors, run through the real ranking parameters and the real assembly against the Typesense node. Each case is a
-// business rule of the owner's examples (completion while typing, typos, synonyms, model codes, pins); a case that fails is a ranking
-// bug to fix in `ranking.ts`, never a case to delete. Only the services and terms collections under this suite's own prefix are touched.
+// business rule of the owner's examples (completion while typing, typos, synonyms, model codes); a case that fails is a ranking bug to
+// fix in `ranking.ts`, never a case to delete. Cases 34 and 56 tested pin rules and left with them (decision 068 retired the pins).
+// Only the services and terms collections under this suite's own prefix are touched.
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import type { SearchResult } from '@src/infra/search';
 import { didYouMean } from '@src/modules/storefront/search/domain/did-you-mean';
@@ -25,14 +26,7 @@ import {
   assembleEnginePart,
   typedPrefix,
 } from '@src/modules/storefront/search/domain/suggest-assembly';
-import {
-  FIXTURE,
-  FIXTURE_CATEGORIES,
-  FIXTURE_PINS,
-  FIXTURE_SYNONYMS,
-  fixtureId,
-  fixtureSlug,
-} from '../../fixtures/search/catalog';
+import { FIXTURE, FIXTURE_CATEGORIES, FIXTURE_SYNONYMS, fixtureId, fixtureSlug } from '../../fixtures/search/catalog';
 import { type GoldenWorld, buildGoldenWorld, dropGoldenWorld } from '../../fixtures/search/world';
 import { dropSearchPrefix, engineClient, searchTestPrefix } from '../../support/search';
 
@@ -97,7 +91,6 @@ interface Resulted {
   readonly ids: string[];
   readonly total: number;
   readonly didYouMean: string | null;
-  readonly curated: string[];
 }
 
 async function results(raw: string, filters: ResultFilters = NO_FILTERS, limit = 24): Promise<Resulted> {
@@ -130,7 +123,6 @@ async function results(raw: string, filters: ResultFilters = NO_FILTERS, limit =
     slugs: ids.map((id) => fixtureSlug(id)),
     total: main!.found,
     didYouMean: suggestion,
-    curated: main!.hits.filter((hit) => hit.curated === true).map((hit) => fixtureSlug(hit.document.id)),
   };
 }
 
@@ -226,7 +218,7 @@ describe('golden set: the first service and the suggestion of each query', () =>
   }
 });
 
-describe('golden set: filters, pins and the cases that need their own checks', () => {
+describe('golden set: filters and the cases that need their own checks', () => {
   it('#33 unlock with brand=Samsung shows only Samsung hits', async () => {
     const found = await results('unlock', { ...NO_FILTERS, brand: ['Samsung'] }, 48);
     expect(found.ids.length).toBeGreaterThan(10);
@@ -234,21 +226,9 @@ describe('golden set: filters, pins and the cases that need their own checks', (
     expect(found.ids.every((id) => brands.get(id) === 'samsung')).toBe(true);
   });
 
-  it('#34 unlock: the exact pin comes first, the hidden service is gone, every other hit holds the word', async () => {
+  it('#34 unlock: every hit holds the word (the pin of this case went with decision 068)', async () => {
     const found = await results('unlock', NO_FILTERS, 250);
-    expect(found.slugs[0]).toBe('iphone-15-pro-max-unlock');
-    expect(found.curated).toEqual(['iphone-15-pro-max-unlock']);
-    expect(found.slugs).not.toContain('motorola-unlock-code');
-    const hidden = new Set(FIXTURE_PINS[0]!.hidden.map(String));
-    const holdUnlock = world.documents.filter(
-      (document) =>
-        !hidden.has(document.id) &&
-        normaliseText(document.title)
-          .split(' ')
-          .some((word) => word.startsWith('unlock')),
-    );
-    // total = pinned + organic matches of `unlock` (the hidden service is in neither).
-    expect(found.total).toBe(holdUnlock.length);
+    expect(found.ids.length).toBeGreaterThan(10);
     const byId = new Map(world.documents.map((document) => [document.id, document]));
     for (const id of found.ids) {
       const words = normaliseText(byId.get(id)!.title).split(' ');
@@ -256,10 +236,9 @@ describe('golden set: filters, pins and the cases that need their own checks', (
     }
   });
 
-  it('#56 iphone unlock: the contains pin comes first and every organic hit holds both words', async () => {
+  it('#56 iphone unlock: every hit holds both words', async () => {
     const found = await results('iphone unlock', NO_FILTERS, 100);
-    expect(found.slugs[0]).toBe('att-usa-iphone-unlock');
-    expect(found.curated).toEqual(['att-usa-iphone-unlock']);
+    expect(found.ids.length).toBeGreaterThan(0);
     const byId = new Map(world.documents.map((document) => [document.id, document]));
     for (const id of found.ids) {
       const words = normaliseText(byId.get(id)!.title).split(' ');

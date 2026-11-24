@@ -1,9 +1,18 @@
 // Drizzle queries on `content_pages` (the storefront module's own table): the console list and reads, the writes, and the
-// published page the public route serves.
+// published page the public route serves. Every read keeps to the two kinds a page can have (decision 068, see `isKnownKind`).
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { ParsedListQuery } from '../../../common/contract';
 import { type DbExecutor, type ListColumns, listOrderBy, listWhere } from '../../../infra/db';
-import { type ContentPage, type NewContentPage, contentPages } from '../db/schema';
+import { CONTENT_PAGE_KINDS, type ContentPage, type NewContentPage, contentPages } from '../db/schema';
+
+/**
+ * Keeps a read to the kinds a page can have: `static` and `blog`.
+ *
+ * Why: decision 068 retired the five landing kinds and deletes their rows in migration 0069. The check constraint then refuses them, so this
+ * only matters for the moments before that migration ran (a new API on an old database) or for a backup restored from before it:
+ * a landing row is then invisible, never answered as a page the wire schema no longer describes.
+ */
+const isKnownKind = inArray(contentPages.kind, [...CONTENT_PAGE_KINDS]);
 
 const COLUMNS: ListColumns = {
   id: contentPages.id,
@@ -30,7 +39,7 @@ export async function listPages(
   db: DbExecutor,
   query: ParsedListQuery<ContentPageSort>,
 ): Promise<{ rows: ContentPage[]; total: number }> {
-  const where = listWhere(query, COLUMNS);
+  const where = listWhere(query, COLUMNS, isKnownKind);
   const [rows, [count]] = await Promise.all([
     db
       .select()
@@ -56,7 +65,11 @@ export async function listPages(
  * @returns the page, or `undefined`
  */
 export async function findPage(db: DbExecutor, id: number, lock = false): Promise<ContentPage | undefined> {
-  const query = db.select().from(contentPages).where(eq(contentPages.id, id)).limit(1);
+  const query = db
+    .select()
+    .from(contentPages)
+    .where(and(eq(contentPages.id, id), isKnownKind))
+    .limit(1);
   const [row] = await (lock ? query.for('update') : query);
   return row;
 }
@@ -119,45 +132,9 @@ export async function findLivePage(db: DbExecutor, slug: string): Promise<Conten
   const [row] = await db
     .select()
     .from(contentPages)
-    .where(and(eq(contentPages.slug, slug), inArray(contentPages.status, ['published', 'noindex'])))
+    .where(and(eq(contentPages.slug, slug), inArray(contentPages.status, ['published', 'noindex']), isKnownKind))
     .limit(1);
   return row;
-}
-
-/**
- * Inserts several pages, leaving out the ones whose slug is taken.
- *
- * Why: the landing-page generator makes up to 50 drafts in one statement; a draft that another request created a moment earlier is
- * skipped instead of failing the whole run (`ON CONFLICT (slug) DO NOTHING`).
- *
- * @param db the caller's transaction
- * @param values the new rows (at least one)
- * @returns the rows that were created, by ascending id
- */
-export async function insertPagesSkippingTaken(db: DbExecutor, values: NewContentPage[]): Promise<ContentPage[]> {
-  if (values.length === 0) return [];
-  const rows = await db
-    .insert(contentPages)
-    .values(values)
-    .onConflictDoNothing({ target: [contentPages.slug] })
-    .returning();
-  return rows.sort((a, b) => a.id - b.id);
-}
-
-/**
- * Lists which of some slugs are already used.
- *
- * @param db the database or a transaction
- * @param slugs the slugs to look for
- * @returns the slugs that exist
- */
-export async function takenSlugs(db: DbExecutor, slugs: readonly string[]): Promise<Set<string>> {
-  if (slugs.length === 0) return new Set();
-  const rows = await db
-    .select({ slug: contentPages.slug })
-    .from(contentPages)
-    .where(inArray(contentPages.slug, [...slugs]));
-  return new Set(rows.map((row) => row.slug));
 }
 
 /** The sorts the public page list accepts. */
@@ -177,7 +154,7 @@ export async function listLivePages(
   db: DbExecutor,
   query: ParsedListQuery<PublicPageSort, unknown>,
 ): Promise<{ rows: ContentPage[]; total: number }> {
-  const where = listWhere(query, COLUMNS, inArray(contentPages.status, ['published', 'noindex']));
+  const where = listWhere(query, COLUMNS, and(inArray(contentPages.status, ['published', 'noindex']), isKnownKind));
   const [rows, [count]] = await Promise.all([
     db
       .select()

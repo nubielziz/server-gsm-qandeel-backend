@@ -1,7 +1,8 @@
 // Integration tests of the storefront search API (feature 29, slice B2) on real Postgres, Redis and Typesense: the suggest and results
 // routes (shape, refusals, prices from Postgres, stale hits, English only, facet labels, the `/services?q=` path), the fallback on every
-// kind of engine failure, the statistics (what is counted and what never is), the limiter, and the console's search tools (CRUD with
-// audit rows and events, refusals, the rebuild, permissions). The suite works under its own Typesense sub-prefix and drops it in afterAll.
+// kind of engine failure, the statistics (what is counted and what never is), the limiter, and the console's index tools (the status,
+// the rebuild, permissions; the tools decision 068 retired answer 404). The suite works under its own Typesense sub-prefix and drops it
+// in afterAll.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Redis } from 'ioredis';
@@ -9,7 +10,7 @@ import { CacheKeys } from '@src/infra/cache';
 import { DbService, schema as s } from '@src/infra/db';
 import { RedisService } from '@src/infra/redis';
 import { SearchCircuit, SearchMetrics } from '@src/infra/search';
-import { SearchNames } from '@src/modules/storefront';
+import { SERVICES_SCHEMA_VERSION, SearchNames } from '@src/modules/storefront';
 import { SearchTermsFlush } from '@src/modules/storefront/search/application/search-terms-flush';
 import {
   SearchRebuildProcessor,
@@ -597,23 +598,6 @@ describe('the statistics', () => {
     expect(categories).not.toContain('samsung frp');
     expect(categories).not.toContain('icloud');
     expect(categories).not.toContain('samsung network');
-    // Staff hide it: gone at once.
-    await resetTerms(database);
-    await database.insert(s.searchTermsDaily).values(
-      ['2026-11-12', '2026-11-13', '2026-11-14'].map((day) => ({
-        day,
-        term: 'samsung frp',
-        searches: 6,
-        zeroResults: 0,
-        visitors: 5,
-      })),
-    );
-    expect(await popular()).toEqual(['samsung frp']);
-    const owner = await adminWith(t, ['storefront:*']);
-    const hidden = await owner.post('/admin/search/hidden-terms', { term: 'samsung frp' });
-    expect(hidden.status).toBe(201);
-    expect(await popular()).not.toContain('samsung frp');
-    await owner.delete(`/admin/search/hidden-terms/${hidden.body.id}`);
     await resetTerms(database);
   });
 });
@@ -650,186 +634,18 @@ describe('the console search tools', () => {
     admin = await adminWith(t, ['storefront:*']);
   });
 
-  it('creates, changes and deletes a synonym with an audit row and an event each, and refuses bad ones', async () => {
-    const before = (await searchEvents()).length;
-    const created = await admin.post('/admin/search/synonyms', {
-      kind: 'multi',
-      terms: ['  Rooting ', 'Magisk install'],
-    });
-    expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({
-      kind: 'multi',
-      root: null,
-      terms: ['rooting', 'magisk install'],
-      isEnabled: true,
-    });
-    const id = created.body.id as number;
-    const changed = await admin.patch(`/admin/search/synonyms/${id}`, { isEnabled: false, note: 'trial' });
-    expect(changed.body).toMatchObject({ isEnabled: false, note: 'trial' });
-    const listed = await admin.get('/admin/search/synonyms?q=magisk');
-    expect(listed.total).toBe(1);
-    expect((await admin.delete(`/admin/search/synonyms/${id}`)).status).toBe(204);
-    expect((await admin.delete(`/admin/search/synonyms/${id}`)).status).toBe(404);
-    expect((await admin.patch('/admin/search/synonyms/999999', { note: 'x' })).status).toBe(404);
-    expect((await admin.post('/admin/search/synonyms', { kind: 'multi', terms: ['one'] })).status).toBe(422);
-    expect((await admin.post('/admin/search/synonyms', { kind: 'one_way', terms: ['a b', 'c d'] })).status).toBe(422);
-    expect((await admin.post('/admin/search/synonyms', { kind: 'multi', terms: ['a', 'A'] })).status).toBe(422);
-    const events = (await searchEvents()).slice(before).filter((event) => event.type === 'search.settings_changed');
-    expect(events.map((event) => event.payload.kind)).toEqual(['synonyms', 'synonyms', 'synonyms']);
-    const audits = await (await db()).select().from(s.auditLogs).where(eq(s.auditLogs.entityType, 'search_synonym'));
-    expect(audits.map((row) => row.action)).toEqual([
-      'created search synonym',
-      'changed search synonym',
-      'deleted search synonym',
-    ]);
-  });
-
-  it('creates pin rules with titles, refuses an unlisted service and a duplicate, and edits and deletes them', async () => {
-    const created = await admin.post('/admin/search/pins', {
-      query: '  Unlock ',
-      match: 'exact',
-      pinned: [{ serviceId: extra.frp, position: 1 }],
-      hidden: [extra.network],
-      note: 'push the FRP service',
-    });
-    expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({
-      query: 'unlock',
-      match: 'exact',
-      pinned: [{ serviceId: extra.frp, position: 1, title: 'Samsung FRP Bypass' }],
-      hidden: [{ serviceId: extra.network, title: 'Samsung Network Unlock (SM-A525F)' }],
-    });
-    const id = created.body.id as number;
-    const duplicate = await admin.post('/admin/search/pins', {
-      query: 'unlock',
-      match: 'exact',
-      pinned: [],
-      hidden: [],
-    });
-    expect(duplicate.status).toBe(409);
-    expect(duplicate.body.code).toBe('CONFLICT');
-    // The same query with the other match type is another rule.
-    expect(
-      (await admin.post('/admin/search/pins', { query: 'unlock', match: 'contains', pinned: [], hidden: [] })).status,
-    ).toBe(201);
-    const pinnedUnlisted = await admin.post('/admin/search/pins', {
-      query: 'zircon',
-      match: 'exact',
-      pinned: [{ serviceId: extra.unlisted, position: 1 }],
-      hidden: [],
-    });
-    expect(pinnedUnlisted.status).toBe(422);
-    expect(pinnedUnlisted.body.errors[0].field).toBe('pinned.0.serviceId');
-    const hiddenUnlisted = await admin.post('/admin/search/pins', {
-      query: 'zircon',
-      match: 'exact',
-      pinned: [],
-      hidden: [extra.unlisted],
-    });
-    expect(hiddenUnlisted.body.errors[0].field).toBe('hidden.0');
-    expect(
-      (
-        await admin.post('/admin/search/pins', {
-          query: 'x',
-          match: 'exact',
-          pinned: [{ serviceId: extra.frp, position: 11 }],
-          hidden: [],
-        })
-      ).status,
-    ).toBe(422);
-    expect(
-      (
-        await admin.post('/admin/search/pins', {
-          query: 'x',
-          match: 'exact',
-          pinned: [],
-          hidden: [],
-          startsAt: '2026-11-20T00:00:00.000Z',
-          endsAt: '2026-11-19T00:00:00.000Z',
-        })
-      ).status,
-    ).toBe(422);
-    const changed = await admin.patch(`/admin/search/pins/${id}`, {
-      isEnabled: false,
-      endsAt: '2026-12-31T00:00:00.000Z',
-    });
-    expect(changed.body).toMatchObject({ isEnabled: false, endsAt: '2026-12-31T00:00:00.000Z' });
-    expect((await admin.get('/admin/search/pins?q=unlock')).total).toBe(2);
-    expect((await admin.delete(`/admin/search/pins/${id}`)).status).toBe(204);
-    expect((await admin.patch(`/admin/search/pins/${id}`, { note: 'x' })).status).toBe(404);
-    const audits = await (await db()).select().from(s.auditLogs).where(eq(s.auditLogs.entityType, 'search_pin'));
-    expect(audits.length).toBeGreaterThanOrEqual(4);
-  });
-
-  it('hides a popular term, refuses it twice, lists it and shows it again', async () => {
-    const hidden = await admin.post('/admin/search/hidden-terms', { term: '  Cheap  Phones ' });
-    expect(hidden.status).toBe(201);
-    expect(hidden.body).toMatchObject({ term: 'cheap phones' });
-    expect((await admin.post('/admin/search/hidden-terms', { term: 'cheap phones' })).status).toBe(409);
-    expect((await admin.get('/admin/search/hidden-terms')).total).toBe(1);
-    expect((await admin.delete(`/admin/search/hidden-terms/${hidden.body.id}`)).status).toBe(204);
-    expect((await admin.delete(`/admin/search/hidden-terms/${hidden.body.id}`)).status).toBe(404);
-    expect((await admin.post('/admin/search/hidden-terms', { term: '   ' })).status).toBe(422);
-  });
-
-  it('reports the top terms and the terms that found nothing over 7, 30 or 90 days', async () => {
-    const database = await db();
-    await resetTerms(database);
-    await database.insert(s.searchTermsDaily).values([
-      { day: '2026-11-15', term: 'samsung frp', searches: 40, zeroResults: 0, visitors: 31 },
-      { day: '2026-11-16', term: 'samsung frp', searches: 10, zeroResults: 0, visitors: 8 },
-      { day: '2026-11-15', term: 'blackberry', searches: 4, zeroResults: 4, visitors: 3 },
-      { day: '2026-09-01', term: 'old term', searches: 99, zeroResults: 99, visitors: 50 },
-    ]);
-    const report = await admin.get('/admin/search/report?days=30');
-    expect(report.status).toBe(200);
-    expect(report.body).toMatchObject({
-      days: 30,
-      totals: { searches: 54, zeroResults: 4, terms: 2 },
-      topTerms: [
-        { term: 'samsung frp', searches: 50, visitors: 39, zeroResults: 0 },
-        { term: 'blackberry', searches: 4, visitors: 3, zeroResults: 4 },
-      ],
-      zeroResultTerms: [{ term: 'blackberry', searches: 4, lastSeen: '2026-11-15T00:00:00.000Z' }],
-    });
-    expect((await admin.get('/admin/search/report?days=90')).body.totals.terms).toBe(3);
-    expect((await admin.get('/admin/search/report?days=5')).status).toBe(422);
-    await resetTerms(database);
-  });
-
-  it('previews a query with the pins applied and marks the hidden services', async () => {
-    const pin = await admin.post('/admin/search/pins', {
-      query: 'samsung',
-      match: 'exact',
-      pinned: [{ serviceId: extra.network, position: 1 }],
-      hidden: [extra.frp],
-    });
-    expect(pin.status).toBe(201);
-    // The worker pushes the set after the settings event: run its job as the relay would.
-    const { runSearchOutbox } = await import('../../support/search');
-    await runSearchOutbox(t);
-    const preview = await admin.get('/admin/search/preview?q=samsung');
-    expect(preview.status).toBe(200);
-    expect(preview.body.engine).toBe('typesense');
-    expect(preview.body.hits[0]).toMatchObject({ serviceId: extra.network, position: 1, pinned: true });
-    expect(preview.body.hiddenIds).toEqual([extra.frp]);
-    expect(preview.body.hits.map((hit: { serviceId: number }) => hit.serviceId)).not.toContain(extra.frp);
-    await admin.delete(`/admin/search/pins/${pin.body.id}`);
-    await runSearchOutbox(t);
-  });
-
   it('reads the index status', async () => {
     const status = await admin.get('/admin/search/index');
     expect(status.status).toBe(200);
     expect(status.body).toMatchObject({
       engine: { status: 'ok' },
-      schemaVersion: 1,
+      schemaVersion: SERVICES_SCHEMA_VERSION,
       documents: 4,
       expectedDocuments: 4,
       rebuild: { running: false, startedAt: null },
     });
     // The state row is the database's, written by the last rebuild of any app of this run.
-    expect(status.body.collection).toMatch(/_services_v1_\d{14}$/);
+    expect(status.body.collection).toMatch(new RegExp(`_services_v${SERVICES_SCHEMA_VERSION}_\\d{14}$`));
   });
 
   it('asks for a rebuild once at a time and only with storefront:publish', async () => {
@@ -862,18 +678,42 @@ describe('the console search tools', () => {
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('UNAVAILABLE');
     expect((await owner.get('/admin/search/index')).body.engine.status).toBe('disabled');
-    expect((await owner.get('/admin/search/preview?q=samsung')).status).toBe(503);
   });
 
-  it('needs the permissions: read for the reads, update for the writes, none for a signed-out caller', async () => {
+  it('needs the permissions: read for the status, none for a signed-out caller', async () => {
     const reader = await adminWith(t, ['storefront:read']);
-    for (const url of ['synonyms', 'pins', 'hidden-terms', 'report', 'preview?q=a', 'index']) {
-      expect((await reader.get(`/admin/search/${url}`)).status, url).toBe(200);
-    }
-    expect((await reader.post('/admin/search/synonyms', { kind: 'multi', terms: ['a b', 'c d'] })).status).toBe(403);
-    expect((await reader.post('/admin/search/hidden-terms', { term: 'x y' })).status).toBe(403);
-    expect((await admin.anonymous('GET', '/admin/search/synonyms')).status).toBe(401);
+    expect((await reader.get('/admin/search/index')).status).toBe(200);
+    expect((await admin.anonymous('GET', '/admin/search/index')).status).toBe(401);
     const none = await adminWith(t, ['catalog:read']);
-    expect((await none.get('/admin/search/synonyms')).status).toBe(403);
+    expect((await none.get('/admin/search/index')).status).toBe(403);
+  });
+
+  it('answers 404 to the tools decision 068 retired, writes nothing and emits no settings event', async () => {
+    const database = await db();
+    const before = (await searchEvents()).length;
+    const audits = (await database.select().from(s.auditLogs)).length;
+    const calls: Array<[string, () => Promise<{ status: number }>]> = [
+      ['GET synonyms', () => admin.get('/admin/search/synonyms')],
+      ['POST synonyms', () => admin.post('/admin/search/synonyms', { kind: 'multi', terms: ['a b', 'c d'] })],
+      ['PATCH synonyms', () => admin.patch('/admin/search/synonyms/1', { isEnabled: false })],
+      ['DELETE synonyms', () => admin.delete('/admin/search/synonyms/1')],
+      ['GET pins', () => admin.get('/admin/search/pins')],
+      [
+        'POST pins',
+        () => admin.post('/admin/search/pins', { query: 'unlock', match: 'exact', pinned: [], hidden: [] }),
+      ],
+      ['PATCH pins', () => admin.patch('/admin/search/pins/1', { isEnabled: false })],
+      ['DELETE pins', () => admin.delete('/admin/search/pins/1')],
+      ['GET hidden-terms', () => admin.get('/admin/search/hidden-terms')],
+      ['POST hidden-terms', () => admin.post('/admin/search/hidden-terms', { term: 'samsung frp' })],
+      ['DELETE hidden-terms', () => admin.delete('/admin/search/hidden-terms/1')],
+      ['GET report', () => admin.get('/admin/search/report?days=30')],
+      ['GET preview', () => admin.get('/admin/search/preview?q=samsung')],
+    ];
+    for (const [name, call] of calls) expect((await call()).status, name).toBe(404);
+    expect((await database.select().from(s.searchPins)).length).toBe(0);
+    expect((await database.select().from(s.searchHiddenTerms)).length).toBe(0);
+    expect((await searchEvents()).slice(before)).toEqual([]);
+    expect((await database.select().from(s.auditLogs)).length).toBe(audits);
   });
 });

@@ -237,7 +237,7 @@ export class StorefrontCatalogService {
    * `_sort=price` cannot be, because the price is worked out in code (`StorefrontQuotes`, so the filtered price is the shown and
    * the charged one): it reads every match (at most 10 000), prices them, keeps those inside the bounds, sorts by price and slices
    * the page itself, so `x-total-count` stays exact. With `q` (feature 29, B223) the match set and the order come from the search
-   * engine (typos, synonyms, model codes, pins), every hit re-checked against Postgres and priced here; a price sort or bounds then
+   * engine (typos, synonyms, model codes), every hit re-checked against Postgres and priced here; a price sort or bounds then
    * work over the best 1000 matches. When the engine is off, down or not ready, the database search above answers as before
    * (decision 038's fallback).
    *

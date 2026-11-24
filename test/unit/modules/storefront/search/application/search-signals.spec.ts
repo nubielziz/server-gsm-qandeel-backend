@@ -71,13 +71,12 @@ describe('SearchSignals and CatalogSignals', () => {
     ]);
   });
 
-  it('write the settings and rebuild events on their aggregates', async () => {
+  it('write the rebuild event on its aggregate, and no settings event any more (decision 068)', async () => {
     const { outbox, events } = recordingOutbox();
     const signals = new SearchSignals(outbox);
-    await signals.settingsChanged(tx, 'pins', 4);
     await signals.rebuildRequested(tx, 2, 31);
+    expect('settingsChanged' in signals).toBe(false);
     expect(events).toEqual([
-      { type: 'search.settings_changed', aggregateType: 'search_pins', aggregateId: 4, payload: { kind: 'pins' } },
       {
         type: 'search.rebuild_requested',
         aggregateType: 'search_index',

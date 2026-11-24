@@ -12,7 +12,7 @@ import { normaliseText } from '../domain/normalise';
 import { listedServiceIds } from '../../infra/listing.repository';
 import type { FacetLabels } from '../domain/suggest-assembly';
 import { SearchableIds } from './searchable-ids';
-import { SEARCH_CACHE_VERSION } from './search-settings-push';
+import { SEARCH_CACHE_VERSION } from './search-synonym-push';
 
 const TTL_SECONDS = 600;
 

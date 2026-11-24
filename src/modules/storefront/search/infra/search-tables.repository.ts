@@ -1,16 +1,9 @@
-// Drizzle queries of the storefront search tables (feature 29, plan section 4.6): the index state row, the enabled synonyms and pins,
-// the hidden terms and the daily term counts.
+// Drizzle queries of the storefront search tables (feature 29, plan section 4.6): the index state row, the enabled synonyms and the daily
+// term counts. The tables `search_pins` and `search_hidden_terms` are retired by decision 068: nothing reads them.
 import { asc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { DbExecutor } from '../../../../infra/db';
-import {
-  type SearchIndexState,
-  searchHiddenTerms,
-  searchIndexState,
-  searchPins,
-  searchSynonyms,
-  searchTermsDaily,
-} from '../../db/schema';
-import type { PinRow, SynonymRow } from '../domain/set-conversion';
+import { type SearchIndexState, searchIndexState, searchSynonyms, searchTermsDaily } from '../../db/schema';
+import type { SynonymRow } from '../domain/set-conversion';
 import type { PopularCandidate } from '../domain/terms';
 import { POPULAR_MIN_DAYS, POPULAR_MIN_VISITORS } from '../domain/terms';
 
@@ -79,45 +72,10 @@ export async function enabledSynonyms(db: DbExecutor): Promise<SynonymRow[]> {
 }
 
 /**
- * Reads every enabled pin rule.
- *
- * @param db the database or a transaction
- * @returns the rows in id order
- */
-export async function enabledPins(db: DbExecutor): Promise<PinRow[]> {
-  const rows = await db
-    .select({
-      id: searchPins.id,
-      query: searchPins.query,
-      match: searchPins.match,
-      pinned: searchPins.pinned,
-      hidden: searchPins.hidden,
-      startsAt: searchPins.startsAt,
-      endsAt: searchPins.endsAt,
-      isEnabled: searchPins.isEnabled,
-    })
-    .from(searchPins)
-    .where(eq(searchPins.isEnabled, true))
-    .orderBy(asc(searchPins.id));
-  return rows;
-}
-
-/**
- * Reads the hidden terms.
- *
- * @param db the database or a transaction
- * @returns the normalised terms
- */
-export async function hiddenTermSet(db: DbExecutor): Promise<Set<string>> {
-  const rows = await db.select({ term: searchHiddenTerms.term }).from(searchHiddenTerms);
-  return new Set(rows.map((row) => row.term));
-}
-
-/**
  * Reads the terms that had at least 5 distinct visitors on at least 3 days since a day, with their figures.
  *
- * Why: plan section 4.4: the busy-days rule is applied in SQL so only candidates leave the database; the vocabulary, the zero-result
- * share and the hidden list are checked by `isPopularQuery`.
+ * Why: plan section 4.4: the busy-days rule is applied in SQL so only candidates leave the database; the vocabulary and the zero-result
+ * share are checked by `isPopularQuery`.
  *
  * @param db the database or a transaction
  * @param sinceDay the first day counted, `yyyy-mm-dd`

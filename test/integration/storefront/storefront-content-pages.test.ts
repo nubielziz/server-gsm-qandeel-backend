@@ -41,7 +41,7 @@ describe('GET /admin/content-pages', () => {
     const old = await insertPageRow(db, {
       slug: 'old',
       title: 'Old',
-      kind: 'carrier',
+      kind: 'blog',
       bodyMd: '# Old body',
       updatedAt: new Date('2026-11-01T10:00:00.000Z'),
     });
@@ -62,7 +62,7 @@ describe('GET /admin/content-pages', () => {
     expect(res.body.map((p: { id: number }) => p.id)).toEqual([old.id, fresh.id]);
     expect(res.body[0]).toMatchObject({
       id: old.id,
-      kind: 'carrier',
+      kind: 'blog',
       slug: 'old',
       title: 'Old',
       bodyMd: '# Old body',
@@ -80,15 +80,16 @@ describe('GET /admin/content-pages', () => {
 
   it('filters by repeated kind and status, counts with _start=0&_end=1, and refuses a language filter', async () => {
     const { db } = await testDb();
-    await insertPageRow(db, { kind: 'carrier', slug: 'c1' });
-    await insertPageRow(db, { kind: 'brand', slug: 'b1', status: 'draft', publishedAt: null });
+    await insertPageRow(db, { kind: 'static', slug: 'c1' });
+    await insertPageRow(db, { kind: 'static', slug: 'b1', status: 'draft', publishedAt: null });
     await insertPageRow(db, { kind: 'static', slug: 's1' });
     await insertPageRow(db, { kind: 'blog', slug: 'g1', status: 'noindex' });
     await insertPageRow(db, { kind: 'blog', slug: 'g2' });
     expect(
       (await admin.get('/admin/content-pages?kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc')).total,
-    ).toBe(3);
-    expect((await admin.get('/admin/content-pages?kind=carrier&_start=0&_end=1')).total).toBe(1);
+    ).toBe(5);
+    expect((await admin.get('/admin/content-pages?kind=blog&_start=0&_end=1')).total).toBe(2);
+    expect((await admin.get('/admin/content-pages?kind=static&_start=0&_end=1')).total).toBe(3);
     expect((await admin.get('/admin/content-pages?status=draft&_start=0&_end=1')).total).toBe(1);
     expect((await admin.get('/admin/content-pages?status=noindex&_start=0&_end=1')).total).toBe(1);
     // The list is strict: the language filter is an unknown key now (the console stops sending it in the same release).
@@ -208,7 +209,7 @@ describe('POST /admin/content-pages', () => {
 
   it('makes the slug from the title when none is typed and refuses a title that cannot make one', async () => {
     const res = await admin.post('/admin/content-pages', {
-      kind: 'carrier',
+      kind: 'blog',
       title: 'Unlock iPhone on AT&T',
       bodyMd: '',
     });

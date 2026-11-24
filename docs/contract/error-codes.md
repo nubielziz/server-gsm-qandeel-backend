@@ -8,7 +8,7 @@ codes internally. Client-only codes of the console (NETWORK_ERROR, INVALID_RESPO
 emitted. **Session-ending codes** (401 UNAUTHORIZED, 403 ACCOUNT_SUSPENDED, 403 IP_NOT_ALLOWED) are only ever about
 the caller. Titles are fixed English sentences written with the catalog in Phase 2.
 
-122 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
+121 codes. "Frontend" = referenced by the console's code or mocks; other codes are backend additions the
 console shows through their title and detail.
 
 | Code | Status | Meaning | Routes | Frontend |
@@ -21,11 +21,11 @@ console shows through their title and detail.
 | ACCOUNT_PENDING_APPROVAL | 403 | A merchant waiting for approval called a route that needs an approved account (orders, top-ups, API keys, price lists); it does not sign out (B153). | any |  |
 | ACCOUNT_SUSPENDED | 403 | The CALLER's staff account is suspended (login with the right password, or any request on a session of a suspended account). Never use it for an action on another (suspended) account. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
 | CSRF_FAILED | 403 | A mutation with a session but a missing or mismatched X-CSRF-Token. | `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup`, `POST /admin/auth/logout` | yes |
-| FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +234 | yes |
+| FORBIDDEN | 403 | Signed in but the role lacks the permission; detail should name it ("You need the x:y permission"). | `GET /admin/staff`, `GET /admin/staff/:id`, `POST /admin/staff` +230 | yes |
 | IP_NOT_ALLOWED | 403 | The caller's IP is blocked (scope admin\|all) or not allowlisted while the console restriction is on; decided before authentication on every /admin route incl. login. Never use it for IP-rule validation errors. | `POST /admin/auth/login`, `GET /admin/auth/me` | yes |
 | RANK_NOT_ALLOWED | 403 | The account has a rank that this route does not serve (a merchant route needs a merchant rank, a shop route the retail rank); it never signs the caller out. | any |  |
 | TURNSTILE_FAILED | 403 | The anti-bot check (Turnstile) failed or is missing: a storefront write or a public merchant sign-in form. | any |  |
-| NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +142 | yes |
+| NOT_FOUND | 404 | No record with this id (also unknown routes). | `GET /admin/staff/:id`, `PATCH /admin/staff/:id`, `POST /admin/staff/:id/password` +140 | yes |
 | ACCOUNT_EXISTS | 409 | POST /admin/customers/:id/account for a customer who already has an account. | `POST /admin/customers/:id/account` | yes |
 | ALERT_ACKNOWLEDGED | 409 | POST /admin/alerts/:id/ack on an alert already acknowledged. | `POST /admin/alerts/:id/ack` | yes |
 | ALERT_RESOLVED | 409 | POST /admin/alerts/:id/ack on an alert that already closed. | `POST /admin/alerts/:id/ack` | yes |
@@ -104,7 +104,6 @@ console shows through their title and detail.
 | SUPPLIER_REFUSED | 409 | POST /admin/orders/:id/dispatch refused by the supplier (test only). | any | yes |
 | SUPPLIER_UNAVAILABLE | 409 | POST /admin/suppliers/:id/sync when the supplier cannot be reached (409 in the mock; 502 as a data value in top errors). | `POST /admin/orders/:id/fetch`, `POST /admin/suppliers/:id/sync` | yes |
 | SYNC_NEEDED | 409 | POST /admin/suppliers/:id/import/preview before a sync (test only). | any | yes |
-| TAC_TAKEN | 409 | TAC catalogue entry already exists (with errors[{field:"tac"}]). | `POST /admin/tac-catalog`, `PATCH /admin/tac-catalog/:id` | yes |
 | TEMPLATE_BROKEN | 409 | PATCH /admin/notification-templates/:id leaves a broken template (test only). | any | yes |
 | TICKET_LOCKED | 409 | PATCH /admin/support-tickets/:id on a locked ticket (test only). | any | yes |
 | TICKET_RESOLVED | 409 | Reply/note on a resolved ticket; a requester's message or upload on one (B220). | `POST /admin/support-tickets/:id/reply` | yes |
@@ -120,7 +119,7 @@ console shows through their title and detail.
 | UNSUPPORTED_MEDIA_TYPE | 415 | The request body type is not accepted by the route. | any |  |
 | INVALID_IMEI | 422 | Data value: IMEI failed validation (Luhn/format) on order placement. | any | yes |
 | TEMPLATE_INVALID | 422 | POST /admin/notification-templates/:id/preview with invalid template syntax (test only). | any | yes |
-| VALIDATION_FAILED | 422 | Invalid input; errors[] items {field, message} with camelCase dotted paths. | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/password/set` +112 | yes |
+| VALIDATION_FAILED | 422 | Invalid input; errors[] items {field, message} with camelCase dotted paths. | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/password/set` +109 | yes |
 | WEAK_PASSWORD | 422 | POST /admin/auth/password/set refuses the password (policy: ≥ 10 characters, not trivial). | `POST /admin/auth/password/set` | yes |
 | RATE_LIMITED | 429 | Too many requests; must carry Retry-After (seconds or HTTP date). | `POST /admin/auth/login`, `POST /admin/auth/2fa`, `POST /admin/auth/2fa/setup` +2 | yes |
 | INTERNAL_ERROR | 500 | Unexpected server failure (backend decision 028 name); also a data value in System health top errors. | `POST /admin/auth/logout`, `GET /admin/auth/me`, `GET /admin/audit-logs` +2 | yes |

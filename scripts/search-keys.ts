@@ -13,6 +13,7 @@ export const INDEXER_ACTIONS = [
   'documents:*',
   'aliases:*',
   'synonym_sets:*',
+  // Decision 068: no curation set is written any more; the rebuild deletes the one schema version 1 linked.
   'curation_sets:*',
   'metrics.json:list',
   'stats.json:list',

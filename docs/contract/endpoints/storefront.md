@@ -22,7 +22,7 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `POST /admin/content-pages` | admin | staff-permission `storefront:*` | 15 | `createContentPage` |
 | `PATCH /admin/content-pages/:id` | admin | staff-permission `storefront:*` | 15 | `updateContentPage` |
 | `POST /admin/content-pages/:id/publish` | admin | staff-permission `storefront:publish` | 15 | `publishContentPage` |
-| `POST /admin/content-pages/generate` | admin | staff-permission `storefront:*` | 19 | `generateContentPages` |
+| `POST /admin/content-pages/generate` | admin | staff-permission `storefront:*` | 19 |  |
 | `GET /admin/help-articles` | admin | staff-permission `storefront:*` | 15 | `listHelpArticles` |
 | `GET /admin/help-articles/:id` | admin | staff-permission `storefront:*` | 15 | `getHelpArticle` |
 | `POST /admin/help-articles` | admin | staff-permission `storefront:*` | 15 | `createHelpArticle` |
@@ -39,19 +39,6 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 | `DELETE /admin/service-listings/:id/image` | admin | staff-permission `storefront:update` | 22 | `removeListingImage` |
 | `GET /store/v1/search/suggest` | store | public | 29 |  |
 | `GET /store/v1/search` | store | public | 29 |  |
-| `GET /admin/search/synonyms` | admin | staff-permission `storefront:read` | 29 | `listSearchSynonyms` |
-| `POST /admin/search/synonyms` | admin | staff-permission `storefront:update` | 29 | `createSearchSynonym` |
-| `PATCH /admin/search/synonyms/:id` | admin | staff-permission `storefront:update` | 29 | `updateSearchSynonym` |
-| `DELETE /admin/search/synonyms/:id` | admin | staff-permission `storefront:update` | 29 | `deleteSearchSynonym` |
-| `GET /admin/search/pins` | admin | staff-permission `storefront:read` | 29 | `listSearchPins` |
-| `POST /admin/search/pins` | admin | staff-permission `storefront:update` | 29 | `createSearchPin` |
-| `PATCH /admin/search/pins/:id` | admin | staff-permission `storefront:update` | 29 | `updateSearchPin` |
-| `DELETE /admin/search/pins/:id` | admin | staff-permission `storefront:update` | 29 | `deleteSearchPin` |
-| `GET /admin/search/hidden-terms` | admin | staff-permission `storefront:read` | 29 | `listHiddenTerms` |
-| `POST /admin/search/hidden-terms` | admin | staff-permission `storefront:update` | 29 | `createHiddenTerm` |
-| `DELETE /admin/search/hidden-terms/:id` | admin | staff-permission `storefront:update` | 29 | `deleteHiddenTerm` |
-| `GET /admin/search/report` | admin | staff-permission `storefront:read` | 29 | `getSearchReport` |
-| `GET /admin/search/preview` | admin | staff-permission `storefront:read` | 29 | `getSearchPreview` |
 | `GET /admin/search/index` | admin | staff-permission `storefront:read` | 29 | `getSearchIndex` |
 | `POST /admin/search/index/rebuild` | admin | staff-permission `storefront:publish` | 29 | `rebuildSearchIndex` |
 | `GET /store/v1/legacy-slugs/:kind/:slug` | store | public | 30 |  |
@@ -142,9 +129,9 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 
 ## GET /admin/content-pages
 
-- **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
-- **Frontend**: `listContentPages` (src/features/storefront/api/contentPages.ts:31) · params `query?: ListQuery` · returns `ListResult<ContentPage>` · success 200 · assumed contract
-- **Query**: Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24).
+- **Map**: Static pages and the blog: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
+- **Frontend**: `listContentPages` (src/features/storefront/api/contentPages.ts:23) · params `query?: ListQuery` · returns `ListResult<ContentPage>` · success 200 · assumed contract
+- **Query**: Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24). The landing kinds are retired (decision 068): a kind other than static or blog is 422.
 - **Response**: JSON array + x-total-count. Row:
 - id, kind, slug, title.
 - bodyMd: the full Markdown; editors start from the row.
@@ -156,59 +143,50 @@ Frontend features covering this module: `storefront`, `settings` (rules in `RULE
 Extra fields such as canonicalUrl and url are harmless.
 - **Errors**: 403 FORBIDDEN (caller lacks storefront:read)
 - **B55**: visits30d and orders30d have no source table. Proposal: null until analytics exist (M185). → Proposal accepted.
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068.)
 
 ## GET /admin/content-pages/:id
 
-- **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
-- **Frontend**: `getContentPage` (src/features/storefront/api/contentPages.ts:40) · params `id: number` · returns `ContentPage` · success 200 · assumed contract
+- **Map**: Static pages and the blog: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
+- **Frontend**: `getContentPage` (src/features/storefront/api/contentPages.ts:32) · params `id: number` · returns `ContentPage` · success 200 · assumed contract
 - **Request**: :id is the numeric page id.
 - **Response**: Same shape as a list row.
 - **Errors**: 404 NOT_FOUND (no page with that id)
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068.)
 
 ## POST /admin/content-pages
 
-- **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
-- **Frontend**: `createContentPage` (src/features/storefront/api/contentPages.ts:49) · params `body: CreatePageBody` · returns `ContentPage` · success 201 · assumed contract
+- **Map**: Static pages and the blog: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
+- **Frontend**: `createContentPage` (src/features/storefront/api/contentPages.ts:41) · params `body: CreatePageBody` · returns `ContentPage` · success 201 · assumed contract
 - **Request**: Body {kind (one of the seven kinds), title, slug? (empty means slugOf(title)), bodyMd (raw Markdown; keep its whitespace), seoTitle?, seoDescription?}. Empty optional fields are left out (ContentPageDialog.tsx:54-62). Created as a draft, with author_id = staff and published_at null.
 - **Response**: 201 with the ContentPage.
 - **Errors**: 422 VALIDATION_FAILED (errors[].field is one of kind|title|slug); 409 SLUG_TAKEN (the slug is already used (a slug is unique for the site); errors[{field: 'slug'}] (pageRoutes.ts:36-39)); 403 FORBIDDEN (caller lacks storefront:create)
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068.)
 
 ## PATCH /admin/content-pages/:id
 
-- **Map**: Landing and content pages: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
-- **Frontend**: `updateContentPage` (src/features/storefront/api/contentPages.ts:59) · params `id: number`, `body: Partial<Omit<CreatePageBody, "kind">>` · returns `ContentPage` · success 200 · assumed contract
+- **Map**: Static pages and the blog: draft, then publish. (صفحات الهبوط والمحتوى: مسودة ثم نشر) · staff-permission `storefront:*` · stage 15 · tables content_pages
+- **Frontend**: `updateContentPage` (src/features/storefront/api/contentPages.ts:51) · params `id: number`, `body: Partial<Omit<CreatePageBody, "kind">>` · returns `ContentPage` · success 200 · assumed contract
 - **Request**: Partial body of {title, slug, bodyMd, seoTitle, seoDescription}, changed fields only. Short fields are trimmed; '' clears an SEO field. Never kind or status (those go through the publish route). An empty title or slug is refused. The slug stays unique for the site.
 - **Response**: 200 with the updated page; updatedAt moves forward.
 - **Errors**: 404 NOT_FOUND (no page with that id); 422 VALIDATION_FAILED (empty title or slug, errors[{field}]); 409 SLUG_TAKEN (the slug is used by another page, with errors[{field: 'slug'}]); 403 FORBIDDEN (caller lacks storefront:update)
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068.)
 
 ## POST /admin/content-pages/:id/publish
 
 - **Map**: Publish a page or hide it. (نشر صفحة أو إخفاؤها) · staff-permission `storefront:publish` · stage 15 · tables content_pages, audit_logs
-- **Frontend**: `publishContentPage` (src/features/storefront/api/contentPages.ts:68) · params `id: number`, `body: PublishPageBody` · returns `ContentPage` · success 200 · assumed contract
+- **Frontend**: `publishContentPage` (src/features/storefront/api/contentPages.ts:60) · params `id: number`, `body: PublishPageBody` · returns `ContentPage` · success 200 · assumed contract
 - **Request**: Body {published: boolean}. true: status published, published_at now. false: status draft (unpublish, or hide). Works from any status, noindex included. Writes audit_logs.
 - **Response**: 200 with the updated page.
 - **Errors**: 404 NOT_FOUND (no page with that id); 422 VALIDATION_FAILED (published is not a boolean, errors[{field: 'published'}]); 403 FORBIDDEN (caller lacks storefront:publish)
 - **B56**: The map says 'publish a page or hide it'. The console reads hide as unpublish, which means draft (M179). No route sets noindex. → Proposal accepted.
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068.)
 
 ## POST /admin/content-pages/generate
 
 - **Map**: Landing-page generator (brand x model x network): produces drafts for review only. (مولّد صفحات الهبوط (ماركة × موديل × شبكة): ينتج مسودات للمراجعة فقط) · staff-permission `storefront:*` · stage 19 · tables content_pages, service_listings, tac_catalog
-- **Frontend**: `generateContentPages` (src/features/storefront/api/contentPages.ts:79) · params `body: GeneratePagesBody` · returns `GeneratePagesResult` · success 200 · assumed contract
-- **Request**: Body {brands: string[], models: string[], networks: string[]} (split on commas and new lines, trimmed).
-An empty list means all:
-- brands: distinct tac_catalog.brand.
-- models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.
-- networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).
-For each model x network: title 'Unlock <model> on <network>', slug slugOf(title), kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists are skipped. Nothing is published.
-- **Response**: 200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.
-- **Errors**: 422 VALIDATION_FAILED (the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85); 403 FORBIDDEN (caller lacks storefront:create)
-- **B57**: The permission storefront:* on an action row is ambiguous. Proposal: storefront:create, which the console uses as its hint (M186). → POST /admin/content-pages/generate requires storefront:create (frontend M186); PUT /admin/risk/rules keeps the literal risk:*.
-- **Mock**: src/features/storefront/mocks/pageRoutes.ts (Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts.)
+- **Retired** (decision 068): The landing pages were retired: a page is a static page or a blog post, so nothing generates drafts of brand, model or network pages. No backend route serves it and no console function calls it.
+- **Frontend**: none.
 
 ## GET /admin/help-articles
 
@@ -244,7 +222,7 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 - **Request**: Partial body of {category, question, answerMd, isPublished}. The publish switch sends only isPublished. An empty category, question or answerMd is refused.
 - **Response**: 200 with the updated article.
 - **Errors**: 404 NOT_FOUND (no article with that id); 422 VALIDATION_FAILED (an empty required field, errors[{field}]); 403 FORBIDDEN (caller lacks storefront:update)
-- **B58**: There is no publish route for articles, so the switch is PATCH isPublished under storefront:update (M187). → Proposal accepted.
+- **B57**: There is no publish route for articles, so the switch is PATCH isPublished under storefront:update (M187). → POST /admin/content-pages/generate requires storefront:create (frontend M186); PUT /admin/risk/rules keeps the literal risk:*. Decision 068 retired POST /admin/content-pages/generate: it is listed in test/contract/retired.ts and nothing serves it.
 - **Mock**: src/features/storefront/mocks/helpRoutes.ts (Seeded from demo S.help (seed.ts:154); api/helpArticles.test.ts.)
 
 ## GET /admin/legal-documents
@@ -260,7 +238,7 @@ For each model x network: title 'Unlock <model> on <network>', slug slugOf(title
 - acceptedCount: count of granted consent_records with this legal_document_id; null if not counted.
 The console groups rows: current = isCurrent; draft = not current and effectiveFrom null; earlier = not current and effectiveFrom set (lib/legal.ts:66-74).
 - **Errors**: 403 FORBIDDEN (caller lacks legal:read)
-- **B59**: acceptedCount needs consent_records; the route's only table is legal_documents. → Proposal accepted.
+- **B58**: acceptedCount needs consent_records; the route's only table is legal_documents. → Proposal accepted.
 - **Mock**: src/features/storefront/mocks/legalRoutes.ts (Seeded from demo S.legal (seed.ts:126); api/legalDocuments.test.ts.)
 
 ## GET /admin/legal-documents/:id
@@ -301,7 +279,7 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 - **Request**: Flat partial object of the 8 policy keys only; the Policies tab sends one key per call (PoliciesTab.tsx:25-26). Switches guestCheckout, require3ds, withdrawalWaiver, autoRefundFailed, imeiPrecheck must be JSON booleans; refundHoursBeforeDispatch integer 0-72, abandonedMinutes integer 5-1440, imeiRetentionDays integer 0-3650 (mock storefrontRoutes.ts:8-14). Any other key is a 422 on that key ('This is not a storefront setting.'). A number saves on blur/Enter, a switch at once (M169). Writes audit_logs; a require3ds change also flips the risk rule require3ds.
 - **Response**: The 8 policy keys with their values after the change (not the whole settings, storefrontRoutes.ts:35-36). GET /admin/settings must show the same values right after.
 - **Errors**: 422 VALIDATION_FAILED (value not boolean / not an integer in range / unknown key); 403 FORBIDDEN (caller lacks settings:storefront)
-- **B68**: Map says the route also writes payment_gateways and notification_templates. The console uses it for the 8 policies only; the gateway switch uses PATCH /admin/payment-gateways/:id (payments:gateways) and the email switch the template CRUD (notifications:update) (M168). Proposal: accept policy keys only. → Proposal accepted.
+- **B67**: Map says the route also writes payment_gateways and notification_templates. The console uses it for the 8 policies only; the gateway switch uses PATCH /admin/payment-gateways/:id (payments:gateways) and the email switch the template CRUD (notifications:update) (M168). Proposal: accept policy keys only. → Proposal accepted.
 - **Mock**: src/features/settings/mocks/storefrontRoutes.ts (Ranges, 422 messages per key, answer = the 8 policy keys; writes into the shared settings store.)
 
 ## GET /store/v1/categories
@@ -339,80 +317,15 @@ Later consents reference this version. requires_reacceptance makes signed-in cus
 - **Map addition** (B221, `scripts/map-additions/29.mjs`): The search results page with facet counts and the price span (English). (صفحة نتائج البحث بالإنجليزية مع عدّ الفلاتر ونطاق السعر) · public · stage 29 · tables service_listings, services, service_categories, currencies, search_terms_daily · success 200
 - **Frontend**: none.
 
-## GET /admin/search/synonyms
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the search synonyms. (قائمة مرادفات البحث) · staff-permission `storefront:read` · stage 29 · tables search_synonyms · success 200
-- **Frontend**: `listSearchSynonyms` (src/features/storefront/api/search.ts:37) · params `query?: ListQuery` · returns `ListResult<SearchSynonym>`
-
-## POST /admin/search/synonyms
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Create a search synonym. (إضافة مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 201
-- **Frontend**: `createSearchSynonym` (src/features/storefront/api/search.ts:51) · params `body: CreateSynonymBody` · returns `SearchSynonym`
-
-## PATCH /admin/search/synonyms/:id
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Change a search synonym. (تعديل مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 200
-- **Frontend**: `updateSearchSynonym` (src/features/storefront/api/search.ts:59) · params `id: number`, `body: Partial<CreateSynonymBody>` · returns `SearchSynonym`
-
-## DELETE /admin/search/synonyms/:id
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Delete a search synonym. (حذف مرادف بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
-- **Frontend**: `deleteSearchSynonym` (src/features/storefront/api/search.ts:67) · params `id: number` · returns `void`
-
-## GET /admin/search/pins
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the pinned search results. (قائمة النتائج المثبّتة في البحث) · staff-permission `storefront:read` · stage 29 · tables search_pins, service_listings · success 200
-- **Frontend**: `listSearchPins` (src/features/storefront/api/search.ts:76) · params `query?: ListQuery` · returns `ListResult<SearchPin>`
-
-## POST /admin/search/pins
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Create a pinned search result. (تثبيت نتائج لعبارة بحث) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs, service_listings · success 201
-- **Frontend**: `createSearchPin` (src/features/storefront/api/search.ts:88) · params `body: CreatePinBody` · returns `SearchPin`
-
-## PATCH /admin/search/pins/:id
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Change a pinned search result. (تعديل نتيجة مثبّتة) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs, service_listings · success 200
-- **Frontend**: `updateSearchPin` (src/features/storefront/api/search.ts:96) · params `id: number`, `body: Partial<CreatePinBody>` · returns `SearchPin`
-
-## DELETE /admin/search/pins/:id
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Delete a pinned search result. (حذف نتيجة مثبّتة) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
-- **Frontend**: `deleteSearchPin` (src/features/storefront/api/search.ts:104) · params `id: number` · returns `void`
-
-## GET /admin/search/hidden-terms
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): List the hidden popular searches. (قائمة العبارات المخفية من البحث الرائج) · staff-permission `storefront:read` · stage 29 · tables search_hidden_terms · success 200
-- **Frontend**: `listHiddenTerms` (src/features/storefront/api/search.ts:112) · params `query?: ListQuery` · returns `ListResult<HiddenTerm>`
-
-## POST /admin/search/hidden-terms
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Hide a term from the popular searches. (إخفاء عبارة من البحث الرائج) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 201
-- **Frontend**: `createHiddenTerm` (src/features/storefront/api/search.ts:122) · params `body: CreateHiddenTermBody` · returns `HiddenTerm`
-
-## DELETE /admin/search/hidden-terms/:id
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Show a hidden term again. (إظهار عبارة مخفية من جديد) · staff-permission `storefront:update` · stage 29 · tables search_synonyms, search_pins, search_hidden_terms, audit_logs · success 204
-- **Frontend**: `deleteHiddenTerm` (src/features/storefront/api/search.ts:130) · params `id: number` · returns `void`
-
-## GET /admin/search/report
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): The search report: top terms and terms with no results. (تقرير البحث: الأكثر بحثاً وما لم يُعثر عليه) · staff-permission `storefront:read` · stage 29 · tables search_terms_daily · success 200
-- **Frontend**: `getSearchReport` (src/features/storefront/api/search.ts:139) · params `days: 7 | 30 | 90` · returns `SearchReport`
-
-## GET /admin/search/preview
-
-- **Map addition** (B222, `scripts/map-additions/29.mjs`): Preview a search with the pin rules applied. (معاينة نتائج البحث مع القواعد المطبّقة) · staff-permission `storefront:read` · stage 29 · tables search_pins, service_listings · success 200
-- **Frontend**: `getSearchPreview` (src/features/storefront/api/search.ts:149) · params `query: SearchPreviewQuery` · returns `SearchPreview`
-
 ## GET /admin/search/index
 
 - **Map addition** (B222, `scripts/map-additions/29.mjs`): The search index status. (حالة فهرس البحث) · staff-permission `storefront:read` · stage 29 · tables search_index_state, service_listings · success 200
-- **Frontend**: `getSearchIndex` (src/features/storefront/api/search.ts:158) · params none · returns `SearchIndexStatus`
+- **Frontend**: `getSearchIndex` (src/features/storefront/api/search.ts:12) · params none · returns `SearchIndexStatus`
 
 ## POST /admin/search/index/rebuild
 
 - **Map addition** (B222, `scripts/map-additions/29.mjs`): Rebuild the search index. (إعادة بناء فهرس البحث) · staff-permission `storefront:publish` · stage 29 · tables search_index_state, audit_logs · success 202
-- **Frontend**: `rebuildSearchIndex` (src/features/storefront/api/search.ts:168) · params none · returns `void`
+- **Frontend**: `rebuildSearchIndex` (src/features/storefront/api/search.ts:22) · params none · returns `void`
 
 ## GET /store/v1/legacy-slugs/:kind/:slug
 

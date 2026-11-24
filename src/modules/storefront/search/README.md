@@ -15,7 +15,7 @@ Slice B1 built the index side (documents, sync, rebuild, reconcile, terms; `sear
 | `GET /store/v1/search/suggest` | the ghost text, up to 6 completions, up to 6 services (then nearby ones) with Postgres prices, up to 4 filter chips, "did you mean", the popular searches for an empty text, an IMEI intent. Limiter `search-suggest` (1200 a minute per address). |
 | `GET /store/v1/search` | the results page: the exact cards of `GET /store/v1/services`, facet counts (each group ignores its own selection), the price span (page 1, at most 1000 matches), "did you mean". Limiter `ip`. |
 | `GET /store/v1/services?q=` | unchanged array shape and `x-total-count`; the match set and the order come from the engine (`relevance` is the default sort while `q` is set), with a price sort or price bounds over the best 1000 (`x-search-truncated`). The database search answers only when the engine is off, down or not ready (decision 038). |
-| `/admin/search/*` | the console tools: synonyms, pin rules, hidden popular terms, the report, a preview, the index status and "Rebuild index" (`storefront:read`, `storefront:update`, `storefront:publish`; every write audited, with its outbox event). |
+| `GET /admin/search/index`, `POST /admin/search/index/rebuild` | the console's index status and "Rebuild index" (`storefront:read`, `storefront:publish`; the rebuild is audited, with its outbox event). Decision 068 retired the synonym, pin, hidden-term, report and preview tools. |
 
 Both public routes send `x-search-engine: typesense|fallback`.
 
@@ -27,7 +27,7 @@ price with `StorefrontQuotes.pricedSellable`) → cards (`StorefrontCatalogServi
 
 - **Suggest engine part** (ghost, completions, candidate ids with matched tokens, filter chips, did-you-mean) is cached 30 s per typed
   text; prices, availability and the re-check are read on every request, never cached. The display part of a card is cached per service
-  (30 s). Both go with the `search` cache version, which moves after a synonym or pin push.
+  (30 s). Both go with the `search` cache version, which moves after the synonym push of a rebuild.
 - **Fallback.** Engine off (`SEARCH_ENABLED=false`), circuit open, not ready (no alias of the running schema version), timeout, any
   failure of the call, a failed sub-search or a malformed body: the routes answer 200 with `engine: 'fallback'`. The suggest fallback
   makes **no service query**: it answers only the popular phrases (read from the cache, never loaded) that start with the typed text. The
@@ -38,13 +38,14 @@ price with `StorefrontQuotes.pricedSellable`) → cards (`StorefrontCatalogServi
   phone number, an email address, a link or five digits in a row; `HINCRBY` per UTC day plus a HyperLogLog of `HMAC(daily salt, IP)`;
   no address is stored. The worker's `search_terms_flush` copies them to `search_terms_daily` (180 days).
 - **Popular searches** (the empty box) are the searched terms with at least 5 distinct visitors on each of at least 3 days in 30, fewer
-  than half without results, not hidden by staff, whose phrase is a document of the terms collection (the catalog's words); with none,
-  the first four category names. Cached 10 minutes; a hidden term deletes the key.
+  than half without results, whose phrase is a document of the terms collection (the catalog's words); with none, the first four category
+  names. Cached 10 minutes. Staff no longer hide terms (decision 068).
 
 ## Ranking: the final values (tuned on the golden set)
 
-All numbers live in `domain/ranking.ts`; `test/integration/storefront/search-golden.test.ts` (58 tests over the 60 cases of plan section 8: the fixture
-catalog of 60 services plus 5 000 generated distractors) is what they were tuned against.
+All numbers live in `domain/ranking.ts`; `test/integration/storefront/search-golden.test.ts` (56 tests over 58 cases of plan section 8: the fixture
+catalog of 60 services plus 5 000 generated distractors) is what they were tuned against. Cases 34 and 56 tested pin rules and left with
+them (decision 068).
 
 | Parameter | Value | Why |
 | --- | --- | --- |
@@ -66,6 +67,21 @@ word such as `iclod` still is, case 6).
 The golden terms collection is built from the fixture catalog only: phrase weights are sums of sales, and with thousands of
 distractors a generic phrase (`samsung galaxy`) always outweighs a specific one (`samsung frp`), which is the right behaviour for a
 real shop but not what case 51 describes. The load script builds terms from every service.
+
+## Synonyms, and what decision 068 retired
+
+- **Synonyms** are shipped data, read only: the five of migration 0033 (`frp`, `icloud`, `unlock`, `imei check`, `kg lock`) live in
+  `search_synonyms`; every rebuild pushes the enabled rows whole to `<prefix>synonyms` (`SearchSynonymPush`) and moves the `search`
+  cache version; the terms build, "did you mean" and the ranking read them as before. No route writes them.
+- **Pins** are gone from the engine: the services collection of schema version 2 links no curation set, no search sends a curation
+  parameter, and the matches carry no pinned ids. A worker that boots with version 2 heals by itself: its boot reconcile finds no
+  `<prefix>services_v2` alias and queues `search_rebuild` (job id `rebuild-auto-v2-<yyyymmddhh>`); the rebuild swaps the new alias in,
+  drops the version 1 alias and collections, then deletes `<prefix>curations` (absent is fine). Until then the API answers from the
+  fallback (`not_ready`) and `GET /health` is `degraded`, never `down`.
+- **Hidden terms** are gone: the popular searches and the terms build keep every other rule.
+- **Tables**: `search_pins` and `search_hidden_terms` stay in the database and in the Drizzle schema, unread and emptied by migration
+  0069, until a later migration drops them. `search.settings_changed` and its `search_settings` job are gone; 0069 marks an unrelayed row
+  of the event as handled.
 
 ## What is not here
 
@@ -122,5 +138,5 @@ Postgres queries per warm suggest (12, plan target 4: `RetailPrices.quotes` alon
 ## Tests
 
 `test/unit/modules/storefront/search/domain/*.spec.ts` (pure rules), `test/unit/modules/storefront/search/application/search-engine.spec.ts` (the fallback), `test/integration/storefront/search-api.test.ts` (routes, fallback
-on every kind of failure, statistics, limiter, console tools), `test/integration/storefront/search-golden.test.ts` (the relevance golden set),
-`test/integration/storefront/search-sync.test.ts` (B1: the index).
+on every kind of failure, statistics, limiter, the index tools and the 404 of the retired ones), `test/integration/storefront/search-golden.test.ts` (the relevance golden set),
+`test/integration/storefront/search-sync.test.ts` (B1: the index, and the upgrade from schema version 1).

@@ -9,7 +9,9 @@ import { DbService, schema as s } from '@src/infra/db';
 import { QueuesService } from '@src/infra/queues';
 import { SearchUnavailable, TypesenseClient } from '@src/infra/search';
 import { CatalogSignals, InventoryStock, ServiceImporter } from '@src/modules/catalog';
-import { SearchNames } from '@src/modules/storefront';
+import { DEV_DEFAULTS } from '@src/config';
+import { SERVICES_SCHEMA_VERSION, SearchNames } from '@src/modules/storefront';
+import { servicesSchema } from '@src/modules/storefront/search/domain/services-schema';
 import { SearchDocuments } from '@src/modules/storefront/search/application/search-documents';
 import { SearchLocks } from '@src/modules/storefront/search/application/search-locks';
 import { SearchSync } from '@src/modules/storefront/search/application/search-sync';
@@ -258,7 +260,7 @@ describe('the change signals (each writer, in its own transaction)', () => {
 });
 
 describe('the sync (search_sync through the alias)', () => {
-  it('rebuilds only the searchable services: listed, retail priced, sellable; the alias links both sets', async () => {
+  it('rebuilds only the searchable services: listed, retail priced, sellable; the alias links the synonym set only', async () => {
     const database = await db();
     const world = await storefrontWorld(database);
     const unlisted = await insertService(database, world.icloud.categoryId, { name: 'Unlisted', code: 'UNLISTED' });
@@ -273,11 +275,12 @@ describe('the sync (search_sync through the alias)', () => {
     expect(await indexedIds(t.prefix)).toEqual([String(world.icloud.serviceId), String(world.att.serviceId)]);
     const collection = await engine.getCollection((await aliasTarget())!);
     expect(collection?.synonym_sets).toEqual([names.synonymSet]);
-    expect(collection?.curation_sets).toEqual([names.curationSet]);
+    // Decision 068: pins are retired, so the collection links no curation set.
+    expect(collection?.curation_sets ?? []).toEqual([]);
     const [state] = await database.select().from(s.searchIndexState);
     expect(state).toMatchObject({
       documents: 2,
-      schemaVersion: 1,
+      schemaVersion: 2,
       servicesCollection: collection?.name,
       lastError: null,
     });
@@ -424,7 +427,7 @@ describe('the reconcile and the rebuild', () => {
     expect(state?.lastReconcileAt?.toISOString()).toBe(clock.now().toISOString());
   });
 
-  it('swaps the alias with no failed search, drops the old and orphan collections, and keeps both set links', async () => {
+  it('swaps the alias with no failed search, drops the old and orphan collections, and keeps the synonym set link', async () => {
     const database = await db();
     await storefrontWorld(database);
     await rebuild();
@@ -457,7 +460,7 @@ describe('the reconcile and the rebuild', () => {
     expect(await servicesCollections()).toEqual([target!]);
     const collection = await engine.getCollection(target!);
     expect(collection?.synonym_sets).toEqual([names.synonymSet]);
-    expect(collection?.curation_sets).toEqual([names.curationSet]);
+    expect(collection?.curation_sets ?? []).toEqual([]);
     // The rebuild queued its follow-ups: the terms and a reconcile.
     const follow = (await queuedJobs('maintenance')).map((entry) => entry.id);
     expect(follow).toEqual(expect.arrayContaining([expect.stringMatching(/^after-rebuild-\d+-terms$/)]));
@@ -513,12 +516,66 @@ describe('the reconcile and the rebuild', () => {
       (await queuedJobs('maintenance')).filter((entry) => String(entry.id).startsWith('rebuild-auto-'));
     expect(await reconcile()).toMatchObject({ outcome: 'rebuild_requested' });
     const [queued] = await autoRebuilds();
-    expect(queued?.id).toBe(`rebuild-auto-v1-${clock.now().toISOString().slice(0, 13).replace(/[-T]/g, '')}`);
+    expect(queued?.id).toBe(
+      `rebuild-auto-v${SERVICES_SCHEMA_VERSION}-${clock.now().toISOString().slice(0, 13).replace(/[-T]/g, '')}`,
+    );
     expect(await reconcile()).toMatchObject({ outcome: 'rebuild_requested' });
     expect(await autoRebuilds()).toHaveLength(1);
     await t.app.get(SearchRebuildProcessor, { strict: false }).process(job(queued!.data));
     expect(await indexedIds(t.prefix)).toEqual([String(world.icloud.serviceId)]);
     expect(await search?.check()).toBe(true);
+  });
+
+  it('upgrades an index of schema version 1 by itself: the API falls back, the reconcile asks for a rebuild, the rebuild drops the old alias, collection and curation set', async () => {
+    const database = await db();
+    const world = await storefrontWorld(database);
+    // A clean node first: the tests before left an index of the running version under this suite's prefix.
+    for (const alias of await engine.listAliases(t.prefix)) {
+      if (names.parseAlias(alias.name)?.kind === 'services') await engine.deleteAlias(alias.name);
+    }
+    for (const name of await servicesCollections()) await engine.dropCollection(name);
+    // What the release before decision 068 left on the node: a version 1 collection linked to the synonym and curation sets, behind
+    // the version 1 alias, with a pin rule in the curation set.
+    await engine.putSynonymSet(names.synonymSet, []);
+    const put = await fetch(`${SEARCH_TEST_URL}/curation_sets/${names.retiredCurationSet}`, {
+      method: 'PUT',
+      headers: { 'x-typesense-api-key': DEV_DEFAULTS.typesenseKey, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        items: [{ id: 'p1', rule: { query: 'unlock', match: 'exact' }, includes: [{ id: '1', position: 1 }] }],
+      }),
+    });
+    expect(put.status).toBe(200);
+    const oldName = `${t.prefix}services_v1_20261101000000`;
+    const oldSchema = { ...servicesSchema(oldName, names.synonymSet), curation_sets: [names.retiredCurationSet] };
+    await engine.createCollection(oldSchema);
+    await engine.putAlias(`${t.prefix}services_v1`, oldName);
+    expect(await aliasTarget()).toBeNull();
+    // The API of the new release reads only the alias of its own version: it answers with the fallback meanwhile (the suggest route,
+    // which counts no search, so the day counters of the tests after stay clean).
+    const fallback = await t.app.inject({
+      method: 'GET',
+      url: '/store/v1/search/suggest?q=unlock',
+      remoteAddress: '198.51.100.9',
+    });
+    expect(fallback.statusCode).toBe(200);
+    expect(fallback.headers['x-search-engine']).toBe('fallback');
+    // The worker's boot reconcile finds no alias of the running version and queues the rebuild.
+    expect(await reconcile()).toMatchObject({ outcome: 'rebuild_requested' });
+    const [queued] = (await queuedJobs('maintenance')).filter((entry) => String(entry.id).startsWith('rebuild-auto-'));
+    expect(String(queued?.id)).toStartWith(`rebuild-auto-v${SERVICES_SCHEMA_VERSION}-`);
+    const report = await t.app.get(SearchRebuildProcessor, { strict: false }).process(job(queued!.data));
+    expect(report).toMatchObject({ outcome: 'rebuilt', documents: 2 });
+    const target = await aliasTarget();
+    expect(names.parse(target!)?.version).toBe(SERVICES_SCHEMA_VERSION);
+    expect(await engine.getAlias(`${t.prefix}services_v1`)).toBeNull();
+    expect(await servicesCollections()).toEqual([target!]);
+    expect((await engine.getCollection(target!))?.curation_sets ?? []).toEqual([]);
+    // The curation set went after its collection: deleting it again finds nothing.
+    expect(await engine.deleteCurationSet(names.retiredCurationSet)).toBe(false);
+    expect(await indexedIds(t.prefix)).toEqual([String(world.icloud.serviceId), String(world.att.serviceId)]);
+    // Every later rebuild finds no curation set, and that is fine.
+    clock.advance(1_000);
+    expect(await rebuild()).toMatchObject({ outcome: 'rebuilt', documents: 2 });
   });
 
   it('skips a run while the index lock is held', async () => {

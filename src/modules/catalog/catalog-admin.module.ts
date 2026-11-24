@@ -20,7 +20,6 @@ import { ServiceAdminService } from './application/service-admin.service';
 import { ServiceOrderService } from './application/service-order.service';
 import { ServicePartsService } from './application/service-parts.service';
 import { ServicePriceGridService } from './application/service-price-grid.service';
-import { TacCatalogAdminService } from './application/tac-catalog-admin.service';
 import { CategoriesController } from './controllers/categories.controller';
 import { ClientCatalogController } from './controllers/client-catalog.controller';
 import { ClientGroupsController } from './controllers/client-groups.controller';
@@ -32,7 +31,6 @@ import { RetailPriceChangesController } from './controllers/retail-price-changes
 import { RetailPriceRulesController } from './controllers/retail-price-rules.controller';
 import { ServiceGridController } from './controllers/service-grid.controller';
 import { ServicesController } from './controllers/services.controller';
-import { TacCatalogController } from './controllers/tac-catalog.controller';
 
 /**
  * Provides `/admin/client-groups`, `/admin/service-categories`, `/admin/services` (with `fields`, `options`, `group-prices`,
@@ -58,7 +56,6 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     RetailPriceChangesController,
     InventoryController,
     ClientCatalogController,
-    TacCatalogController,
   ],
   providers: [
     ClientGroupAdminService,
@@ -78,7 +75,6 @@ import { TacCatalogController } from './controllers/tac-catalog.controller';
     ClientCatalogService,
     MerchantApiCatalog,
     InventoryAdminService,
-    TacCatalogAdminService,
   ],
 })
 export class CatalogAdminModule {}

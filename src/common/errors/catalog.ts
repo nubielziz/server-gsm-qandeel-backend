@@ -112,7 +112,6 @@ export const ERROR_CATALOG = {
   SUPPLIER_REFUSED: { status: 409, title: 'The supplier refused this order.' },
   SUPPLIER_UNAVAILABLE: { status: 409, title: 'The supplier cannot be reached right now.' },
   SYNC_NEEDED: { status: 409, title: 'Sync the supplier before importing.' },
-  TAC_TAKEN: { status: 409, title: 'This TAC is already in the catalog.' },
   TEMPLATE_BROKEN: { status: 409, title: 'This change would break the template.' },
   TICKET_LOCKED: { status: 409, title: 'This ticket is locked.' },
   TICKET_RESOLVED: { status: 409, title: 'This ticket is already resolved.' },

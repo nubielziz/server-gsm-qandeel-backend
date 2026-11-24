@@ -9,7 +9,7 @@ import { type ImportFailure, SearchMetrics, SearchUnavailable, TypesenseClient }
 import { countryName } from '../domain/countries';
 import { type TermQuery, type TermService, buildTerms, dayOf, isPopularQuery } from '../domain/terms';
 import { type VocabularySource, buildVocabulary } from '../domain/vocabulary';
-import { enabledSynonyms, hiddenTermSet, popularCandidates, writeIndexState } from '../infra/search-tables.repository';
+import { enabledSynonyms, popularCandidates, writeIndexState } from '../infra/search-tables.repository';
 import { SearchCollections } from './search-collections';
 import { SearchDocuments } from './search-documents';
 import { SearchLocks } from './search-locks';
@@ -33,8 +33,8 @@ export interface TermsBuildReport {
  * Builds the terms collection.
  *
  * Why: plan section 4.4: completions come from a collection of one document per normalised phrase (title phrases, facet values,
- * synonym phrases, popular queries), built in full each time from Postgres and swapped in through `<prefix>terms_v<N>`, so a hidden
- * term or a delisted service leaves the completions at the next build. Popular queries are counted visitors (never searches) and must
+ * synonym phrases, popular queries), built in full each time from Postgres and swapped in through `<prefix>terms_v<N>`, so a delisted
+ * service or a query that is no longer popular leaves the completions at the next build. Popular queries are counted visitors (never searches) and must
  * use only words of the index vocabulary.
  *
  * Side effects: holds `gsm:{env}:storefront:search-terms:lock`; Typesense: drops terms orphans, creates and fills a terms collection,
@@ -111,10 +111,9 @@ export class SearchTermsBuild {
       vocabulary,
       synonyms.flatMap((row) => [...row.terms, ...(row.root ? [row.root] : [])]),
     );
-    const hidden = await hiddenTermSet(db);
     const since = dayOf(new Date(this.clock.nowMs() - (POPULAR_WINDOW_DAYS - 1) * DAY_MS));
     const queries: TermQuery[] = (await popularCandidates(db, since))
-      .filter((candidate) => isPopularQuery(candidate, words, hidden))
+      .filter((candidate) => isPopularQuery(candidate, words))
       .map((candidate) => ({ term: candidate.term, visitors: candidate.visitors }));
     const terms = buildTerms({
       services,

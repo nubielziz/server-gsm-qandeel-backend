@@ -126,7 +126,7 @@
         "client": 3,
         "admin": 46
       },
-      "frontendCalled": 46,
+      "frontendCalled": 42,
       "stages": [
         4,
         5,
@@ -281,13 +281,13 @@
       "module": "storefront",
       "name": "Storefront & content",
       "domain": "H",
-      "rows": 46,
-      "endpoints": 57,
+      "rows": 33,
+      "endpoints": 44,
       "bySurface": {
         "store": 12,
-        "admin": 45
+        "admin": 32
       },
-      "frontendCalled": 45,
+      "frontendCalled": 31,
       "stages": [
         14,
         15,

@@ -88,7 +88,7 @@ The list itself is also refetched every 30 s.
 - lastPublicAt: time of the latest non-internal message, or null.
 - late: a reply is awaited and slaDueAt has passed; always false when resolved.
 - **Errors**: 403 FORBIDDEN (caller lacks support:read)
-- **B62**: Rows need joins to customers or clients (requester), staff_users (assignee) and ticket_messages (lastPublicAt); the route's tables are support_tickets and orders. The map computes sla_due_at by category at creation (b2c-ticket step 2), while the demo uses priority targets of 2h, 8h and 24h. Proposal: the category sets the default priority; sla_due_at = time of the last customer message + the priority's target, recomputed when the customer writes or the priority changes, and null after a public staff reply. → Proposal accepted.
+- **B61**: Rows need joins to customers or clients (requester), staff_users (assignee) and ticket_messages (lastPublicAt); the route's tables are support_tickets and orders. The map computes sla_due_at by category at creation (b2c-ticket step 2), while the demo uses priority targets of 2h, 8h and 24h. Proposal: the category sets the default priority; sla_due_at = time of the last customer message + the priority's target, recomputed when the customer writes or the priority changes, and null after a public staff reply. → Proposal accepted.
 - **Mock**: src/features/support/mocks/ticketHandlers.ts (Seeded from demo S.tickets with the customers and merchants (mocks/store.ts:50-99). Timers are in mocks/dto.ts; exact queries are in api/support.test.ts.)
 
 ## GET /admin/support-tickets/:id
@@ -101,7 +101,7 @@ The list itself is also refetched every 30 s.
 - replyChannels: ['email'], plus 'telegram' when the requester has a linked Telegram chat.
 Refetched every 30 s while open.
 - **Errors**: 404 NOT_FOUND (no ticket with that id); 403 FORBIDDEN (caller lacks support:read)
-- **B63**: The map has no messages route, so the thread rides on this answer and needs ticket_messages, which is not in the route's tables. → Proposal accepted.
+- **B62**: The map has no messages route, so the thread rides on this answer and needs ticket_messages, which is not in the route's tables. → Proposal accepted.
 - **Mock**: src/features/support/mocks/ticketHandlers.ts (Seeded from demo S.tickets with the customers and merchants (mocks/store.ts:50-99). Timers are in mocks/dto.ts; exact queries are in api/support.test.ts.)
 
 ## PATCH /admin/support-tickets/:id
@@ -115,7 +115,7 @@ Refetched every 30 s while open.
 Values equal to the current ones are ignored. audit_logs entry per change.
 - **Response**: 200 with the updated list row (no messages).
 - **Errors**: 404 NOT_FOUND (no ticket with that id); 422 VALIDATION_FAILED (errors[].field is one of priority|status|assigneeId (mocks/ticketHandlers.ts:121-132)); 403 FORBIDDEN (caller lacks support:update)
-- **B64**: The route's tables are support_tickets and orders, but resolving also writes ticket_messages, notifications/outbox_events and audit_logs (b2c-ticket steps 7-8). → Proposal accepted.
+- **B63**: The route's tables are support_tickets and orders, but resolving also writes ticket_messages, notifications/outbox_events and audit_logs (b2c-ticket steps 7-8). → Proposal accepted.
 - **Mock**: src/features/support/mocks/ticketHandlers.ts (Seeded from demo S.tickets with the customers and merchants (mocks/store.ts:50-99). Timers are in mocks/dto.ts; exact queries are in api/support.test.ts.)
 
 ## POST /admin/support-tickets/:id/reply
@@ -137,7 +137,7 @@ Effects: inserts a staff message (is_internal false) and delivers it on the chan
 - **Request**: Body {body}. Adds an internal message (is_internal true); the status stays the same and the customer never sees it. As in the mock and demo, it also assigns an unassigned ticket to the author and bumps updated_at. Allowed on resolved tickets.
 - **Response**: 201 with the new TicketMessage.
 - **Errors**: 422 VALIDATION_FAILED (empty body, errors[{field: 'body'}]); 404 NOT_FOUND (no ticket with that id); 403 FORBIDDEN (caller lacks support:reply)
-- **B65**: The map lists only ticket_messages, but the demo and mock also set assignee_id (when empty) and updated_at on support_tickets. → Proposal accepted.
+- **B64**: The map lists only ticket_messages, but the demo and mock also set assignee_id (when empty) and updated_at on support_tickets. → Proposal accepted.
 - **Mock**: src/features/support/mocks/ticketHandlers.ts (Seeded from demo S.tickets with the customers and merchants (mocks/store.ts:50-99). Timers are in mocks/dto.ts; exact queries are in api/support.test.ts.)
 
 ## GET /admin/reply-templates

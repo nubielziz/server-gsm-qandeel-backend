@@ -37,7 +37,7 @@ describe('GET /store/v1/pages/:slug', () => {
   it('serves a published content page without a session, with its SEO fields and times', async () => {
     const { db } = await testDb();
     await insertPageRow(db, {
-      kind: 'carrier',
+      kind: 'blog',
       slug: 'unlock-iphone-on-atandt',
       title: 'Unlock iPhone on AT&T',
       bodyMd: '# Unlock\n\n<b>raw html as stored</b>',
@@ -48,7 +48,7 @@ describe('GET /store/v1/pages/:slug', () => {
     const res = await get('/store/v1/pages/unlock-iphone-on-atandt');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      kind: 'carrier',
+      kind: 'blog',
       slug: 'unlock-iphone-on-atandt',
       title: 'Unlock iPhone on AT&T',
       bodyMd: '# Unlock\n\n<b>raw html as stored</b>',

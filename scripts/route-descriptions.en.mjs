@@ -268,7 +268,7 @@ export const descriptions = {
   'admin CRUD /admin/tac-catalog': 'TAC table: brand and model for each IMEI prefix.',
   'admin POST /admin/currencies/refresh-fx': 'Refresh the exchange rates shown to customers.',
   'admin CRUD /admin/service-listings': 'Services listed in the storefront and the retail price of each service; selling below the minimum price is blocked.',
-  'admin CRUD /admin/content-pages': 'Landing and content pages: draft, then publish.',
+  'admin CRUD /admin/content-pages': 'Static pages and the blog: draft, then publish.',
   'admin POST /admin/content-pages/:id/publish': 'Publish a page or hide it.',
   'admin POST /admin/content-pages/generate': 'Landing-page generator (brand x model x network): produces drafts for review only.',
   'admin CRUD /admin/help-articles': 'Help center articles.',

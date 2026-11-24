@@ -67,7 +67,8 @@ export const AUDIT_ENTITY_TYPES = [
   'tac_entry',
   'ledger_account',
   'notification_campaign',
-  // Feature 29 (storefront search, slice B2's console routes).
+  // Feature 29 (storefront search, slice B2's console routes). Decision 068 retired the synonym, pin and hidden-term routes: their three
+  // words stay for the audit rows written before.
   'search_synonym',
   'search_pin',
   'search_hidden_term',

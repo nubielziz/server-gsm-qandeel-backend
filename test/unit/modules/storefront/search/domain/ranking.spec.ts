@@ -44,14 +44,14 @@ describe('the services field lists', () => {
 });
 
 describe('the searches', () => {
-  it('never lets a pin bypass a filter, and keeps typos off numbers', () => {
+  it('keeps typos off numbers and asks for ids only; no curation parameter since decision 068', () => {
     for (const search of [
       suggestServicesSearch('c', 'samsung'),
       nearbyServicesSearch('c', 'samsung'),
       resultsSearch('c', 'samsung', { sortBy: RELEVANCE_SORT, offset: 0, limit: 24 }),
       facetsOnlySearch('c', 'samsung', '', 'brand_key'),
     ]) {
-      expect(search.filter_curated_hits).toBe(true);
+      expect(search).not.toHaveProperty('filter_curated_hits');
       expect(search.enable_typos_for_numerical_tokens).toBe(false);
       expect(search.include_fields).toBe('id');
       expect(search.collection).toBe('c');

@@ -517,29 +517,29 @@ export const CACHE_KEY_FAMILIES: readonly CacheKeyFamily[] = [
     pattern: 'gsm:{env}:storefront:search-popular',
     owner: 'storefront (search)',
     ttl: '10 min (+-15 %)',
-    invalidation:
-      'deleted by the search_settings job after a hidden-term change; otherwise expiry (display only, never a decision)',
+    invalidation: 'expiry only (display only, never a decision)',
   },
   {
     builder: 'searchCard',
     pattern: 'gsm:{env}:storefront:search-card:{serviceId}:v{search}',
     owner: 'storefront (search)',
     ttl: '30 s (+-15 %); display text only (no price, no searchable rule: both are read on every request)',
-    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry',
+    invalidation: 'the search version moves after the synonym push of a rebuild; otherwise expiry',
   },
   {
     builder: 'searchSuggest',
     pattern: 'gsm:{env}:storefront:suggest:{sha1(p)}:v{search}',
     owner: 'storefront (search)',
     ttl: '30 s (+-15 %); the engine part only (ids, ghost, completions, filters, did-you-mean), prices and the re-check come after it',
-    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry',
+    invalidation: 'the search version moves after the synonym push of a rebuild; otherwise expiry',
   },
   {
     builder: 'searchFacetLabels',
     pattern: 'gsm:{env}:storefront:search-facet-labels:v{search}',
     owner: 'storefront (search)',
     ttl: '10 min (+-15 %)',
-    invalidation: 'the search version moves after a synonym or pin push; otherwise expiry (labels for display only)',
+    invalidation:
+      'the search version moves after the synonym push of a rebuild; otherwise expiry (labels for display only)',
   },
   {
     builder: 'searchTermsDay',

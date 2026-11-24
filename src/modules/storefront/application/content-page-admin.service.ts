@@ -106,9 +106,9 @@ const snapshot = (page: ContentPage) => ({
 });
 
 /**
- * Manages landing pages, static pages and the blog.
+ * Manages static pages and the blog.
  *
- * Why: the console's Landing pages and Content tabs write the pages the public storefront serves (`GET /store/v1/pages/:slug`).
+ * Why: the console's Content tab writes the pages the public storefront serves (`GET /store/v1/pages/:slug`).
  * A slug is unique for the site (checked before the write and again from the unique index, so a race answers 409, never 500)
  * and may not be one of the four legal document words, which the same public route serves.
  *

@@ -28,11 +28,8 @@ export {
   LISTING_CHANGED_EVENT,
   REBUILD_REQUESTED_EVENT,
   SEARCH_JOBS,
-  SEARCH_SETTINGS_KINDS,
-  SETTINGS_CHANGED_EVENT,
   SearchSignals,
 } from './search/application/search-signals';
-export type { SearchSettingsKind } from './search/application/search-signals';
 export { SearchableIds } from './search/application/searchable-ids';
 export type { Searchable } from './search/application/searchable-ids';
 export { SERVICES_SCHEMA_VERSION, SearchNames } from './search/domain/services-schema';

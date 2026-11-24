@@ -228,27 +228,25 @@ limiter is per queue, so a broadcast of 50 000 messages never slows a password r
 
 ## search-index
 
-Applies catalog, listing and search settings changes to the storefront search engine (feature 29, decision 038: Typesense holds derived,
-public, price-free documents; Postgres is the truth).
+Applies catalog and listing changes to the storefront search engine (feature 29, decision 038: Typesense holds derived, public, price-free
+documents; Postgres is the truth).
 
 - **Concurrency:** 1 per worker process. `search_sync` is the only writer of documents through the services alias
   (`<prefix>services_v<N>`), so two writes never race on one document; the reconcile only compares and enqueues `search_sync`, and the
   rebuild writes only its own new collection (both on `maintenance`, below).
-- **Jobs:** two named processors (`src/modules/storefront/search/jobs/search-index.processor.ts`):
+- **Jobs:** one named processor (`src/modules/storefront/search/jobs/search-index.processor.ts`):
   - `search_sync` (`SearchSyncProcessor`, logic `SearchSync.run`): the job of the outbox events `catalog.services_changed`, `catalog.category_changed` and
     `storefront.listing_changed` (the relay names the job `search_sync`), and of the reconcile's `{ serviceIds }` jobs. A category event is resolved to
     the category's service ids (`StorefrontServices.serviceIdsOfCategory`, keyset pages of 500). Each batch of ids is built from Postgres
     (`SearchDocuments.build`: the searchable rule, the English listing, the option labels, the stock flag); the ids that fail the rule are **deleted
     first** (`filter_by=id:[...]`, 250 per request), then the documents are imported with `action=upsert` in batches of 500.
-  - `search_settings` (`SearchSettingsProcessor`, logic `SearchSettingsPush`): the job of `search.settings_changed { kind }`. `synonyms` and `pins` put
-    the whole set of enabled rows (`PUT /synonym_sets/<prefix>synonyms`, `PUT /curation_sets/<prefix>curations`; every pin rule carries
-    `filter_curated_hits: true` and `remove_matched_tokens: false`) and then move the cache version `search`; `hidden_terms` deletes the popular-searches
-    cache key and enqueues `search_terms_build` on `maintenance` (job id `terms-hidden-<event id>`).
+  - `search_settings` is retired (decision 068: nobody edits synonyms, pins or hidden terms). A `search_settings` job that was still queued at the
+    deploy fails once with `UnrecoverableError` ("no processor"), is never retried and only counts in the failed list; migration 0069 marks an
+    unrelayed `search.settings_changed` row as handled.
 - **Payload:** the `OutboxJobData` of the event (`payload: { serviceIds, reason }` with 1-50 ids and `reason` one of `service`, `price`, `options`,
-  `stock`; `{ categoryId }`; `{ serviceIds }`; `{ kind }`), or `{ serviceIds }` (at most 500 ids) from the reconcile. Ids only.
+  `stock`; `{ categoryId }`; `{ serviceIds }`), or `{ serviceIds }` (at most 500 ids) from the reconcile. Ids only.
 - **Idempotency:** the job id is `outbox-<event id>` (relay) or `reconcile-<run id>-<n>` (reconcile). The job re-reads every fact from Postgres and writes
-  whole documents (upsert) and deletes by id (an absent id deletes nothing), so a repeat or a late run writes what Postgres says now; a set push replaces
-  the whole set.
+  whole documents (upsert) and deletes by id (an absent id deletes nothing), so a repeat or a late run writes what Postgres says now.
 - **Retry policy:** 8 attempts, exponential backoff from 30 s (jitter 50 %), about an hour in all; then the job sits in the failed list (the console's
   queues page) and the next reconcile repairs the index anyway. `SearchUnavailable` (connection, timeout, 5xx, a refused key, a node out of disk)
   throws and is retried; a 401/403 also sets `search_index_state.last_error = 'search keys missing'` and counts `search_auth_failures_total`. A
@@ -436,14 +434,16 @@ None of these writes documents through the services alias (the `search-index` qu
   (job ids `reconcile-<run id>-<n>`). Then it reads `/metrics.json` and `/debug` and writes `documents`, `memory_bytes`, `engine_version` and
   `last_reconcile_at` into `search_index_state`. Payload: none, or `{ runId }`.
 - **`search_rebuild`** (scheduler `search-rebuild-nightly`, daily 03:40 UTC; the console's "Rebuild index" through the outbox event
-  `search.rebuild_requested { staffId, runId? }`; the reconcile above): holds the same lock. It pushes the synonym and curation sets, drops every collection
-  of the prefix that is not an alias target (orphans of a stalled run, so never three collections), creates a services collection of the running version
-  (`SearchCollections.create`, the only creator, which links both sets), imports every document built from `pricedPage` into **that collection only**,
+  `search.rebuild_requested { staffId, runId? }`; the reconcile above): holds the same lock. It pushes the synonym set (`SearchSynonymPush`: the enabled rows of
+  `search_synonyms`, read only since decision 068, and a move of the cache version `search`), drops every collection of the prefix that is not an alias
+  target (orphans of a stalled run, so never three collections), creates a services collection of the running version (`SearchCollections.create`, the
+  only creator, which links the synonym set and, since schema version 2, no curation set), imports every document built from `pricedPage` into **that collection only**,
   checks that the collection holds exactly the built count with no refused line (else it drops it, keeps the old alias and records `last_error`: an
   `UnrecoverableError`), swaps the alias (`PUT /aliases`, no failed search during it), drops the older collections of this version and every collection
-  and alias of older versions, releases the lock and enqueues `search_terms_build` and `search_reconcile` (job ids `after-rebuild-<run id>-terms` and
+  and alias of older versions, deletes the curation set `<prefix>curations` that version 1 linked (decision 068; absent is fine), releases the lock and
+  enqueues `search_terms_build` and `search_reconcile` (job ids `after-rebuild-<run id>-terms` and
   `-reconcile`): the reconcile turns the changes made during the build into `search_sync` jobs.
-- **`search_terms_build`** (scheduler `search-terms-build`, hourly at :20; after a rebuild; after a hidden-term change, job id `terms-hidden-<event id>`):
+- **`search_terms_build`** (scheduler `search-terms-build`, hourly at :20; after a rebuild):
   holds `gsm:{env}:storefront:search-terms:lock`, builds the terms (title phrases, facet values, synonym phrases, popular queries of
   `search_terms_daily`) into a new terms collection and swaps `<prefix>terms_v<N>` the same way; it is the only writer of terms collections.
 - **`search_terms_flush`** (scheduler `search-terms-flush`, every 15 minutes): for today and yesterday (UTC) reads the day's counter hash
@@ -837,7 +837,6 @@ none); the job id is `outbox-<event id>`.
 | `catalog.services_changed` | `search-index` | `search_sync` | `serviceIds` (1-50), `reason` (`service`, `price`, `options`, `stock`) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`, loaded by the API and the worker), written by the catalog's `CatalogSignals` in the writer's transaction: service create, edit, archive and delete, every `PUT /admin/services/:id/group-prices`, `PUT /admin/services/:id/options`, an inventory import and void, and the stock claim of an order placement (feature 29) |
 | `catalog.category_changed` | `search-index` | `search_sync` | `categoryId` (aggregate: `service_categories`) | storefront (`SearchOutboxRoutes`), written by `CatalogSignals` on a category edit or delete and, once per category, by a merchant group delete that removed the group from categories (feature 29) |
 | `storefront.listing_changed` | `search-index` | `search_sync` | `serviceIds` (1-50) (aggregate: `services`, the first id) | storefront (`SearchOutboxRoutes`), written by `SearchSignals` on `POST /admin/service-listings` and every `PATCH /admin/service-listings/:id` (feature 29) |
-| `search.settings_changed` | `search-index` | `search_settings` | `kind` (`synonyms`, `pins`, `hidden_terms`) (aggregate: the row's table) | storefront (`SearchOutboxRoutes`), written by the console's search routes (feature 29, slice B2) |
 | `search.rebuild_requested` | `maintenance` | `search_rebuild` | `staffId`, optional `runId` (aggregate: `search_index`, 1) | storefront (`SearchOutboxRoutes`), written by `POST /admin/search/index/rebuild` (feature 29, slice B2) |
 | `catalog.category_names_clean` | `maintenance` | `category_names_clean` | none (aggregate: `service_categories`, 1) | catalog (`CategoryNameCleanupModule`, worker only), written once by migration `0046_clean_category_names` |
 | `catalog.field_patterns_review` | `maintenance` | `field_patterns_review` | none (aggregate: `service_fields`, 1) | catalog (`FieldPatternReviewModule`, worker only), written once by migration `0048_supplier_safety` |

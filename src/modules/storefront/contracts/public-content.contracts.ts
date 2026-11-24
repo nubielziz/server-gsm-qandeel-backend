@@ -14,7 +14,7 @@ const PageLegal = z.object({
   requiresReacceptance: z.boolean(),
 });
 
-/** A public page: a published content page, or the legal document in force. */
+/** A public page: a published static page or blog post, or the legal document in force. */
 const PublicPage = z.object({
   kind: z.enum([...CONTENT_PAGE_KINDS, 'legal']),
   slug: z.string(),
@@ -79,13 +79,13 @@ const ARTICLE_EXAMPLE = {
   updatedAt: '2026-10-01T09:00:00.000Z',
 } as const;
 
-/** `GET /store/v1/pages/:slug`: a content, landing or legal page in its current version. */
+/** `GET /store/v1/pages/:slug`: a static page, a blog post or a legal document in its current version. */
 export const getPublicPage = defineRoute({
   key: 'GET /store/v1/pages/:slug',
   summary: 'Get a public page',
   description:
-    'A content or landing page by slug: only a `published` or `noindex` page (`noindex` is live with `noindex: true`); a draft is ' +
-    '`404`. The slugs `terms`, `privacy`, `refund` and `cookies` answer the legal document of that type in force (`kind: legal`, ' +
+    'A static page or blog post by slug: only a `published` or `noindex` page (`noindex` is live with `noindex: true`); a draft is ' +
+    '`404`. The landing pages are retired (decision 068): their slugs are `404` like any unknown slug. The slugs `terms`, `privacy`, `refund` and `cookies` answer the legal document of that type in force (`kind: legal`, ' +
     'with `legal` naming the version); no version in force is `404`.',
   tags: ['storefront-public'],
   surface: 'store',
@@ -140,7 +140,7 @@ export const listPublicPages = defineRoute({
   description:
     'The live content pages: status `published`, or `noindex` (live, flagged ' +
     '`noindex: true`: leave those out of a sitemap). Drafts are never listed, and neither are the legal documents (read them by ' +
-    'slug at `GET /store/v1/pages/:slug`). Filter by `kind`; `q` is a contains over the title; sort by `publishedAt` (default, newest ' +
+    'slug at `GET /store/v1/pages/:slug`). Filter by `kind` (`static` or `blog`; any other value is `422`); `q` is a contains over the title; sort by `publishedAt` (default, newest ' +
     'first) or `title`; pages of up to 100 rows with `x-total-count`. Bodies are not included: fetch a page by slug. Public; ' +
     'cacheable for 30 seconds.',
   tags: ['storefront-public'],

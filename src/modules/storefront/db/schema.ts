@@ -1,4 +1,4 @@
-// Storefront tables (map domain H): public service pages, landing and blog pages, help articles, legal documents.
+// Storefront tables (map domain H): public service pages, static and blog pages, help articles, legal documents.
 // Conventions: decision 027; schema additions: MISMATCHES B116; ownership: scripts/module-map.mjs.
 import { sql } from 'drizzle-orm';
 import {
@@ -33,11 +33,13 @@ import { staffUsers } from '../../identity/db/schema';
 import { files } from '../../platform/db/schema';
 
 /**
- * Kinds of content page: five landing kinds, static pages and the blog.
+ * Kinds of content page: static pages and the blog.
  *
- * Why: the console's content page wire enum (GET /admin/content-pages).
+ * Why: the console's content page wire enum (GET /admin/content-pages). The five landing kinds (`country`, `model`, `brand`,
+ * `carrier`, `tool`) were retired by decision 068 with the landing pages and their generator: no page of those kinds exists or can
+ * be written, and the `content_pages_kind_check` constraint allows only these two.
  */
-export const CONTENT_PAGE_KINDS = ['country', 'model', 'brand', 'carrier', 'tool', 'static', 'blog'] as const;
+export const CONTENT_PAGE_KINDS = ['static', 'blog'] as const;
 
 /** One value of {@link CONTENT_PAGE_KINDS}. */
 export type ContentPageKind = (typeof CONTENT_PAGE_KINDS)[number];
@@ -106,9 +108,9 @@ export type ServiceListing = typeof serviceListings.$inferSelect;
 export type NewServiceListing = typeof serviceListings.$inferInsert;
 
 /**
- * Landing pages, static pages and the blog.
+ * Static pages and the blog.
  *
- * Why: Landing pages, static pages and the blog (routes /admin/content-pages). English only (decision 039, B224): the map's
+ * Why: Static pages and the blog (routes /admin/content-pages); the landing pages the map also lists here were retired by decision 068. English only (decision 039, B224): the map's
  * `locale` column is dropped (`REMOVED` in test/tooling/schema-structure.test.ts) and a slug is unique for the site.
  */
 export const contentPages = pgTable(
@@ -125,6 +127,7 @@ export const contentPages = pgTable(
     status: text().$type<ContentPageStatus>().notNull().default('draft'),
     publishedAt: timestampTz(),
     authorId: fk((): AnyPgColumn => staffUsers.id),
+    /** Unused since decision 068: the landing-page generator wrote it; nothing reads or writes it now. */
     templateParams: jsonObject(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -248,9 +251,9 @@ export const SEARCH_SYNONYM_KINDS = ['multi', 'one_way'] as const;
 export type SearchSynonymKind = (typeof SEARCH_SYNONYM_KINDS)[number];
 
 /**
- * How a pin rule matches the query: the whole query (`exact`) or a part of it (`contains`).
+ * How a pin rule matched the query: the whole query (`exact`) or a part of it (`contains`).
  *
- * Why: Typesense curation rules know both (plan section 4.6).
+ * Why: Typesense curation rules know both (plan section 4.6). Kept only for the check of the retired `search_pins` table (decision 068).
  */
 export const SEARCH_PIN_MATCHES = ['exact', 'contains'] as const;
 
@@ -258,10 +261,10 @@ export const SEARCH_PIN_MATCHES = ['exact', 'contains'] as const;
 export type SearchPinMatch = (typeof SEARCH_PIN_MATCHES)[number];
 
 /**
- * The synonyms of the storefront search, edited by staff and pushed to the Typesense synonym set (feature 29).
+ * The synonyms of the storefront search, pushed to the Typesense synonym set by every rebuild (feature 29).
  *
  * Why: plan section 4.6: synonyms live in Postgres and are pushed whole; nothing is edited in Typesense by hand. Migration 0033 inserts
- * the owner's five (frp, icloud, unlock, imei check, kg lock).
+ * the owner's five (frp, icloud, unlock, imei check, kg lock). Read only since decision 068: no route writes them any more.
  */
 export const searchSynonyms = pgTable(
   'search_synonyms',
@@ -293,10 +296,11 @@ export type SearchSynonym = typeof searchSynonyms.$inferSelect;
 export type NewSearchSynonym = typeof searchSynonyms.$inferInsert;
 
 /**
- * The pinned and hidden results of a query, pushed to the Typesense curation set (feature 29).
+ * The pinned and hidden results of a query (feature 29). Retired by decision 068: nothing reads or writes the table; it stays in the
+ * database, emptied by migration 0069, until a later migration drops it (an API of the release before never meets a missing table).
  *
- * Why: plan section 4.6: staff put chosen services first for a query (or hide some), optionally in a time window; the rows are the
- * truth and the curation set is rebuilt from them.
+ * Why: plan section 4.6 (as built): staff put chosen services first for a query (or hid some) and the curation set was rebuilt from the
+ * rows. The engine has no curation set since services schema version 2.
  */
 export const searchPins = pgTable(
   'search_pins',
@@ -330,16 +334,13 @@ export const searchPins = pgTable(
   ],
 );
 
-/** A row read from `search_pins`. */
-export type SearchPin = typeof searchPins.$inferSelect;
-
-/** A row to insert into `search_pins`. */
-export type NewSearchPin = typeof searchPins.$inferInsert;
-
 /**
- * Searched terms staff keep out of the popular searches (feature 29).
+ * Searched terms staff kept out of the popular searches (feature 29). Retired by decision 068: nothing reads or writes the table; it
+ * stays in the database, emptied by migration 0069, until a later migration drops it (an API of the release before never meets a
+ * missing table).
  *
- * Why: plan section 5.6 and owner question 4: popular searches are automatic, and staff can hide a term.
+ * Why: plan section 5.6 and owner question 4 (as built): popular searches are automatic, and staff could hide a term. The popular
+ * searches keep every other rule (`isPopularQuery`).
  */
 export const searchHiddenTerms = pgTable(
   'search_hidden_terms',
@@ -357,9 +358,6 @@ export const searchHiddenTerms = pgTable(
     index('search_hidden_terms_created_by_idx').on(t.createdBy),
   ],
 );
-
-/** A row read from `search_hidden_terms`. */
-export type SearchHiddenTerm = typeof searchHiddenTerms.$inferSelect;
 
 /**
  * Searches per day and term: counts and a distinct-visitor estimate, no IP, user, session or cookie (feature 29).

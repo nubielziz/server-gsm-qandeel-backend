@@ -48,8 +48,6 @@ export interface Matches {
   /** The counts per group, each ignoring its own group's selection; `null` without `extras`. */
   readonly facets: Record<FacetGroup, FacetValue[]> | null;
   readonly didYouMean: string | null;
-  /** The ids a pin put first. */
-  readonly pinned: ReadonlySet<number>;
 }
 
 const idsOf = (result: SearchResult<{ id: string }>): number[] =>
@@ -179,7 +177,6 @@ export class SearchMatches {
           allIds,
           facets,
           didYouMean: suggestion,
-          pinned: new Set(main.hits.filter((hit) => hit.curated === true).map((hit) => Number(hit.document.id))),
         } satisfies Matches;
       },
       () => Promise.resolve(null),

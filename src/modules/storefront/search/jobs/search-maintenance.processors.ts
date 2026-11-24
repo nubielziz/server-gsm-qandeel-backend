@@ -12,7 +12,7 @@ import { SearchTermsFlush, type TermsFlushReport } from '../application/search-t
 
 /**
  * The data of a maintenance job of the search: nothing (a schedule), `{ runId }` (a manual run from the console's jobs page),
- * `{ reason }` (a follow-up: `boot`, `not_ready`, `after_rebuild`, `hidden_terms`) or, for the rebuild, the outbox event
+ * `{ reason }` (a follow-up: `boot`, `not_ready`, `after_rebuild`) or, for the rebuild, the outbox event
  * `search.rebuild_requested { staffId, runId? }`.
  */
 export type MaintenanceJobData = { readonly runId?: number; readonly reason?: string } | OutboxJobData;

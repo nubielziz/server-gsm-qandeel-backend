@@ -1,5 +1,5 @@
 // SearchCollections: the collections and aliases of the storefront search (feature 29, plan section 3.3): the only code that creates a
-// collection (a services collection always links the environment's synonym and curation sets), swaps an alias, and drops old ones.
+// collection (a services collection always links the environment's synonym set), swaps an alias, and drops old ones.
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../../../common/clock';
 import { APP_CONFIG, type AppConfig } from '../../../../config';
@@ -14,11 +14,12 @@ const NAME_TRIES = 30;
  * Manages the collections and aliases of one environment.
  *
  * Why: plan section 3.3 and 4.5: every read and every incremental write goes through an alias, so a rebuild fills a new collection
- * and swaps the alias in one call (no failed search during it); the synonym and curation sets are linked at creation, which is why
- * this class is the only creator (a test asserts the alias target carries the links). Names are matched whole
+ * and swaps the alias in one call (no failed search during it); the synonym set is linked at creation, which is why this class is the
+ * only creator (a test asserts the alias target carries the link and no curation set, decision 068). Names are matched whole
  * (`SearchNames.parse`), so a longer prefix of another environment or test run is never touched.
  *
- * Side effects: Typesense calls (create and drop collections, put and delete aliases) with the worker's key.
+ * Side effects: Typesense calls (create and drop collections, put and delete aliases, delete the retired curation set) with the worker's
+ * key.
  */
 @Injectable()
 export class SearchCollections {
@@ -47,7 +48,7 @@ export class SearchCollections {
   /**
    * Creates a new collection of the running version.
    *
-   * @param kind services (linked to `<prefix>synonyms` and `<prefix>curations`) or terms
+   * @param kind services (linked to `<prefix>synonyms`) or terms
    * @returns the new collection's name (`<prefix><kind>_v<N>_<yyyymmddhhmmss>`; a later second when that one is taken)
    * @throws {SearchUnavailable} | {SearchRejected}
    */
@@ -58,10 +59,7 @@ export class SearchCollections {
     for (let step = 1; taken.has(name) && step < NAME_TRIES; step += 1) {
       name = this.names.collection(kind, new Date(now + step * 1000));
     }
-    const schema =
-      kind === 'services'
-        ? servicesSchema(name, { synonyms: this.names.synonymSet, curations: this.names.curationSet })
-        : termsSchema(name);
+    const schema = kind === 'services' ? servicesSchema(name, this.names.synonymSet) : termsSchema(name);
     await this.client.createCollection(schema);
     return name;
   }
@@ -124,6 +122,19 @@ export class SearchCollections {
       dropped.push(collection.name);
     }
     return dropped;
+  }
+
+  /**
+   * Deletes the curation set that services collections of schema version 1 linked (decision 068: pins are retired).
+   *
+   * Why: once `dropAfterSwap` dropped the version 1 collections nothing links the set; a set left behind would hold the old pin rules on
+   * the node. Absent (every rebuild after the first one) is fine.
+   *
+   * @returns true when a set was deleted, false when there was none
+   * @throws {SearchUnavailable} | {SearchRejected}
+   */
+  async dropRetiredCurationSet(): Promise<boolean> {
+    return this.client.deleteCurationSet(this.names.retiredCurationSet);
   }
 
   /**

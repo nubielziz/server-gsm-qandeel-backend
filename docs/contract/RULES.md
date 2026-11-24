@@ -383,14 +383,13 @@ Figures are one-row count calls. Every price, floor, margin and lock comes from 
 - Publish, in one transaction, retires the version in force of the same type (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.
 - An already current version answers 409 ALREADY_CURRENT; a duplicate version of a type answers 409 VERSION_EXISTS.
 (Map legal rows; legalRoutes.ts:24-45, 72-78; lib/legal.ts:66-74.)
-7. TAC: exactly 8 digits and unique (409 TAC_TAKEN on tac). brand and model are required; marketingName and releaseYear are optional. Console entries get source manual. No delete (map CRUD[LSCU]; tacRoutes.ts:35-84).
-8. Help articles have no publish route: the switch is PATCH {isPublished} under storefront:update. New articles are unpublished by default and go last in sort order (helpRoutes.ts:39-50; M187).
-9. Permissions (M7, M187):
+7. Help articles have no publish route: the switch is PATCH {isPublished} under storefront:update. New articles are unpublished by default and go last in sort order (helpRoutes.ts:39-50; M187).
+8. Permissions (M7, M187):
 - storefront:* rows: storefront:read, storefront:create, storefront:update; page publish: storefront:publish; generator: storefront:create.
 - legal:* rows: legal:read, legal:create; legal publish: legal:publish.
 - TAC: catalog:read, catalog:create, catalog:update.
 Publishes write audit_logs (map tables).
-10. English only (decision 039, B224): no language field on a listing, page, help article, category, template, campaign or account, and `locale` is an unknown key. A legal document row keeps a read-only `locale` as an archive tag (B225).
+9. English only (decision 039, B224): no language field on a listing, page, help article, category, template, campaign or account, and `locale` is an unknown key. A legal document row keeps a read-only `locale` as an archive tag (B225).
 
 Frontend mismatches with backend impact:
 

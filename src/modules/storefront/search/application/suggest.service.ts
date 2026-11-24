@@ -21,7 +21,7 @@ import {
   highlightTitle,
   typedPrefix,
 } from '../domain/suggest-assembly';
-import { hiddenTermSet, popularCandidates } from '../infra/search-tables.repository';
+import { popularCandidates } from '../infra/search-tables.repository';
 import { quoteFilterValue } from '../domain/filters';
 import { dayOf, isPopularQuery } from '../domain/terms';
 import { POPULAR_WINDOW_DAYS } from './search-terms-build';
@@ -29,7 +29,7 @@ import { SearchFacetLabels } from './facet-labels';
 import { SearchCards } from './search-cards';
 import { SearchCollections } from './search-collections';
 import { SearchEngine } from './search-engine';
-import { SEARCH_CACHE_VERSION } from './search-settings-push';
+import { SEARCH_CACHE_VERSION } from './search-synonym-push';
 import { SearchableIds } from './searchable-ids';
 import type { SearchResult } from '../../../../infra/search';
 
@@ -115,8 +115,8 @@ export class SuggestService {
   }
 
   /**
-   * The popular searches of the empty box: the searched terms with at least 5 visitors on each of 3 days that the catalog knows and staff
-   * did not hide (`isPopularQuery`), else the first four category names.
+   * The popular searches of the empty box: the searched terms with at least 5 visitors on each of 3 days that the catalog knows
+   * (`isPopularQuery`), else the first four category names.
    *
    * @returns at most eight phrases
    */
@@ -149,7 +149,7 @@ export class SuggestService {
   private async loadPopular(): Promise<string[]> {
     const db = this.db.db;
     const since = dayOf(new Date(this.clock.nowMs() - (POPULAR_WINDOW_DAYS - 1) * DAY_MS));
-    const [candidates, hidden] = await Promise.all([popularCandidates(db, since), hiddenTermSet(db)]);
+    const candidates = await popularCandidates(db, since);
     const alias = this.collections.names.alias('terms');
     const top = candidates.slice(0, POPULAR_CANDIDATES);
     // The catalog's vocabulary is what the terms collection holds: a candidate is popular only when its phrase is one of its documents
@@ -176,7 +176,7 @@ export class SuggestService {
     const known = new Set(outcome.value);
     const vocabulary = new Set([...known].flatMap((phrase) => phrase.split(' ')));
     const phrases = top
-      .filter((candidate) => known.has(normaliseText(candidate.term)) && isPopularQuery(candidate, vocabulary, hidden))
+      .filter((candidate) => known.has(normaliseText(candidate.term)) && isPopularQuery(candidate, vocabulary))
       .map((candidate) => normaliseText(candidate.term))
       .slice(0, MAX_POPULAR);
     if (phrases.length > 0) return phrases;

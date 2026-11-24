@@ -10,8 +10,8 @@ import { writeIndexState } from '../infra/search-tables.repository';
 import { SearchCollections } from './search-collections';
 import { SearchDocuments } from './search-documents';
 import { SearchLocks } from './search-locks';
-import { SearchSettingsPush } from './search-settings-push';
 import { SEARCH_JOBS } from './search-signals';
+import { SearchSynonymPush } from './search-synonym-push';
 import { KEYS_MISSING, SYNC_BATCH, describeFailures } from './search-sync';
 
 /** What one rebuild did. */
@@ -21,7 +21,7 @@ export interface RebuildReport {
   /** The new collection the alias points at. */
   readonly collection: string | null;
   readonly documents: number;
-  /** Collections and aliases dropped (orphans first, then the old ones after the swap). */
+  /** Collections, aliases and sets dropped (orphans first, then the old ones and the retired curation set after the swap). */
   readonly dropped: number;
 }
 
@@ -29,13 +29,16 @@ export interface RebuildReport {
  * Rebuilds the services index.
  *
  * Why: decision 038: a lost, stale or old-version index is harmless because a nightly (and on-demand) rebuild makes it whole from
- * Postgres. Order (plan section 4.5): push the synonym and curation sets (the new collection links them), drop the orphans of a stalled
- * run (never three collections), create the collection (`SearchCollections.create`, the only creator), import every document into
- * **that collection only**, check that it holds exactly the built count with no refused line (else drop it, keep the old alias, record
- * the error), swap the alias, drop the older collections and every collection and alias of older versions, release the lock, then queue
- * the terms build and a reconcile, which turns the changes made during the build into `search_sync` jobs.
+ * Postgres. Order (plan section 4.5): push the synonym set (the new collection links it), drop the orphans of a stalled run (never three
+ * collections), create the collection (`SearchCollections.create`, the only creator), import every document into **that collection
+ * only**, check that it holds exactly the built count with no refused line (else drop it, keep the old alias, record the error), swap
+ * the alias, drop the older collections and every collection and alias of older versions, delete the curation set of schema version 1
+ * (decision 068: once its collections are gone nothing links it; absent is fine), release the lock, then queue the terms build and a
+ * reconcile, which turns the changes made during the build into `search_sync` jobs. A worker that boots with a new schema version gets
+ * here by itself: its boot reconcile finds no alias of the running version and queues this job.
  *
- * Side effects: holds `gsm:{env}:storefront:search-index:lock`; Typesense set pushes, collection create, imports, alias swap, drops;
+ * Side effects: holds `gsm:{env}:storefront:search-index:lock`; Typesense synonym set push, collection create, imports, alias swap,
+ * drops, `DELETE /curation_sets/<prefix>curations`;
  * `search_index_state` (`schema_version`, `services_collection`, `documents`, `last_rebuild_at`, `last_error`); the gauge
  * `search_index_last_rebuild_timestamp_seconds`; enqueues `search_terms_build` and `search_reconcile` (job ids
  * `after-rebuild-<run id>-terms` and `-reconcile`).
@@ -49,7 +52,7 @@ export class SearchRebuild {
     private readonly documents: SearchDocuments,
     private readonly collections: SearchCollections,
     private readonly client: TypesenseClient,
-    private readonly settings: SearchSettingsPush,
+    private readonly synonyms: SearchSynonymPush,
     private readonly locks: SearchLocks,
     private readonly queues: QueuesService,
     private readonly metrics: SearchMetrics,
@@ -97,7 +100,7 @@ export class SearchRebuild {
   }
 
   private async rebuild(): Promise<RebuildReport> {
-    await this.settings.pushAll();
+    await this.synonyms.push();
     const orphans = await this.collections.dropOrphans('services');
     const collection = await this.collections.create('services');
     let built = 0;
@@ -128,6 +131,15 @@ export class SearchRebuild {
     }
     await this.collections.swap('services', collection);
     const dropped = await this.collections.dropAfterSwap('services', collection);
+    // After the old collections: a set that a collection still links must not go first (decision 068). The alias is already swapped, so a
+    // failure here must not fail the rebuild (the state would not be written and the follow-up jobs not queued): the next rebuild tries again.
+    try {
+      if (await this.collections.dropRetiredCurationSet()) dropped.push(this.collections.names.retiredCurationSet);
+    } catch (error) {
+      this.logger.warn(
+        `The retired curation set was not deleted (${error instanceof Error ? error.message : String(error)}); the next rebuild tries again.`,
+      );
+    }
     const now = this.clock.now();
     await writeIndexState(
       this.db.db,

@@ -5,17 +5,17 @@
   },
   "body": {
     "id": 1,
-    "kind": "carrier",
-    "slug": "unlock-iphone-on-atandt",
-    "title": "Unlock iPhone on AT&T",
-    "bodyMd": "# Unlock iPhone on AT&T\n\nText for Unlock iPhone on AT&T goes here.",
-    "seoTitle": "Unlock iPhone on AT&T",
+    "kind": "static",
+    "slug": "about",
+    "title": "About us",
+    "bodyMd": "# About us\n\nText for About us goes here.",
+    "seoTitle": "About us",
     "seoDescription": "",
     "status": "published",
-    "publishedAt": "2026-10-28T12:00:00.000Z",
-    "createdAt": "2026-09-28T12:00:00.000Z",
+    "publishedAt": "2026-09-28T12:00:00.000Z",
+    "createdAt": "2026-08-29T12:00:00.000Z",
     "updatedAt": "2026-10-31T12:00:00.000Z",
-    "visits30d": 5480,
-    "orders30d": 21
+    "visits30d": null,
+    "orders30d": null
   }
 }

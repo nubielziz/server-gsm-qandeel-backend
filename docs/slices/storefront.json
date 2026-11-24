@@ -4,13 +4,13 @@
   "domain": "H",
   "generatedBy": "scripts/build-route-slices.mjs (do not edit by hand)",
   "counts": {
-    "rows": 46,
-    "endpoints": 57,
+    "rows": 33,
+    "endpoints": 44,
     "bySurface": {
       "store": 12,
-      "admin": 45
+      "admin": 32
     },
-    "frontendCalled": 45
+    "frontendCalled": 31
   },
   "stages": [
     14,
@@ -62,7 +62,7 @@
     },
     {
       "name": "content_pages",
-      "description": "Landing pages, static pages and the blog.",
+      "description": "Static pages and the blog.",
       "descriptionAr": "صفحات الهبوط والصفحات الثابتة والمدونة بعدة لغات",
       "b2c": "new",
       "columns": [
@@ -534,10 +534,10 @@
         "path": "/admin/content-pages"
       },
       "module": "storefront",
-      "description": "Landing and content pages: draft, then publish.",
+      "description": "Static pages and the blog: draft, then publish.",
       "frontend": {
         "file": "src/features/storefront/api/contentPages.ts",
-        "line": 29,
+        "line": 21,
         "fn": "listContentPages"
       }
     },
@@ -567,10 +567,10 @@
         "path": "/admin/content-pages"
       },
       "module": "storefront",
-      "description": "Landing and content pages: draft, then publish.",
+      "description": "Static pages and the blog: draft, then publish.",
       "frontend": {
         "file": "src/features/storefront/api/contentPages.ts",
-        "line": 38,
+        "line": 30,
         "fn": "getContentPage"
       }
     },
@@ -600,10 +600,10 @@
         "path": "/admin/content-pages"
       },
       "module": "storefront",
-      "description": "Landing and content pages: draft, then publish.",
+      "description": "Static pages and the blog: draft, then publish.",
       "frontend": {
         "file": "src/features/storefront/api/contentPages.ts",
-        "line": 47,
+        "line": 39,
         "fn": "createContentPage"
       }
     },
@@ -633,10 +633,10 @@
         "path": "/admin/content-pages"
       },
       "module": "storefront",
-      "description": "Landing and content pages: draft, then publish.",
+      "description": "Static pages and the blog: draft, then publish.",
       "frontend": {
         "file": "src/features/storefront/api/contentPages.ts",
-        "line": 57,
+        "line": 49,
         "fn": "updateContentPage"
       }
     },
@@ -670,7 +670,7 @@
       "description": "Publish a page or hide it.",
       "frontend": {
         "file": "src/features/storefront/api/contentPages.ts",
-        "line": 66,
+        "line": 58,
         "fn": "publishContentPage"
       }
     },
@@ -703,11 +703,7 @@
       },
       "module": "storefront",
       "description": "Landing-page generator (brand x model x network): produces drafts for review only.",
-      "frontend": {
-        "file": "src/features/storefront/api/contentPages.ts",
-        "line": 77,
-        "fn": "generateContentPages"
-      }
+      "frontend": null
     },
     {
       "key": "GET /admin/help-articles",
@@ -1267,528 +1263,6 @@
       "successStatus": 200
     },
     {
-      "key": "GET /admin/search/synonyms",
-      "method": "GET",
-      "path": "/admin/search/synonyms",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "قائمة مرادفات البحث",
-      "access": "staff-permission",
-      "permission": "storefront:read",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:read",
-      "stage": 29,
-      "tables": [
-        "search_synonyms"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin GET /admin/search/synonyms",
-        "method": "GET",
-        "ops": null,
-        "path": "/admin/search/synonyms"
-      },
-      "module": "storefront",
-      "description": "List the search synonyms.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 35,
-        "fn": "listSearchSynonyms"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "POST /admin/search/synonyms",
-      "method": "POST",
-      "path": "/admin/search/synonyms",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "إضافة مرادف بحث",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin POST /admin/search/synonyms",
-        "method": "POST",
-        "ops": null,
-        "path": "/admin/search/synonyms"
-      },
-      "module": "storefront",
-      "description": "Create a search synonym.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 49,
-        "fn": "createSearchSynonym"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 201
-    },
-    {
-      "key": "PATCH /admin/search/synonyms/:id",
-      "method": "PATCH",
-      "path": "/admin/search/synonyms/:id",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "تعديل مرادف بحث",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin PATCH /admin/search/synonyms/:id",
-        "method": "PATCH",
-        "ops": null,
-        "path": "/admin/search/synonyms/:id"
-      },
-      "module": "storefront",
-      "description": "Change a search synonym.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 57,
-        "fn": "updateSearchSynonym"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "DELETE /admin/search/synonyms/:id",
-      "method": "DELETE",
-      "path": "/admin/search/synonyms/:id",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "حذف مرادف بحث",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin DELETE /admin/search/synonyms/:id",
-        "method": "DELETE",
-        "ops": null,
-        "path": "/admin/search/synonyms/:id"
-      },
-      "module": "storefront",
-      "description": "Delete a search synonym.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 65,
-        "fn": "deleteSearchSynonym"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "GET /admin/search/pins",
-      "method": "GET",
-      "path": "/admin/search/pins",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "قائمة النتائج المثبّتة في البحث",
-      "access": "staff-permission",
-      "permission": "storefront:read",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:read",
-      "stage": 29,
-      "tables": [
-        "search_pins",
-        "service_listings"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin GET /admin/search/pins",
-        "method": "GET",
-        "ops": null,
-        "path": "/admin/search/pins"
-      },
-      "module": "storefront",
-      "description": "List the pinned search results.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 74,
-        "fn": "listSearchPins"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "POST /admin/search/pins",
-      "method": "POST",
-      "path": "/admin/search/pins",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "تثبيت نتائج لعبارة بحث",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs",
-        "service_listings"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin POST /admin/search/pins",
-        "method": "POST",
-        "ops": null,
-        "path": "/admin/search/pins"
-      },
-      "module": "storefront",
-      "description": "Create a pinned search result.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 86,
-        "fn": "createSearchPin"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 201
-    },
-    {
-      "key": "PATCH /admin/search/pins/:id",
-      "method": "PATCH",
-      "path": "/admin/search/pins/:id",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "تعديل نتيجة مثبّتة",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs",
-        "service_listings"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin PATCH /admin/search/pins/:id",
-        "method": "PATCH",
-        "ops": null,
-        "path": "/admin/search/pins/:id"
-      },
-      "module": "storefront",
-      "description": "Change a pinned search result.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 94,
-        "fn": "updateSearchPin"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "DELETE /admin/search/pins/:id",
-      "method": "DELETE",
-      "path": "/admin/search/pins/:id",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "حذف نتيجة مثبّتة",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin DELETE /admin/search/pins/:id",
-        "method": "DELETE",
-        "ops": null,
-        "path": "/admin/search/pins/:id"
-      },
-      "module": "storefront",
-      "description": "Delete a pinned search result.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 102,
-        "fn": "deleteSearchPin"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "GET /admin/search/hidden-terms",
-      "method": "GET",
-      "path": "/admin/search/hidden-terms",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "قائمة العبارات المخفية من البحث الرائج",
-      "access": "staff-permission",
-      "permission": "storefront:read",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:read",
-      "stage": 29,
-      "tables": [
-        "search_hidden_terms"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin GET /admin/search/hidden-terms",
-        "method": "GET",
-        "ops": null,
-        "path": "/admin/search/hidden-terms"
-      },
-      "module": "storefront",
-      "description": "List the hidden popular searches.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 110,
-        "fn": "listHiddenTerms"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "POST /admin/search/hidden-terms",
-      "method": "POST",
-      "path": "/admin/search/hidden-terms",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "إخفاء عبارة من البحث الرائج",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin POST /admin/search/hidden-terms",
-        "method": "POST",
-        "ops": null,
-        "path": "/admin/search/hidden-terms"
-      },
-      "module": "storefront",
-      "description": "Hide a term from the popular searches.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 120,
-        "fn": "createHiddenTerm"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 201
-    },
-    {
-      "key": "DELETE /admin/search/hidden-terms/:id",
-      "method": "DELETE",
-      "path": "/admin/search/hidden-terms/:id",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "إظهار عبارة مخفية من جديد",
-      "access": "staff-permission",
-      "permission": "storefront:update",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:update",
-      "stage": 29,
-      "tables": [
-        "search_synonyms",
-        "search_pins",
-        "search_hidden_terms",
-        "audit_logs"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin DELETE /admin/search/hidden-terms/:id",
-        "method": "DELETE",
-        "ops": null,
-        "path": "/admin/search/hidden-terms/:id"
-      },
-      "module": "storefront",
-      "description": "Show a hidden term again.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 128,
-        "fn": "deleteHiddenTerm"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 204
-    },
-    {
-      "key": "GET /admin/search/report",
-      "method": "GET",
-      "path": "/admin/search/report",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "تقرير البحث: الأكثر بحثاً وما لم يُعثر عليه",
-      "access": "staff-permission",
-      "permission": "storefront:read",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:read",
-      "stage": 29,
-      "tables": [
-        "search_terms_daily"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin GET /admin/search/report",
-        "method": "GET",
-        "ops": null,
-        "path": "/admin/search/report"
-      },
-      "module": "storefront",
-      "description": "The search report: top terms and terms with no results.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 137,
-        "fn": "getSearchReport"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
-      "key": "GET /admin/search/preview",
-      "method": "GET",
-      "path": "/admin/search/preview",
-      "op": "action",
-      "surface": "admin",
-      "kind": "http",
-      "group": "storefront",
-      "descriptionAr": "معاينة نتائج البحث مع القواعد المطبّقة",
-      "access": "staff-permission",
-      "permission": "storefront:read",
-      "turnstile": false,
-      "idempotencyKey": false,
-      "authRaw": "storefront:read",
-      "stage": 29,
-      "tables": [
-        "search_pins",
-        "service_listings"
-      ],
-      "dhruResponse": null,
-      "origin": {
-        "row": "admin GET /admin/search/preview",
-        "method": "GET",
-        "ops": null,
-        "path": "/admin/search/preview"
-      },
-      "module": "storefront",
-      "description": "Preview a search with the pin rules applied.",
-      "frontend": {
-        "file": "src/features/storefront/api/search.ts",
-        "line": 147,
-        "fn": "getSearchPreview"
-      },
-      "addition": {
-        "file": "scripts/map-additions/29.mjs",
-        "spec": "B222"
-      },
-      "successStatus": 200
-    },
-    {
       "key": "GET /admin/search/index",
       "method": "GET",
       "path": "/admin/search/index",
@@ -1818,7 +1292,7 @@
       "description": "The search index status.",
       "frontend": {
         "file": "src/features/storefront/api/search.ts",
-        "line": 156,
+        "line": 10,
         "fn": "getSearchIndex"
       },
       "addition": {
@@ -1857,7 +1331,7 @@
       "description": "Rebuild the search index.",
       "frontend": {
         "file": "src/features/storefront/api/search.ts",
-        "line": 166,
+        "line": 20,
         "fn": "rebuildSearchIndex"
       },
       "addition": {

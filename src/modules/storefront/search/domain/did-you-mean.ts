@@ -3,8 +3,8 @@
 import type { SearchHit } from '../../../../infra/search';
 import { hasDigit, normaliseText } from './normalise';
 
-/** The hit shape the rule reads: the highlight tokens (and whether a pin put the hit there). */
-export type HighlightedHit = Pick<SearchHit<unknown>, 'highlights' | 'curated'>;
+/** The hit shape the rule reads: the highlight tokens. */
+export type HighlightedHit = Pick<SearchHit<unknown>, 'highlights'>;
 
 /** How many of the top hits must all hold the replacement word. */
 export const AGREEING_HITS = 3;
@@ -122,10 +122,7 @@ export function didYouMean(input: DidYouMeanInput): string | null {
   const checked = input.lastWordComplete ? words.length : words.length - 1;
   // A hit with no highlighted token matched through a field the highlight leaves out (the summary, the networks): it neither agrees
   // nor disagrees with a replacement, so it does not count among the hits that must share one.
-  const top = input.hits
-    .filter((hit) => hit.curated !== true)
-    .slice(0, Math.min(AGREEING_HITS, input.found))
-    .filter((hit) => matchedTokensOf(hit).size > 0);
+  const top = input.hits.slice(0, Math.min(AGREEING_HITS, input.found)).filter((hit) => matchedTokensOf(hit).size > 0);
   if (top.length === 0) return null;
   const perHit = top.map(matchedTokensOf);
   const covered = coveredBySynonymPhrase(words.map(fold), input.synonymPhrases ?? []);

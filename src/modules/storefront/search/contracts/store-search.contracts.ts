@@ -185,7 +185,7 @@ export const searchStore = defineRoute({
   key: 'GET /store/v1/search',
   summary: 'Search the services (results page)',
   description:
-    'The results page of an English search: the services that match `q` (typos, synonyms, model codes, staff pins), their facet counts and ' +
+    'The results page of an English search: the services that match `q` (typos, synonyms, model codes), their facet counts and ' +
     'the price span. `brand`, `network`, `country`, `categoryId` and `type` repeat; `availability`, `featured`, `sort` ' +
     '(`relevance` default, `popular`, `title`, `listedAt`, `price`) and `order` take one value. `minPrice`, `maxPrice` and the price ' +
     'sort work over the best 1000 matches (`truncated`). Every hit is checked against the database and priced by the same code as ' +

@@ -7,7 +7,7 @@
     "key": {
       "clientId": 1,
       "name": "Harvest sample",
-      "prefix": "gsm_MqJS",
+      "prefix": "gsm_bkEB",
       "allowedIps": [],
       "rateLimitPerMin": 60,
       "lastUsedAt": null,
@@ -18,6 +18,6 @@
       "createdByStaff": true,
       "id": 21
     },
-    "secret": "gsm_MqJSJdYTXgvZ5TaSN3xbUV95dFXx53czmSucge4tawzb"
+    "secret": "gsm_bkEBnQB7FRMqJSJdYTXgvZ5TaSN3xbUV95dFXx53czmS"
   }
 }

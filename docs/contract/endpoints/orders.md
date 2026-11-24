@@ -305,7 +305,7 @@ Frontend features covering this module: `orders`, `dashboard` (rules in `RULES.m
 - **Query**: days=1|7|14&limit=6 (hooks/useTopClients.ts:8-20); called only when the caller has reports:read.
 - **Response**: A JSON array (not a paged list, no x-total-count) of up to limit merchants ranked by spend, highest first: id, name, country (ISO-2), orders (count created in the window), spend (sum total_price of non-rejected orders created in the window), profit (completed orders: total_price - total_cost), walletBalance (merchant-side wallet balance, may be negative). Excludes merchants with status pending and merchants with no order in the window (mocks/topClients.ts:10-41). Window = the last days x 24 h.
 - **Errors**: 422 VALIDATION_FAILED (days outside 1|7|14 or limit not a positive integer (proposed max 50)); 403 FORBIDDEN (caller lacks reports:read)
-- **B88**: Map: 'Top merchants by volume and by profit' (orders, clients). Proposal: one list ranked by spend that carries profit (M41); walletBalance needs ledger_accounts. → Proposal accepted.
+- **B87**: Map: 'Top merchants by volume and by profit' (orders, clients). Proposal: one list ranked by spend that carries profit (M41); walletBalance needs ledger_accounts. → Proposal accepted.
 - **Mock**: src/features/dashboard/mocks/topClients.ts (Ranking over the demo merchants (S.merchants) and the live order store; wallet balances from the mock ledger.)
 
 ## EVENT order.status_changed

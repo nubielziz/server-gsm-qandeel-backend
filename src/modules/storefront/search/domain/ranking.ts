@@ -72,8 +72,6 @@ function servicesBase(q: string): SearchParams {
     synonym_num_typos: RANKING.synonymTypos,
     max_candidates: RANKING.maxCandidates,
     prioritize_exact_match: true,
-    // A pin never bypasses a filter (step 0: set on every rule, and passed on every search).
-    filter_curated_hits: true,
     include_fields: 'id',
     highlight_fields: HIGHLIGHT_FIELDS,
   };

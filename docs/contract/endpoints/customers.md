@@ -280,7 +280,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 - marketingConsent: the latest marketing consent record (consent_records.purpose marketing; subject_type customer|client) for the session or customer is a grant.
 - canRecover: the server's verdict.
 - **Errors**: 403 FORBIDDEN (caller lacks growth:read)
-- **B60**: Rows need services and currencies joins and the abandonedMinutes setting (for canRecover); the route's tables are checkout_sessions and consent_records. → Proposal accepted.
+- **B59**: Rows need services and currencies joins and the abandonedMinutes setting (for canRecover); the route's tables are checkout_sessions and consent_records. → Proposal accepted.
 - **Mock**: src/features/checkouts/mocks/handlers.ts (Rows come from mocks/store.ts (demo S.checkouts and S.services; consent made up per id; the recovery word becomes recoveryEmailedAt, orderId and canRecover). See also test/fixtures.ts and api/checkouts.test.ts.)
 
 ## POST /admin/checkouts/recover
@@ -291,7 +291,7 @@ Writes audit_logs both ways. Card fingerprint = the gateway's card fingerprint (
 - **Request**: Body {ids: number[]}: the ticked rows with canRecover, at most a page. The server checks each id again: exists, not already emailed, not paid, marketing consent granted, and due. Each eligible checkout gets one recovery email (a notification with a one-click link back to the saved basket) and recovery_emailed_at is set. Duplicate ids are ignored.
 - **Response**: 200 with {sent, skipped: [{id, reason}]}. Reasons: no_marketing_consent|already_emailed|already_paid|not_found; any new code is shown with underscores as spaces. Check in the mock's order: not_found, already_emailed, already_paid, no_marketing_consent (mocks/handlers.ts:14-20). A send that reached someone toasts; any skip opens the summary dialog (M133).
 - **Errors**: 422 VALIDATION_FAILED (empty or invalid ids, errors[{field: 'ids'}] (mocks/handlers.ts:39-40)); 403 FORBIDDEN (caller lacks growth:send)
-- **B61**: audit_logs is missing from the route's tables (the demo logs 'sent recovery emails'). Re-checking consent at send time also reads consent_records. → Proposal accepted.
+- **B60**: audit_logs is missing from the route's tables (the demo logs 'sent recovery emails'). Re-checking consent at send time also reads consent_records. → Proposal accepted.
 - **Mock**: src/features/checkouts/mocks/handlers.ts (Rows come from mocks/store.ts (demo S.checkouts and S.services; consent made up per id; the recovery word becomes recoveryEmailedAt, orderId and canRecover). See also test/fixtures.ts and api/checkouts.test.ts.)
 
 ## GET /admin/reports/funnel

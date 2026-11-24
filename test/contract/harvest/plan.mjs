@@ -127,8 +127,6 @@ export const OVERRIDES = {
   // Feature 28: a download needs a file on a message, and GETs are read before any upload, so the console's mock seeds one: the
   // receipt on the team's reply of T-4208 (ticket 4208, file 1).
   'GET /admin/support-tickets/:id/files/:fileId': { path: { id: 4208, fileId: 1 } },
-  // Feature 29: the search preview needs the query it ranks.
-  'GET /admin/search/preview': { query: { q: 'unlock' } },
   // Decision 062: the console's Sessions tab always asks for staff sessions (`listSessions` adds subjectType=staff).
   'GET /admin/sessions': { query: { _start: 0, _end: 25, subjectType: 'staff' } },
   // Decision 064: the legacy lookup answers only for a record of the old model; the console's seed turned old customer 5 into an account.
@@ -190,7 +188,6 @@ export const OVERRIDES = {
   'POST /admin/suppliers/:id/import/preview': (w) => ({
     body: { supplierServiceIds: (w.docs['GET /admin/suppliers/:id/services'] ?? []).slice(0, 2).map((row) => row.id) },
   }),
-  'POST /admin/tac-catalog': { body: { tac: '35123456', brand: 'Harvest', model: 'H1' } },
   'POST /admin/tax-rates': { body: { country: 'GB' } },
   'POST /admin/client-prices': (w) => ({
     bodies: (w.rows['/admin/clients'] ?? [])

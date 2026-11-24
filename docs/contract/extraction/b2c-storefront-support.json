@@ -333,7 +333,7 @@
         {
           "key": "GET /admin/content-pages",
           "successStatus": 200,
-          "query": "Landing tab: kind repeated (all five landing kinds carrier|model|tool|brand|country, or the one chosen), q (contains over title and slug, mocks/pageRoutes.ts:22), _sort title|status|updatedAt (default updatedAt desc), paging 25 (components/LandingTab.tsx:25-29). Counts: kind x5 plus status=published|draft|noindex, with _start=0&_end=1 (LandingStats.tsx:10-14). Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24).",
+          "query": "Content tab: kind=static&kind=blog&_start=0&_end=200&_sort=title&_order=asc (PagesPanel.tsx:20-24). The landing kinds are retired (decision 068): a kind other than static or blog is 422.",
           "request": "",
           "response": "JSON array + x-total-count. Row:\n- id, kind, slug, title.\n- bodyMd: the full Markdown; editors start from the row.\n- seoTitle and seoDescription: '' when none.\n- status draft|published|noindex.\n- publishedAt: null until the first publish.\n- createdAt, updatedAt.\n- visits30d and orders30d: null (no analytics source in the map; landing pages only).\nExtra fields such as canonicalUrl and url are harmless.",
           "errors": [
@@ -396,19 +396,6 @@
           ],
           "assumed": true,
           "mapConflict": "The map says 'publish a page or hide it'. The console reads hide as unpublish, which means draft (M179). No route sets noindex."
-        },
-        {
-          "key": "POST /admin/content-pages/generate",
-          "successStatus": 200,
-          "query": "",
-          "request": "Body {brands: string[], models: string[], networks: string[]} (split on commas and new lines, trimmed).\nAn empty list means all:\n- brands: distinct tac_catalog.brand.\n- models: tac_catalog marketing_name (else model) of those brands, plus typed models that are not in the catalogue.\n- networks: distinct service_listings.carrier (the mock falls back to AT&T, T-Mobile, Vodafone).\nFor each model x network: title 'Unlock <model> on <network>', slug slugOf(title), kind model, status draft, template_params {brand, model, network}, and a short draft body. Combinations whose slug already exists are skipped. Nothing is published.",
-          "response": "200 with {created: ContentPage[] (the new drafts), skipped: number (combinations that already had a page)}.",
-          "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "the run would create more than 50 new drafts (cap STOREFRONT_GENERATE_MAX_PER_RUN = 50, a code constant with no setting and no console field): the server computes brands x models x networks, removes the combinations that already have a page (counted in skipped) and, if more than 50 remain, refuses the whole run without truncating: detail 'This run would create N pages; the limit is 50 per run. Narrow the lists.', errors [] (no field); the mock silently stops at 6, pageRoutes.ts:27, 85", "ui": "dialog error slot" },
-            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks storefront:create", "ui": "Generate disabled" }
-          ],
-          "assumed": true,
-          "mapConflict": "The permission storefront:* on an action row is ambiguous. Proposal: storefront:create, which the console uses as its hint (M186)."
         },
         {
           "key": "GET /admin/help-articles",
@@ -513,59 +500,6 @@
           ],
           "assumed": true,
           "mapConflict": ""
-        },
-        {
-          "key": "GET /admin/tac-catalog",
-          "successStatus": 200,
-          "query": "Paging 25. q: contains over tac (typed digits find prefixes), brand, model and marketingName (mocks/tacRoutes.ts:9). A brand filter is accepted. _sort tac|brand|model|releaseYear, default tac asc (lib/views.ts:43-47).",
-          "request": "",
-          "response": "JSON array + x-total-count. Row: id, tac (8-digit text), brand, model (model code, e.g. A2633), marketingName ('' when none), releaseYear (number; 0 when unknown: the column stays nullable and null is sent as 0, which the console shows as '-' since TacTable.tsx:62 treats any falsy value so; sorting by releaseYear puts unknown first in asc order, matching 0; input accepts a 4-digit integer 1990 to current year + 1, and 0 or null in a body are refused with 422), source (text; manual for console entries).",
-          "errors": [
-            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks catalog:read", "ui": "tab hidden" }
-          ],
-          "assumed": true,
-          "mapConflict": ""
-        },
-        {
-          "key": "GET /admin/tac-catalog/:id",
-          "successStatus": 200,
-          "query": "",
-          "request": ":id is the numeric entry id.",
-          "response": "Same shape as a list row.",
-          "errors": [
-            { "status": 404, "code": "NOT_FOUND", "when": "no entry with that id", "ui": "error state" }
-          ],
-          "assumed": true,
-          "mapConflict": ""
-        },
-        {
-          "key": "POST /admin/tac-catalog",
-          "successStatus": 201,
-          "query": "",
-          "request": "Body {tac (exactly 8 digits), brand, model, marketingName?, releaseYear? (4-digit number, left out when empty)}. The server sets source = 'manual'.",
-          "response": "201 with the TacEntry.",
-          "errors": [
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "errors[].field is one of tac|brand|model|releaseYear", "ui": "message under the field" },
-            { "status": 409, "code": "TAC_TAKEN", "when": "the TAC is already in the catalogue; errors[{field: 'tac'}] (tacRoutes.ts:12-15)", "ui": "message under TAC" },
-            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks catalog:create", "ui": "Add TAC disabled" }
-          ],
-          "assumed": true,
-          "mapConflict": ""
-        },
-        {
-          "key": "PATCH /admin/tac-catalog/:id",
-          "successStatus": 200,
-          "query": "",
-          "request": "Partial body, changed fields only. tac is editable (8 digits, unique) only while no imei_checks row references the old TAC (imei_checks.tac records the TAC of the IMEI actually checked, a historical fact, so there is no ON UPDATE CASCADE); otherwise 422 VALIDATION_FAILED errors[{field:'tac', message:'N IMEI checks already use TAC <old>; add a new entry for the new TAC instead.'}]. brand and model cannot be emptied. The console never sends null, so a year cannot be cleared.",
-          "response": "200 with the updated entry.",
-          "errors": [
-            { "status": 404, "code": "NOT_FOUND", "when": "no entry with that id", "ui": "dialog error slot" },
-            { "status": 422, "code": "VALIDATION_FAILED", "when": "bad tac or a tac already used by IMEI checks, empty brand or model, bad year", "ui": "message under the field" },
-            { "status": 409, "code": "TAC_TAKEN", "when": "another entry has the new TAC, with errors[{field: 'tac'}]", "ui": "message under TAC" },
-            { "status": 403, "code": "FORBIDDEN", "when": "caller lacks catalog:update", "ui": "Edit disabled" }
-          ],
-          "assumed": true,
-          "mapConflict": ""
         }
       ],
       "businessRules": [
@@ -575,7 +509,6 @@
         "Slugs are made from the title when empty, with the demo's slugOf. They are unique for the site, for pages and listings (409 SLUG_TAKEN or LISTING_EXISTS, with errors[].field). Each service has one listing (mocks/http.ts:69-76; pageRoutes.ts:30-39; listingRoutes.ts:72-83).",
         "Content pages:\n- Created as drafts.\n- Status changes only through POST /:id/publish: published true sets published with published_at; false sets draft.\n- PATCH never changes kind or status.\n- The generator only creates drafts and skips slugs that exist.\n(Map content-pages rows; pageRoutes.ts:41-59, 63-117.)",
         "Legal versions are immutable (there is no edit route).\n- POST creates a draft: is_current false, effective_from null.\n- Publish, in one transaction, retires the version in force of the same type (is_current false, effective_from kept) and makes this one current from now. Later consents reference it.\n- An already current version answers 409 ALREADY_CURRENT; a duplicate version of a type answers 409 VERSION_EXISTS.\n(Map legal rows; legalRoutes.ts:24-45, 72-78; lib/legal.ts:66-74.)",
-        "TAC: exactly 8 digits and unique (409 TAC_TAKEN on tac). brand and model are required; marketingName and releaseYear are optional. Console entries get source manual. No delete (map CRUD[LSCU]; tacRoutes.ts:35-84).",
         "Help articles have no publish route: the switch is PATCH {isPublished} under storefront:update. New articles are unpublished by default and go last in sort order (helpRoutes.ts:39-50; M187).",
         "Permissions (M7, M187):\n- storefront:* rows: storefront:read, storefront:create, storefront:update; page publish: storefront:publish; generator: storefront:create.\n- legal:* rows: legal:read, legal:create; legal publish: legal:publish.\n- TAC: catalog:read, catalog:create, catalog:update.\nPublishes write audit_logs (map tables).",
         "English only (decision 039, B224): no language field on a listing, page, help article, category, template, campaign or account, and `locale` is an unknown key. A legal document row keeps a read-only `locale` as an archive tag (B225)."
@@ -610,10 +543,9 @@
       ],
       "fixtures": [
         { "routes": ["GET /admin/service-listings", "GET /admin/service-listings/:id", "POST /admin/service-listings", "PATCH /admin/service-listings/:id"], "file": "src/features/storefront/mocks/listingRoutes.ts", "note": "Rows come from mocks/dto.ts (toListing, floorOf) over mocks/seed.ts (demo S.listings, S.services, S.retail, S.orders). Query and body expectations are in api/listings.test.ts." },
-        { "routes": ["GET /admin/content-pages", "GET /admin/content-pages/:id", "POST /admin/content-pages", "PATCH /admin/content-pages/:id", "POST /admin/content-pages/:id/publish", "POST /admin/content-pages/generate"], "file": "src/features/storefront/mocks/pageRoutes.ts", "note": "Seeded from demo S.landing and S.pages (seed.ts:115-119). Generator rules at pageRoutes.ts:63-100; api/contentPages.test.ts." },
+        { "routes": ["GET /admin/content-pages", "GET /admin/content-pages/:id", "POST /admin/content-pages", "PATCH /admin/content-pages/:id", "POST /admin/content-pages/:id/publish"], "file": "src/features/storefront/mocks/pageRoutes.ts", "note": "Seeded from demo S.pages; api/contentPages.test.ts. The landing rows and the generator were retired by decision 068." },
         { "routes": ["GET /admin/help-articles", "GET /admin/help-articles/:id", "POST /admin/help-articles", "PATCH /admin/help-articles/:id"], "file": "src/features/storefront/mocks/helpRoutes.ts", "note": "Seeded from demo S.help (seed.ts:154); api/helpArticles.test.ts." },
-        { "routes": ["GET /admin/legal-documents", "GET /admin/legal-documents/:id", "POST /admin/legal-documents", "POST /admin/legal-documents/:id/publish"], "file": "src/features/storefront/mocks/legalRoutes.ts", "note": "Seeded from demo S.legal (seed.ts:126); api/legalDocuments.test.ts." },
-        { "routes": ["GET /admin/tac-catalog", "GET /admin/tac-catalog/:id", "POST /admin/tac-catalog", "PATCH /admin/tac-catalog/:id"], "file": "src/features/storefront/mocks/tacRoutes.ts", "note": "Seeded from demo S.tac (B2C_TAC, seed.ts:170); api/tacCatalog.test.ts." }
+        { "routes": ["GET /admin/legal-documents", "GET /admin/legal-documents/:id", "POST /admin/legal-documents", "POST /admin/legal-documents/:id/publish"], "file": "src/features/storefront/mocks/legalRoutes.ts", "note": "Seeded from demo S.legal (seed.ts:126); api/legalDocuments.test.ts." }
       ]
     },
     {

@@ -67,7 +67,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
       ['service_group_prices', 14],
       ['service_listings', 14],
       ['tac_catalog', 8],
-      ['content_pages', 20],
+      ['content_pages', 6],
       ['help_articles', 12],
       ['legal_documents', 6],
       ['legacy_slugs', 2],
@@ -96,19 +96,12 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
     expect(xiaomi).toMatchObject({ isListed: false, locked: true, lockedReason: 'Service disabled' });
   });
 
-  it('writes the 14 landing pages then the 6 content pages and serves the published ones publicly', async () => {
+  it('writes the 6 content pages (no landing page) and serves the published ones publicly', async () => {
     await seed();
     const pages = await admin.get('/admin/content-pages?_start=0&_end=200&_sort=id&_order=asc');
-    expect(pages.total).toBe(20);
-    expect(pages.body[0]).toMatchObject({
-      id: 1,
-      kind: 'carrier',
-      slug: 'unlock-iphone-on-atandt',
-      status: 'published',
-    });
-    expect(
-      pages.body.slice(14).map((p: { slug: string; kind: string; status: string }) => [p.slug, p.kind, p.status]),
-    ).toEqual([
+    expect(pages.total).toBe(6);
+    expect(pages.body[0]).toMatchObject({ id: 1, kind: 'static', slug: 'about', status: 'published' });
+    expect(pages.body.map((p: { slug: string; kind: string; status: string }) => [p.slug, p.kind, p.status])).toEqual([
       ['about', 'static', 'published'],
       ['how-it-works', 'static', 'published'],
       ['contact', 'static', 'published'],
@@ -117,6 +110,10 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
       ['unlock-vs-jailbreak', 'blog', 'draft'],
     ]);
     expect((await admin.get('/admin/content-pages?kind=static&kind=blog&_start=0&_end=1')).total).toBe(6);
+    // The demo's landing pages are not seeded: their slugs are not found.
+    expect((await t.app.inject({ method: 'GET', url: '/store/v1/pages/unlock-iphone-on-atandt' })).statusCode).toBe(
+      404,
+    );
     expect((await t.app.inject({ method: 'GET', url: '/store/v1/pages/about' })).statusCode).toBe(200);
     expect((await t.app.inject({ method: 'GET', url: '/store/v1/pages/unlock-vs-jailbreak' })).statusCode).toBe(404);
   });
@@ -162,7 +159,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
     const { db } = await testDb();
     expect(await db.$count(s.serviceListings)).toBe(14);
     expect(await db.$count(s.legacySlugs)).toBe(2);
-    expect(await db.$count(s.contentPages)).toBe(20);
+    expect(await db.$count(s.contentPages)).toBe(6);
     // A normal insert after the seed takes the next id.
     const res = await admin.post('/admin/help-articles', {
       category: 'Orders',
@@ -176,7 +173,7 @@ describe.skipIf(!frontendPresent)('the storefront seed through the console route
       title: 'Careers',
       bodyMd: '',
     });
-    expect(page.body.id).toBe(21);
+    expect(page.body.id).toBe(7);
   });
 });
 

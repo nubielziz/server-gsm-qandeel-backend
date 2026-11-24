@@ -1,5 +1,5 @@
-// The HTTP side of the storefront search (feature 29, decision 038): the public routes (`/store/v1/search*`), the console's search tools
-// (`/admin/search/*`) and the services they and the public catalog list share. API only; the worker has the index and sync modules.
+// The HTTP side of the storefront search (feature 29, decision 038): the public routes (`/store/v1/search*`), the console's index tools
+// (`/admin/search/index*`) and the services they and the public catalog list share. API only; the worker has the index and sync modules.
 import { Global, Module } from '@nestjs/common';
 import { JobRunsModule } from '../../health';
 import { SearchFacetLabels } from './application/facet-labels';
@@ -8,7 +8,6 @@ import { SearchAdminService } from './application/search-admin.service';
 import { SearchCards } from './application/search-cards';
 import { SearchEngine } from './application/search-engine';
 import { SearchMatches } from './application/search-matches';
-import { SearchReportService } from './application/search-report.service';
 import { SearchResolver } from './application/search-resolver';
 import { SearchTermsCounter } from './application/search-terms-counter';
 import { SuggestService } from './application/suggest.service';
@@ -36,7 +35,6 @@ import { StoreSearchController } from './controllers/store-search.controller';
     SuggestService,
     ResultsService,
     SearchAdminService,
-    SearchReportService,
   ],
   exports: [SearchMatches, SearchResolver, SearchTermsCounter],
 })

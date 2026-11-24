@@ -128,16 +128,15 @@ describe('isPopularQuery', () => {
   });
 
   it('keeps a term of catalog words with 5 visitors on 3 days and few empty results', () => {
-    expect(isPopularQuery(candidate(), vocabulary, new Set())).toBe(true);
-    expect(isPopularQuery(candidate({ term: 'google account lock' }), vocabulary, new Set())).toBe(true);
+    expect(isPopularQuery(candidate(), vocabulary)).toBe(true);
+    expect(isPopularQuery(candidate({ term: 'google account lock' }), vocabulary)).toBe(true);
   });
 
-  it('refuses an injected phrase, too few busy days, mostly empty results, a hidden term and more than 4 words', () => {
-    expect(isPopularQuery(candidate({ term: 'cheap unlock scam site' }), vocabulary, new Set())).toBe(false);
-    expect(isPopularQuery(candidate({ busyDays: 2 }), vocabulary, new Set())).toBe(false);
-    expect(isPopularQuery(candidate({ zeroResults: 20 }), vocabulary, new Set())).toBe(false);
-    expect(isPopularQuery(candidate(), vocabulary, new Set(['samsung frp']))).toBe(false);
-    expect(isPopularQuery(candidate({ term: 'samsung frp bypass samsung frp' }), vocabulary, new Set())).toBe(false);
+  it('refuses an injected phrase, too few busy days, mostly empty results and more than 4 words', () => {
+    expect(isPopularQuery(candidate({ term: 'cheap unlock scam site' }), vocabulary)).toBe(false);
+    expect(isPopularQuery(candidate({ busyDays: 2 }), vocabulary)).toBe(false);
+    expect(isPopularQuery(candidate({ zeroResults: 20 }), vocabulary)).toBe(false);
+    expect(isPopularQuery(candidate({ term: 'samsung frp bypass samsung frp' }), vocabulary)).toBe(false);
   });
 });
 

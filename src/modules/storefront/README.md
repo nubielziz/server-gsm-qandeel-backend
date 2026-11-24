@@ -4,14 +4,14 @@ Map domain H. The content of the public storefront: service listings, content pa
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
-Decisions that shape this module: 022 caching, 034 Turnstile, 038 search on Typesense. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 022 caching, 034 Turnstile, 038 search on Typesense, 068 the landing pages are retired. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
 Built: the public catalog (feature 14a, storefront-checkout: 3 of the 6 storefront routes `GET /store/v1/config`,
 `GET /store/v1/services`, `GET /store/v1/services/:slug`) and the admin and content parts (feature 15: the admin routes of the
 listings, content pages, help articles and legal documents and the three public content routes, 20 routes), with the one demo seed
-(`scripts/seed/storefront.ts`), and the page generator (feature 19: `POST /admin/content-pages/generate`). Feature 16 built
+(`scripts/seed/storefront.ts`); the page generator of feature 19 (`POST /admin/content-pages/generate`) was retired by decision 068. Feature 16 built
 `PATCH /admin/storefront/settings` (below). Feature 22 (the storefront catalog backend) added the listing content editor, the
 catalog filters and sorts, `GET /store/v1/categories`, the availability flag, the popularity job, the public page list, the slug
 alternates (removed by feature 30), the help vote and the service picture (upload, removal, `imageUrl`; section "Feature 22" below).
@@ -103,7 +103,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | Table | What it holds |
 |---|---|
 | `service_listings` | The public service page in the storefront, one per service: title, slug (unique for the site), content, SEO fields and the facts of the service (brand, carrier, country, featured, position); `listed_at`, `sales_30d` (job only) and `image_file_id` (feature 22). The map's `locale` column is dropped (feature 30, migration 0036). |
-| `content_pages` | Landing pages, static pages and the blog; the slug is unique for the site. The map's `locale` column is dropped (feature 30, migration 0037). |
+| `content_pages` | Static pages and the blog (`kind` `static` or `blog`, the check `content_pages_kind_check`; the five landing kinds were retired by decision 068); the slug is unique for the site. `template_params` is unused since the generator went. The map's `locale` column is dropped (feature 30, migration 0037). |
 | `help_articles` | The help centre and FAQ; an article can be linked to a service. The map's `locale` column is dropped (feature 30, migration 0037). |
 | `legal_documents` | Terms, privacy, refund and cookie documents, with archived versions. `locale` stays as an archive tag (feature 30, section "Legal documents: the one exception"). |
 
@@ -111,7 +111,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 25 endpoints (admin 19, store 6). Source: `docs/slices/storefront.json`. Built by feature 15: the 20 below; built by feature 14a:
 `GET /store/v1/config`, `GET /store/v1/services`, `GET /store/v1/services/:slug` (described above); built by feature 19:
-`POST /admin/content-pages/generate` (below, "Landing-page generator"). Not built: `PATCH /admin/storefront/settings` (16).
+`POST /admin/content-pages/generate` was retired by decision 068 (section "Landing pages, retired"). Not built: `PATCH /admin/storefront/settings` (16).
 
 ### Admin console (17 of 19, plus the two picture routes of feature 22)
 
@@ -123,12 +123,11 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 | `PATCH /admin/service-listings/:id` | `storefront:update` | The "On the site" switch, the retail price (floor 422, `SERVICE_DISABLED`, `LISTING_LOCKED`; feature 31: `retailPricing: 'rule'` prices by the retail price rule and follows it, 422 on `retailPricing` `conflict`, `no_rule`, `no_cost`; a typed price stops following) and the content: title, slug (`LISTING_EXISTS` on `slug`), summary, description, requirements, delivery note, SEO, brand, carrier, country, featured, position. Switching on also needs `storefront:publish`; `retailPrice` and `retailPricing` also need `pricing:update` (decision 046). |
 | `POST /admin/service-listings/:id/image` | `storefront:update` | (22) Multipart part `file`: a JPEG, PNG or WebP of at most 2 MiB, 200 to 4096 px, checked and cleaned by `PublicImages`; becomes the picture of the service. `422` on `file` with the refusal code, `413` over 2 MiB. Audited `uploaded image for`. |
 | `DELETE /admin/service-listings/:id/image` | `storefront:update` | (22) Removes the picture of the service (`204`, also when there was none); the file stays. Audited `removed image of`. |
-| `GET /admin/content-pages` | `storefront:read` | Landing and content pages; filters `kind` (repeatable), `status`; `q` over title and slug. |
+| `GET /admin/content-pages` | `storefront:read` | Static pages and blog posts; filters `kind` (repeatable), `status`; `q` over title and slug. |
 | `GET /admin/content-pages/:id` | `storefront:read` | One page. |
 | `POST /admin/content-pages` | `storefront:create` | A draft written by the signed-in staff member (`SLUG_TAKEN`). |
 | `PATCH /admin/content-pages/:id` | `storefront:update` | Text, slug and SEO; never kind or status. |
 | `POST /admin/content-pages/:id/publish` | `storefront:publish` | Publish or hide (`published` boolean). |
-| `POST /admin/content-pages/generate` | `storefront:create` | Draft landing pages for brand x model x network (`422` over 50 new drafts); feature 19. |
 | `GET /admin/help-articles` | `storefront:read` | Articles with votes; filters `isPublished`, `category`. |
 | `GET /admin/help-articles/:id` | `storefront:read` | One article. |
 | `POST /admin/help-articles` | `storefront:create` | A new article, last in the order. |
@@ -142,7 +141,7 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 
 | Route | What it does |
 |---|---|
-| `GET /store/v1/pages/:slug` | A live content page (`published`, or `noindex` with `noindex: true`), or the legal document in force for the slugs `terms`, `privacy`, `refund`, `cookies` (`kind: legal`, with the version a consent references). A draft is 404. |
+| `GET /store/v1/pages/:slug` | A live static page or blog post (`published`, or `noindex` with `noindex: true`), or the legal document in force for the slugs `terms`, `privacy`, `refund`, `cookies` (`kind: legal`, with the version a consent references). A draft is 404. |
 | `GET /store/v1/help?q=&category=` | The published articles, in staff order, with the derived slug and the votes. |
 | `GET /store/v1/help/:slug` | One published article; only the id at the start of the slug counts. |
 | `GET /store/v1/pages?kind=&q=&_sort=` | (22) The live pages without their bodies (`published`, or `noindex` with `noindex: true`); never drafts or legal documents; sorts `publishedAt` (default, newest first), `title`; up to 100 rows. |
@@ -187,10 +186,9 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
 - **Audit** (demo phrases, ANSWERS audit Q3): `created listing for`, `listed on storefront`, `unlisted from storefront`, `changed
   retail price of`, `edited listing of` (entity `listing`); `created page`, `edited page`, `published page`, `unpublished page` (`content_page`);
   `created help article`, `edited help article`, `published help article`, `unpublished help article` (`help_article`);
-  `created legal document`, `published legal document` (`legal`, label `Terms of service 3.2`); `generated landing pages` (`content_page`,
-  label `12 drafts`, feature 19).
+  `created legal document`, `published legal document` (`legal`, label `Terms of service 3.2`); a row written by the retired generator keeps its audit entry `generated landing pages` (`content_page`).
 - **Seed** (`scripts/seed/storefront.ts`, last in the order; one seeder, reports in this order): the 14 retail prices, the mock's 14
-  listings (ids 1 to 14), the 8 TAC catalogue entries, 14 landing and 6 content pages, 12 help articles and 6 legal versions (one
+  listings (ids 1 to 14), the 8 TAC catalogue entries, 6 content pages (static pages and blog posts; the demo's landing pages are not seeded), 12 help articles and 6 legal versions (one
   draft refund policy 1.5). The console's demo file also has an Arabic version of the terms (`lang` `AR`): the seed skips a demo legal row
   whose `lang` is present and not `EN`, so every seeded version is English.
 
@@ -231,35 +229,30 @@ Only this module reads and writes these 4 tables (`scripts/module-map.mjs`); oth
   carry `imageUrl` (`/store/v1/media/<name>` or `null`), read with one batched query per page (`PublicImages.urlsOf`). The bytes are
   served by the platform's `GET /store/v1/media/:name` (platform README).
 
-## Landing-page generator (feature 19)
+## Landing pages, retired (decision 068)
 
-`POST /admin/content-pages/generate` (`storefront:create`, B57; `contracts/page-generator.contracts.ts`, `application/page-generator.service.ts`,
-`domain/page-generator.ts`, `infra/page-generator.repository.ts`). Body `{ brands, models, networks }`, each a list of names (at most 100 of at most
-60 characters); the server trims, splits on commas and new lines, and drops blanks and repeats (ignoring case). Empty lists mean everything the site
-knows: every brand of the TAC catalogue, every model of those brands (marketing name, else the model code), every distinct carrier of the service
-listings (a read of `tac_catalog` in `infra/foreign-reads.repository.ts`, the only read of another module's table; `service_listings` is this module's).
-A typed model is generated as typed; the brand in `template_params` is the catalogue's (the typed brands first when two share a name), else the one
-brand typed, else empty.
+The owner removed the landing pages and the TAC catalogue from the console's Shop content page. A page is now a static page or a blog post and
+nothing else: `CONTENT_PAGE_KINDS` is `['static', 'blog']` (`db/schema.ts`), so the contracts, the filters and the examples know only those two, and
+creating a page of any other kind is `422` on `kind` (a change never carries a kind). A filter `kind=country` (or `model`, `brand`, `carrier`, `tool`) on the
+admin list or on `GET /store/v1/pages` is `422` too, and the slug of an old landing page is `404`. Every read of `infra/content-page.repository.ts` also
+keeps to the two kinds (`isKnownKind`), so a landing row left in a database that the migration has not reached yet, or in a backup restored from before
+it, is never answered.
 
-For each model x network (model by model): title `Unlock <model> on <network>`, slug `slugOf(title)`, kind `model`, status `draft`,
-`template_params { brand, model, network }`, `author_id` the signed-in staff member, a short Markdown body. Combinations that repeat
-an earlier one of the run (`iPhone 13` and `iPhone-13`) are merged before counting; the distinct combinations whose slug exists, or that a
-parallel run made first, are skipped and counted in `skipped`. A catalogue model with no Latin letter or digit cannot make a slug: it is left out and
-counted in `unusableModels` (in the answer only when above 0, and always in the audit entry), never a `422`; a listing carrier with no Latin letter or
-digit is left out of an "all networks" run the same way and counted in `unusableNetworks`. If more than `STOREFRONT_GENERATE_MAX_PER_RUN` (50, a code
-constant, b2c-15) new drafts remain, nothing is created: `422 VALIDATION_FAILED`, detail `This run would create N pages; the limit is 50 per run. Narrow
-the lists.`, `errors: []` (no field). The same `422` and sentence (N = the combinations) cover more than 20 000 combinations (a safety bound), and an "all models" run whose catalogue read returns more than 20 000 models (the read stops
-at 20 001, N = 20001; judged before any unusable name is dropped, or a cut-off catalogue would pass); a typed
-model or network with no Latin letter or digit is `422` on `models` or `networks` (it cannot make a slug). The insert is `ON CONFLICT (slug) DO NOTHING`, so two requests at once
-never create a page twice and never answer an error. One audit entry `generated landing pages` (entity `content_page`, label `N drafts`, ids in `after`),
-also when nothing was created. Nothing is published.
+Gone with them: `POST /admin/content-pages/generate` (a row of the map, so it stays in the route manifest and is listed in `test/contract/retired.ts`;
+no contract, controller method or use case serves it), `domain/page-generator.ts`, `application/page-generator.service.ts`, the carriers read, the
+storefront's read of the TAC names (`listTacNames`) and the permission wording "the generator needs `storefront:create`". The audit action
+`generated landing pages` stays readable in old audit rows. *Kept:* the table `content_pages` (its column `template_params` is unused), `visits30d` and
+`orders30d` on the admin row (still `null`), and the table `tac_catalog` (the risk queue reads it). The migration (0069) deletes the rows of the five landing
+kinds and narrows `content_pages_kind_check` to the two kinds; no other table has a foreign key to `content_pages`.
 
 ## Feature 29: search
 
 The English storefront search (`search/README.md` has the flow, the fallback and the statistics). Public routes and the console's
-`/admin/search/*` tools share `SearchHttpModule`; the index side (documents, sync, rebuild, terms) is `SearchIndexModule` and
+index tools (`GET /admin/search/index`, `POST /admin/search/index/rebuild`) share `SearchHttpModule`; the index side (documents, sync, rebuild, terms) is `SearchIndexModule` and
 `SearchWorkerModule`. `GET /store/v1/services` keeps its contract; `relevance` is a new sort (the first of the default order, skipped
-without `q` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers.
+without `q` and on fallback) and `x-search-engine` / `x-search-truncated` are new response headers. Decision 068 retired the console's
+synonym, pin, hidden-term, report and preview tools: the five synonyms of migration 0033 stay in the engine, read only, and the services
+schema version 2 links no curation set (the worker's first rebuild after the deploy deletes the old one).
 
 **Ranking values after tuning on the golden set** (`test/integration/storefront/search-golden.test.ts`; all in `search/domain/ranking.ts`): `query_by`
 `title,title_words,codes,joins,models,brand,carrier,networks,country_names,category,summary` with weights `10,9,10,8,6,6,5,4,5,4,2`;
@@ -320,15 +313,15 @@ None of the 13 map scenarios (`docs/slices/` → `scenarios`) touches this modul
 
 Staff permissions the map requires on this module's admin routes: `legal:*`, `legal:publish`, `settings:storefront`, `storefront:*`, `storefront:publish`.
 
-As built (CRUD rows expand per ALIGNMENT § 4; the generator needs `storefront:create`): `storefront:read`, `storefront:create`, `storefront:update`, `storefront:publish`,
+As built (CRUD rows expand per ALIGNMENT § 4): `storefront:read`, `storefront:create`, `storefront:update`, `storefront:publish`,
 `legal:read`, `legal:create`, `legal:publish`. The public routes need none. Keep this list in step with the contracts
 (`permission` of each `defineRoute`).
 
 ## Events
 
 Outbox events produced (feature 29; payloads are ids only): `storefront.listing_changed { serviceIds }` (`ListingAdminService` create and
-update and every service a publish run publishes or switches, at most 50 ids an event), `search.settings_changed { kind }` (the console's synonym, pin and hidden-term writes) and
-`search.rebuild_requested { staffId, runId }` (`POST /admin/search/index/rebuild`). Consumed: the three above, by the worker's
+update and every service a publish run publishes or switches, at most 50 ids an event) and
+`search.rebuild_requested { staffId, runId }` (`POST /admin/search/index/rebuild`). Consumed: both, by the worker's
 `search-index` and `maintenance` queues (`search/jobs/search-outbox-routes.ts`); catalog's `catalog.services_changed` and
 `catalog.category_changed` also reach the `search-index` queue.
 
@@ -338,8 +331,8 @@ update and every service a publish run publishes or switches, at most 50 ids an 
 `service_listings.sales_30d`. Idempotent, written to `job_runs` (`processed` = rows changed, `result` = `{ services, changed }`).
 Documented in `docs/queues.md`.
 
-Search (feature 29, `search/jobs`): on `search-index` `search_sync` (the only writer of documents through the live alias) and
-`search_settings`; on `maintenance` `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`), `search_rebuild` (03:40 UTC and on demand),
+Search (feature 29, `search/jobs`): on `search-index` `search_sync` (the only writer of documents through the live alias; decision 068
+retired `search_settings`); on `maintenance` `search_reconcile` (every `SEARCH_RECONCILE_MINUTES`), `search_rebuild` (03:40 UTC and on demand),
 `search_terms_build` (hourly at :20), `search_terms_flush` (every 15 minutes) and `search_terms_purge` (04:10 UTC). All idempotent and
 recorded in `job_runs`.
 
@@ -360,4 +353,4 @@ The pre-Phase-3 audit of the console endpoints (`docs/contract/RESOLUTIONS.md`, 
 - `catalog-3` · DELETE /admin/services/:id (an archived or disabled service is never listed or sold)
 - `b2c-7` · GET /admin/service-listings, PATCH /admin/service-listings/:id
 - `b2c-14` · GET /admin/customers/:id (answers `410` since decision 064; the account detail is `GET /admin/clients/:id`), GET /admin/legal-documents
-- `b2c-15` · POST /admin/content-pages/generate
+- `b2c-15` · POST /admin/content-pages/generate (retired by decision 068)

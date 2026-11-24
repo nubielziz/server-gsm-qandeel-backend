@@ -9,16 +9,8 @@ import { httpRequest } from '@src/infra/http/http-request';
 import { TypesenseClient } from '@src/infra/search';
 import { CATALOG_CATEGORY_CHANGED_EVENT, CATALOG_SERVICES_CHANGED_EVENT } from '@src/modules/catalog';
 import type { OutboxJobData } from '@src/modules/platform';
-import {
-  LISTING_CHANGED_EVENT,
-  SERVICES_SCHEMA_VERSION,
-  SETTINGS_CHANGED_EVENT,
-  SearchWorkerModule,
-} from '@src/modules/storefront';
-import {
-  SearchSettingsProcessor,
-  SearchSyncProcessor,
-} from '@src/modules/storefront/search/jobs/search-index.processor';
+import { LISTING_CHANGED_EVENT, SERVICES_SCHEMA_VERSION, SearchWorkerModule } from '@src/modules/storefront';
+import { SearchSyncProcessor } from '@src/modules/storefront/search/jobs/search-index.processor';
 import { type TestApp, type TestAppOptions, createTestApp } from './app';
 import { TEST_DATABASE_URL, testDb } from './db';
 import { testInstanceEnv } from './env';
@@ -64,6 +56,7 @@ export async function dropSearchPrefix(prefix: string): Promise<void> {
   for (const alias of await client.listAliases(prefix)) await client.deleteAlias(alias.name);
   for (const collection of await client.listCollections(prefix)) await client.dropCollection(collection.name);
   await client.deleteSynonymSet(`${prefix}synonyms`);
+  // A suite that builds an index of schema version 1 (the upgrade test) leaves its curation set behind if the rebuild failed.
   await client.deleteCurationSet(`${prefix}curations`);
   for (const key of await client.listKeys()) {
     if (key.description.startsWith(`gsm:${prefix}:`)) await client.deleteKey(key.id);
@@ -111,11 +104,10 @@ export async function runSearchOutbox(t: TestApp): Promise<number> {
   const events = await db
     .select()
     .from(s.outboxEvents)
-    .where(inArray(s.outboxEvents.type, [...SYNC_EVENTS, SETTINGS_CHANGED_EVENT]))
+    .where(inArray(s.outboxEvents.type, SYNC_EVENTS))
     .orderBy(asc(s.outboxEvents.id));
   const pending = events.filter((event) => event.id > after);
   const sync = t.app.get(SearchSyncProcessor, { strict: false });
-  const settings = t.app.get(SearchSettingsProcessor, { strict: false });
   for (const event of pending) {
     const { meta: _meta, ...payload } = event.payload;
     const data: OutboxJobData = {
@@ -127,8 +119,7 @@ export async function runSearchOutbox(t: TestApp): Promise<number> {
       requestId: `test-${event.id}`,
     };
     const job = { name: event.type, data, timestamp: event.createdAt.getTime() } as never;
-    if (event.type === SETTINGS_CHANGED_EVENT) await settings.process(job);
-    else await sync.process(job);
+    await sync.process(job);
     handled.set(t, event.id);
   }
   return pending.length;
@@ -161,7 +152,7 @@ export async function searchEvents(
     .where(gt(s.outboxEvents.id, afterId))
     .orderBy(asc(s.outboxEvents.id));
   return rows
-    .filter((row) => [...SYNC_EVENTS, SETTINGS_CHANGED_EVENT].includes(row.type))
+    .filter((row) => SYNC_EVENTS.includes(row.type))
     .map((row) => {
       const { meta: _meta, ...payload } = row.payload;
       return { id: row.id, type: row.type, aggregateType: row.aggregateType, aggregateId: row.aggregateId, payload };

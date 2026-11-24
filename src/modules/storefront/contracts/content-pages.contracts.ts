@@ -1,4 +1,5 @@
-// Route contracts of the content pages (map domain H, stage 15): landing pages, static pages and the blog, draft then publish.
+// Route contracts of the content pages (map domain H, stage 15): static pages and the blog, draft then publish. The landing kinds were
+// retired by decision 068.
 // Shapes match the console's ContentPage (docs/contract/endpoints/storefront.md, ANSWERS storefront Q2, Q3, Q8 and Q9).
 import { z } from 'zod';
 import { defineRoute, listQuery, zId, zIdParam, zIsoDateTime } from '../../../common/contract';
@@ -30,11 +31,11 @@ export const ContentPageRow = z.object({
 
 const PAGE_EXAMPLE = {
   id: 1,
-  kind: 'carrier',
-  slug: 'unlock-iphone-on-atandt',
-  title: 'Unlock iPhone on AT&T',
-  bodyMd: '# Unlock iPhone on AT&T\n\nHow the unlock works.',
-  seoTitle: 'Unlock iPhone on AT&T',
+  kind: 'blog',
+  slug: 'how-to-find-your-imei',
+  title: 'How to find your IMEI',
+  bodyMd: '# How to find your IMEI\n\nThree ways to find the IMEI of a phone.',
+  seoTitle: 'How to find your IMEI',
   seoDescription: '',
   status: 'published',
   publishedAt: '2026-10-01T09:00:00.000Z',
@@ -45,14 +46,14 @@ const PAGE_EXAMPLE = {
   orders30d: null,
 } as const;
 
-/** `GET /admin/content-pages`: the landing and content lists, with search, kind and status filters. */
+/** `GET /admin/content-pages`: the static pages and the blog posts, with search, kind and status filters. */
 export const listContentPages = defineRoute({
   key: 'GET /admin/content-pages',
   summary: 'List content pages',
   description:
-    'Landing pages (`kind` carrier, model, tool, brand, country) and content pages (`static`, `blog`) in one table. `kind` may ' +
-    'repeat (`kind=static&kind=blog`). `q` is a contains over the title and the slug. Default order: last change first. The ' +
-    'stats above the tables ask with `_start=0&_end=1`. Rows carry the full Markdown body.',
+    'Static pages and blog posts (`kind` `static` or `blog`; the landing kinds were retired by decision 068, so any other `kind` ' +
+    'is `422`). `kind` may repeat (`kind=static&kind=blog`). `q` is a contains over the title and the slug. Default order: last ' +
+    'change first. The stats above the tables ask with `_start=0&_end=1`. Rows carry the full Markdown body.',
   tags: ['content-pages'],
   surface: 'admin',
   access: 'staff-permission',
@@ -90,7 +91,8 @@ export const createContentPage = defineRoute({
   key: 'POST /admin/content-pages',
   summary: 'Create a content page',
   description:
-    'Always a draft (`publishedAt` null) written by the signed-in staff member. Without `slug` the server makes one from the ' +
+    'Always a draft (`publishedAt` null) written by the signed-in staff member; `kind` is `static` or `blog`, any other kind (the ' +
+    'retired landing kinds included) is `422` on `kind`. Without `slug` the server makes one from the ' +
     'title; a typed slug must be lower-case words joined by hyphens, and `terms`, `privacy`, `refund` and `cookies` belong to ' +
     'the legal documents. A slug already used by another page is `409 SLUG_TAKEN` on `slug` (also when two requests race). ' +
     '`bodyMd` keeps its whitespace; HTML inside is stored as sent and rendered only by the storefront.',

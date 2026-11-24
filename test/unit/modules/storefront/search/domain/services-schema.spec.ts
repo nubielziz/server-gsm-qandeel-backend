@@ -9,13 +9,12 @@ import {
 } from '@src/modules/storefront/search/domain/services-schema';
 
 describe('servicesSchema', () => {
-  it('links both sets, sorts by popularity, and searches no field with typos that could hold a digit token', () => {
-    const schema = servicesSchema('p_services_v1_20261116000000', { synonyms: 'p_synonyms', curations: 'p_curations' });
-    expect(schema).toMatchObject({
-      default_sorting_field: 'popularity',
-      synonym_sets: ['p_synonyms'],
-      curation_sets: ['p_curations'],
-    });
+  it('links the synonym set and no curation set, sorts by popularity, and searches no field with typos that could hold a digit token', () => {
+    const schema = servicesSchema('p_services_v2_20261116000000', 'p_synonyms');
+    expect(schema).toMatchObject({ default_sorting_field: 'popularity', synonym_sets: ['p_synonyms'] });
+    // Decision 068: pins are retired, so a collection of schema version 2 links no curation set.
+    expect(schema).not.toHaveProperty('curation_sets');
+    expect(SERVICES_SCHEMA_VERSION).toBe(2);
     expect(schema).not.toHaveProperty('token_separators');
     expect(SERVICE_FIELDS.find((field) => field.name === 'hash')).toEqual({
       name: 'hash',
@@ -36,7 +35,7 @@ describe('SearchNames', () => {
     expect(names.alias('services')).toBe(`gsm_29_test_services_v${SERVICES_SCHEMA_VERSION}`);
     expect(names.alias('terms', 7)).toBe('gsm_29_test_terms_v7');
     expect(names.synonymSet).toBe('gsm_29_test_synonyms');
-    expect(names.curationSet).toBe('gsm_29_test_curations');
+    expect(names.retiredCurationSet).toBe('gsm_29_test_curations');
   });
 
   it('parses only its own names, never a longer prefix of another run', () => {

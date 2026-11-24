@@ -8,7 +8,6 @@ import type {
   ApiKeySpec,
   CollectionInfo,
   CollectionSchema,
-  CurationItem,
   EngineHealth,
   EngineMetrics,
   ImportAction,
@@ -454,23 +453,6 @@ export class TypesenseClient {
   }
 
   /**
-   * Replaces a curation set with these items.
-   *
-   * @param name the set (`<prefix>curations`)
-   * @param items every enabled pin rule
-   * @throws {SearchUnavailable} | {SearchRejected}
-   */
-  async putCurationSet(name: string, items: readonly CurationItem[]): Promise<void> {
-    await this.json({
-      method: 'PUT',
-      path: `/curation_sets/${encodeURIComponent(name)}`,
-      operation: 'put curation set',
-      body: JSON.stringify({ items }),
-      contentType: 'application/json',
-    });
-  }
-
-  /**
    * Deletes a synonym set.
    *
    * @param name the set
@@ -482,7 +464,7 @@ export class TypesenseClient {
   }
 
   /**
-   * Deletes a curation set.
+   * Deletes a curation set (the rebuild deletes the one schema version 1 linked: pins are retired by decision 068).
    *
    * @param name the set
    * @returns false when it did not exist

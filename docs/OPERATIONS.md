@@ -1331,9 +1331,11 @@ nothing fails.
   It is idempotent (lists the keys, keeps those that work, recreates those that differ or answer 401) and never prints a key. The worker's
   boot reconcile then finds no alias and rebuilds the index (a few minutes for 100 000 services); the shop uses the database search
   meanwhile. The data volume is not backed up: it is derived data.
-- **Console:** Storefront, **Search**: synonyms, pinned results, the report (what visitors searched for and what found nothing), a
-  preview of a query with the rules applied, and the index status with **Rebuild index** (`storefront:publish`; a rebuild runs the
-  nightly job now). Staff never edit Typesense by hand: the worker pushes the whole synonym and curation sets after every change.
+- **Console:** Storefront, **Search**: the index status with **Rebuild index** (`storefront:publish`; a rebuild runs the nightly job now).
+  Decision 068 retired the synonyms, pinned results, hidden terms, the report and the preview of the console: the five synonyms of
+  migration 0033 stay, read only, and every rebuild pushes them whole. Staff never edit Typesense by hand. The first worker start of that
+  release finds no alias of services schema version 2 and rebuilds by itself (the shop uses the database search meanwhile); the rebuild
+  deletes the old curation set.
 - **Kill switch:** `SEARCH_ENABLED=false` in `.env.production` and `gsmc up -d api worker`: every search is the database search and the
   sync jobs complete without calls. No deploy of code is needed to go back to today's behaviour. Removing Typesense is stopping the
   container and deleting `typesense-data`.

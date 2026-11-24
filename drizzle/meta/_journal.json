@@ -484,6 +484,13 @@
       "when": 1795526139226,
       "tag": "0068_field_names",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1795555556112,
+      "tag": "0069_shop_content_trimmed",
+      "breakpoints": true
     }
   ]
 }

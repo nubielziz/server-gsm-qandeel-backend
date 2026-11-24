@@ -4,6 +4,19 @@ Single source of truth for status. The lead updates it after every step. Read it
 
 ## Resume here
 
+**Shop content trimmed (2026-11-25, decision 068): merged, not released.** On the owner's order the landing pages, the TAC catalogue's admin
+routes and the search tools of the console are retired; the search index status and "Rebuild index" stay. A content page is a static page or a
+blog post (`POST /admin/content-pages/generate` and the five landing kinds are gone); the four `/admin/tac-catalog` routes are gone (the table,
+its seed rows and the risk queue's device name stay); the thirteen synonym, pin, hidden-term, report and preview routes are gone with
+`search.settings_changed` and the `search_settings` job. **Synonyms stay in the engine as shipped data, read only**, so a visitor's search
+answers as before; pins and hidden terms are out of the engine (services schema version 2: the worker's first reconcile rebuilds the index by
+itself, the API answers from the database fallback meanwhile). Migration `0069_shop_content_trimmed`: deletes landing rows, narrows
+`content_pages_kind_check`, empties `search_pins` and `search_hidden_terms`, marks unsent `search.settings_changed` rows as handled; safe under
+the automatic deploy. Built by a Sonnet and an Opus implementer in parallel worktrees, integrated by the lead (Fable 5.2), reviewed by an Opus
+reviewer with no blocker (plan: `/home/saifi/gsm-project/.shop-content-trim/PLAN.md`). **Checks:** typecheck, lint, format, English, routes,
+contract, OpenAPI, coverage and `db:check` (70 migrations); the contract, tooling, storefront, risk, infra and platform suites pass (3,926 tests
+in the wide run, 2,494 in the last one); the whole suite was not run locally. **Release order:** console, backend, shop.
+
 **API keys are made by staff (2026-11-24, decision 067): merged, released with the shop's read-only page.** The owner decided merchants no
 longer create, change or revoke their API keys: `POST /client/api-keys`, `PATCH /client/api-keys/:id` and `DELETE /client/api-keys/:id` are
 retired (listed in `test/contract/retired.ts`, a merchant session gets 404); `GET /client/api-keys` stays, read only. Staff routes are

@@ -71,7 +71,7 @@ export const tableDescriptions = {
 
   // H. Storefront and content
   service_listings: 'The public service page in the storefront: title, slug and SEO fields.',
-  content_pages: 'Landing pages, static pages and the blog.',
+  content_pages: 'Static pages and the blog.',
   help_articles: 'The help centre and FAQ; an article can be linked to a service.',
   legal_documents: 'Terms, privacy, refund and cookie documents, with archived versions.',
 

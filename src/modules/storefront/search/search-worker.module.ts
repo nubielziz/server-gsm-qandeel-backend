@@ -1,4 +1,4 @@
-// Nest module of the storefront search's worker side (feature 29, plan section 4.5): the sync, the settings push, the reconcile, the
+// Nest module of the storefront search's worker side (feature 29, plan section 4.5): the sync, the synonym push, the reconcile, the
 // rebuild, the terms build and flush, their processors and schedules, and the boot reconcile. Import it in the worker process only.
 import { randomUUID } from 'node:crypto';
 import { Inject, Logger, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
@@ -9,12 +9,12 @@ import { JobRunsModule } from '../../health';
 import { SearchLocks } from './application/search-locks';
 import { SearchRebuild } from './application/search-rebuild';
 import { SearchReconcile } from './application/search-reconcile';
-import { SearchSettingsPush } from './application/search-settings-push';
 import { SEARCH_JOBS } from './application/search-signals';
 import { SearchSync } from './application/search-sync';
+import { SearchSynonymPush } from './application/search-synonym-push';
 import { SearchTermsBuild } from './application/search-terms-build';
 import { SearchTermsFlush } from './application/search-terms-flush';
-import { SearchSettingsProcessor, SearchSyncProcessor } from './jobs/search-index.processor';
+import { SearchSyncProcessor } from './jobs/search-index.processor';
 import {
   SearchRebuildProcessor,
   SearchReconcileProcessor,
@@ -43,7 +43,7 @@ export const SEARCH_SCHEDULERS = {
  * Why: decision 038: the API never does slow work inline; the worker keeps the index in step with Postgres (sync, reconcile every
  * `SEARCH_RECONCILE_MINUTES`, nightly rebuild at 03:40 UTC, terms hourly at :20, the counters every 15 minutes, the purge daily at
  * 04:10 UTC). At boot it also queues one reconcile (job id `boot-<boot id>`), which starts a rebuild when the alias of the running schema
- * version is missing (a new deploy or a wiped volume heals by itself). The schedules are created by the worker on every boot.
+ * version is missing (a new deploy, a bumped schema version such as decision 068's, or a wiped volume heals by itself). The schedules are created by the worker on every boot.
  *
  * Side effects: scheduler registrations; one `search_reconcile` job per worker boot (only where the queue workers run).
  */
@@ -52,20 +52,19 @@ export const SEARCH_SCHEDULERS = {
   providers: [
     SearchLocks,
     SearchSync,
-    SearchSettingsPush,
+    SearchSynonymPush,
     SearchReconcile,
     SearchRebuild,
     SearchTermsBuild,
     SearchTermsFlush,
     SearchSyncProcessor,
-    SearchSettingsProcessor,
     SearchReconcileProcessor,
     SearchRebuildProcessor,
     SearchTermsBuildProcessor,
     SearchTermsFlushProcessor,
     SearchTermsPurgeProcessor,
   ],
-  exports: [SearchSync, SearchSettingsPush, SearchReconcile, SearchRebuild, SearchTermsBuild, SearchTermsFlush],
+  exports: [SearchSync, SearchSynonymPush, SearchReconcile, SearchRebuild, SearchTermsBuild, SearchTermsFlush],
 })
 export class SearchWorkerModule implements OnModuleInit, OnApplicationBootstrap {
   private readonly logger = new Logger(SearchWorkerModule.name);

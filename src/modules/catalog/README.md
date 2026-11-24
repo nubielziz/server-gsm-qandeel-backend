@@ -1,17 +1,17 @@
 # Catalog & pricing module (`catalog`)
 
-Map domain B. What is for sale and at what price: client groups, categories, services with their fields and options, group and client prices, pricing rules, inventory codes and the TAC catalog.
+Map domain B. What is for sale and at what price: client groups, categories, services with their fields and options, group and client prices, pricing rules, inventory codes and the TAC catalog (a table with no routes since decision 068).
 
 Layout, boundaries and the request pipeline: `docs/ARCHITECTURE.md` §§ 2-3 and decision 016. Every route is a zod contract (decision 008); how to add one: `CONTRIBUTING.md`.
 
 Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 065 one Name per field and the main input flag. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
-Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 066 the `ids` read of the merchant catalog. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
+Decisions that shape this module: 011 money, 026 Dhru compatibility, 051 field patterns (feature 41), 063 the price grid and the stored order of services, 066 the `ids` read of the merchant catalog, 068 the TAC catalog loses its routes. Common to all modules: 008 route contracts, 016 layout and boundaries, 027 database conventions.
 
 ## Status
 
 Built: feature 4a (catalog-structure, 20 routes): merchant groups, service categories, services with their custom fields and
 option lists, and the code inventory; feature 4b (catalog-pricing, 16 routes): group prices, client prices, pricing rules, the
-bulk price change, the price resolver and the merchant catalog (below); feature 14b (4 routes): the TAC catalog (below). Supplier links and import are
+bulk price change, the price resolver and the merchant catalog (below); feature 14b (the TAC catalog: its 4 routes are retired, decision 068). Supplier links and import are
 feature 6.
 
 - **Ranks, the merchant groups and the retail rank** (`application/client-group-admin.service.ts`, `infra/group.repository.ts`; decision 064): every
@@ -78,14 +78,15 @@ feature 6.
   `greatest(cost, credit x credit_rate)` of the first link an order can use (switched on, supplier `active`, service still listed),
   else the highest of the switched-on links, else 0.
 
-### TAC catalog (feature 14b)
+### TAC catalog (read only since decision 068)
 
-`TacCatalogAdminService` (`application/tac-catalog-admin.service.ts`, `infra/tac-catalog.repository.ts`, `domain/tac-input.ts`) serves
-`/admin/tac-catalog` (`catalog:read|create|update`, audit entity type `tac_entry`): list with `q` over TAC (a typed prefix finds it), brand, model code and
-marketing name, an exact `brand` filter, sorts by `tac` (default), `brand`, `model` and `releaseYear`; add (`source` `manual`) and correct. A TAC appears once
-(`409 TAC_TAKEN` on `tac`, also for two requests at once through the unique index). RESOLUTIONS catalog-8: `release_year` stays nullable and an unknown year is
-sent as `0` (sorted as 0); a body year is a whole number from 1990 to next year by the clock (0 and null are `422` on `releaseYear`); a year cannot be cleared; `brand` and
-`model` cannot be emptied. The seed loads the demo's eight TACs (`scripts/seed/customers.ts`).
+The four routes `GET /admin/tac-catalog`, `GET /admin/tac-catalog/:id`, `POST /admin/tac-catalog` and `PATCH /admin/tac-catalog/:id` (feature 14b) were
+retired with the console's TAC tab: nobody edits the catalogue by hand any more. They are rows of the map, so they stay in the route manifest
+and are listed in `test/contract/retired.ts`; no contract, controller, use case, repository function or test serves them. *Kept:* the table
+`tac_catalog` with its seed rows (the demo's eight TACs, `scripts/seed/storefront.ts`), its foreign key from `imei_checks.tac`, and the read of a
+held order's device name by the risk queue (`risk/infra/foreign-reads.repository.ts`, `tacEntries`). The permissions `catalog:*` stay (the services
+use them) and the audit entity type `tac_entry` stays so old audit rows still read. The error code `TAC_TAKEN` left the catalog with the routes.
+No migration, no queue or cache key change.
 
 ### Pricing (feature 4b)
 
@@ -395,14 +396,11 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 | `GET /admin/service-categories/:id` | staff-permission · `catalog:*` | Service categories and the merchant groups that can see them. | 4 |
 | `GET /admin/services` | staff-permission · `catalog:*` | Services: type, execution, pricing mode and rules. | 4 |
 | `GET /admin/services/:id` | staff-permission · `catalog:*` | Services: type, execution, pricing mode and rules. | 4 |
-| `GET /admin/tac-catalog` | staff-permission · `catalog:*` | TAC table: brand and model for each IMEI prefix. | 14 |
-| `GET /admin/tac-catalog/:id` | staff-permission · `catalog:*` | TAC table: brand and model for each IMEI prefix. | 14 |
 | `PATCH /admin/client-groups/:id` | staff-permission · `groups:*` | Merchant groups: discount, upgrade threshold and deposit limit. | 4 |
 | `PATCH /admin/client-prices/:id` | staff-permission · `pricing:*` | A special price for a merchant on a service. | 4 |
 | `PATCH /admin/pricing-rules/:id` | staff-permission · `pricing:*` | Margin and discount rules. | 4 |
 | `PATCH /admin/service-categories/:id` | staff-permission · `catalog:*` | Service categories and the merchant groups that can see them. | 4 |
 | `PATCH /admin/services/:id` | staff-permission · `catalog:*` | Services: type, execution, pricing mode and rules. | 4 |
-| `PATCH /admin/tac-catalog/:id` | staff-permission · `catalog:*` | TAC table: brand and model for each IMEI prefix. | 14 |
 | `POST /admin/client-groups` | staff-permission · `groups:*` | Merchant groups: discount, upgrade threshold and deposit limit. | 4 |
 | `POST /admin/client-prices` | staff-permission · `pricing:*` | A special price for a merchant on a service. | 4 |
 | `POST /admin/inventory-codes/void` | staff-permission · `inventory:write` | Void unsold codes. | 5 |
@@ -412,7 +410,6 @@ Feature 31 adds seven admin routes beyond the map (`scripts/map-additions/31.mjs
 | `POST /admin/services/:id/inventory/import` | staff-permission · `inventory:write` | Import codes with duplicate detection. | 5 |
 | `POST /admin/services/bulk-price/apply` | staff-permission · `pricing:update` | Apply the bulk price change. | 4 |
 | `POST /admin/services/bulk-price/preview` | staff-permission · `pricing:update` | Preview a bulk price change. | 4 |
-| `POST /admin/tac-catalog` | staff-permission · `catalog:*` | TAC table: brand and model for each IMEI prefix. | 14 |
 | `PUT /admin/services/:id/fields` | staff-permission · `catalog:update` | Custom fields of the service. | 4 |
 | `PUT /admin/services/:id/group-prices` | staff-permission · `pricing:update` | Service price for each merchant group. | 4 |
 | `PUT /admin/services/:id/options` | staff-permission · `catalog:update` | Model, network and MEP option lists. | 4 |
